@@ -94,7 +94,7 @@ const buildLogPath = (req = {}, date = new Date()) => {
   const fileName = `${method}-${routePath}-${time}.log`;
   const baseDir = user.id || user.email
     ? path.join(LOG_ROOT, getUserDirectoryName(user), day)
-    : path.join(LOG_ROOT, 'Server', day);
+    : path.join(LOG_ROOT, 'Server-Errors', day);
   return path.join(baseDir, fileName);
 };
 
