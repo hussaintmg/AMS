@@ -1,0 +1,3 @@
+﻿"# AMS Direct Sales Order bulk import (vehicle line). REQUIRED: customer_id, vehicle_id, vehicle_price (>0). OPTIONAL: sale_type (vehicle), accessories_total, discount_amount, tax_amount, registration_charges, insurance_charges, other_charges, paid_amount, payment_mode, finance_company, finance_amount, exchange_vehicle_details, exchange_value, expected_delivery_date (YYYY-MM-DD), notes. Vehicle must be at_yard or in_transit."
+"customer_id*","vehicle_id*","vehicle_price*","accessories_total","discount_amount","tax_amount","registration_charges","insurance_charges","other_charges","paid_amount","payment_mode","notes"
+"1","1","2500000","0","0","0","0","0","0","0","cash","Replace customer_id and vehicle_id with valid IDs from AMS."

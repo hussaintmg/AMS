@@ -1,0 +1,3 @@
+﻿"# AMS Vehicle Brand bulk import. REQUIRED: name. OPTIONAL: description, country_of_origin, established_year, website, logo_url, is_active (1/0/true/false)."
+"name*","description","country_of_origin","established_year","website","logo_url","is_active"
+"Sample Motors","Demo brand row","Pakistan","2020","https://example.com","","1"

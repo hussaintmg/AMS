@@ -1,0 +1,143 @@
+/* ═══════════════════════════════════════════════════════════════
+   SHARED FILTER BAR
+   ═══════════════════════════════════════════════════════════════ */
+
+.filter-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: flex-end;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 20px;
+}
+
+.filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 160px;
+}
+
+.filter-group label {
+    font-size: 11px;
+    font-weight: 600;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.filter-group .form-control {
+    padding: 8px 12px;
+    border: 1.5px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 13px;
+    background: #fff;
+    color: #1f2937;
+    transition: border-color 0.15s ease;
+}
+
+.filter-group .form-control:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+}
+
+/* Search input */
+.filter-search-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+    min-width: 200px;
+}
+
+.filter-search-icon {
+    position: absolute;
+    left: 12px;
+    color: #9ca3af;
+    pointer-events: none;
+}
+
+.filter-search-input {
+    padding-left: 36px !important;
+}
+
+.filter-clear-btn {
+    position: absolute;
+    right: 8px;
+    background: none;
+    border: none;
+    font-size: 20px;
+    color: #9ca3af;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0 4px;
+}
+
+.filter-clear-btn:hover {
+    color: #64748b;
+}
+
+/* Date range */
+.filter-date-range {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.filter-date-group {
+    min-width: 140px;
+}
+
+.filter-date-sep {
+    color: #9ca3af;
+    font-size: 14px;
+    margin-top: 0;
+}
+
+/* Reset button */
+.filter-reset-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+}
+
+.filter-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
+    border-radius: 10px;
+    background: #3b82f6;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .filter-bar {
+        flex-direction: column;
+    }
+
+    .filter-group,
+    .filter-search-wrapper,
+    .filter-date-group {
+        min-width: 100%;
+        width: 100%;
+    }
+
+    .filter-date-range {
+        flex-wrap: wrap;
+        width: 100%;
+    }
+
+    .filter-date-sep {
+        display: none;
+    }
+}

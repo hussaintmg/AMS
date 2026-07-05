@@ -1,0 +1,237 @@
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { adminAPI, serverManagementAPI } from '../services/api';
+import { showApiSuccess, showApiError, getErrorMessage } from '../utils/toastResponse';
+import eventBus from '../utils/eventBus';
+
+const UserManagementContext = createContext(null);
+
+export function UserManagementProvider({ children }) {
+    const [users, setUsers] = useState([]);
+    const [roles, setRoles] = useState([]);
+    const [departments, setDepartments] = useState([]);
+    const [stats, setStats] = useState({});
+    const [loading, setLoading] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState(null);
+
+    useEffect(() => {
+        const reset = () => {
+            setUsers([]);
+            setRoles([]);
+            setDepartments([]);
+            setStats({});
+            setLoading(false);
+            setSaving(false);
+            setError(null);
+        };
+        eventBus.on('auth:logout', reset);
+        return () => eventBus.remove('auth:logout', reset);
+    }, []);
+
+    const loadUsers = useCallback(async (params = {}) => {
+        try {
+            setLoading(true);
+            const res = await adminAPI.getUsers(params);
+            const data = res.data.data;
+            return data;
+        } catch (err) {
+            const msg = getErrorMessage(err, 'Failed to load users');
+            setError(msg);
+            showApiError(err, 'Failed to load users');
+            throw err;
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    const loadRoles = useCallback(async () => {
+        try {
+            const res = await adminAPI.getRoles();
+            const data = res.data.data;
+            setRoles(data || []);
+            return data;
+        } catch (err) {
+            showApiError(err, 'Failed to load roles');
+            throw err;
+        }
+    }, []);
+
+    const loadDepartments = useCallback(async () => {
+        try {
+            const res = await adminAPI.getDepartments({ flat: true });
+            const data = res.data.data;
+            const deptList = (data && Array.isArray(data.flat)) ? data.flat : (data || []);
+            setDepartments(deptList);
+            return deptList;
+        } catch (err) {
+            showApiError(err, 'Failed to load departments');
+            throw err;
+        }
+    }, []);
+
+    const loadStats = useCallback(async () => {
+        try {
+            const res = await adminAPI.getUserStats();
+            const data = res.data.data;
+            setStats(data || {});
+            return data;
+        } catch (err) {
+            const msg = err.response?.data?.message || 'Failed to load stats';
+            setError(msg);
+            throw err;
+        }
+    }, []);
+
+    const loadReferenceData = useCallback(async () => {
+        await Promise.all([
+            loadRoles(),
+            loadDepartments(),
+            loadStats()
+        ]);
+    }, [loadRoles, loadDepartments, loadStats]);
+
+    const createUser = useCallback(async (formData) => {
+        try {
+            setSaving(true);
+            const payload = {
+                email: formData.email,
+                password: formData.password,
+                firstName: formData.firstName,
+                lastName: formData.lastName,
+                phone: formData.phone,
+                roleId: formData.roleId,
+                department: formData.department,
+                jobTitle: formData.jobTitle
+            };
+            const res = await serverManagementAPI.createUser(payload);
+            if (!(res?.status >= 200 && res?.status < 300 && res?.data?.success === true)) {
+                throw new Error(res?.data?.message || 'Failed to create user');
+            }
+            showApiSuccess(res, 'User created successfully!');
+            await loadReferenceData();
+            return { success: true };
+        } catch (err) {
+            showApiError(err, 'Failed to create user');
+            return { success: false, message: getErrorMessage(err, 'Failed to create user'), error: err.response?.data };
+        } finally {
+            setSaving(false);
+        }
+    }, [loadReferenceData]);
+
+    const updateUser = useCallback(async (userId, formData) => {
+        try {
+            setSaving(true);
+            const payload = { ...formData };
+            if (!payload.password) delete payload.password;
+            const res = await serverManagementAPI.updateUser(userId, payload);
+            if (!(res?.status >= 200 && res?.status < 300 && res?.data?.success === true)) {
+                throw new Error(res?.data?.message || 'Failed to update user');
+            }
+            showApiSuccess(res, 'User updated successfully!');
+            return { success: true };
+        } catch (err) {
+            showApiError(err, 'Failed to update user');
+            return { success: false, message: getErrorMessage(err, 'Failed to update user'), error: err.response?.data };
+        } finally {
+            setSaving(false);
+        }
+    }, []);
+
+    const deleteUser = useCallback(async (userId, email) => {
+        if (!window.confirm(`Are you sure you want to delete user "${email}"?`)) return { success: false };
+        try {
+            const res = await adminAPI.deleteUser(userId);
+            if (!(res?.status >= 200 && res?.status < 300 && res?.data?.success === true)) {
+                throw new Error(res?.data?.message || 'Failed to delete user');
+            }
+            showApiSuccess(res, 'User deleted successfully!');
+            return { success: true };
+        } catch (err) {
+            showApiError(err, 'Failed to delete user');
+            return { success: false, message: getErrorMessage(err, 'Failed to delete user'), error: err.response?.data };
+        }
+    }, []);
+
+    const toggleUserStatus = useCallback(async (userId) => {
+        try {
+            const res = await adminAPI.toggleUserStatus(userId);
+            if (!(res?.status >= 200 && res?.status < 300 && res?.data?.success === true)) {
+                throw new Error(res?.data?.message || 'Failed to toggle status');
+            }
+            const isActive = res.data.data.isActive;
+            showApiSuccess(res, `User ${isActive ? 'activated' : 'deactivated'} successfully!`);
+            await loadReferenceData();
+            return { success: true, isActive };
+        } catch (err) {
+            return { success: false, message: getErrorMessage(err, 'Failed to toggle status'), error: err.response?.data };
+        }
+    }, [loadReferenceData]);
+
+    const createDepartment = useCallback(async (data) => {
+        try {
+            const res = await adminAPI.createDepartment(data);
+            ensureSuccess(res, 'Department created');
+            await loadDepartments();
+            showApiSuccess(res, 'Department created');
+            return { success: true };
+        } catch (err) {
+            showApiError(err, 'Failed to create department');
+            return { success: false, message: getErrorMessage(err, 'Failed to create department') };
+        }
+    }, [loadDepartments]);
+
+    const updateDepartment = useCallback(async (id, data) => {
+        try {
+            const res = await adminAPI.updateDepartment(id, data);
+            ensureSuccess(res, 'Department updated');
+            await loadDepartments();
+            showApiSuccess(res, 'Department updated');
+            return { success: true };
+        } catch (err) {
+            showApiError(err, 'Failed to update department');
+            return { success: false, message: getErrorMessage(err, 'Failed to update department') };
+        }
+    }, [loadDepartments]);
+
+    const deleteDepartment = useCallback(async (id) => {
+        try {
+            const res = await adminAPI.deleteDepartment(id);
+            ensureSuccess(res, 'Department deleted');
+            await loadDepartments();
+            showApiSuccess(res, 'Department deleted');
+            return { success: true };
+        } catch (err) {
+            showApiError(err, 'Failed to delete department');
+            return { success: false, message: getErrorMessage(err, 'Failed to delete department') };
+        }
+    }, [loadDepartments]);
+
+    const value = useMemo(() => ({
+        users, roles, departments, stats,
+        loading, saving, error,
+        setUsers, setRoles, setDepartments,
+        loadUsers, loadRoles, loadDepartments, loadStats, loadReferenceData,
+        createUser, updateUser, deleteUser, toggleUserStatus,
+        createDepartment, updateDepartment, deleteDepartment
+    }), [users, roles, departments, stats, loading, saving, error,
+        loadUsers, loadRoles, loadDepartments, loadStats, loadReferenceData,
+        createUser, updateUser, deleteUser, toggleUserStatus,
+        createDepartment, updateDepartment, deleteDepartment]);
+
+    return (
+        <UserManagementContext.Provider value={value}>
+            {children}
+        </UserManagementContext.Provider>
+    );
+}
+
+const ensureSuccess = (response, fallback) => {
+    if (!(response?.status >= 200 && response?.status < 300 && response?.data?.success === true)) {
+        throw new Error(response?.data?.message || fallback);
+    }
+    return response?.data?.message || fallback;
+};
+
+export const useUserManagement = () => useContext(UserManagementContext);
+
+export default UserManagementContext;

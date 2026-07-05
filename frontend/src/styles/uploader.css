@@ -1,0 +1,150 @@
+/* Uploader Specific Styles 
+   Created by LOGIXINVENTOR (PVT) Ltd.
+*/
+
+.uploader-card {
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.upload-instruction {
+    color: var(--text-secondary);
+    margin-bottom: 1.5rem;
+    font-size: 0.95rem;
+    line-height: 1.6;
+}
+
+.dropzone-container {
+    border: 2px dashed var(--border-color);
+    border-radius: var(--border-radius-lg);
+    padding: 3rem 2rem;
+    text-align: center;
+    background-color: var(--bg-main);
+    transition: all 0.3s ease;
+    min-height: 300px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+}
+
+.dropzone-container.drag-active {
+    border-color: var(--primary-color);
+    background-color: rgba(37, 99, 235, 0.05); /* very light primary tint */
+    transform: scale(1.01);
+}
+
+.dropzone-container.has-file {
+    border-style: solid;
+    padding: 2rem;
+}
+
+.dropzone-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.upload-icon {
+    width: 64px;
+    height: 64px;
+    color: var(--primary-color);
+    margin-bottom: 0.5rem;
+    opacity: 0.8;
+}
+
+.dropzone-content h3 {
+    font-size: 1.25rem;
+    color: var(--text-main);
+    margin: 0;
+}
+
+.file-input-hidden {
+    display: none;
+}
+
+.browse-btn {
+    cursor: pointer;
+    margin-top: 0.5rem;
+    display: inline-block;
+}
+
+.upload-limits {
+    margin-top: 1.5rem;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+/* File Preview State */
+.file-preview {
+    width: 100%;
+    max-width: 500px;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.file-info {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.25rem;
+    background-color: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-md);
+    box-shadow: var(--shadow-sm);
+}
+
+.file-icon {
+    width: 40px;
+    height: 40px;
+    color: var(--success-color);
+}
+
+.file-details {
+    flex: 1;
+    text-align: left;
+}
+
+.file-details h4 {
+    margin: 0 0 0.25rem 0;
+    font-size: 1rem;
+    color: var(--text-main);
+    word-break: break-all;
+}
+
+.file-details p {
+    margin: 0;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.remove-btn {
+    color: var(--danger-color);
+    background: none;
+    border: none;
+}
+
+.remove-btn:hover {
+    background-color: rgba(239, 68, 68, 0.1);
+}
+
+.upload-btn {
+    width: 100%;
+    padding: 0.875rem;
+    font-size: 1rem;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.spinner-small {
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+    border-top-color: white;
+    animation: spin 1s linear infinite;
+}

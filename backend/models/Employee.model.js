@@ -1,0 +1,29 @@
+const mongoose = require('mongoose');
+
+const employeeSchema = new mongoose.Schema({
+  employeeCode: { type: String, trim: true },
+  user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  firstName: { type: String, trim: true },
+  lastName: { type: String, trim: true },
+  email: { type: String, trim: true, lowercase: true },
+  phone: { type: String, trim: true },
+  cnic: { type: String, trim: true },
+  department: { type: String, trim: true },
+  role: { type: mongoose.Schema.Types.ObjectId, ref: 'Role' },
+  designation: { type: String, trim: true },
+  joiningDate: { type: Date },
+  salary: { type: Number },
+  status: { type: String, trim: true },
+  isActive: { type: Boolean, default: true }
+}, {
+  timestamps: true
+});
+
+employeeSchema.index({ employeeCode: 1 });
+employeeSchema.index({ email: 1 });
+employeeSchema.index({ department: 1 });
+employeeSchema.index({ isActive: 1 });
+
+const Employee = mongoose.model('Employee', employeeSchema);
+
+module.exports = Employee;

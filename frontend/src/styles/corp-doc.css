@@ -1,0 +1,170 @@
+/* Corporate document layout — view + print (quotation, booking, sales order) */
+
+.corp-doc {
+    color: #0f172a;
+    font-size: 14px;
+    line-height: 1.55;
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 0 0 0.5rem;
+}
+
+.corp-doc .corporate-print-letterhead {
+    margin-bottom: 1.25rem;
+}
+
+.corp-doc .sales-print-meta {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 0.65rem 1rem;
+    padding: 0.85rem 1rem;
+    margin-bottom: 1.25rem;
+    background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+}
+
+.corp-doc .sales-print-meta__label {
+    font-size: 0.65rem;
+    letter-spacing: 0.08em;
+}
+
+.corp-doc .sales-print-meta__value {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #0f172a;
+}
+
+.corp-doc__titlebar {
+    margin-bottom: 1rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 3px solid #1e3a5f;
+}
+
+.corp-doc__doctitle {
+    margin: 0;
+    font-size: 1.35rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #1e3a5f;
+}
+
+.corp-doc__ref {
+    margin-top: 0.35rem;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #475569;
+}
+
+.corp-doc-section {
+    margin-top: 1.35rem;
+}
+
+.corp-doc-section__title {
+    margin: 0 0 0.65rem;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: #1e3a5f;
+    padding-bottom: 0.35rem;
+    border-bottom: 1px solid #cbd5e1;
+}
+
+.corp-doc-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+}
+
+.corp-doc-table td {
+    padding: 0.55rem 0.75rem;
+    border: 1px solid #e2e8f0;
+    vertical-align: top;
+}
+
+.corp-doc-table td:first-child {
+    width: 32%;
+    background: #f8fafc;
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #64748b;
+}
+
+.corp-doc-table td:last-child {
+    font-weight: 500;
+    color: #0f172a;
+    background: #fff;
+}
+
+.corp-doc-table--financial td:first-child {
+    width: 58%;
+    text-transform: none;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: #475569;
+    background: #f8fafc;
+}
+
+.corp-doc-table--financial td:last-child {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+}
+
+.corp-doc-table--financial tr.corp-doc-table__total td {
+    background: #eff6ff;
+    border-color: #93c5fd;
+    font-weight: 700;
+    font-size: 0.95rem;
+    color: #1e3a5f;
+}
+
+.corp-doc-table--financial tr.corp-doc-table__balance td:last-child {
+    color: #b91c1c;
+}
+
+.corp-doc-notes {
+    margin-top: 1.25rem;
+    padding: 0.85rem 1rem;
+    background: #fafafa;
+    border-left: 4px solid #1e3a5f;
+    border: 1px solid #e5e7eb;
+    border-left-width: 4px;
+    border-left-color: #1e3a5f;
+}
+
+.corp-doc-notes__label {
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #64748b;
+    margin-bottom: 0.35rem;
+}
+
+.corp-doc-notes__body {
+    margin: 0;
+    white-space: pre-wrap;
+    font-size: 0.8125rem;
+    color: #334155;
+}
+
+.corp-doc-muted {
+    color: #94a3b8;
+    font-weight: 400;
+}
+
+@media print {
+    .corp-doc {
+        max-width: 100%;
+        padding: 0;
+    }
+
+    .corp-doc-table td {
+        padding: 5pt 7pt;
+    }
+}

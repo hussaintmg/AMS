@@ -1,0 +1,20 @@
+const { pendingList, pendingObject } = require('../utils/mongoPendingResponse');
+
+exports.createReport = (req, res) => pendingObject(res, 'Reports');
+exports.updateReport = (req, res) => pendingObject(res, 'Reports');
+exports.deleteReport = (req, res) => pendingObject(res, 'Reports');
+exports.getReportById = (req, res) => pendingObject(res, 'Reports');
+exports.getReports = (req, res) => pendingList(res, 'Reports');
+exports.executeReport = (req, res) => pendingObject(res, 'Reports');
+exports.getSalesPerformance = (req, res) => pendingList(res, 'Reports');
+exports.getSalesByModel = (req, res) => pendingList(res, 'Reports');
+exports.getInventoryHealth = (req, res) => pendingList(res, 'Reports');
+exports.getInventoryStockMovement = (req, res) => pendingList(res, 'Reports');
+exports.getInventoryStockSnapshot = (req, res) => pendingList(res, 'Reports');
+exports.getPendingDeliveries = (req, res) => pendingList(res, 'Reports');
+exports.getCustomerReceivables = (req, res) => pendingList(res, 'Reports');
+exports.getReceivablesAging = (req, res) => pendingList(res, 'Reports');
+exports.getLeadStatistics = (req, res) => pendingList(res, 'Reports');
+exports.getServiceAnalytics = (req, res) => pendingList(res, 'Reports');
+exports.getServiceKpiDetail = (req, res) => pendingList(res, 'Reports');
+exports.getLowStockParts = (req, res) => pendingList(res, 'Reports');

@@ -1,0 +1,3 @@
+﻿"# AMS Customer (Lead) bulk import. REQUIRED columns: first_name, last_name, phone. OPTIONAL: email, source_id, source (name), city, priority, status, interested_in, notes. Match ""source"" to Lead Sources name if source_id is empty."
+"first_name*","last_name*","phone*","email","source_id","source","city","priority","status","interested_in","notes"
+"John","Doe","+923001234567","john.doe@example.com","","Walk-in","Karachi","medium","new","SUV OMODA 5","Imported row"
