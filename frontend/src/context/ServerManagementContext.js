@@ -170,9 +170,10 @@ export function ServerManagementProvider({ children }) {
         setPages(updatedPages);
     }, []);
 
-    const saveSidebar = useCallback(async () => {
+    const saveSidebar = useCallback(async (pagesOverride) => {
         try {
-            const res = await serverManagementAPI.updateSidebar(pageList);
+            const pagesToSave = pagesOverride || pageList;
+            const res = await serverManagementAPI.updateSidebar(pagesToSave);
             const msg = ensureSuccess(res, 'Sidebar saved');
             const nextPages = responseList(res, 'pages');
             if (nextPages.length) setPages(nextPages);

@@ -524,8 +524,7 @@ function ServerManagement() {
     savingRef.current.sidebar = true;
     setSavingSidebar(true);
     try {
-      updatePagesList(pagesArr);
-      await ctxSaveSidebar();
+      await ctxSaveSidebar(pagesArr);
     } finally {
       savingRef.current.sidebar = false;
       setSavingSidebar(false);
