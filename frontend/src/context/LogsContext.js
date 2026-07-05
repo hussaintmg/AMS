@@ -39,6 +39,7 @@ export function LogsProvider({ children }) {
     const [activeFilters, setActiveFilters] = useState({});
     const [currentPage, setCurrentPage] = useState(1);
     const [newLogsAvailable, setNewLogsAvailable] = useState(0);
+    const [filtersLoading, setFiltersLoading] = useState(false);
 
     const socketRef = useRef(null);
     const filterVersionRef = useRef('');
@@ -76,14 +77,27 @@ export function LogsProvider({ children }) {
             const rid = String(log.requestId || '').toLowerCase();
             if (!rid.includes(filters.requestId.toLowerCase())) return false;
         }
-        if (filters.logsOf === 'server-errors') {
+        if (filters.logsOf === 'server' || filters.logsOf === 'server-errors') {
             if (!log.serverError) return false;
         } else if (filters.logsOf && log.user?.id !== filters.logsOf) {
             return false;
         }
         if (filters.roleName || filters.role) {
-            const targetRole = filters.roleName || filters.role;
-            if (log.user?.role !== targetRole && log.roleName !== targetRole) return false;
+            const targetRole = (filters.roleName || filters.role).toLowerCase();
+            const logRoles = [log.user?.role, log.roleName, log.role].filter(Boolean).map(r => r.toLowerCase());
+            if (!logRoles.some(r => r === targetRole)) return false;
+        }
+        if (filters.serverError === 'yes' || filters.serverError === 'true') {
+            if (!log.serverError) return false;
+        }
+        if (filters.serverError === 'no' || filters.serverError === 'false') {
+            if (log.serverError) return false;
+        }
+        if (filters.success === 'success' || filters.success === 'true') {
+            if (!log.success && log.statusCode >= 400) return false;
+        }
+        if (filters.success === 'failed' || filters.success === 'false') {
+            if (log.success && log.statusCode < 400) return false;
         }
         return true;
     };
@@ -297,6 +311,11 @@ export function LogsProvider({ children }) {
 
             setCurrentPage(responsePagination.page || 1);
             setNewLogsAvailable(0);
+
+            if (payload.filterVersionChanged && !filterOptionsStaleRef.current) {
+                refreshFilterOptions();
+            }
+
             return { data: responseLogs, pagination: responsePagination };
         } catch (err) {
             const msg = getErrorMessage(err, 'Failed to load logs');
@@ -371,6 +390,7 @@ export function LogsProvider({ children }) {
     }, []);
 
     const refreshFilterOptions = useCallback(async () => {
+        setFiltersLoading(true);
         try {
             const res = await logsAPI.getFilterOptions();
             const opts = res?.data?.data?.options || res?.data?.data || emptyFilterOptions;
@@ -387,6 +407,8 @@ export function LogsProvider({ children }) {
                 console.warn('Failed to load filter options:', getErrorMessage(err));
             }
             return null;
+        } finally {
+            setFiltersLoading(false);
         }
     }, []);
 
@@ -403,6 +425,7 @@ export function LogsProvider({ children }) {
         loading: tableLoading,
         tableLoading,
         statsLoading,
+        filtersLoading,
         error,
         accessDenied,
         socketConnected,
@@ -419,7 +442,7 @@ export function LogsProvider({ children }) {
         refreshFilterOptions,
         showNewLogs,
     }), [
-        logs, stats, filterOptions, pagination, tableLoading, statsLoading, error, accessDenied,
+        logs, stats, filterOptions, pagination, tableLoading, statsLoading, filtersLoading, error, accessDenied,
         socketConnected, activeFilters, currentPage, newLogsAvailable,
         loadLogs, fetchLog, removeLog, loadStats,
         applyFilters, resetFilters, changePage, refreshFilterOptions, showNewLogs,

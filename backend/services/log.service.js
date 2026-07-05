@@ -8,9 +8,9 @@ const permissionCache = require("../utils/permissionCache");
 const serverErrorExpr = [
   { serverError: true },
   { "user.id": { $in: [null, ""] } },
-  { userName: "Server Errors" },
-  { logFilePath: /[\\/]Server-Errors[\\/]/i },
-  { physicalLogPath: /[\\/]Server-Errors[\\/]/i },
+  { userName: "Server" },
+  { logFilePath: /[\\/]Server[\\/]/i },
+  { physicalLogPath: /[\\/]Server[\\/]/i },
 ];
 
 const mergeAnd = (query, condition) => {
@@ -25,12 +25,15 @@ const buildDateRange = (filters = {}) => {
   const dateTo = filters.dateTo || filters.endDate || filters.dateTimeTo;
   const timeFrom = filters.timeFrom;
   const timeTo = filters.timeTo;
-  const range = {};
-  const effectiveDateFrom = dateFrom || dateTo;
-  const effectiveDateTo = dateTo || dateFrom;
 
-  if (effectiveDateFrom) {
-    const start = new Date(effectiveDateFrom);
+  if (!dateFrom && !dateTo) return null;
+
+  if ((timeFrom || timeTo) && !dateFrom && !dateTo) return null;
+
+  const range = {};
+
+  if (dateFrom) {
+    const start = new Date(dateFrom);
     if (timeFrom) {
       const [h, m] = timeFrom.split(":");
       start.setHours(Number(h) || 0, Number(m) || 0, 0, 0);
@@ -40,28 +43,14 @@ const buildDateRange = (filters = {}) => {
     range.$gte = start;
   }
 
-  if (effectiveDateTo) {
-    const end = new Date(effectiveDateTo);
+  if (dateTo) {
+    const end = new Date(dateTo);
     if (timeTo) {
       const [h, m] = timeTo.split(":");
       end.setHours(Number(h) || 0, Number(m) || 0, 59, 999);
     } else {
       end.setHours(23, 59, 59, 999);
     }
-    range.$lte = end;
-  }
-
-  if (!dateFrom && timeFrom) {
-    const start = new Date();
-    const [h, m] = timeFrom.split(":");
-    start.setHours(Number(h) || 0, Number(m) || 0, 0, 0);
-    range.$gte = start;
-  }
-
-  if (!dateTo && timeTo) {
-    const end = new Date();
-    const [h, m] = timeTo.split(":");
-    end.setHours(Number(h) || 0, Number(m) || 0, 59, 999);
     range.$lte = end;
   }
 
@@ -89,12 +78,12 @@ const addSearchFilter = (query, search) => {
       { severity: re },
       { message: re },
       { errorMessage: re },
+      { "error.message": re },
+      { "error.stack": re },
       { "user.firstName": re },
       { "user.lastName": re },
       { "user.email": re },
       { "user.role": re },
-      { userName: re },
-      { userEmail: re },
       { roleName: re },
       { logFilePath: re },
       { physicalLogPath: re },
@@ -133,7 +122,12 @@ const buildFiltersQuery = (filters = {}) => {
     filters.success === "true" ||
     filters.hasError === "false"
   ) {
-    mergeAnd(query, { statusCode: { $lt: 400 } });
+    mergeAnd(query, {
+      $or: [
+        { statusCode: { $lt: 400 } },
+        { success: true },
+      ],
+    });
   }
   if (
     filters.status === "failed" ||
@@ -141,7 +135,12 @@ const buildFiltersQuery = (filters = {}) => {
     filters.success === "false" ||
     filters.hasError === "true"
   ) {
-    mergeAnd(query, { statusCode: { $gte: 400 } });
+    mergeAnd(query, {
+      $or: [
+        { statusCode: { $gte: 400 } },
+        { success: false },
+      ],
+    });
   }
 
   if (filters.userId) query["user.id"] = filters.userId;
@@ -149,7 +148,15 @@ const buildFiltersQuery = (filters = {}) => {
   if (filters.roleId) query["user.roleId"] = filters.roleId;
 
   if (filters.roleName || filters.role) {
-    query["user.role"] = filters.roleName || filters.role;
+    const roleVal = filters.roleName || filters.role;
+    const escaped = roleVal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    mergeAnd(query, {
+      $or: [
+        { "user.role": { $regex: escaped, $options: "i" } },
+        { roleName: { $regex: escaped, $options: "i" } },
+        { role: { $regex: escaped, $options: "i" } },
+      ],
+    });
   }
 
   if (filters.endpoint) {
@@ -167,11 +174,13 @@ const buildFiltersQuery = (filters = {}) => {
     query.requestId = { $regex: escaped, $options: "i" };
   }
 
-  if (
+  const isServerFilter =
     filters.serverError === "yes" ||
     filters.serverError === "true" ||
-    filters.logsOf === "server-errors"
-  ) {
+    filters.logsOf === "server" ||
+    filters.logsOf === "server-errors";
+
+  if (isServerFilter) {
     mergeAnd(query, { $or: serverErrorExpr });
   }
   if (filters.serverError === "no" || filters.serverError === "false") {
@@ -180,6 +189,7 @@ const buildFiltersQuery = (filters = {}) => {
 
   if (
     filters.logsOf &&
+    filters.logsOf !== "server" &&
     filters.logsOf !== "server-errors" &&
     filters.logsOf !== "all"
   ) {
@@ -353,6 +363,26 @@ const aggregateFilterOptions = async (scoped) => {
   const pipeline = [
     { $match: scoped },
     {
+      $project: {
+        method: 1,
+        severity: 1,
+        statusCode: 1,
+        endpoint: 1,
+        apiName: 1,
+        requestId: 1,
+        serverError: 1,
+        "user.id": 1,
+        "user.email": 1,
+        "user.firstName": 1,
+        "user.lastName": 1,
+        "user.role": 1,
+        roleName: 1,
+        role: 1,
+        logFilePath: 1,
+        physicalLogPath: 1,
+      },
+    },
+    {
       $group: {
         _id: null,
         methods: { $addToSet: "$method" },
@@ -419,8 +449,8 @@ const aggregateFilterOptions = async (scoped) => {
     methods: (data.methods || []).filter(Boolean).sort(),
     severities: (data.severities || []).filter(Boolean).sort(),
     statusCodes: (data.statusCodes || []).filter((c) => c !== null && c !== undefined).sort((a, b) => a - b),
-    endpoints: (data.endpoints || []).filter(Boolean).sort(),
-    requestIds: (data.requestIds || []).filter(Boolean).sort(),
+    endpoints: (data.endpoints || []).filter(Boolean).sort().slice(0, 300),
+    requestIds: (data.requestIds || []).filter(Boolean).sort().slice(0, 200),
     includeServerErrors: (data.serverErrorCount || 0) > 0,
   };
 

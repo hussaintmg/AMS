@@ -20,7 +20,7 @@ const { authenticate, authorize } = require("../middleware/auth");
  *     parameters:
  *       - in: query
  *         name: logsOf
- *         schema: { type: string, example: server-errors }
+ *         schema: { type: string, example: server }
  *       - in: query
  *         name: search
  *         schema: { type: string }
@@ -156,6 +156,67 @@ const { authenticate, authorize } = require("../middleware/auth");
  *                     filterVersionChanged:
  *                       type: boolean
  *                       description: "True if client's filterVersion differs from server; client should refresh filter options"
+ */
+/**
+ * @swagger
+ * /api/logs/filter-options:
+ *   get:
+ *     tags: [Logs]
+ *     summary: Get all filter dropdown options scoped by user permission
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200:
+ *         description: Filter options object
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     options:
+ *                       type: object
+ *                       properties:
+ *                         users:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               id: { type: string }
+ *                               name: { type: string }
+ *                               email: { type: string }
+ *                               roleName: { type: string }
+ *                         roles:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               id: { type: string }
+ *                               name: { type: string }
+ *                               displayName: { type: string }
+ *                         methods:
+ *                           type: array
+ *                           items: { type: string }
+ *                         severities:
+ *                           type: array
+ *                           items: { type: string }
+ *                         statusCodes:
+ *                           type: array
+ *                           items: { type: integer }
+ *                         endpoints:
+ *                           type: array
+ *                           items: { type: string }
+ *                         requestIds:
+ *                           type: array
+ *                           items: { type: string }
+ *                         includeServerErrors:
+ *                           type: boolean
+ *                     version:
+ *                       type: string
+ *                       description: Hash of filter options for client caching
  */
 router.get("/", authenticate, logController.queryLogs);
 router.get("/filter-options", authenticate, logController.getFilterOptions);

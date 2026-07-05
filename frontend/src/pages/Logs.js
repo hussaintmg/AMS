@@ -13,8 +13,10 @@ import "../styles/filters.css";
 
 const defaultFilters = {
   search: "",
-  dateTimeFrom: "",
-  dateTimeTo: "",
+  dateFrom: "",
+  dateTo: "",
+  timeFrom: "",
+  timeTo: "",
   severity: "",
   method: "",
   statusCode: "",
@@ -23,25 +25,19 @@ const defaultFilters = {
   roleName: "",
   endpoint: "",
   requestId: "",
+  success: "",
+  serverError: "",
   page: 1,
   limit: 25,
 };
 
-const splitDateTime = (value) => {
-  if (!value) return { date: "", time: "" };
-  const [date = "", time = ""] = String(value).split("T");
-  return { date, time: time.slice(0, 5) };
-};
-
 const buildLogQueryParams = (filterState, page = 1) => {
-  const from = splitDateTime(filterState.dateTimeFrom);
-  const to = splitDateTime(filterState.dateTimeTo);
   const params = {
     search: filterState.search,
-    dateFrom: from.date,
-    timeFrom: from.time,
-    dateTo: to.date,
-    timeTo: to.time,
+    dateFrom: filterState.dateFrom,
+    timeFrom: filterState.timeFrom,
+    dateTo: filterState.dateTo,
+    timeTo: filterState.timeTo,
     logsOf: filterState.logsOf,
     roleName: filterState.roleName || filterState.role,
     method: filterState.method,
@@ -49,6 +45,8 @@ const buildLogQueryParams = (filterState, page = 1) => {
     severity: filterState.severity,
     endpoint: filterState.endpoint,
     requestId: filterState.requestId,
+    success: filterState.success,
+    serverError: filterState.serverError,
     page,
     limit: filterState.limit || 25,
   };
@@ -59,14 +57,16 @@ const buildLogQueryParams = (filterState, page = 1) => {
 const getActiveFilterCount = (f) => {
   let count = 0;
   if (f.search) count++;
-  if (f.dateTimeFrom || f.dateTimeTo) count++;
+  if (f.dateFrom || f.dateTo || f.timeFrom || f.timeTo) count++;
   if (f.severity) count++;
   if (f.method) count++;
   if (f.statusCode) count++;
   if (f.logsOf) count++;
-  if (f.roleName) count++;
+  if (f.roleName || f.role) count++;
   if (f.endpoint) count++;
   if (f.requestId) count++;
+  if (f.success) count++;
+  if (f.serverError) count++;
   return count;
 };
 
@@ -211,7 +211,7 @@ export default function Logs() {
             >
               <option value="">All allowed logs</option>
               {filterOptions.includeServerErrors && (
-                <option value="server-errors">Server</option>
+                <option value="server">Server</option>
               )}
               {filterOptions.users.map((u) => (
                 <option key={u.id} value={u.id}>
@@ -221,24 +221,46 @@ export default function Logs() {
             </SelectFilter>
           </div>
           <div className="filter-group">
-            <label className="filter-label">Date-Time From</label>
+            <label className="filter-label">Date From</label>
             <input
-              type="datetime-local"
+              type="date"
               className="form-control"
-              value={filters.dateTimeFrom}
+              value={filters.dateFrom}
               onChange={(e) =>
-                setFilters((prev) => ({ ...prev, dateTimeFrom: e.target.value }))
+                setFilters((prev) => ({ ...prev, dateFrom: e.target.value }))
               }
             />
           </div>
           <div className="filter-group">
-            <label className="filter-label">Date-Time To</label>
+            <label className="filter-label">Time From</label>
             <input
-              type="datetime-local"
+              type="time"
               className="form-control"
-              value={filters.dateTimeTo}
+              value={filters.timeFrom}
               onChange={(e) =>
-                setFilters((prev) => ({ ...prev, dateTimeTo: e.target.value }))
+                setFilters((prev) => ({ ...prev, timeFrom: e.target.value }))
+              }
+            />
+          </div>
+          <div className="filter-group">
+            <label className="filter-label">Date To</label>
+            <input
+              type="date"
+              className="form-control"
+              value={filters.dateTo}
+              onChange={(e) =>
+                setFilters((prev) => ({ ...prev, dateTo: e.target.value }))
+              }
+            />
+          </div>
+          <div className="filter-group">
+            <label className="filter-label">Time To</label>
+            <input
+              type="time"
+              className="form-control"
+              value={filters.timeTo}
+              onChange={(e) =>
+                setFilters((prev) => ({ ...prev, timeTo: e.target.value }))
               }
             />
           </div>
@@ -270,6 +292,32 @@ export default function Logs() {
                   {method}
                 </option>
               ))}
+            </SelectFilter>
+          </div>
+          <div className="filter-group">
+            <label className="filter-label">Success Status</label>
+            <SelectFilter
+              value={filters.success}
+              onChange={(v) =>
+                setFilters((prev) => ({ ...prev, success: v }))
+              }
+            >
+              <option value="">All</option>
+              <option value="success">Success</option>
+              <option value="failed">Failed</option>
+            </SelectFilter>
+          </div>
+          <div className="filter-group">
+            <label className="filter-label">Server Error</label>
+            <SelectFilter
+              value={filters.serverError}
+              onChange={(v) =>
+                setFilters((prev) => ({ ...prev, serverError: v }))
+              }
+            >
+              <option value="">All</option>
+              <option value="yes">Yes</option>
+              <option value="no">No</option>
             </SelectFilter>
           </div>
           <div className="filter-group">

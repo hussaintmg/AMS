@@ -5,6 +5,7 @@ export default function SelectFilter({
     value = '',
     onChange,
     options = [],
+    children,
     name = '',
     placeholder = 'All',
     labelField = 'label',
@@ -41,11 +42,14 @@ export default function SelectFilter({
                 onChange={(e) => handleChange(e)}
             >
                 {includeAll && <option value="">{allLabel}</option>}
-                {options.map((opt, i) => (
-                    <option key={opt[valueField] || i} value={opt[valueField]}>
-                        {opt[labelField]}
-                    </option>
-                ))}
+                {options.length > 0
+                    ? options.map((opt, i) => (
+                        <option key={opt[valueField] || i} value={opt[valueField]}>
+                            {opt[labelField]}
+                        </option>
+                    ))
+                    : children
+                }
             </select>
         </div>
     );
