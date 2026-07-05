@@ -8,9 +8,9 @@ const permissionCache = require("../utils/permissionCache");
 const serverErrorExpr = [
   { serverError: true },
   { "user.id": { $in: [null, ""] } },
-  { userName: "Server Errors" },
-  { logFilePath: /[\\/]Server-Errors[\\/]/i },
-  { physicalLogPath: /[\\/]Server-Errors[\\/]/i },
+  { userName: "Server" },
+  { logFilePath: /[\\/]Server[\\/]/i },
+  { physicalLogPath: /[\\/]Server[\\/]/i },
 ];
 
 const mergeAnd = (query, condition) => {
@@ -170,7 +170,7 @@ const buildFiltersQuery = (filters = {}) => {
   if (
     filters.serverError === "yes" ||
     filters.serverError === "true" ||
-    filters.logsOf === "server-errors"
+    filters.logsOf === "server"
   ) {
     mergeAnd(query, { $or: serverErrorExpr });
   }
@@ -180,7 +180,7 @@ const buildFiltersQuery = (filters = {}) => {
 
   if (
     filters.logsOf &&
-    filters.logsOf !== "server-errors" &&
+    filters.logsOf !== "server" &&
     filters.logsOf !== "all"
   ) {
     query["user.id"] = filters.logsOf;

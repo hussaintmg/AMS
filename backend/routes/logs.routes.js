@@ -20,7 +20,7 @@ const { authenticate, authorize } = require("../middleware/auth");
  *     parameters:
  *       - in: query
  *         name: logsOf
- *         schema: { type: string, example: server-errors }
+ *         schema: { type: string, example: server }
  *       - in: query
  *         name: search
  *         schema: { type: string }

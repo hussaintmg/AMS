@@ -76,7 +76,7 @@ export function LogsProvider({ children }) {
             const rid = String(log.requestId || '').toLowerCase();
             if (!rid.includes(filters.requestId.toLowerCase())) return false;
         }
-        if (filters.logsOf === 'server-errors') {
+        if (filters.logsOf === 'server') {
             if (!log.serverError) return false;
         } else if (filters.logsOf && log.user?.id !== filters.logsOf) {
             return false;

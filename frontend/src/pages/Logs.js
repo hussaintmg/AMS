@@ -211,7 +211,7 @@ export default function Logs() {
             >
               <option value="">All allowed logs</option>
               {filterOptions.includeServerErrors && (
-                <option value="server-errors">Server</option>
+                <option value="server">Server</option>
               )}
               {filterOptions.users.map((u) => (
                 <option key={u.id} value={u.id}>

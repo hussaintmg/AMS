@@ -6,7 +6,7 @@
 - Added structured API logging in `backend/utils/apiLogger.js` and request middleware in `backend/middleware/apiLogging.js`.
 - New structured log folder layout:
   - `backend/logs/users/<safe-user-name-or-user-id>/YYYY-MM-DD/HH-mm-ss-SSS_<METHOD>_<safe-path>.json`
-  - `backend/logs/server-errors/YYYY-MM-DD/HH-mm-ss-SSS_<METHOD>_<safe-path>.json`
+  - `backend/logs/server/YYYY-MM-DD/HH-mm-ss-SSS_<METHOD>_<safe-path>.json`
 - Structured logs include request ID, timestamp, user summary, request details, response details, error details when present, and file operation details when explicitly logged.
 - Sensitive fields are masked recursively, including password fields, tokens, authorization, cookies, SMTP password-style fields, API keys, and secrets.
 - Request/response body logging is size-limited and non-blocking; logging failures are caught and reported to console without breaking API responses.
