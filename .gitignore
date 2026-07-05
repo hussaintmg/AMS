@@ -2,11 +2,11 @@ node_modules/
 frontend/node_modules/
 backend/node_modules/
 backend/nodemon.json
+backend/logs/
 .env
 .env.production
 .env.production.server
 .DS_Store
-logs/
 uploads/
 .cache/
 dist/

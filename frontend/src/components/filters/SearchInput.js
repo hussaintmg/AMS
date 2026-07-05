@@ -1,20 +1,13 @@
-import React, { useRef, useCallback } from 'react';
+import React from 'react';
 
-export default function SearchInput({ value = '', onChange, placeholder = 'Search...', debounceMs = 300 }) {
-    const timerRef = useRef(null);
+export default function SearchInput({ value = '', onChange, placeholder = 'Search...' }) {
+    const handleChange = (e) => {
+        if (onChange) onChange(e.target.value);
+    };
 
-    const handleChange = useCallback((e) => {
-        const val = e.target.value;
-        if (timerRef.current) clearTimeout(timerRef.current);
-        timerRef.current = setTimeout(() => {
-            if (onChange) onChange(val);
-        }, debounceMs);
-    }, [onChange, debounceMs]);
-
-    const handleClear = useCallback(() => {
-        if (timerRef.current) clearTimeout(timerRef.current);
+    const handleClear = () => {
         if (onChange) onChange('');
-    }, [onChange]);
+    };
 
     return (
         <div className="filter-search-wrapper">
@@ -25,7 +18,7 @@ export default function SearchInput({ value = '', onChange, placeholder = 'Searc
                 type="text"
                 className="form-control filter-search-input"
                 placeholder={placeholder}
-                defaultValue={value}
+                value={value}
                 onChange={handleChange}
             />
             {value && (

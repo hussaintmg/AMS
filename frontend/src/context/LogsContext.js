@@ -40,6 +40,7 @@ export function LogsProvider({ children }) {
     const [currentPage, setCurrentPage] = useState(1);
     const [newLogsAvailable, setNewLogsAvailable] = useState(0);
     const [filtersLoading, setFiltersLoading] = useState(false);
+    const [hiddenLiveCount, setHiddenLiveCount] = useState(0);
 
     const socketRef = useRef(null);
     const filterVersionRef = useRef('');
@@ -47,9 +48,13 @@ export function LogsProvider({ children }) {
     const currentPageRef = useRef(1);
     const filterOptionsStaleRef = useRef(false);
     const statsRef = useRef(null);
+    const activeFiltersRef = useRef({});
+    const paginationRef = useRef(emptyPagination);
 
     currentPageRef.current = currentPage;
     statsRef.current = stats;
+    activeFiltersRef.current = activeFilters;
+    paginationRef.current = pagination;
 
     const getToken = useCallback(() => {
         const fromCookie = document.cookie.match(/(?:^|;\s*)token=([^;]*)/);
@@ -59,46 +64,99 @@ export function LogsProvider({ children }) {
         return null;
     }, []);
 
-    const logMatchesFilters = (log, filters) => {
+    const doesLogMatchCurrentFilters = (log, filters) => {
         if (!filters || !Object.keys(filters).length) return true;
+
         if (filters.search) {
             const s = filters.search.toLowerCase();
             const logStr = JSON.stringify(log).toLowerCase();
             if (!logStr.includes(s)) return false;
         }
+
         if (filters.method && log.method !== filters.method) return false;
+
         if (filters.severity && log.severity !== filters.severity) return false;
+
         if (filters.statusCode && String(log.statusCode) !== String(filters.statusCode)) return false;
+
         if (filters.endpoint) {
             const ep = String(log.endpoint || log.apiName || '').toLowerCase();
             if (!ep.includes(filters.endpoint.toLowerCase())) return false;
         }
+
         if (filters.requestId) {
             const rid = String(log.requestId || '').toLowerCase();
             if (!rid.includes(filters.requestId.toLowerCase())) return false;
         }
+
         if (filters.logsOf === 'server' || filters.logsOf === 'server-errors') {
             if (!log.serverError) return false;
         } else if (filters.logsOf && log.user?.id !== filters.logsOf) {
             return false;
         }
+
         if (filters.roleName || filters.role) {
             const targetRole = (filters.roleName || filters.role).toLowerCase();
             const logRoles = [log.user?.role, log.roleName, log.role].filter(Boolean).map(r => r.toLowerCase());
             if (!logRoles.some(r => r === targetRole)) return false;
         }
+
         if (filters.serverError === 'yes' || filters.serverError === 'true') {
             if (!log.serverError) return false;
         }
         if (filters.serverError === 'no' || filters.serverError === 'false') {
             if (log.serverError) return false;
         }
+
         if (filters.success === 'success' || filters.success === 'true') {
             if (!log.success && log.statusCode >= 400) return false;
         }
         if (filters.success === 'failed' || filters.success === 'false') {
             if (log.success && log.statusCode < 400) return false;
         }
+
+        if (filters.dateFrom || filters.dateTo) {
+            const logDate = new Date(log.createdAt);
+            if (!isNaN(logDate.getTime())) {
+                let start = null;
+                let end = null;
+
+                if (filters.dateFrom) {
+                    const startTime = filters.timeFrom || '00:00';
+                    start = new Date(`${filters.dateFrom}T${startTime}:00`);
+                    if (isNaN(start.getTime())) start = null;
+                }
+
+                if (filters.dateTo) {
+                    const endTime = filters.timeTo || '23:59';
+                    end = new Date(`${filters.dateTo}T${endTime}:59.999`);
+                    if (isNaN(end.getTime())) end = null;
+                } else if (filters.dateFrom) {
+                    end = new Date(`${filters.dateFrom}T23:59:59.999`);
+                    if (isNaN(end.getTime())) end = null;
+                }
+
+                if (start && logDate < start) return false;
+                if (end && logDate > end) return false;
+            }
+        }
+
+        if (!filters.includeInternalLogs || filters.includeInternalLogs === 'false') {
+            const endpoint = String(log.endpoint || log.apiName || '').toLowerCase();
+            const module = String(log.module || '').toLowerCase();
+            const isInternal = endpoint.startsWith('/api/logs') || module.startsWith('logs');
+
+            if (isInternal) {
+                const explicitEndpoint = filters.endpoint && filters.endpoint.toLowerCase().includes('/api/logs');
+                const explicitSearch = filters.search && filters.search.toLowerCase().includes('api/logs');
+                const explicitRequestId = filters.requestId && String(log.requestId || '').toLowerCase().includes(filters.requestId.toLowerCase());
+
+                if (!explicitEndpoint && !explicitSearch && !explicitRequestId) {
+                    return false;
+                }
+            }
+        }
+
         return true;
     };
 
@@ -162,31 +220,30 @@ export function LogsProvider({ children }) {
         });
 
         socket.on('logs:new', (payload) => {
-            console.log('[LogsContext] logs:new received', payload?.log?._id);
             const newLog = payload?.log;
             if (!newLog) return;
 
             const filters = currentFiltersRef.current || {};
-            if (!logMatchesFilters(newLog, filters)) return;
+            const isPageOne = currentPageRef.current === 1;
 
-            if (currentPageRef.current === 1) {
+            if (!doesLogMatchCurrentFilters(newLog, filters)) {
+                setHiddenLiveCount((prev) => prev + 1);
+                return;
+            }
+
+            if (isPageOne) {
                 setLogs((prev) => {
                     const exists = prev.some((l) => (l._id || l.id) === (newLog._id || newLog.id));
                     if (exists) return prev;
-                    const limit = filters.limit || 25;
-                    const next = [newLog, ...prev];
-                    return next.slice(0, limit);
+                    const limit = filters.limit || paginationRef.current.limit || 25;
+                    return [newLog, ...prev].slice(0, limit);
                 });
-            }
 
-            setPagination((prev) => ({
-                ...prev,
-                total: prev.total + 1,
-            }));
-
-            updateStatsLocal(newLog, true);
-
-            if (currentPageRef.current !== 1) {
+                setPagination((prev) => ({
+                    ...prev,
+                    total: prev.total + 1,
+                }));
+            } else {
                 setNewLogsAvailable((prev) => prev + 1);
             }
         });
@@ -311,6 +368,7 @@ export function LogsProvider({ children }) {
 
             setCurrentPage(responsePagination.page || 1);
             setNewLogsAvailable(0);
+            setHiddenLiveCount(0);
 
             if (payload.filterVersionChanged && !filterOptionsStaleRef.current) {
                 refreshFilterOptions();
@@ -432,6 +490,7 @@ export function LogsProvider({ children }) {
         activeFilters,
         currentPage,
         newLogsAvailable,
+        hiddenLiveCount,
         loadLogs,
         fetchLog,
         removeLog,
@@ -443,7 +502,7 @@ export function LogsProvider({ children }) {
         showNewLogs,
     }), [
         logs, stats, filterOptions, pagination, tableLoading, statsLoading, filtersLoading, error, accessDenied,
-        socketConnected, activeFilters, currentPage, newLogsAvailable,
+        socketConnected, activeFilters, currentPage, newLogsAvailable, hiddenLiveCount,
         loadLogs, fetchLog, removeLog, loadStats,
         applyFilters, resetFilters, changePage, refreshFilterOptions, showNewLogs,
     ]);

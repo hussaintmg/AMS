@@ -9,8 +9,6 @@ const logger = require('../utils/logger');
 
 const HR_ROLES = ['super_admin', 'admin', 'hr_admin'];
 
-logger.info('[HR] employees.controller loaded — upsert uses INSERT/UPDATE (no CALL sp_employee_upsert)');
-
 const listEmployees = async (req, res, next) => {
     try {
         const { search, department_id, status, page = 1, limit = 50 } = req.query;

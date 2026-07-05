@@ -5,6 +5,44 @@ const logger = require("../utils/logger");
 const { buildAllowedLogsQuery } = require("../utils/logPermissionResolver");
 const permissionCache = require("../utils/permissionCache");
 
+const parseTimeStr = (t) => {
+  if (!t) return [0, 0, 0, 0];
+  const parts = t.split(":");
+  const h = parseInt(parts[0], 10) || 0;
+  const mi = parseInt(parts[1], 10) || 0;
+  const secParts = (parts[2] || "0").split(".");
+  const s = parseInt(secParts[0], 10) || 0;
+  const ms = parseInt(secParts[1], 10) || 0;
+  return [h, mi, s, ms];
+};
+
+const localDateTimeToUTC = (dateStr, timeStr, timezone) => {
+  const [y, mo, d] = dateStr.split("-").map(Number);
+  const [h, mi, s, ms] = parseTimeStr(timeStr);
+
+  const desiredLocalMs = Date.UTC(y, mo - 1, d, h, mi, s, ms);
+
+  let utcDate = new Date(desiredLocalMs);
+
+  for (let iter = 0; iter < 2; iter++) {
+    const opts = {
+      timeZone: timezone,
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit",
+      hour12: false,
+    };
+    const parts = new Intl.DateTimeFormat("en-CA", opts).formatToParts(utcDate);
+    const get = (t) => parseInt(parts.find((p) => p.type === t)?.value, 10);
+    const localMs = Date.UTC(get("year"), get("month") - 1, get("day"), get("hour"), get("minute"), get("second"), 0);
+    const offsetMs = localMs - utcDate.getTime();
+    const result = new Date(desiredLocalMs - offsetMs);
+    if (iter === 1) return result;
+    utcDate = result;
+  }
+
+  return utcDate;
+};
+
 const serverErrorExpr = [
   { serverError: true },
   { "user.id": { $in: [null, ""] } },
@@ -20,38 +58,23 @@ const mergeAnd = (query, condition) => {
 };
 
 const buildDateRange = (filters = {}) => {
-  const dateFrom =
-    filters.dateFrom || filters.startDate || filters.dateTimeFrom;
+  const dateFrom = filters.dateFrom || filters.startDate || filters.dateTimeFrom;
   const dateTo = filters.dateTo || filters.endDate || filters.dateTimeTo;
   const timeFrom = filters.timeFrom;
   const timeTo = filters.timeTo;
+  const zone = filters.timezone || "UTC";
 
   if (!dateFrom && !dateTo) return null;
-
   if ((timeFrom || timeTo) && !dateFrom && !dateTo) return null;
 
   const range = {};
 
   if (dateFrom) {
-    const start = new Date(dateFrom);
-    if (timeFrom) {
-      const [h, m] = timeFrom.split(":");
-      start.setHours(Number(h) || 0, Number(m) || 0, 0, 0);
-    } else {
-      start.setHours(0, 0, 0, 0);
-    }
-    range.$gte = start;
+    range.$gte = localDateTimeToUTC(dateFrom, timeFrom, zone);
   }
 
   if (dateTo) {
-    const end = new Date(dateTo);
-    if (timeTo) {
-      const [h, m] = timeTo.split(":");
-      end.setHours(Number(h) || 0, Number(m) || 0, 59, 999);
-    } else {
-      end.setHours(23, 59, 59, 999);
-    }
-    range.$lte = end;
+    range.$lte = localDateTimeToUTC(dateTo, timeTo || "23:59:59.999", zone);
   }
 
   return Object.keys(range).length ? range : null;
@@ -148,15 +171,9 @@ const buildFiltersQuery = (filters = {}) => {
   if (filters.roleId) query["user.roleId"] = filters.roleId;
 
   if (filters.roleName || filters.role) {
-    const roleVal = filters.roleName || filters.role;
+    const roleVal = (filters.roleName || filters.role).trim().toLowerCase();
     const escaped = roleVal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    mergeAnd(query, {
-      $or: [
-        { "user.role": { $regex: escaped, $options: "i" } },
-        { roleName: { $regex: escaped, $options: "i" } },
-        { role: { $regex: escaped, $options: "i" } },
-      ],
-    });
+    query["user.role"] = new RegExp(`^${escaped}$`, "i");
   }
 
   if (filters.endpoint) {

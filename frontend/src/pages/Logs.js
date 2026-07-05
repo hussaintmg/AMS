@@ -26,7 +26,6 @@ const defaultFilters = {
   endpoint: "",
   requestId: "",
   success: "",
-  serverError: "",
   page: 1,
   limit: 25,
 };
@@ -46,10 +45,13 @@ const buildLogQueryParams = (filterState, page = 1) => {
     endpoint: filterState.endpoint,
     requestId: filterState.requestId,
     success: filterState.success,
-    serverError: filterState.serverError,
     page,
     limit: filterState.limit || 25,
   };
+  const hasDateFilter = params.dateFrom || params.dateTo || params.timeFrom || params.timeTo;
+  if (hasDateFilter) {
+    params.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  }
   Object.keys(params).forEach((k) => { if (!params[k]) delete params[k]; });
   return params;
 };
@@ -66,7 +68,6 @@ const getActiveFilterCount = (f) => {
   if (f.endpoint) count++;
   if (f.requestId) count++;
   if (f.success) count++;
-  if (f.serverError) count++;
   return count;
 };
 
@@ -86,6 +87,7 @@ export default function Logs() {
     loadStats,
     socketConnected,
     newLogsAvailable,
+    hiddenLiveCount,
     showNewLogs,
   } = useLogs();
 
@@ -127,8 +129,9 @@ export default function Logs() {
   };
 
   const handleResetFilters = () => {
-    setFilters(defaultFilters);
-    setAppliedFilters(defaultFilters);
+    const reset = { ...defaultFilters };
+    setFilters(reset);
+    setAppliedFilters(reset);
   };
 
   const handlePageChange = (page) => {
@@ -208,8 +211,8 @@ export default function Logs() {
               onChange={(v) =>
                 setFilters((prev) => ({ ...prev, logsOf: v, userId: "" }))
               }
+              allLabel="All Allowed Logs"
             >
-              <option value="">All allowed logs</option>
               {filterOptions.includeServerErrors && (
                 <option value="server">Server</option>
               )}
@@ -271,8 +274,8 @@ export default function Logs() {
               onChange={(v) =>
                 setFilters((prev) => ({ ...prev, role: "", roleName: v }))
               }
+              allLabel="All Roles"
             >
-              <option value="">All Roles</option>
               {filterOptions.roles.map((r) => (
                 <option key={r.id || r.name} value={r.name}>
                   {r.displayName || r.name}
@@ -285,8 +288,8 @@ export default function Logs() {
             <SelectFilter
               value={filters.method}
               onChange={(v) => setFilters((prev) => ({ ...prev, method: v }))}
+              allLabel="All Methods"
             >
-              <option value="">All Methods</option>
               {filterOptions.methods.map((method) => (
                 <option key={method} value={method}>
                   {method}
@@ -301,23 +304,10 @@ export default function Logs() {
               onChange={(v) =>
                 setFilters((prev) => ({ ...prev, success: v }))
               }
+              allLabel="All Statuses"
             >
-              <option value="">All</option>
               <option value="success">Success</option>
               <option value="failed">Failed</option>
-            </SelectFilter>
-          </div>
-          <div className="filter-group">
-            <label className="filter-label">Server Error</label>
-            <SelectFilter
-              value={filters.serverError}
-              onChange={(v) =>
-                setFilters((prev) => ({ ...prev, serverError: v }))
-              }
-            >
-              <option value="">All</option>
-              <option value="yes">Yes</option>
-              <option value="no">No</option>
             </SelectFilter>
           </div>
           <div className="filter-group">
@@ -325,8 +315,8 @@ export default function Logs() {
             <SelectFilter
               value={filters.severity}
               onChange={(v) => setFilters((prev) => ({ ...prev, severity: v }))}
+              allLabel="All Severities"
             >
-              <option value="">All Severities</option>
               {filterOptions.severities.map((severity) => (
                 <option key={severity} value={severity}>
                   {severity}
@@ -341,8 +331,8 @@ export default function Logs() {
               onChange={(v) =>
                 setFilters((prev) => ({ ...prev, statusCode: v }))
               }
+              allLabel="All Status Codes"
             >
-              <option value="">All Codes</option>
               {filterOptions.statusCodes.map((code) => (
                 <option key={code} value={code}>
                   {code}
@@ -385,7 +375,7 @@ export default function Logs() {
             </datalist>
           </div>
           <div className="filter-actions">
-            <button type="submit" className="btn btn-primary btn-sm">
+            <button type="submit" className="btn btn-primary btn-sm" style={{marginRight:"10px"}}>
               Apply Filters
             </button>
             <ResetFiltersButton
@@ -395,13 +385,6 @@ export default function Logs() {
           </div>
         </FilterBar>
       </form>
-
-      {newLogsAvailable > 0 && pagination.page > 1 && (
-        <div className="log-error-banner" style={{ background: '#e3f2fd', color: '#1565c0', cursor: 'pointer' }} onClick={showNewLogs}>
-          <span>{newLogsAvailable} new log{newLogsAvailable !== 1 ? 's' : ''} available — click to view</span>
-          <button style={{ background: '#1565c0', color: '#fff' }}>Show</button>
-        </div>
-      )}
 
       {initialLoading && (
         <div className="log-table-loader">Loading logs...</div>
