@@ -111,8 +111,13 @@ const userSchema = new mongoose.Schema(
       required: [true, "Role is required"],
     },
     department: {
-      type: String,
-      default: "",
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Department",
+      default: null,
+      required: false,
+      set: function (value) {
+        return value === "" ? null : value;
+      },
     },
     designation: {
       type: String,
@@ -247,6 +252,7 @@ const userSchema = new mongoose.Schema(
 );
 
 userSchema.index({ role: 1 });
+userSchema.index({ status: 1 });
 userSchema.index({ isActive: 1 });
 userSchema.index({ createdAt: -1 });
 
@@ -258,6 +264,9 @@ userSchema.pre("init", function (doc) {
 });
 
 userSchema.pre("save", async function () {
+  if (this.isModified("status")) {
+    this.isActive = this.status === "active";
+  }
   if (!this.isModified("password")) return;
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);

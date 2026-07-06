@@ -274,8 +274,8 @@ router.post('/login', async (req, res, next) => {
       throw new AppError('Invalid credentials', 401);
     }
 
-    if (!user.isActive) {
-      throw new AppError('Account is inactive', 401);
+    if (user.status !== 'active' || user.isActive === false) {
+      throw new AppError('Account is inactive', 403, 'Please contact your administrator.', 'USER_INACTIVE');
     }
 
     const isMatch = await user.comparePassword(password);

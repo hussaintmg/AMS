@@ -12,6 +12,10 @@ const ActionButtons = ({
     showDelete = true,
     showView = false,
     showToggle = false,
+    disableToggle = false,
+    disableDelete = false,
+    toggleDisabledTitle,
+    deleteDisabledTitle,
     title = 'Item',
     customActions = []
 }) => {
@@ -40,8 +44,9 @@ const ActionButtons = ({
             {showToggle && onToggle && (
                 <button
                     className={`btn-action ${status ? 'btn-deactivate' : 'btn-activate'}`}
-                    onClick={(e) => { e.stopPropagation(); onToggle(); }}
-                    title={status ? 'Deactivate' : 'Activate'}
+                    onClick={(e) => { e.stopPropagation(); if (!disableToggle) onToggle(); }}
+                    title={disableToggle ? (toggleDisabledTitle || 'Status change disabled') : (status ? 'Deactivate' : 'Activate')}
+                    disabled={disableToggle}
                 >
                     {status ? (
                         <NoSymbolIcon className="action-icon" />
@@ -65,8 +70,9 @@ const ActionButtons = ({
             {showDelete && onDelete && (
                 <button
                     className="btn-action btn-delete"
-                    onClick={(e) => { e.stopPropagation(); onDelete(); }}
-                    title={`Delete ${title}`}
+                    onClick={(e) => { e.stopPropagation(); if (!disableDelete) onDelete(); }}
+                    title={disableDelete ? (deleteDisabledTitle || 'Delete disabled') : `Delete ${title}`}
+                    disabled={disableDelete}
                 >
                     <TrashIcon className="action-icon" />
                 </button>

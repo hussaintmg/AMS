@@ -8,10 +8,11 @@
 const logger = require('../utils/logger');
 
 class AppError extends Error {
-    constructor(message, statusCode, resolution = null) {
+    constructor(message, statusCode, resolution = null, code = null) {
         super(message);
         this.statusCode = statusCode;
         this.resolution = resolution;
+        this.code = code;
         this.isOperational = true;
         Error.captureStackTrace(this, this.constructor);
     }
@@ -88,7 +89,8 @@ const errorHandler = (err, req, res, next) => {
     const response = {
         success: false,
         message: err.message,
-        resolution: err.resolution
+        resolution: err.resolution,
+        code: err.code
     };
 
     // Development mode - send full error

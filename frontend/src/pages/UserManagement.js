@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import SearchableSelect from '../components/SearchableSelect';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import UserFormModal from '../components/users/UserFormModal';
+import DepartmentFormModal from '../components/departments/DepartmentFormModal';
+import RoleFormModal from '../components/roles/rolesFormModel';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useUserManagement } from '../context/UserManagementContext';
@@ -16,7 +17,8 @@ const UserManagement = () => {
         loading: ctxLoading, saving,
         loadUsers, loadReferenceData,
         createUser, updateUser, deleteUser, toggleUserStatus,
-        setUsers, loading: userMgmtLoading
+        createRole, createDepartment,
+        setUsers,
     } = useUserManagement();
     const [loading, setLoading] = useState(true);
     const [errorPopup, setErrorPopup] = useState(null);
@@ -29,12 +31,21 @@ const UserManagement = () => {
     const urlSearch = searchParams.get('search') || '';
 
     const [search, setSearch] = useState(urlSearch);
-    const [roleFilter, setRoleFilter] = useState('');
-    const [statusFilter, setStatusFilter] = useState('');
 
     const [showModal, setShowModal] = useState(false);
     const [modalMode, setModalMode] = useState('create');
     const [selectedUser, setSelectedUser] = useState(null);
+
+    // Nested department creation modal state
+    const [showDeptModal, setShowDeptModal] = useState(false);
+    const [savingDept, setSavingDept] = useState(false);
+    const [createdDepartmentId, setCreatedDepartmentId] = useState(null);
+    const [showRoleModal, setShowRoleModal] = useState(false);
+    const [savingRole, setSavingRole] = useState(false);
+    const [createdRoleId, setCreatedRoleId] = useState(null);
+
+    // Ref to track user form data to auto-select created department
+    const userFormRef = useRef(null);
 
     const fetchUsers = useCallback(async () => {
         try {
@@ -42,12 +53,11 @@ const UserManagement = () => {
             const params = {
                 page, limit,
                 ...(search && { search }),
-                ...(roleFilter && { role: roleFilter }),
-                ...(statusFilter && { status: statusFilter })
             };
             const response = await loadUsers(params);
             if (response) {
-                setUsers(response.users || []);
+                const userList = response.users || [];
+                setUsers(userList);
                 setTotalPages(response.pagination?.totalPages || 1);
                 setTotal(response.pagination?.total || 0);
             }
@@ -56,7 +66,7 @@ const UserManagement = () => {
         } finally {
             setLoading(false);
         }
-    }, [page, limit, search, roleFilter, statusFilter, loadUsers, setUsers]);
+    }, [page, limit, search, loadUsers, setUsers]);
 
     useEffect(() => {
         if (currentUser) {
@@ -83,12 +93,16 @@ const UserManagement = () => {
     const openModal = (mode, user = null) => {
         setModalMode(mode);
         setSelectedUser(user);
+        setCreatedDepartmentId(null);
+        setCreatedRoleId(null);
         setShowModal(true);
     };
 
     const closeModal = () => {
         setShowModal(false);
         setSelectedUser(null);
+        setCreatedDepartmentId(null);
+        setCreatedRoleId(null);
     };
 
     const handleCreateUser = async (formData) => {
@@ -129,6 +143,61 @@ const UserManagement = () => {
         }
     };
 
+    // Open nested Department modal from User form
+    const openCreateDepartment = () => {
+        setShowDeptModal(true);
+    };
+
+    const closeCreateDepartment = () => {
+        setShowDeptModal(false);
+    };
+
+    const openCreateRole = () => {
+        setShowRoleModal(true);
+    };
+
+    const closeCreateRole = () => {
+        setShowRoleModal(false);
+    };
+
+    const handleRoleCreated = async (formData) => {
+        setSavingRole(true);
+        try {
+            const result = await createRole(formData);
+            if (result.success) {
+                const newRoleId = result.data?.id || result.data?._id;
+                setCreatedRoleId(newRoleId || '');
+                setShowRoleModal(false);
+            } else {
+                setErrorPopup(result.error || { message: 'Failed to create role' });
+            }
+        } catch (err) {
+            setErrorPopup({ message: 'Failed to create role' });
+        } finally {
+            setSavingRole(false);
+        }
+    };
+
+    // Department created → auto-select in user form
+    const handleDeptCreated = async (formData, mode) => {
+        setSavingDept(true);
+        try {
+            const result = await createDepartment(formData);
+            if (result.success) {
+                const newDeptId = result.data?.data?._id || result.data?._id;
+                setCreatedDepartmentId(newDeptId || formData.code);
+                toast.success('Department created');
+                setShowDeptModal(false);
+            } else {
+                setErrorPopup(result.error || { message: 'Failed to create department' });
+            }
+        } catch (err) {
+            setErrorPopup({ message: 'Failed to create department' });
+        } finally {
+            setSavingDept(false);
+        }
+    };
+
     const getRoleBadgeClass = (roleName) => {
         const roleColors = {
             'super_admin': 'badge-danger',
@@ -139,7 +208,7 @@ const UserManagement = () => {
             'technician': 'badge-dark',
             'inventory_manager': 'badge-success',
             'accountant': 'badge-purple',
-            'customer': 'badge-light'
+            'customer': 'badge-light',
         };
         return roleColors[roleName] || 'badge-secondary';
     };
@@ -194,36 +263,17 @@ const UserManagement = () => {
                 <div className="search-box">
                     <input
                         type="text"
-                        placeholder="Search by name, email, or ID..."
+                        placeholder="Search by name, email, phone, or ID..."
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
                         className="search-input"
                     />
                     <span className="search-icon">🔍</span>
                 </div>
-                <SearchableSelect
-                    value={roleFilter}
-                    onChange={(e) => { setRoleFilter(e.target.value); setPage(1); }}
-                    className="filter-select"
-                >
-                    <option value="">All Roles</option>
-                    {roles.map(role => (
-                        <option key={role.id} value={role.name}>{role.name.replace(/_/g, ' ').toUpperCase()}</option>
-                    ))}
-                </SearchableSelect>
-                <SearchableSelect
-                    value={statusFilter}
-                    onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
-                    className="filter-select"
-                >
-                    <option value="">All Status</option>
-                    <option value="active">Active</option>
-                    <option value="inactive">Inactive</option>
-                </SearchableSelect>
                 <span className="results-count">{total} users found</span>
             </div>
 
-            <div className="table-container">
+            <div className="table-container desktop-only">
                 {loading ? (
                     <div className="loading-state">
                         <div className="spinner"></div>
@@ -241,6 +291,7 @@ const UserManagement = () => {
                             <tr>
                                 <th>User</th>
                                 <th>Email</th>
+                                <th>Phone</th>
                                 <th>Role</th>
                                 <th>Department</th>
                                 <th>Status</th>
@@ -249,38 +300,47 @@ const UserManagement = () => {
                             </tr>
                         </thead>
                         <tbody>
-                            {ctxUsers.map(user => (
-                                <tr key={user.id} className={!user.is_active ? 'row-inactive' : ''}>
+                            {ctxUsers.map(user => {
+                                const uid = user._id || user.id;
+                                const fullName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email;
+                                const statusText = user.status || (user.isActive ? 'active' : 'inactive');
+                                const roleName = user.role?.displayName || user.role?.name || '-';
+                                const roleKey = user.role?.name || roleName;
+                                const isSuperAdmin = roleKey === 'super_admin';
+                                const deptName = user.department?.name || '-';
+                                return (
+                                <tr key={uid} className={statusText !== 'active' ? 'row-inactive' : ''}>
                                     <td>
                                         <div className="user-cell">
                                             <div className="user-avatar">
                                                 {user.avatar ? (
-                                                    <img src={user.avatar} alt={user.full_name} />
+                                                    <img src={user.avatar} alt={fullName} />
                                                 ) : (
-                                                    <span>{user.first_name?.[0]}{user.last_name?.[0]}</span>
+                                                    <span>{(user.firstName || '?')[0]}{(user.lastName || '')[0] || (user.firstName || '?')[1]}</span>
                                                 )}
                                             </div>
                                             <div className="user-info">
-                                                <span className="user-name">{user.full_name}</span>
-                                                <span className="user-emp-id">{user.employee_id}</span>
+                                                <span className="user-name">{fullName}</span>
+                                                <span className="user-emp-id">{user.employeeId || user.employee_id || ''}</span>
                                             </div>
                                         </div>
                                     </td>
                                     <td>{user.email}</td>
+                                    <td>{user.phone || '-'}</td>
                                     <td>
-                                        <span className={`badge ${getRoleBadgeClass(user.role_name)}`}>
-                                            {user.role_name?.replace(/_/g, ' ')}
+                                        <span className={`badge ${getRoleBadgeClass(user.role?.name || roleName)}`}>
+                                            {roleName.replace(/_/g, ' ')}
                                         </span>
                                     </td>
-                                    <td>{user.department_name || '-'}</td>
+                                    <td>{deptName}</td>
                                     <td>
-                                        <span className={`status-badge ${user.is_active ? 'status-active' : 'status-inactive'}`}>
-                                            {user.is_active ? 'Active' : 'Inactive'}
+                                        <span className={`status-badge ${statusText === 'active' ? 'status-active' : 'status-inactive'}`}>
+                                            {statusText.charAt(0).toUpperCase() + statusText.slice(1)}
                                         </span>
                                     </td>
                                     <td>
-                                        {user.last_login
-                                            ? new Date(user.last_login).toLocaleDateString('en-GB', {
+                                        {user.lastLogin || user.last_login
+                                            ? new Date(user.lastLogin || user.last_login).toLocaleDateString('en-GB', {
                                                 day: '2-digit', month: 'short', year: 'numeric',
                                                 hour: '2-digit', minute: '2-digit'
                                               })
@@ -290,17 +350,101 @@ const UserManagement = () => {
                                     <td>
                                         <ActionButtons
                                             onEdit={() => openModal('edit', user)}
-                                            onToggle={() => handleToggleStatus(user.id)}
-                                            onDelete={() => handleDeleteUser(user.id, user.email)}
-                                            status={user.is_active}
+                                            onToggle={() => handleToggleStatus(uid)}
+                                            onDelete={() => handleDeleteUser(uid, user.email)}
+                                            status={statusText === 'active'}
                                             title={user.email}
+                                            disableToggle={isSuperAdmin}
+                                            disableDelete={isSuperAdmin}
+                                            toggleDisabledTitle="Super admin cannot be deactivated"
+                                            deleteDisabledTitle="Super admin cannot be deleted"
                                             showEdit showToggle showDelete
                                         />
                                     </td>
                                 </tr>
-                            ))}
+                                );
+                            })}
                         </tbody>
                     </table>
+                )}
+            </div>
+
+            <div className="mobile-cards-container mobile-only">
+                {loading ? (
+                    <div className="loading-state">
+                        <div className="spinner"></div>
+                        <p>Loading users...</p>
+                    </div>
+                ) : ctxUsers.length === 0 ? (
+                    <div className="empty-state">
+                        <div className="empty-icon">👤</div>
+                        <h3>No Users Found</h3>
+                        <p>No users match your search criteria.</p>
+                    </div>
+                ) : (
+                    <div className="users-cards-grid">
+                        {ctxUsers.map(user => {
+                            const uid = user._id || user.id;
+                            const fullName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email;
+                            const statusText = user.status || (user.isActive ? 'active' : 'inactive');
+                            const roleName = user.role?.displayName || user.role?.name || '-';
+                            const roleKey = user.role?.name || roleName;
+                            const isSuperAdmin = roleKey === 'super_admin';
+                            const deptName = user.department?.name || '-';
+                            return (
+                                <div key={uid} className={`user-card ${statusText !== 'active' ? 'card-inactive' : ''}`}>
+                                    <div className="user-card-header">
+                                        <div className="user-card-avatar">
+                                            {user.avatar ? (
+                                                <img src={user.avatar} alt={fullName} />
+                                            ) : (
+                                                <span>{(user.firstName || '?')[0]}{(user.lastName || '')[0] || ''}</span>
+                                            )}
+                                        </div>
+                                        <div className="user-card-title">
+                                            <span className="user-card-name">{fullName}</span>
+                                            <span className="user-card-role">{roleName}</span>
+                                        </div>
+                                        <span className={`status-badge ${statusText === 'active' ? 'status-active' : 'status-inactive'}`}>
+                                            {statusText.charAt(0).toUpperCase() + statusText.slice(1)}
+                                        </span>
+                                    </div>
+                                    <div className="user-card-body">
+                                        <div className="user-card-field">
+                                            <span className="field-label">Email</span>
+                                            <span className="field-value">{user.email}</span>
+                                        </div>
+                                        <div className="user-card-field">
+                                            <span className="field-label">Phone</span>
+                                            <span className="field-value">{user.phone || '-'}</span>
+                                        </div>
+                                        <div className="user-card-field">
+                                            <span className="field-label">Department</span>
+                                            <span className="field-value">{deptName}</span>
+                                        </div>
+                                        <div className="user-card-field">
+                                            <span className="field-label">Employee ID</span>
+                                            <span className="field-value">{user.employeeId || user.employee_id || '-'}</span>
+                                        </div>
+                                    </div>
+                                    <div className="user-card-actions">
+                                        <ActionButtons
+                                            onEdit={() => openModal('edit', user)}
+                                            onToggle={() => handleToggleStatus(uid)}
+                                            onDelete={() => handleDeleteUser(uid, user.email)}
+                                            status={statusText === 'active'}
+                                            title={user.email}
+                                            disableToggle={isSuperAdmin}
+                                            disableDelete={isSuperAdmin}
+                                            toggleDisabledTitle="Super admin cannot be deactivated"
+                                            deleteDisabledTitle="Super admin cannot be deleted"
+                                            showEdit showToggle showDelete
+                                        />
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
                 )}
             </div>
 
@@ -334,6 +478,7 @@ const UserManagement = () => {
                 </div>
             )}
 
+            {/* User form modal */}
             <UserFormModal
                 isOpen={showModal}
                 mode={modalMode}
@@ -343,6 +488,32 @@ const UserManagement = () => {
                 onClose={closeModal}
                 onSubmit={modalMode === 'create' ? handleCreateUser : handleUpdateUser}
                 loading={saving}
+                allowCreateDepartment={true}
+                onOpenCreateDepartment={openCreateDepartment}
+                allowCreateRole={true}
+                onOpenCreateRole={openCreateRole}
+                createdRoleId={createdRoleId}
+                keyboardDisabled={showDeptModal || showRoleModal}
+            />
+
+            {/* Nested Department creation modal */}
+            <DepartmentFormModal
+                isOpen={showDeptModal}
+                mode="create"
+                initialData={null}
+                departments={departments}
+                users={[]}
+                onClose={closeCreateDepartment}
+                onSubmit={handleDeptCreated}
+                loading={savingDept}
+                allowCreateManagerUser={false}
+            />
+
+            <RoleFormModal
+                isOpen={showRoleModal}
+                onClose={closeCreateRole}
+                onSubmit={handleRoleCreated}
+                loading={savingRole}
             />
         </div>
     );

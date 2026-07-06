@@ -16,7 +16,13 @@ import { showApiSuccess, showApiError } from "../utils/toastResponse";
 import "../styles/serverManagement.css";
 import "../styles/filters.css";
 
-const tabs = ["Frontend Management", "Branding", "Roles Permissions", "User Permissions", "Log Permissions"];
+const tabs = [
+  "Frontend Management",
+  "Branding",
+  "Roles Permissions",
+  "User Permissions",
+  "Log Permissions",
+];
 const assetFields = [
   ["favicon", "Favicon"],
   ["sidebarLogo", "Sidebar Logo"],
@@ -63,43 +69,66 @@ const viewPermission = (page, enabled) => ({
   isActive: true,
 });
 
-const emptyLogDraft = { viewType: "own", selectedUserIds: [], selectedRoleIds: [] };
+const emptyLogDraft = {
+  viewType: "own",
+  selectedUserIds: [],
+  selectedRoleIds: [],
+};
 
 const normalizeLogDraft = (permissions, fallbackViewType = "own") => {
   if (Array.isArray(permissions)) {
-    const active = permissions.filter((permission) => permission?.isActive !== false);
+    const active = permissions.filter(
+      (permission) => permission?.isActive !== false,
+    );
     const allPerm = active.find((permission) => permission.type === "all");
     const userPerms = active.filter((permission) => permission.type === "user");
     const rolePerms = active.filter((permission) => permission.type === "role");
     return {
-      viewType: allPerm ? "all" : userPerms.length ? "users" : rolePerms.length ? "roles" : fallbackViewType,
-      selectedUserIds: userPerms.map((permission) => String(permission.refId || "")).filter(Boolean),
-      selectedRoleIds: rolePerms.map((permission) => String(permission.refId || "")).filter(Boolean),
+      viewType: allPerm
+        ? "all"
+        : userPerms.length
+          ? "users"
+          : rolePerms.length
+            ? "roles"
+            : fallbackViewType,
+      selectedUserIds: userPerms
+        .map((permission) => String(permission.refId || ""))
+        .filter(Boolean),
+      selectedRoleIds: rolePerms
+        .map((permission) => String(permission.refId || ""))
+        .filter(Boolean),
     };
   }
 
   const mode = permissions?.mode;
   return {
-    viewType: mode === "all"
-      ? "all"
-      : mode === "selected_users"
-      ? "users"
-      : mode === "selected_roles"
-      ? "roles"
-      : fallbackViewType,
+    viewType:
+      mode === "all"
+        ? "all"
+        : mode === "selected_users"
+          ? "users"
+          : mode === "selected_roles"
+            ? "roles"
+            : fallbackViewType,
     selectedUserIds: Array.isArray(permissions?.users)
-      ? permissions.users.map((item) => String(item?._id || item || "")).filter(Boolean)
+      ? permissions.users
+          .map((item) => String(item?._id || item || ""))
+          .filter(Boolean)
       : [],
     selectedRoleIds: Array.isArray(permissions?.roles)
-      ? permissions.roles.map((item) => String(item?._id || item || "")).filter(Boolean)
+      ? permissions.roles
+          .map((item) => String(item?._id || item || ""))
+          .filter(Boolean)
       : [],
   };
 };
 
 const buildLogPermissionsConfig = (draft) => {
   if (draft.viewType === "all") return { mode: "all", users: [], roles: [] };
-  if (draft.viewType === "users") return { mode: "selected_users", users: draft.selectedUserIds, roles: [] };
-  if (draft.viewType === "roles") return { mode: "selected_roles", users: [], roles: draft.selectedRoleIds };
+  if (draft.viewType === "users")
+    return { mode: "selected_users", users: draft.selectedUserIds, roles: [] };
+  if (draft.viewType === "roles")
+    return { mode: "selected_roles", users: [], roles: draft.selectedRoleIds };
   return { mode: "own", users: [], roles: [] };
 };
 
@@ -339,8 +368,10 @@ function ServerManagement() {
   const [savingBranding, setSavingBranding] = useState(false);
   const [savingRole, setSavingRole] = useState(false);
   const [savingUserPermissions, setSavingUserPermissions] = useState(false);
-  const [savingLogRolePermissions, setSavingLogRolePermissions] = useState(false);
-  const [savingLogUserPermissions, setSavingLogUserPermissions] = useState(false);
+  const [savingLogRolePermissions, setSavingLogRolePermissions] =
+    useState(false);
+  const [savingLogUserPermissions, setSavingLogUserPermissions] =
+    useState(false);
   const [savingPage, setSavingPage] = useState(false);
   const [savingAssetDelete, setSavingAssetDelete] = useState(false);
   const savingRef = useRef({});
@@ -740,9 +771,12 @@ function ServerManagement() {
     return false;
   };
 
-  const isDropdownOpen = () => Boolean(
-    document.querySelector(".sm-picker-dropdown, .sm-icon-dropdown, .ss-portal-dropdown, .search-dropdown"),
-  );
+  const isDropdownOpen = () =>
+    Boolean(
+      document.querySelector(
+        ".sm-picker-dropdown, .sm-icon-dropdown, .ss-portal-dropdown, .search-dropdown",
+      ),
+    );
 
   const renderPages = () => (
     <form className="sm-panel" onSubmit={saveSidebar}>
@@ -752,10 +786,18 @@ function ServerManagement() {
           <p>Mongo Pages are the runtime source for the sidebar.</p>
         </div>
         <div className="sm-actions">
-          <button type="button" className="btn btn-secondary" onClick={openPageModal}>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={openPageModal}
+          >
             Add Page
           </button>
-          <button type="submit" className="btn btn-primary" disabled={savingSidebar}>
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={savingSidebar}
+          >
             Save Sidebar
           </button>
         </div>
@@ -1039,7 +1081,11 @@ function ServerManagement() {
             >
               Cancel
             </button>
-            <button type="submit" className="btn btn-primary" disabled={savingPage}>
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={savingPage}
+            >
               Save
             </button>
           </div>
@@ -1057,7 +1103,11 @@ function ServerManagement() {
               Saved branding updates the app title, logos, and favicon live.
             </p>
           </div>
-          <button type="submit" className="btn btn-primary" disabled={savingBranding}>
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={savingBranding}
+          >
             Save Branding
           </button>
         </div>
@@ -1157,7 +1207,10 @@ function ServerManagement() {
             filteredAssets.map((asset) => (
               <div key={asset._id} className="sm-asset-card">
                 <div className="sm-asset-actions">
-                  <label className="btn btn-secondary btn-sm" title="Edit asset">
+                  <label
+                    className="btn btn-secondary btn-sm"
+                    title="Edit asset"
+                  >
                     Edit
                     <input
                       type="file"
@@ -1247,7 +1300,11 @@ function ServerManagement() {
       <div className="sm-panel">
         <div className="sm-panel-header">
           <h2>Roles</h2>
-          <button type="button" className="btn btn-secondary" onClick={startCreateRole}>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={startCreateRole}
+          >
             New Role
           </button>
         </div>
@@ -1269,7 +1326,11 @@ function ServerManagement() {
           ))}
         </div>
       </div>
-      <form className="sm-panel" onSubmit={saveRole} onKeyDownCapture={handleServerManagementEnterSave}>
+      <form
+        className="sm-panel"
+        onSubmit={saveRole}
+        onKeyDownCapture={handleServerManagementEnterSave}
+      >
         <div className="sm-panel-header">
           <h2>{selectedRole ? "Edit Role" : "Create Role"}</h2>
           <button
@@ -1306,18 +1367,19 @@ function ServerManagement() {
             }
           />
         </div>
-        {selectedRoleIsSuperAdmin
-          ? renderSuperAdminInfo()
-          : <>
-              {renderPermissions(
-                roleDraft.permissions,
-                toggleRolePage,
-                setAllRolePages,
-                setAllRolePages,
-                filteredActivePages,
-              )}
-            </>
-            }
+        {selectedRoleIsSuperAdmin ? (
+          renderSuperAdminInfo()
+        ) : (
+          <>
+            {renderPermissions(
+              roleDraft.permissions,
+              toggleRolePage,
+              setAllRolePages,
+              setAllRolePages,
+              filteredActivePages,
+            )}
+          </>
+        )}
       </form>
     </div>
   );
@@ -1389,7 +1451,11 @@ function ServerManagement() {
           )}
         </div>
       </div>
-      <form className="sm-panel" onSubmit={saveUserPermissions} onKeyDownCapture={handleServerManagementEnterSave}>
+      <form
+        className="sm-panel"
+        onSubmit={saveUserPermissions}
+        onKeyDownCapture={handleServerManagementEnterSave}
+      >
         <div className="sm-panel-header">
           <h2>
             {selectedUser
@@ -1399,33 +1465,42 @@ function ServerManagement() {
           <button
             type="submit"
             className="btn btn-primary"
-            disabled={!selectedUserId || selectedUserIsSuperAdmin || savingUserPermissions}
+            disabled={
+              !selectedUserId ||
+              selectedUserIsSuperAdmin ||
+              savingUserPermissions
+            }
           >
             Save Permissions
           </button>
         </div>
-        {selectedUserIsSuperAdmin
-          ? renderSuperAdminInfo()
-          : selectedUser && (!selectedUser.customPermissions || !selectedUser.customPermissions.length)
-          ? <>
-              <div className="sm-info-panel compact">
-                <p>This user is currently using role permissions. Saving here will create custom user permissions.</p>
-              </div>
-              {renderPermissions(
-                userPermissionDraft,
-                toggleUserPage,
-                setAllUserPages,
-                setAllUserPages,
-              )}
-            </>
-          : selectedUser
-          ? renderPermissions(
+        {selectedUserIsSuperAdmin ? (
+          renderSuperAdminInfo()
+        ) : selectedUser &&
+          (!selectedUser.customPermissions ||
+            !selectedUser.customPermissions.length) ? (
+          <>
+            <div className="sm-info-panel compact">
+              <p>
+                This user is currently using role permissions. Saving here will
+                create custom user permissions.
+              </p>
+            </div>
+            {renderPermissions(
               userPermissionDraft,
               toggleUserPage,
               setAllUserPages,
               setAllUserPages,
-            )
-          : null}
+            )}
+          </>
+        ) : selectedUser ? (
+          renderPermissions(
+            userPermissionDraft,
+            toggleUserPage,
+            setAllUserPages,
+            setAllUserPages,
+          )
+        ) : null}
       </form>
     </div>
   );
@@ -1452,20 +1527,29 @@ function ServerManagement() {
     savingRef.current.logRole = true;
     setSavingLogRolePermissions(true);
     try {
-      const res = await serverManagementAPI.updateRoleLogsPermissions(selectedLogRoleId, {
-        logsPermissions: buildLogPermissionsConfig(logRoleDraft),
-      });
+      const res = await serverManagementAPI.updateRoleLogsPermissions(
+        selectedLogRoleId,
+        {
+          logsPermissions: buildLogPermissionsConfig(logRoleDraft),
+        },
+      );
       if (res?.data?.success === true) {
         const updatedRole = res.data?.data?.role;
         if (updatedRole) {
-          setRoles(prev => prev.map(r => getRoleId(r) === selectedLogRoleId ? { ...r, logsPermissions: updatedRole.logsPermissions } : r));
+          setRoles((prev) =>
+            prev.map((r) =>
+              getRoleId(r) === selectedLogRoleId
+                ? { ...r, logsPermissions: updatedRole.logsPermissions }
+                : r,
+            ),
+          );
         }
-        showApiSuccess(res, 'Log permissions saved');
+        showApiSuccess(res, "Log permissions saved");
       } else {
-        throw new Error(res?.data?.message || 'Failed to save log permissions');
+        throw new Error(res?.data?.message || "Failed to save log permissions");
       }
     } catch (err) {
-      showApiError(err, 'Failed to save log permissions');
+      showApiError(err, "Failed to save log permissions");
     } finally {
       savingRef.current.logRole = false;
       setSavingLogRolePermissions(false);
@@ -1479,21 +1563,30 @@ function ServerManagement() {
     savingRef.current.logUser = true;
     setSavingLogUserPermissions(true);
     try {
-      const res = await serverManagementAPI.updateUserLogsPermissions(selectedLogUserId, {
-        logPermissionSource: logUserSource,
-        logsPermissions: buildLogPermissionsConfig(logUserDraft),
-      });
+      const res = await serverManagementAPI.updateUserLogsPermissions(
+        selectedLogUserId,
+        {
+          logPermissionSource: logUserSource,
+          logsPermissions: buildLogPermissionsConfig(logUserDraft),
+        },
+      );
       if (res?.data?.success === true) {
         const updatedUser = res.data?.data?.user;
         if (updatedUser) {
-          setUsers(prev => prev.map(u => (u._id || u.id) === selectedLogUserId ? { ...u, ...updatedUser } : u));
+          setUsers((prev) =>
+            prev.map((u) =>
+              (u._id || u.id) === selectedLogUserId
+                ? { ...u, ...updatedUser }
+                : u,
+            ),
+          );
         }
-        showApiSuccess(res, 'Log permissions saved');
+        showApiSuccess(res, "Log permissions saved");
       } else {
-        throw new Error(res?.data?.message || 'Failed to save log permissions');
+        throw new Error(res?.data?.message || "Failed to save log permissions");
       }
     } catch (err) {
-      showApiError(err, 'Failed to save log permissions');
+      showApiError(err, "Failed to save log permissions");
     } finally {
       savingRef.current.logUser = false;
       setSavingLogUserPermissions(false);
@@ -1502,7 +1595,14 @@ function ServerManagement() {
 
   const handleServerManagementEnterSave = (event) => {
     if (event.key !== "Enter") return;
-    if (event.defaultPrevented || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) return;
+    if (
+      event.defaultPrevented ||
+      event.shiftKey ||
+      event.ctrlKey ||
+      event.altKey ||
+      event.metaKey
+    )
+      return;
     if (showUserModal) return;
     if (isAnySectionSaving) return;
 
@@ -1543,39 +1643,40 @@ function ServerManagement() {
   };
 
   const toggleLogUserSelection = (uid, target) => {
-    const setter = target === 'role' ? setLogRoleDraft : setLogUserDraft;
-    const current = target === 'role' ? logRoleDraft : logUserDraft;
+    const setter = target === "role" ? setLogRoleDraft : setLogUserDraft;
+    const current = target === "role" ? logRoleDraft : logUserDraft;
     setter((prev) => {
       const ids = prev.selectedUserIds.includes(uid)
         ? prev.selectedUserIds.filter((id) => id !== uid)
         : [...prev.selectedUserIds, uid];
-      return { ...prev, selectedUserIds: ids, viewType: 'users' };
+      return { ...prev, selectedUserIds: ids, viewType: "users" };
     });
   };
 
   const toggleLogRoleSelection = (rid, target) => {
-    const setter = target === 'role' ? setLogRoleDraft : setLogUserDraft;
+    const setter = target === "role" ? setLogRoleDraft : setLogUserDraft;
     setter((prev) => {
       const ids = prev.selectedRoleIds.includes(rid)
         ? prev.selectedRoleIds.filter((id) => id !== rid)
         : [...prev.selectedRoleIds, rid];
-      return { ...prev, selectedRoleIds: ids, viewType: 'roles' };
+      return { ...prev, selectedRoleIds: ids, viewType: "roles" };
     });
   };
 
   const logViewOptions = [
-    { value: 'own', label: 'Own Logs' },
-    { value: 'users', label: 'Selected Users' },
-    { value: 'roles', label: 'Selected Roles' },
-    { value: 'all', label: 'All Users' },
+    { value: "own", label: "Own Logs" },
+    { value: "users", label: "Selected Users" },
+    { value: "roles", label: "Selected Roles" },
+    { value: "all", label: "All Users" },
   ];
 
   const filteredLogUsers = userArr.filter((u) => {
-    if (u.role?.name === "super_admin" || u.role === "super_admin") return false;
+    if (u.role?.name === "super_admin" || u.role === "super_admin")
+      return false;
     const q = logUserSearch.toLowerCase().trim();
     if (!q) return true;
-    const name = `${u.firstName || ''} ${u.lastName || ''}`.toLowerCase();
-    const email = (u.email || '').toLowerCase();
+    const name = `${u.firstName || ""} ${u.lastName || ""}`.toLowerCase();
+    const email = (u.email || "").toLowerCase();
     return name.includes(q) || email.includes(q);
   });
 
@@ -1583,17 +1684,24 @@ function ServerManagement() {
     if (r.name === "super_admin") return false;
     const q = logRoleSearch.toLowerCase().trim();
     if (!q) return true;
-    const name = (r.displayName || r.name || '').toLowerCase();
+    const name = (r.displayName || r.name || "").toLowerCase();
     return name.includes(q);
   });
 
   const renderUserPicker = (selectedIds, onToggle, target) => (
     <div className="sm-picker-wrapper">
-      <button type="button" className="btn btn-secondary btn-sm" onClick={() => {
-        if (target === 'role') setShowLogUserPicker(!showLogUserPicker);
-        else setShowLogUserPicker(!showLogUserPicker);
-      }}>
-        {selectedIds.length > 0 ? `${selectedIds.length} user(s) selected` : 'Select Users'}
+      <button
+        type="button"
+        className="btn btn-secondary btn-sm"
+        style={{ margin: "0 0 10px 0" }}
+        onClick={() => {
+          if (target === "role") setShowLogUserPicker(!showLogUserPicker);
+          else setShowLogUserPicker(!showLogUserPicker);
+        }}
+      >
+        {selectedIds.length > 0
+          ? `${selectedIds.length} user(s) selected`
+          : "Select Users"}
       </button>
       {showLogUserPicker && (
         <div className="sm-picker-dropdown">
@@ -1613,9 +1721,17 @@ function ServerManagement() {
                 const checked = selectedIds.includes(uid);
                 return (
                   <label key={uid} className="sm-picker-row">
-                    <input type="checkbox" checked={checked} onChange={() => onToggle(uid, target)} />
-                    <span>{u.firstName} {u.lastName}</span>
-                    <small>{u.role?.displayName || u.role?.name || u.email}</small>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => onToggle(uid, target)}
+                    />
+                    <span>
+                      {u.firstName} {u.lastName}{" "}
+                      <small>
+                        {u.role?.displayName || u.role?.name || u.email}
+                      </small>
+                    </span>
                   </label>
                 );
               })
@@ -1628,11 +1744,18 @@ function ServerManagement() {
 
   const renderRolePicker = (selectedIds, onToggle, target) => (
     <div className="sm-picker-wrapper">
-      <button type="button" className="btn btn-secondary btn-sm" onClick={() => {
-        if (target === 'role') setShowLogRolePicker(!showLogRolePicker);
-        else setShowLogRolePicker(!showLogRolePicker);
-      }}>
-        {selectedIds.length > 0 ? `${selectedIds.length} role(s) selected` : 'Select Roles'}
+      <button
+        type="button"
+        className="btn btn-secondary btn-sm"
+        style={{ margin: "0 0 10px 0" }}
+        onClick={() => {
+          if (target === "role") setShowLogRolePicker(!showLogRolePicker);
+          else setShowLogRolePicker(!showLogRolePicker);
+        }}
+      >
+        {selectedIds.length > 0
+          ? `${selectedIds.length} role(s) selected`
+          : "Select Roles"}
       </button>
       {showLogRolePicker && (
         <div className="sm-picker-dropdown">
@@ -1652,7 +1775,11 @@ function ServerManagement() {
                 const checked = selectedIds.includes(rid);
                 return (
                   <label key={rid} className="sm-picker-row">
-                    <input type="checkbox" checked={checked} onChange={() => onToggle(rid, target)} />
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => onToggle(rid, target)}
+                    />
                     <span>{r.displayName || r.name}</span>
                   </label>
                 );
@@ -1668,14 +1795,24 @@ function ServerManagement() {
     <div className="sm-form-grid">
       <label>
         Can View
-        <select className="form-input" value={draft.viewType} onChange={(e) => setter(prev => ({ ...prev, viewType: e.target.value }))}>
-          {logViewOptions.map(opt => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
+        <select
+          className="form-input"
+          value={draft.viewType}
+          onChange={(e) =>
+            setter((prev) => ({ ...prev, viewType: e.target.value }))
+          }
+        >
+          {logViewOptions.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
           ))}
         </select>
       </label>
-      {draft.viewType === 'users' && renderUserPicker(draft.selectedUserIds, toggleLogUserSelection, target)}
-      {draft.viewType === 'roles' && renderRolePicker(draft.selectedRoleIds, toggleLogRoleSelection, target)}
+      {draft.viewType === "users" &&
+        renderUserPicker(draft.selectedUserIds, toggleLogUserSelection, target)}
+      {draft.viewType === "roles" &&
+        renderRolePicker(draft.selectedRoleIds, toggleLogRoleSelection, target)}
     </div>
   );
 
@@ -1705,76 +1842,107 @@ function ServerManagement() {
   const renderLogPermissions = () => (
     <>
       <div className="sm-grid sm-log-permissions-grid">
-      <div className="sm-panel">
-        <div className="sm-panel-header">
-          <h2>Role Log Permissions</h2>
-          <p>Log access configuration per role</p>
+        <div className="sm-panel">
+          <div className="sm-panel-header">
+            <h2>Role Log Permissions</h2>
+            <p>Log access configuration per role</p>
+          </div>
+          <div className="sm-list">
+            {roleArr
+              .filter((r) => r.name !== "super_admin")
+              .map((role) => (
+                <button
+                  type="button"
+                  key={getRoleId(role)}
+                  className={
+                    selectedLogRoleId === getRoleId(role) ? "active" : ""
+                  }
+                  onClick={() => selectLogRole(getRoleId(role))}
+                >
+                  <span>{role.displayName || role.name}</span>
+                </button>
+              ))}
+          </div>
         </div>
-        <div className="sm-list">
-          {roleArr.filter(r => r.name !== 'super_admin').map((role) => (
+        <form
+          className="sm-panel"
+          data-log-panel="role"
+          onSubmit={saveLogRolePermissions}
+          onKeyDownCapture={handleServerManagementEnterSave}
+          onFocus={() => setActiveLogPanel("role")}
+          onClick={() => setActiveLogPanel("role")}
+        >
+          <div className="sm-panel-header">
+            <h2>
+              {selectedLogRoleId
+                ? roleArr.find((r) => getRoleId(r) === selectedLogRoleId)
+                    ?.displayName || "Role"
+                : "Select a Role"}
+            </h2>
             <button
-              type="button"
-              key={getRoleId(role)}
-              className={selectedLogRoleId === getRoleId(role) ? 'active' : ''}
-              onClick={() => selectLogRole(getRoleId(role))}
+              type="submit"
+              className="btn btn-primary"
+              disabled={!selectedLogRoleId || savingLogRolePermissions}
             >
-              <span>{role.displayName || role.name}</span>
+              Save
             </button>
-          ))}
+          </div>
+          {selectedLogRoleId &&
+            renderLogPermissionsConfig(logRoleDraft, setLogRoleDraft, "role")}
+        </form>
+        <div className="sm-panel">
+          <div className="sm-panel-header">
+            <h2>User Log Permissions</h2>
+            <p>Override log access per user</p>
+          </div>
+          <div className="sm-list">
+            {userArr
+              .filter((u) => u.role?.name !== "super_admin")
+              .map((user) => (
+                <button
+                  type="button"
+                  key={user._id || user.id}
+                  className={
+                    selectedLogUserId === (user._id || user.id) ? "active" : ""
+                  }
+                  onClick={() => selectLogUser(user._id || user.id)}
+                >
+                  <span>
+                    {user.firstName} {user.lastName}
+                  </span>
+                  <small>
+                    {user.role?.displayName || user.role?.name || user.email}
+                  </small>
+                </button>
+              ))}
+          </div>
         </div>
-      </div>
-      <form
-        className="sm-panel"
-        data-log-panel="role"
-        onSubmit={saveLogRolePermissions}
-        onKeyDownCapture={handleServerManagementEnterSave}
-        onFocus={() => setActiveLogPanel("role")}
-        onClick={() => setActiveLogPanel("role")}
-      >
-        <div className="sm-panel-header">
-          <h2>{selectedLogRoleId ? (roleArr.find(r => getRoleId(r) === selectedLogRoleId)?.displayName || 'Role') : 'Select a Role'}</h2>
-          <button type="submit" className="btn btn-primary" disabled={!selectedLogRoleId || savingLogRolePermissions}>
-            Save
-          </button>
-        </div>
-        {selectedLogRoleId && renderLogPermissionsConfig(logRoleDraft, setLogRoleDraft, 'role')}
-      </form>
-      <div className="sm-panel">
-        <div className="sm-panel-header">
-          <h2>User Log Permissions</h2>
-          <p>Override log access per user</p>
-        </div>
-        <div className="sm-list">
-          {userArr.filter(u => u.role?.name !== 'super_admin').map((user) => (
+        <form
+          className="sm-panel"
+          data-log-panel="user"
+          onSubmit={saveLogUserPermissions}
+          onKeyDownCapture={handleServerManagementEnterSave}
+          onFocus={() => setActiveLogPanel("user")}
+          onClick={() => setActiveLogPanel("user")}
+        >
+          <div className="sm-panel-header">
+            <h2>
+              {selectedLogUserId
+                ? userArr.find((u) => (u._id || u.id) === selectedLogUserId)
+                    ?.firstName || "User"
+                : "Select a User"}
+            </h2>
             <button
-              type="button"
-              key={user._id || user.id}
-              className={selectedLogUserId === (user._id || user.id) ? 'active' : ''}
-              onClick={() => selectLogUser(user._id || user.id)}
+              type="submit"
+              className="btn btn-primary"
+              disabled={!selectedLogUserId || savingLogUserPermissions}
             >
-              <span>{user.firstName} {user.lastName}</span>
-              <small>{user.role?.displayName || user.role?.name || user.email}</small>
+              Save
             </button>
-          ))}
-        </div>
+          </div>
+          {selectedLogUserId && renderUserLogPermissionsConfig()}
+        </form>
       </div>
-      <form
-        className="sm-panel"
-        data-log-panel="user"
-        onSubmit={saveLogUserPermissions}
-        onKeyDownCapture={handleServerManagementEnterSave}
-        onFocus={() => setActiveLogPanel("user")}
-        onClick={() => setActiveLogPanel("user")}
-      >
-        <div className="sm-panel-header">
-          <h2>{selectedLogUserId ? (userArr.find(u => (u._id || u.id) === selectedLogUserId)?.firstName || 'User') : 'Select a User'}</h2>
-          <button type="submit" className="btn btn-primary" disabled={!selectedLogUserId || savingLogUserPermissions}>
-            Save
-          </button>
-        </div>
-        {selectedLogUserId && renderUserLogPermissionsConfig()}
-      </form>
-    </div>
     </>
   );
 
@@ -1794,7 +1962,10 @@ function ServerManagement() {
   }
 
   return (
-    <div className="server-management" onKeyDownCapture={handleServerManagementEnterSave}>
+    <div
+      className="server-management"
+      onKeyDownCapture={handleServerManagementEnterSave}
+    >
       <div className="sm-page-header">
         <div>
           <h1>Server Management</h1>
@@ -1834,22 +2005,45 @@ function ServerManagement() {
         loading={userModalLoading}
       />
       {assetDeleteTarget && (
-        <div className="sm-modal-backdrop" onClick={() => setAssetDeleteTarget(null)}>
-          <div className="sm-modal" onClick={(event) => event.stopPropagation()}>
+        <div
+          className="sm-modal-backdrop"
+          onClick={() => setAssetDeleteTarget(null)}
+        >
+          <div
+            className="sm-modal"
+            onClick={(event) => event.stopPropagation()}
+          >
             <div className="sm-modal-header">
               <h3>Delete Asset</h3>
-              <button type="button" className="sm-modal-close" onClick={() => setAssetDeleteTarget(null)}>
+              <button
+                type="button"
+                className="sm-modal-close"
+                onClick={() => setAssetDeleteTarget(null)}
+              >
                 &times;
               </button>
             </div>
             <div className="sm-modal-body">
-              <p>Delete "{assetDeleteTarget.originalName || assetDeleteTarget.fileName}"? Assigned branding will fall back to default.</p>
+              <p>
+                Delete "
+                {assetDeleteTarget.originalName || assetDeleteTarget.fileName}"?
+                Assigned branding will fall back to default.
+              </p>
             </div>
             <div className="sm-modal-actions">
-              <button type="button" className="btn btn-secondary" onClick={() => setAssetDeleteTarget(null)}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setAssetDeleteTarget(null)}
+              >
                 Cancel
               </button>
-              <button type="button" className="btn btn-danger" onClick={confirmDeleteAsset} disabled={savingAssetDelete}>
+              <button
+                type="button"
+                className="btn btn-danger"
+                onClick={confirmDeleteAsset}
+                disabled={savingAssetDelete}
+              >
                 Delete
               </button>
             </div>

@@ -323,8 +323,13 @@ tr:hover td {
     font-weight: 500;
     color: var(--text-primary, #334155);
 }
-
-.form-group input,
+.form-group input{
+    padding: 10px 12px;
+    border: 1px solid var(--border-color, #cbd5e1);
+    border-radius: 8px;
+    font-size: 14px;
+    transition: all 0.2s;
+}
 .form-group select,
 .form-group textarea {
     width: 100%;

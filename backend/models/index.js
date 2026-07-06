@@ -24,6 +24,7 @@ const BrandingAsset = require('./BrandingAsset.model');
 const ServerConfig = require('./ServerConfig.model');
 const Page = require('./Page.model');
 const BrandingSetting = require('./BrandingSetting.model');
+const Department = require('./Department.model');
 const Log = require('./mongo/Log.model');
 // ApiLog and AuditLog are deprecated — use single Log model instead
 // const ApiLog = require('./ApiLog.model');
@@ -56,6 +57,7 @@ module.exports = {
   ServerConfig,
   Page,
   BrandingSetting,
+  Department,
   Log,
   // ApiLog,
   // AuditLog

@@ -28,6 +28,14 @@ api.interceptors.response.use(
         const message = error.response?.data?.message || 'An error occurred';
         const resolution = error.response?.data?.resolution;
         const statusCode = error.response?.status;
+        const errorCode = error.response?.data?.code;
+
+        if (errorCode === 'USER_INACTIVE') {
+            if (window.location.pathname !== '/no-access') {
+                window.location.href = '/no-access';
+            }
+            return Promise.reject(error);
+        }
 
         if (statusCode === 401) {
             if (!error.config?.skipAuthRedirect) {

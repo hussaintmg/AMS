@@ -1,5 +1,5 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { adminAPI, serverManagementAPI } from '../services/api';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { adminAPI } from '../services/api';
 import { showApiSuccess, showApiError, getErrorMessage } from '../utils/toastResponse';
 import eventBus from '../utils/eventBus';
 
@@ -32,12 +32,13 @@ export function UserManagementProvider({ children }) {
         try {
             setLoading(true);
             const res = await adminAPI.getUsers(params);
-            const data = res.data.data;
-            return data;
+            const payload = res.data?.data || res.data;
+            const users = Array.isArray(payload) ? payload : (payload?.users || []);
+            const pagination = payload?.pagination || {};
+            return { users, pagination };
         } catch (err) {
             const msg = getErrorMessage(err, 'Failed to load users');
             setError(msg);
-            showApiError(err, 'Failed to load users');
             throw err;
         } finally {
             setLoading(false);
@@ -62,7 +63,7 @@ export function UserManagementProvider({ children }) {
             const data = res.data.data;
             const deptList = (data && Array.isArray(data.flat)) ? data.flat : (data || []);
             setDepartments(deptList);
-            return deptList;
+            return data || { hierarchy: [], flat: deptList };
         } catch (err) {
             showApiError(err, 'Failed to load departments');
             throw err;
@@ -77,6 +78,19 @@ export function UserManagementProvider({ children }) {
             return data;
         } catch (err) {
             const msg = err.response?.data?.message || 'Failed to load stats';
+            setError(msg);
+            throw err;
+        }
+    }, []);
+
+    const loadDepartmentStats = useCallback(async () => {
+        try {
+            const res = await adminAPI.getDepartmentStats();
+            const data = res.data.data;
+            setStats(data || {});
+            return data;
+        } catch (err) {
+            const msg = err.response?.data?.message || 'Failed to load department stats';
             setError(msg);
             throw err;
         }
@@ -103,7 +117,7 @@ export function UserManagementProvider({ children }) {
                 department: formData.department,
                 jobTitle: formData.jobTitle
             };
-            const res = await serverManagementAPI.createUser(payload);
+            const res = await adminAPI.createUser(payload);
             if (!(res?.status >= 200 && res?.status < 300 && res?.data?.success === true)) {
                 throw new Error(res?.data?.message || 'Failed to create user');
             }
@@ -123,7 +137,7 @@ export function UserManagementProvider({ children }) {
             setSaving(true);
             const payload = { ...formData };
             if (!payload.password) delete payload.password;
-            const res = await serverManagementAPI.updateUser(userId, payload);
+            const res = await adminAPI.updateUser(userId, payload);
             if (!(res?.status >= 200 && res?.status < 300 && res?.data?.success === true)) {
                 throw new Error(res?.data?.message || 'Failed to update user');
             }
@@ -180,6 +194,19 @@ export function UserManagementProvider({ children }) {
         }
     }, [loadDepartments]);
 
+    const createRole = useCallback(async (data) => {
+        try {
+            const res = await adminAPI.createRole(data);
+            ensureSuccess(res, 'Role created');
+            await loadRoles();
+            showApiSuccess(res, 'Role created');
+            return { success: true, data: res.data?.data || res.data };
+        } catch (err) {
+            showApiError(err, 'Failed to create role');
+            return { success: false, message: getErrorMessage(err, 'Failed to create role'), error: err.response?.data };
+        }
+    }, [loadRoles]);
+
     const updateDepartment = useCallback(async (id, data) => {
         try {
             const res = await adminAPI.updateDepartment(id, data);
@@ -210,13 +237,14 @@ export function UserManagementProvider({ children }) {
         users, roles, departments, stats,
         loading, saving, error,
         setUsers, setRoles, setDepartments,
-        loadUsers, loadRoles, loadDepartments, loadStats, loadReferenceData,
+        loadUsers, loadRoles, loadDepartments, loadStats, loadDepartmentStats, loadReferenceData,
         createUser, updateUser, deleteUser, toggleUserStatus,
+        createRole,
         createDepartment, updateDepartment, deleteDepartment
     }), [users, roles, departments, stats, loading, saving, error,
-        loadUsers, loadRoles, loadDepartments, loadStats, loadReferenceData,
+        loadUsers, loadRoles, loadDepartments, loadStats, loadDepartmentStats, loadReferenceData,
         createUser, updateUser, deleteUser, toggleUserStatus,
-        createDepartment, updateDepartment, deleteDepartment]);
+        createRole, createDepartment, updateDepartment, deleteDepartment]);
 
     return (
         <UserManagementContext.Provider value={value}>

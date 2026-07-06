@@ -38,8 +38,12 @@ const authenticate = async (req, res, next) => {
 
     const user = await User.findById(decoded.id || decoded.userId).populate('role');
 
-    if (!user || !user.isActive) {
-      throw new AppError('User not found or inactive', 401);
+    if (!user) {
+      throw new AppError('User not found', 401);
+    }
+
+    if (user.status !== 'active' || user.isActive === false) {
+      throw new AppError('Account is inactive', 403, 'Please contact your administrator.', 'USER_INACTIVE');
     }
 
     const roleName = normalizeRole(user.role?.name || '');

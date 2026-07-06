@@ -173,6 +173,7 @@ function App() {
                     <Route path="/login" element={<Login />} />
                     <Route path="/forgot-password" element={<ForgotPassword />} />
                     <Route path="/reset-password" element={<ResetPassword />} />
+                    <Route path="/no-access" element={<NoAccess />} />
                     <Route path="*" element={<Navigate to="/login" replace />} />
                 </Routes>
             </>

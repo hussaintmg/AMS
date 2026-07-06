@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const path = require('path');
+const { normalizePhone } = require('../utils/phone.util');
 require('dotenv').config({ path: path.join(__dirname, '../../.env') });
 
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/amserp';
@@ -26,7 +27,7 @@ const validateConfig = () => {
   const password = getRequiredEnv('SUPER_ADMIN_PASSWORD');
   const firstName = process.env.SUPER_ADMIN_FIRST_NAME?.trim() || 'Super';
   const lastName = process.env.SUPER_ADMIN_LAST_NAME?.trim() || 'Admin';
-  const phone = process.env.SUPER_ADMIN_PHONE?.trim() || '';
+  const phone = normalizePhone(process.env.SUPER_ADMIN_PHONE?.trim() || '');
 
   if (password.length < 8) {
     throw new Error('SUPER_ADMIN_PASSWORD must be at least 8 characters long');
