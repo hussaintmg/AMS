@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useUserManagement } from "../context/UserManagementContext";
 import toast from "react-hot-toast";
 import ErrorPopup from "../components/ErrorPopup";
 import ActionButtons from "../components/ActionButtons";
 import DepartmentFormModal from "../components/departments/DepartmentFormModal";
-import UserFormModal from "../components/users/UserFormModal";
+import DepartmentDrawer from "../components/departments/DepartmentDrawer";
 import ConfirmModal from "../components/ConfirmModal";
 import "../styles/userManagement.css";
 
@@ -14,66 +14,74 @@ const DepartmentManagement = () => {
   const {
     users: ctxUsers,
     stats: ctxStats,
+    roles,
     createDepartment,
     updateDepartment,
     deleteDepartment,
     loadDepartments,
     loadRoles,
     loadDepartmentStats,
+    loadDepartmentById,
+    assignUserDepartment,
+    removeUserDepartment,
     createUser,
-    roles,
+    updateUser,
+    toggleUserStatus,
   } = useUserManagement();
 
-  const [departments, setDepartments] = useState([]);
   const [flatDepartments, setFlatDepartments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [errorPopup, setErrorPopup] = useState(null);
-  const [stats, setStats] = useState({});
-  const [users, setUsers] = useState([]);
+  const [stats, setStats] = useState({
+    total_departments: 0,
+    active_departments: 0,
+    inactive_departments: 0,
+    total_active_staff: 0,
+    total_managers: 0,
+  });
+  const [allUsers, setAllUsers] = useState([]);
   const [saving, setSaving] = useState(false);
 
-  // Department form modal state
-  const [showDeptModal, setShowDeptModal] = useState(false);
-  const [deptModalMode, setDeptModalMode] = useState("create");
-  const [selectedDept, setSelectedDept] = useState(null);
+  // Create modal state
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [createSaving, setCreateSaving] = useState(false);
 
-  // Nested user creation modal state
-  const [showUserModal, setShowUserModal] = useState(false);
-  const [savingUser, setSavingUser] = useState(false);
+  // Drawer state
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [selectedDepartment, setSelectedDepartment] = useState(null);
+  const [drawerDepartment, setDrawerDepartment] = useState(null);
+  const [drawerStaff, setDrawerStaff] = useState([]);
+  const [drawerLoading, setDrawerLoading] = useState(false);
 
-  // Delete confirm modal state
+  // Delete confirm from table
   const [deleteConfirm, setDeleteConfirm] = useState(null);
 
-  // Load initial data
-  useEffect(() => {
-    if (!user) return;
-    const loadAll = async () => {
-      try {
-        setLoading(true);
-        const [deptData] = await Promise.all([
-          loadDepartments(),
-          loadRoles(),
-          loadDepartmentStats(),
-        ]);
-        if (deptData) {
-          setDepartments(
-            Array.isArray(deptData.hierarchy) ? deptData.hierarchy : [],
-          );
-          setFlatDepartments(Array.isArray(deptData.flat) ? deptData.flat : []);
-        }
-      } catch (e) {
-        // silent
-      } finally {
-        setLoading(false);
+  const loadAllData = useCallback(async () => {
+    try {
+      setLoading(true);
+      const [deptData] = await Promise.all([
+        loadDepartments(),
+        loadRoles(),
+        loadDepartmentStats(),
+      ]);
+      if (deptData) {
+        setFlatDepartments(Array.isArray(deptData.flat) ? deptData.flat : []);
       }
-    };
-    loadAll();
-  }, [user, loadDepartments, loadRoles, loadDepartmentStats]);
+    } catch (e) {
+      // silent
+    } finally {
+      setLoading(false);
+    }
+  }, [loadDepartments, loadRoles, loadDepartmentStats]);
 
-  // Sync users from context
+  useEffect(() => {
+    if (user) loadAllData();
+  }, [user, loadAllData]);
+
+  // Sync users
   useEffect(() => {
     if (ctxUsers && Array.isArray(ctxUsers)) {
-      setUsers(
+      setAllUsers(
         ctxUsers.map((u) => ({
           id: u._id || u.id,
           _id: u._id || u.id,
@@ -82,133 +90,121 @@ const DepartmentManagement = () => {
           firstName: u.firstName || u.first_name || "",
           lastName: u.lastName || u.last_name || "",
           email: u.email,
-        })),
+          phone: u.phone,
+          status: u.status,
+          isActive: u.isActive,
+          role: u.role,
+        }))
       );
     }
   }, [ctxUsers]);
 
-  // Sync stats from context
+  // Sync stats
   useEffect(() => {
-    if (ctxStats) setStats(ctxStats);
+    if (ctxStats) setStats((prev) => ({ ...prev, ...ctxStats }));
   }, [ctxStats]);
 
-  // Recursive component to render department tree
-  const DepartmentNode = ({ dept, level = 0 }) => {
-    const [isExpanded, setIsExpanded] = useState(true);
-
-    return (
-      <div className="dept-node" style={{ marginLeft: `${level * 20}px` }}>
-        <div className="dept-card">
-          <div className="dept-header">
-            <div className="dept-title">
-              {dept.children && dept.children.length > 0 && (
-                <button
-                  className="btn-expand"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setIsExpanded(!isExpanded);
-                  }}
-                >
-                  {isExpanded ? "▼" : "▶"}
-                </button>
-              )}
-              <h3>{dept.name}</h3>
-              <span className="badge badge-secondary">{dept.code}</span>
-            </div>
-            <div className="dept-actions">
-              <ActionButtons
-                onEdit={() => openDeptModal("edit", dept)}
-                onDelete={() => setDeleteConfirm(dept)}
-                showEdit
-                showDelete
-                title={dept.name}
-              />
-            </div>
-          </div>
-
-          <div className="dept-details">
-            <div className="dept-detail-item">
-              <span className="label">Manager:</span>
-              <span className="value">{dept.manager_name || "Unassigned"}</span>
-            </div>
-            <div className="dept-detail-item">
-              <span className="label">Staff:</span>
-              <span className="value">{dept.total_users || 0}</span>
-            </div>
-            <div className="dept-detail-item">
-              <span className="label">Status:</span>
-              <span
-                className={`status-dot ${dept.is_active ? "active" : "inactive"}`}
-              ></span>
-            </div>
-          </div>
-        </div>
-
-        {isExpanded && dept.children && dept.children.length > 0 && (
-          <div className="dept-children">
-            {dept.children.map((child) => (
-              <DepartmentNode key={child.id} dept={child} level={level + 1} />
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  // Department modal handlers
-  const openDeptModal = (mode, dept = null) => {
-    setDeptModalMode(mode);
-    setSelectedDept(dept);
-    setShowDeptModal(true);
-  };
-
-  const closeDeptModal = () => {
-    setShowDeptModal(false);
-    setSelectedDept(null);
-  };
-
-  const handleDeptSubmit = async (formData, mode) => {
-    setSaving(true);
+  // Drawer open — fetch full department data
+  const openDrawer = async (dept) => {
+    setSelectedDepartment(dept);
+    setDrawerOpen(true);
+    setDrawerLoading(true);
     try {
-      let result;
-      if (mode === "edit" && selectedDept) {
-        result = await updateDepartment(selectedDept.id, formData);
-      } else {
-        result = await createDepartment(formData);
+      const data = await loadDepartmentById(dept.id || dept._id);
+      if (data) {
+        setDrawerDepartment(data);
+        setDrawerStaff(Array.isArray(data.staff) ? data.staff : []);
       }
+    } catch (e) {
+      toast.error("Failed to load department details");
+    } finally {
+      setDrawerLoading(false);
+    }
+  };
+
+  const closeDrawer = () => {
+    setDrawerOpen(false);
+    setSelectedDepartment(null);
+    setDrawerDepartment(null);
+    setDrawerStaff([]);
+  };
+
+  const refreshDrawer = useCallback(async () => {
+    if (!selectedDepartment) return;
+    try {
+      const data = await loadDepartmentById(selectedDepartment.id || selectedDepartment._id);
+      if (data) {
+        setDrawerDepartment(data);
+        setDrawerStaff(Array.isArray(data.staff) ? data.staff : []);
+      }
+    } catch (e) {
+      // silent
+    }
+  }, [selectedDepartment, loadDepartmentById]);
+
+  // Create department
+  const handleCreateDepartment = async (formData, mode) => {
+    setCreateSaving(true);
+    try {
+      const result = await createDepartment(formData);
       if (result.success) {
-        toast.success(
-          `Department ${mode === "create" ? "created" : "updated"} successfully!`,
-        );
-        closeDeptModal();
-        const res = await loadDepartments();
-        if (res) {
-          setDepartments(Array.isArray(res.hierarchy) ? res.hierarchy : []);
-          setFlatDepartments(Array.isArray(res.flat) ? res.flat : []);
-        }
+        toast.success("Department created successfully!");
+        setShowCreateModal(false);
+        await loadAllData();
       } else {
-        setErrorPopup(result.error || { message: "Failed to save department" });
+        setErrorPopup(result.error || { message: "Failed to create department" });
       }
     } catch (err) {
-      setErrorPopup({ message: "Failed to save department" });
+      setErrorPopup({ message: "Failed to create department" });
+    } finally {
+      setCreateSaving(false);
+    }
+  };
+
+  // Save department (from drawer edit)
+  const handleSaveDepartment = async (id, formData) => {
+    setSaving(true);
+    try {
+      const result = await updateDepartment(id, formData);
+      if (result.success) {
+        toast.success("Department updated");
+        await loadAllData();
+        await refreshDrawer();
+      } else {
+        setErrorPopup(result.error || { message: "Failed to update department" });
+      }
+    } catch (err) {
+      setErrorPopup({ message: "Failed to update department" });
     } finally {
       setSaving(false);
     }
   };
 
-  // Delete handlers
-  const handleDeleteConfirm = async () => {
+  // Delete department (from drawer)
+  const handleDeleteFromDrawer = async (id) => {
+    try {
+      const result = await deleteDepartment(id);
+      if (result.success) {
+        toast.success("Department deleted");
+        closeDrawer();
+        await loadAllData();
+      } else {
+        toast.error(result.message || "Failed to delete department");
+      }
+    } catch (err) {
+      toast.error("Failed to delete department");
+    }
+  };
+
+  // Delete department (from table)
+  const handleDeleteFromTable = async () => {
     if (!deleteConfirm) return;
     try {
-      const result = await deleteDepartment(deleteConfirm.id);
+      const result = await deleteDepartment(deleteConfirm.id || deleteConfirm._id);
       if (result.success) {
         toast.success("Department deleted successfully!");
         setDeleteConfirm(null);
-        const res = await loadDepartments();
-        if (res) {
-          setDepartments(Array.isArray(res.hierarchy) ? res.hierarchy : []);
-          setFlatDepartments(Array.isArray(res.flat) ? res.flat : []);
-        }
+        await loadAllData();
       } else {
         toast.error(result.message || "Failed to delete department");
         setDeleteConfirm(null);
@@ -219,34 +215,86 @@ const DepartmentManagement = () => {
     }
   };
 
-  // Nested user creation from manager field
-  const openCreateUser = () => {
-    setShowUserModal(true);
-  };
-
-  const closeCreateUser = () => {
-    setShowUserModal(false);
-  };
-
-  const handleUserCreated = async (formData) => {
-    setSavingUser(true);
+  // Assign user to department (Add Staff)
+  const handleAssignStaff = async (userId, deptId) => {
     try {
-      const result = await createUser(formData);
+      const result = await assignUserDepartment(userId, deptId);
       if (result.success) {
-        toast.success("User created");
-        setShowUserModal(false);
-        const deptRes = await loadDepartments();
-        if (deptRes) {
-          setFlatDepartments(Array.isArray(deptRes.flat) ? deptRes.flat : []);
-        }
+        toast.success("Staff added");
+        await refreshDrawer();
       } else {
-        setErrorPopup(result.error || { message: "Failed to create user" });
+        toast.error(result.message || "Failed to add staff");
       }
     } catch (err) {
-      setErrorPopup({ message: "Failed to create user" });
-    } finally {
-      setSavingUser(false);
+      toast.error("Failed to add staff");
     }
+  };
+
+  // Remove user from department
+  const handleRemoveStaff = async (userId, deptId) => {
+    try {
+      const result = await removeUserDepartment(userId, deptId);
+      if (result.success) {
+        toast.success("Staff removed from department");
+        await refreshDrawer();
+      } else {
+        toast.error(result.message || "Failed to remove staff");
+      }
+    } catch (err) {
+      toast.error("Failed to remove staff");
+    }
+  };
+
+  // Toggle staff status
+  const handleToggleStaffStatus = async (userId) => {
+    try {
+      const result = await toggleUserStatus(userId);
+      if (result.success) {
+        await refreshDrawer();
+      }
+    } catch (err) {
+      toast.error("Failed to toggle status");
+    }
+  };
+
+  // Edit staff user (create or update)
+  const handleEditStaffUser = async (formData, mode, userIdOrDeptId) => {
+    try {
+      if (mode === "create") {
+        // Pre-assign department in formData
+        const deptId = userIdOrDeptId;
+        const result = await createUser({ ...formData, department: deptId });
+        if (result.success) {
+          toast.success("User created and added to staff");
+          await refreshDrawer();
+        } else {
+          setErrorPopup(result.error || { message: "Failed to create user" });
+        }
+      } else if (mode === "edit") {
+        const userId = userIdOrDeptId;
+        const result = await updateUser(userId, formData);
+        if (result.success) {
+          toast.success("User updated");
+          await refreshDrawer();
+        } else {
+          setErrorPopup(result.error || { message: "Failed to update user" });
+        }
+      }
+    } catch (err) {
+      setErrorPopup({ message: "Failed to save user" });
+    }
+  };
+
+  const formatDate = (d) => {
+    if (!d) return "-";
+    const date = new Date(d);
+    return isNaN(date.getTime())
+      ? "-"
+      : date.toLocaleDateString("en-GB", {
+          day: "2-digit",
+          month: "short",
+          year: "numeric",
+        });
   };
 
   return (
@@ -258,13 +306,14 @@ const DepartmentManagement = () => {
         </div>
         <button
           className="btn btn-primary btn-create"
-          onClick={() => openDeptModal("create")}
+          onClick={() => setShowCreateModal(true)}
         >
           <span className="icon">+</span>
           New Department
         </button>
       </div>
 
+      {/* Stats */}
       <div className="stats-grid">
         <div className="stat-card">
           <div className="stat-icon">🏢</div>
@@ -273,79 +322,234 @@ const DepartmentManagement = () => {
             <span className="stat-label">Total Departments</span>
           </div>
         </div>
-        <div className="stat-card">
-          <div className="stat-icon">🌳</div>
+        <div className="stat-card stat-active">
+          <div className="stat-icon">✓</div>
           <div className="stat-content">
-            <span className="stat-value">{stats.root_departments || 0}</span>
-            <span className="stat-label">Root Units</span>
+            <span className="stat-value">{stats.active_departments || 0}</span>
+            <span className="stat-label">Active</span>
+          </div>
+        </div>
+        <div className="stat-card stat-inactive">
+          <div className="stat-icon">⊘</div>
+          <div className="stat-content">
+            <span className="stat-value">{stats.inactive_departments || 0}</span>
+            <span className="stat-label">Inactive</span>
           </div>
         </div>
         <div className="stat-card">
           <div className="stat-icon">👥</div>
           <div className="stat-content">
-            <span className="stat-value">
-              {stats.users_with_department || 0}
-            </span>
-            <span className="stat-label">Assigned Staff</span>
+            <span className="stat-value">{stats.total_active_staff || 0}</span>
+            <span className="stat-label">Active Staff</span>
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-icon">👤</div>
+          <div className="stat-content">
+            <span className="stat-value">{stats.total_managers || 0}</span>
+            <span className="stat-label">Managers</span>
           </div>
         </div>
       </div>
 
       <ErrorPopup error={errorPopup} onClose={() => setErrorPopup(null)} />
 
-      <div className="department-tree-container">
+      {/* Desktop Table */}
+      <div className="table-container desktop-only">
         {loading ? (
           <div className="loading-state">
             <div className="spinner"></div>
+            <p>Loading departments...</p>
           </div>
-        ) : departments.length === 0 ? (
-          <div className="empty-state">No departments found. Create one.</div>
+        ) : flatDepartments.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-icon">🏢</div>
+            <h3>No Departments Found</h3>
+            <p>Create your first department to get started.</p>
+          </div>
         ) : (
-          <div className="tree-view">
-            {departments.map((dept) => (
-              <DepartmentNode key={dept.id} dept={dept} />
-            ))}
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Department Name</th>
+                <th>Code</th>
+                <th>Manager</th>
+                <th>Staff Count</th>
+                <th>Email</th>
+                <th>Phone</th>
+                <th>Status</th>
+                <th>Created Date</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {flatDepartments.map((dept) => {
+                const deptId = dept.id || dept._id;
+                return (
+                  <tr
+                    key={deptId}
+                    className={dept.is_active ? "" : "row-inactive"}
+                    style={{ cursor: "pointer" }}
+                    onClick={() => openDrawer(dept)}
+                  >
+                    <td>
+                      <strong style={{ color: "#0f172a" }}>{dept.name}</strong>
+                    </td>
+                    <td>
+                      <span className="badge badge-secondary">{dept.code}</span>
+                    </td>
+                    <td>
+                      {dept.manager_deactivated ? (
+                        <span style={{ color: "#dc2626", fontSize: 13 }}>Manager Deactivated</span>
+                      ) : dept.manager_name ? (
+                        dept.manager_name
+                      ) : (
+                        <span style={{ color: "#94a3b8" }}>-</span>
+                      )}
+                    </td>
+                    <td>{dept.staff_count != null ? dept.staff_count : dept.total_users || 0}</td>
+                    <td>{dept.email || "-"}</td>
+                    <td>{dept.phone || "-"}</td>
+                    <td>
+                      <span
+                        className={`status-badge ${dept.is_active ? "status-active" : "status-inactive"}`}
+                      >
+                        {dept.is_active ? "Active" : "Inactive"}
+                      </span>
+                    </td>
+                    <td>{formatDate(dept.created_at || dept.createdAt)}</td>
+                    <td onClick={(e) => e.stopPropagation()}>
+                      <ActionButtons
+                        onEdit={() => openDrawer(dept)}
+                        onDelete={() => setDeleteConfirm(dept)}
+                        showEdit
+                        showDelete
+                        title={dept.name}
+                      />
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* Mobile Cards */}
+      <div className="mobile-cards-container mobile-only">
+        {loading ? (
+          <div className="loading-state">
+            <div className="spinner"></div>
+            <p>Loading departments...</p>
+          </div>
+        ) : flatDepartments.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-icon">🏢</div>
+            <h3>No Departments Found</h3>
+            <p>Create your first department to get started.</p>
+          </div>
+        ) : (
+          <div className="users-cards-grid">
+            {flatDepartments.map((dept) => {
+              const deptId = dept.id || dept._id;
+              return (
+                <div
+                  key={deptId}
+                  className={`user-card ${dept.is_active ? "" : "card-inactive"}`}
+                  style={{ cursor: "pointer" }}
+                  onClick={() => openDrawer(dept)}
+                >
+                  <div className="user-card-header">
+                    <div className="user-card-title">
+                      <span className="user-card-name">{dept.name}</span>
+                      <span className="badge badge-secondary">{dept.code}</span>
+                    </div>
+                    <span
+                      className={`status-badge ${dept.is_active ? "status-active" : "status-inactive"}`}
+                    >
+                      {dept.is_active ? "Active" : "Inactive"}
+                    </span>
+                  </div>
+                  <div className="user-card-body">
+                    <div className="user-card-field">
+                      <span className="field-label">Manager</span>
+                      <span className="field-value">
+                        {dept.manager_deactivated ? (
+                          <span style={{ color: "#dc2626", fontSize: 12 }}>Manager Deactivated</span>
+                        ) : dept.manager_name || "-"}
+                      </span>
+                    </div>
+                    <div className="user-card-field">
+                      <span className="field-label">Staff</span>
+                      <span className="field-value">{dept.staff_count != null ? dept.staff_count : dept.total_users || 0}</span>
+                    </div>
+                    <div className="user-card-field">
+                      <span className="field-label">Email</span>
+                      <span className="field-value">{dept.email || "-"}</span>
+                    </div>
+                    <div className="user-card-field">
+                      <span className="field-label">Phone</span>
+                      <span className="field-value">{dept.phone || "-"}</span>
+                    </div>
+                  </div>
+                  <div className="user-card-actions" onClick={(e) => e.stopPropagation()}>
+                    <ActionButtons
+                      onEdit={() => openDrawer(dept)}
+                      onDelete={() => setDeleteConfirm(dept)}
+                      showEdit
+                      showDelete
+                      title={dept.name}
+                    />
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
 
-      {/* Department form modal */}
+      {/* Create Department Modal */}
       <DepartmentFormModal
-        isOpen={showDeptModal}
-        mode={deptModalMode}
-        initialData={selectedDept}
-        departments={flatDepartments}
-        users={users}
-        onClose={closeDeptModal}
-        onSubmit={handleDeptSubmit}
-        loading={saving}
-        allowCreateManagerUser={true}
-        onCreateManagerUser={openCreateUser}
-      />
-
-      {/* Nested User creation modal (from department manager field) */}
-      <UserFormModal
-        isOpen={showUserModal}
+        isOpen={showCreateModal}
         mode="create"
         initialData={null}
-        roles={roles}
         departments={flatDepartments}
-        onClose={closeCreateUser}
-        onSubmit={handleUserCreated}
-        loading={savingUser}
-        allowCreateDepartment={false}
+        users={allUsers}
+        onClose={() => setShowCreateModal(false)}
+        onSubmit={handleCreateDepartment}
+        loading={createSaving}
+        allowCreateManagerUser={true}
       />
 
-      {/* Delete confirmation modal */}
+      {/* Department Details Drawer */}
+      <DepartmentDrawer
+        isOpen={drawerOpen}
+        onClose={closeDrawer}
+        department={drawerDepartment || selectedDepartment}
+        staff={drawerStaff}
+        allUsers={allUsers}
+        roles={roles}
+        flatDepartments={flatDepartments}
+        onSaveDepartment={handleSaveDepartment}
+        onDeleteDepartment={handleDeleteFromDrawer}
+        onRefresh={refreshDrawer}
+        onAssignStaff={handleAssignStaff}
+        onRemoveStaff={handleRemoveStaff}
+        onToggleStaffStatus={handleToggleStaffStatus}
+        onEditStaff={handleEditStaffUser}
+        saving={saving}
+      />
+
+      {/* Delete Confirm (from table) */}
       <ConfirmModal
         isOpen={!!deleteConfirm}
         title="Delete Department"
         message={
           deleteConfirm
-            ? `Are you sure you want to delete "${deleteConfirm.name}"? This action cannot be undone.`
+            ? `Are you sure you want to delete "${deleteConfirm.name}"? This will deactivate the department and its sub-departments.`
             : ""
         }
-        onConfirm={handleDeleteConfirm}
+        onConfirm={handleDeleteFromTable}
         onCancel={() => setDeleteConfirm(null)}
         confirmText="Delete"
         cancelText="Cancel"

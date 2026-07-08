@@ -227,7 +227,10 @@ const SearchableSelect = ({
                             role="option"
                             aria-selected={String(opt[normalizedValueField]) === String(value)}
                         >
-                            <span className="ss-option-label">{opt[normalizedLabelField]}</span>
+                            <span className="ss-option-label">
+                                {opt[normalizedLabelField]}
+                                {opt._isInactive && <span className="ss-inactive-badge">Inactive</span>}
+                            </span>
                             {String(opt[normalizedValueField]) === String(value) && (
                                 <span className="ss-check">✓</span>
                             )}

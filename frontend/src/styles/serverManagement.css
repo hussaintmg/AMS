@@ -428,7 +428,74 @@
   border: 1px solid #e2e8f0;
   border-radius: 16px;
   box-shadow: 0 20px 45px rgba(15, 23, 42, 0.22);
-  padding: 22px;
+  padding: 0;
+}
+
+.sm-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 18px 22px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+  border-radius: 16px 16px 0 0;
+}
+
+.sm-modal-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.sm-modal-close {
+  background: none;
+  border: none;
+  font-size: 22px;
+  line-height: 1;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: all 0.15s;
+}
+
+.sm-modal-close:hover {
+  color: #475569;
+  background: #e2e8f0;
+}
+
+.sm-modal-body {
+  padding: 20px 22px;
+}
+
+.sm-modal-body label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #334155;
+}
+
+.sm-modal-body .form-input {
+  margin-top: 2px;
+}
+
+.sm-modal-body p {
+  margin: 0;
+  color: #475569;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.sm-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 16px 22px;
+  border-top: 1px solid #e2e8f0;
+  background: #f8fafc;
+  border-radius: 0 0 16px 16px;
 }
 
 .sm-roles-layout {

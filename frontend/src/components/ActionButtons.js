@@ -1,5 +1,5 @@
 import React from 'react';
-import { PencilSquareIcon, TrashIcon, EyeIcon, NoSymbolIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
+import { SquarePen, Trash2, Eye, Ban, CheckCircle } from 'lucide-react';
 import '../styles/userManagement.css';
 
 const ActionButtons = ({
@@ -24,34 +24,34 @@ const ActionButtons = ({
             {showView && onView && (
                 <button
                     className="btn-action btn-view"
-                    onClick={(e) => { e.stopPropagation(); onView(); }}
+                    onClick={(e) => { e.stopPropagation(); onView(e); }}
                     title={`View ${title}`}
                 >
-                    <EyeIcon className="action-icon" />
+                    <Eye size={18} className="action-icon" />
                 </button>
             )}
 
             {showEdit && onEdit && (
                 <button
                     className="btn-action btn-edit"
-                    onClick={(e) => { e.stopPropagation(); onEdit(); }}
+                    onClick={(e) => { e.stopPropagation(); onEdit(e); }}
                     title={`Edit ${title}`}
                 >
-                    <PencilSquareIcon className="action-icon" />
+                    <SquarePen size={18} className="action-icon" />
                 </button>
             )}
 
             {showToggle && onToggle && (
                 <button
                     className={`btn-action ${status ? 'btn-deactivate' : 'btn-activate'}`}
-                    onClick={(e) => { e.stopPropagation(); if (!disableToggle) onToggle(); }}
+                    onClick={(e) => { e.stopPropagation(); if (!disableToggle) onToggle(e); }}
                     title={disableToggle ? (toggleDisabledTitle || 'Status change disabled') : (status ? 'Deactivate' : 'Activate')}
                     disabled={disableToggle}
                 >
                     {status ? (
-                        <NoSymbolIcon className="action-icon" />
+                        <Ban size={18} className="action-icon" />
                     ) : (
-                        <CheckCircleIcon className="action-icon" />
+                        <CheckCircle size={18} className="action-icon" />
                     )}
                 </button>
             )}
@@ -60,7 +60,7 @@ const ActionButtons = ({
                 <button
                     key={index}
                     className={`btn-action ${action.className || ''}`}
-                    onClick={(e) => { e.stopPropagation(); action.onClick(); }}
+                    onClick={(e) => { e.stopPropagation(); action.onClick(e); }}
                     title={action.title}
                 >
                     {action.icon}
@@ -70,11 +70,11 @@ const ActionButtons = ({
             {showDelete && onDelete && (
                 <button
                     className="btn-action btn-delete"
-                    onClick={(e) => { e.stopPropagation(); if (!disableDelete) onDelete(); }}
+                    onClick={(e) => { e.stopPropagation(); if (!disableDelete) onDelete(e); }}
                     title={disableDelete ? (deleteDisabledTitle || 'Delete disabled') : `Delete ${title}`}
                     disabled={disableDelete}
                 >
-                    <TrashIcon className="action-icon" />
+                    <Trash2 size={18} className="action-icon" />
                 </button>
             )}
         </div>

@@ -45,6 +45,7 @@ import TableEnhancer from './components/TableEnhancer';
 import MasterDataHub from './pages/MasterDataHub';
 import ServerManagement from './pages/ServerManagement';
 import Logs from './pages/Logs';
+import EmailTemplates from './pages/EmailTemplates';
 import NoAccess from './pages/NoAccess';
 import { getFirstAllowedPage, canViewPage } from './utils/permissions';
 
@@ -122,6 +123,7 @@ const AppLayout = () => {
                     <Route path="admin/departments" element={<ProtectedPage path="/admin/departments"><DepartmentManagement /></ProtectedPage>} />
                     <Route path="admin/statuses" element={<ProtectedPage path="/admin/statuses"><StatusManagement /></ProtectedPage>} />
                     <Route path="settings" element={<ProtectedPage path="/settings"><Settings /></ProtectedPage>} />
+                    <Route path="email/*" element={<ProtectedPage path="/email"><EmailTemplates /></ProtectedPage>} />
                     <Route path="server-management" element={<ProtectedPage path="/server-management"><ServerManagement /></ProtectedPage>} />
                     <Route path="logs" element={<ProtectedPage path="/logs"><Logs /></ProtectedPage>} />
                     <Route path="*" element={<Navigate to={getFirstAllowedPage(effectivePermissions)} replace />} />

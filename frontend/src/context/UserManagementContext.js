@@ -233,16 +233,55 @@ export function UserManagementProvider({ children }) {
         }
     }, [loadDepartments]);
 
+    const loadDepartmentById = useCallback(async (id) => {
+        try {
+            const res = await adminAPI.getDepartment(id);
+            const data = res.data.data;
+            return data || null;
+        } catch (err) {
+            showApiError(err, 'Failed to load department');
+            throw err;
+        }
+    }, []);
+
+    const assignUserDepartment = useCallback(async (userId, deptId) => {
+        try {
+            const res = await adminAPI.assignDepartment(userId, deptId);
+            ensureSuccess(res, 'Department assigned');
+            showApiSuccess(res, 'Department assigned');
+            return { success: true };
+        } catch (err) {
+            showApiError(err, 'Failed to assign department');
+            return { success: false, message: getErrorMessage(err, 'Failed to assign department') };
+        }
+    }, []);
+
+    const removeUserDepartment = useCallback(async (userId, deptId) => {
+        try {
+            const res = await adminAPI.removeDepartment(userId, deptId);
+            ensureSuccess(res, 'User removed from department');
+            showApiSuccess(res, 'User removed from department');
+            return { success: true };
+        } catch (err) {
+            showApiError(err, 'Failed to remove user from department');
+            return { success: false, message: getErrorMessage(err, 'Failed to remove user from department') };
+        }
+    }, []);
+
     const value = useMemo(() => ({
         users, roles, departments, stats,
         loading, saving, error,
         setUsers, setRoles, setDepartments,
         loadUsers, loadRoles, loadDepartments, loadStats, loadDepartmentStats, loadReferenceData,
+        loadDepartmentById,
+        assignUserDepartment, removeUserDepartment,
         createUser, updateUser, deleteUser, toggleUserStatus,
         createRole,
         createDepartment, updateDepartment, deleteDepartment
     }), [users, roles, departments, stats, loading, saving, error,
         loadUsers, loadRoles, loadDepartments, loadStats, loadDepartmentStats, loadReferenceData,
+        loadDepartmentById,
+        assignUserDepartment, removeUserDepartment,
         createUser, updateUser, deleteUser, toggleUserStatus,
         createRole, createDepartment, updateDepartment, deleteDepartment]);
 

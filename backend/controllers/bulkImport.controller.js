@@ -8,9 +8,18 @@ const { AppError } = require('../middleware/errorHandler');
 const { parseSpreadsheet } = require('../utils/bulkImport.parse');
 const { query } = require('../config/database');
 const { normalizePhone } = require('../utils/phone.util');
-const LeadRepository = require('../repositories/LeadRepository');
+const Lead = require('../models/Lead.model');
+const LeadSource = require('../models/LeadSource.model');
 
-const leadRepo = new LeadRepository();
+async function generateLeadNo() {
+  const lastLead = await Lead.findOne({ leadNo: { $regex: /^LEAD-/ } }).sort({ createdAt: -1 }).lean();
+  let nextNum = 1;
+  if (lastLead && lastLead.leadNo) {
+    const match = lastLead.leadNo.match(/LEAD-(\d+)/);
+    if (match) nextNum = parseInt(match[1], 10) + 1;
+  }
+  return `LEAD-${String(nextNum).padStart(6, '0')}`;
+}
 
 const TEMPLATE_SPECS = {
     leads: {
@@ -128,20 +137,15 @@ function buildTemplateMatrix(spec) {
 }
 
 async function resolveSourceId(row) {
-    const sid = String(row.source_id || '').trim();
-    if (sid && !Number.isNaN(parseInt(sid, 10))) {
-        const rows = await query('SELECT id FROM lead_sources WHERE id = ? AND is_active = 1', [
-            parseInt(sid, 10)
-        ]);
-        if (rows.length) return rows[0].id;
-    }
-    const name = String(row.source || '').trim();
-    if (!name) return null;
-    const rows = await query(
-        'SELECT id FROM lead_sources WHERE is_active = 1 AND LOWER(TRIM(name)) = LOWER(TRIM(?)) LIMIT 1',
-        [name]
-    );
-    return rows.length ? rows[0].id : null;
+  const sid = String(row.source_id || '').trim();
+  if (sid && !Number.isNaN(parseInt(sid, 10))) {
+    const source = await LeadSource.findById(sid).lean();
+    if (source) return source._id;
+  }
+  const name = String(row.source || '').trim();
+  if (!name) return null;
+  const source = await LeadSource.findOne({ isActive: true, name: { $regex: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } }).lean();
+  return source ? source._id : null;
 }
 
 exports.downloadTemplate = async (req, res, next) => {
@@ -212,26 +216,21 @@ exports.importLeads = async (req, res, next) => {
             }
             try {
                 const sourceId = await resolveSourceId(row);
+                const leadNo = await generateLeadNo();
                 const leadData = {
-                    first_name: first,
-                    last_name: last,
-                    email: row.email || null,
+                    leadNo,
+                    customerName: `${first} ${last}`.trim(),
+                    email: row.email || '',
                     phone: normalizePhone(phone),
-                    alternate_phone: null,
-                    address: null,
-                    city: row.city || null,
-                    state: null,
-                    postal_code: null,
-                    source_id: sourceId,
-                    status: row.status || 'new',
-                    priority: row.priority || 'medium',
-                    interested_in: row.interested_in || null,
-                    budget_range: null,
-                    notes: row.notes || null,
-                    assigned_to: userId,
-                    created_by: userId
+                    source: sourceId,
+                    status: row.status || '',
+                    description: row.notes || '',
+                    leadValue: row.budget_range ? parseFloat(row.budget_range) || 0 : 0,
+                    assignedTo: userId,
+                    createdBy: userId,
+                    activities: [{ type: 'created', description: `Lead ${leadNo} created via import`, performedBy: userId, performedAt: new Date() }],
                 };
-                await leadRepo.create(leadData);
+                await Lead.create(leadData);
                 created += 1;
             } catch (e) {
                 logger.warn(`importLeads row ${rowNum}`, e);

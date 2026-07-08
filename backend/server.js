@@ -56,6 +56,7 @@ const expensesRoutes = require("./routes/expenses.routes");
 const ledgerRoutes = require("./routes/ledger.routes");
 const serverManagementRoutes = require("./routes/server-management.routes");
 const logsRoutes = require("./routes/logs.routes");
+const emailRoutes = require("./routes/email.routes");
 
 const app = express();
 const server = http.createServer(app);
@@ -251,6 +252,7 @@ app.use("/api/expenses", expensesRoutes);
 app.use("/api/ledger", ledgerRoutes);
 app.use("/api/server-management", serverManagementRoutes);
 app.use("/api/logs", logsRoutes);
+app.use("/api/email", emailRoutes);
 
 // 404 Handler
 app.use((req, res) => {
@@ -267,6 +269,18 @@ const startServer = async () => {
     logger.info("MongoDB connection established");
 
     initSocket(server);
+
+    const fs = require('fs');
+    const emailAssetDirs = [
+      path.join(__dirname, 'uploads', 'email-assets'),
+      path.join(__dirname, 'uploads', 'email-assets', 'themes'),
+      path.join(__dirname, 'uploads', 'email-assets', 'components'),
+      path.join(__dirname, 'uploads', 'email-assets', 'inline-images'),
+    ];
+    emailAssetDirs.forEach(dir => fs.mkdirSync(dir, { recursive: true }));
+
+    const emailQueue = require('./services/emailQueue.service');
+    emailQueue.startQueue();
 
     server.listen(PORT, () => {
       logger.info(`AMS API Server running on port ${PORT}`);

@@ -26,9 +26,21 @@ const Page = require('./Page.model');
 const BrandingSetting = require('./BrandingSetting.model');
 const Department = require('./Department.model');
 const Log = require('./mongo/Log.model');
-// ApiLog and AuditLog are deprecated — use single Log model instead
-// const ApiLog = require('./ApiLog.model');
-// const AuditLog = require('./AuditLog.model');
+const StatusCollection = require('./StatusCollection.model');
+const StatusItem = require('./StatusItem.model');
+const LeadSource = require('./LeadSource.model');
+const LeadType = require('./LeadType.model');
+const LeadPriority = require('./LeadPriority.model');
+const LeadCity = require('./LeadCity.model');
+const EmailTemplate = require('./EmailTemplate.model');
+const EmailTemplateVersion = require('./EmailTemplateVersion.model');
+const EmailUsage = require('./EmailUsage.model');
+const EmailLog = require('./EmailLog.model');
+const EmailQueue = require('./EmailQueue.model');
+const EmailAsset = require('./EmailAsset.model');
+const EmailComponent = require('./EmailComponent.model');
+const EmailVariable = require('./EmailVariable.model');
+const EmailConfig = require('./EmailConfig.model');
 
 module.exports = {
   Role,
@@ -59,6 +71,19 @@ module.exports = {
   BrandingSetting,
   Department,
   Log,
-  // ApiLog,
-  // AuditLog
+  StatusCollection,
+  StatusItem,
+  LeadSource,
+  LeadType,
+  LeadPriority,
+  LeadCity,
+  EmailTemplate,
+  EmailTemplateVersion,
+  EmailUsage,
+  EmailLog,
+  EmailQueue,
+  EmailAsset,
+  EmailComponent,
+  EmailVariable,
+  EmailConfig,
 };

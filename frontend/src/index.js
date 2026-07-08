@@ -14,6 +14,7 @@ import { ApiProvider } from './context/ApiProvider';
 import { AppDataProvider } from './context/AppDataContext';
 import { ServerManagementProvider } from './context/ServerManagementContext';
 import { UserManagementProvider } from './context/UserManagementContext';
+import { StatusManagementProvider } from './context/StatusManagementContext';
 import { ProfileProvider } from './context/ProfileContext';
 import { LogsProvider } from './context/LogsContext';
 import App from './App';
@@ -29,6 +30,7 @@ root.render(
                         <AppDataProvider>
                             <ServerManagementProvider>
                                 <UserManagementProvider>
+                                    <StatusManagementProvider>
                                     <LogsProvider>
                                         <ProfileProvider>
                                         <Toaster
@@ -41,6 +43,7 @@ root.render(
                                         <App />
                                     </ProfileProvider>
                                     </LogsProvider>
+                                    </StatusManagementProvider>
                                 </UserManagementProvider>
                             </ServerManagementProvider>
                         </AppDataProvider>

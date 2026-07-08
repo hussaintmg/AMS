@@ -3,7 +3,7 @@
  */
 
 import React, { useRef, useState, useCallback } from 'react';
-import { ArrowUpTrayIcon, DocumentArrowDownIcon } from '@heroicons/react/24/outline';
+import { Upload, Download } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { getBulkImportSampleUrl, BULK_IMPORT_DOWNLOAD_NAMES } from '../constants/bulkImportSamples';
 import { runClientBulkImport } from '../utils/bulkImportClient';
@@ -207,7 +207,7 @@ export default function BulkUploadModal({
                         onDragLeave={() => setDragOver(false)}
                         onDrop={onDrop}
                     >
-                        <ArrowUpTrayIcon style={{ width: 40, height: 40, color: '#2563eb', margin: '0 auto' }} />
+                        <Upload size={40} style={{ color: '#2563eb', margin: '0 auto' }} />
                         <p>
                             <strong>Drag and drop</strong> your file here, or click to browse
                         </p>
@@ -227,7 +227,7 @@ export default function BulkUploadModal({
                             disabled={downloading}
                             onClick={() => downloadTemplate('csv')}
                         >
-                            <DocumentArrowDownIcon style={{ width: 18, height: 18, marginRight: 6 }} />
+                            <Download size={20} style={{ marginRight: 6 }} />
                             Sample CSV
                         </button>
                         <button
@@ -236,7 +236,7 @@ export default function BulkUploadModal({
                             disabled={downloading}
                             onClick={() => downloadTemplate('xlsx')}
                         >
-                            <DocumentArrowDownIcon style={{ width: 18, height: 18, marginRight: 6 }} />
+                            <Download size={20} style={{ marginRight: 6 }} />
                             Sample XLSX
                         </button>
                     </div>

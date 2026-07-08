@@ -29,7 +29,8 @@ const pages = [
   { key: 'sales_master', label: 'Sales Master Data', path: '/sales-master', module: 'sales-master', icon: 'PanelTop', group: 'Master Data', isCore: false, isActive: true },
   { key: 'profile', label: 'Profile', path: '/profile', module: 'profile', icon: 'UserCircle', group: 'Account', isCore: false, isActive: true },
   { key: 'order_form_upload', label: 'Order Form Upload', path: '/uploader/order-form', module: 'uploader', icon: 'UploadCloud', group: 'Uploader', isCore: false, isActive: true },
-  { key: 'server_management', label: 'Server Management', path: '/server-management', module: 'server-management', icon: 'ServerCog', group: 'System', isCore: true, isActive: true }
+  { key: 'server_management', label: 'Server Management', path: '/server-management', module: 'server-management', icon: 'ServerCog', group: 'System', isCore: true, isActive: true },
+  { key: 'email_templates', label: 'Email Templates', path: '/email', module: 'email', icon: 'Mail', group: 'Communication', isCore: false, isActive: true }
 ];
 
 export default pages;

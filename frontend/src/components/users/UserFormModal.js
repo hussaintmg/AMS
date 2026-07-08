@@ -17,6 +17,7 @@ function UserFormModal({
   onOpenCreateRole,
   createdRoleId,
   keyboardDisabled = false,
+  preselectDepartment = "",
 }) {
   const [formData, setFormData] = useState({
     email: "",
@@ -40,7 +41,7 @@ function UserFormModal({
         lastName: "",
         phone: "",
         roleId: "",
-        department: "",
+        department: preselectDepartment || "",
         jobTitle: "",
       });
     } else if (initialData) {
@@ -66,7 +67,7 @@ function UserFormModal({
       });
     }
     setErrors({});
-  }, [isOpen, mode, initialData]);
+  }, [isOpen, mode, initialData, preselectDepartment]);
 
   useEffect(() => {
     if (!isOpen || !createdRoleId) return;

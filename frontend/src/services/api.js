@@ -127,6 +127,12 @@ export const serverManagementAPI = {
         `/server-management/roles/${id}/logs-permissions`,
         payload && typeof payload === 'object' && 'logsPermissions' in payload ? payload : { logsPermissions: payload },
     ),
+    getLeadAssignmentRoles: () => api.get('/server-management/lead-assignment-roles'),
+    updateLeadAssignmentRoles: (roles) => api.put('/server-management/lead-assignment-roles', { roles }),
+    getSetting: (key) => api.get(`/server-management/settings/${key}`),
+    saveSetting: (key, value) => api.put('/server-management/settings', { key, value }),
+    getLeadTypeMapping: () => api.get('/server-management/settings/lead_type_mapping'),
+    updateLeadTypeMapping: (value) => api.put('/server-management/settings', { key: 'lead_type_mapping', value }),
 };
 
 // Dashboard
@@ -152,15 +158,35 @@ export const leadAPI = {
     create: (data) => api.post('/leads', data),
     update: (id, data) => api.put(`/leads/${id}`, data),
     delete: (id) => api.delete(`/leads/${id}`),
-    getSources: () => api.get('/leads/sources/list'),
-    getFilterOptions: () => api.get('/leads/filter-options'),
-    getAnalytics: () => api.get('/leads/analytics'),
+    getMeta: () => api.get('/leads/meta'),
     getStats: () => api.get('/leads/stats'),
-    export: (params) => api.get('/leads/export', { params, responseType: 'blob' }),
-    convert: (id) => api.post(`/leads/${id}/convert`)
+    getActivities: (id) => api.get(`/leads/${id}/activities`),
+    assign: (id, data) => api.put(`/leads/${id}/assign`, data),
+    changeStatus: (id, data) => api.put(`/leads/${id}/status`, data),
+    addNote: (id, data) => api.post(`/leads/${id}/notes`, data),
+    convert: (id) => api.post(`/leads/${id}/convert`),
+    markLost: (id, data) => api.post(`/leads/${id}/lost`, data),
 };
 
-// Customers
+export const leadMasterAPI = {
+    getStats: () => api.get('/lead-master/stats'),
+    getAll: (type, params) => api.get(`/lead-master/${type}`, { params }),
+    create: (type, data) => api.post(`/lead-master/${type}`, data),
+    update: (type, id, data) => api.put(`/lead-master/${type}/${id}`, data),
+    delete: (type, id) => api.delete(`/lead-master/${type}/${id}`),
+};
+
+export const leadAssignmentRolesAPI = {
+    get: () => api.get('/server-management/lead-assignment-roles'),
+    update: (roles) => api.put('/server-management/lead-assignment-roles', { roles }),
+};
+
+export const customerRoleConfigAPI = {
+    get: () => api.get('/server-management/customer-role-config'),
+    update: (data) => api.put('/server-management/customer-role-config', data),
+};
+
+// Customers (MongoDB)
 export const customerAPI = {
     getAll: (params) => api.get('/customers', { params }),
     getAllForDropdown: () => api.get('/customers/all'),
@@ -170,7 +196,8 @@ export const customerAPI = {
     delete: (id) => api.delete(`/customers/${id}`),
     toggleStatus: (id) => api.patch(`/customers/${id}/status`),
     getStats: () => api.get('/customers/stats'),
-    getCities: () => api.get('/customers/cities')
+    getCities: () => api.get('/customers/cities'),
+    getMeta: () => api.get('/customers/meta')
 };
 
 // Vehicles
@@ -369,6 +396,7 @@ export const adminAPI = {
     toggleUserStatus: (id) => api.patch(`/admin/users/${id}/status`),
     assignRole: (id, roleId) => api.patch(`/admin/users/${id}/role`, { roleId }),
     assignDepartment: (id, deptId) => api.patch(`/admin/users/${id}/department`, { deptId }),
+    removeDepartment: (id, deptId) => api.delete(`/admin/users/${id}/department/${deptId}`),
     getUserStats: () => api.get('/admin/users/stats'),
 
     // Roles
@@ -393,7 +421,21 @@ export const adminAPI = {
     assignDepartmentManager: (id, userId) => api.patch(`/admin/departments/${id}/manager`, { userId }),
     getDepartmentStats: () => api.get('/admin/departments/stats'),
 
-    // Statuses
+    // Status Collections (new system)
+    getStatusCollections: (params) => api.get('/admin/status-collections', { params }),
+    getStatusCollectionStats: () => api.get('/admin/status-collections/stats'),
+    getStatusCollection: (id) => api.get(`/admin/status-collections/${id}`),
+    createStatusCollection: (data) => api.post('/admin/status-collections', data),
+    updateStatusCollection: (id, data) => api.put(`/admin/status-collections/${id}`, data),
+    deleteStatusCollection: (id) => api.delete(`/admin/status-collections/${id}`),
+    getStatusCollectionItems: (id, params) => api.get(`/admin/status-collections/${id}/items`, { params }),
+    createStatusCollectionItem: (id, data) => api.post(`/admin/status-collections/${id}/items`, data),
+    updateStatusItem: (itemId, data) => api.put(`/admin/status-items/${itemId}`, data),
+    deleteStatusItem: (itemId) => api.delete(`/admin/status-items/${itemId}`),
+    toggleStatusItem: (itemId) => api.patch(`/admin/status-items/${itemId}/toggle`),
+    setDefaultStatusItem: (itemId) => api.patch(`/admin/status-items/${itemId}/default`),
+
+    // Old status table routes (backward compat)
     getStatuses: () => api.get('/admin/statuses'),
     getStatusesByTable: (table, params) => api.get(`/admin/statuses/table/${table}`, { params }),
     createStatus: (data) => api.post('/admin/statuses', data),
@@ -646,6 +688,89 @@ export const logsAPI = {
     getAuditLog: (id) => api.get(`/logs/audit-logs/${id}`),
     deleteAuditLog: (id) => api.delete(`/logs/audit-logs/${id}`),
     getAuditLogStats: (params) => api.get('/logs/audit-logs/stats', { params }),
+};
+
+// Email Templates
+export const emailAPI = {
+  // Templates
+  getTemplates: (params) => api.get('/email/templates', { params }),
+  getTemplateStats: () => api.get('/email/templates/stats'),
+  getTemplate: (id) => api.get(`/email/templates/${id}`),
+  createTemplate: (data) => api.post('/email/templates', data),
+  updateTemplate: (id, data) => api.put(`/email/templates/${id}`, data),
+  deleteTemplate: (id) => api.delete(`/email/templates/${id}`),
+  activateTemplate: (id) => api.patch(`/email/templates/${id}/activate`),
+  deactivateTemplate: (id) => api.patch(`/email/templates/${id}/deactivate`),
+
+  // Template Versions
+  getVersions: (templateId) => api.get(`/email/templates/${templateId}/versions`),
+  restoreVersion: (versionId) => api.post(`/email/templates/versions/${versionId}/restore`),
+
+  // Usage
+  getUsages: (params) => api.get('/email/usage', { params }),
+  getUsage: (id) => api.get(`/email/usage/${id}`),
+  createUsage: (data) => api.post('/email/usage', data),
+  updateUsage: (id, data) => api.put(`/email/usage/${id}`, data),
+  deleteUsage: (id) => api.delete(`/email/usage/${id}`),
+  validateUsage: (id) => api.post(`/email/usage/${id}/validate`),
+
+  // Variables
+  getVariables: (params) => api.get('/email/variables', { params }),
+  getVariable: (id) => api.get(`/email/variables/${id}`),
+  createVariable: (data) => api.post('/email/variables', data),
+  updateVariable: (id, data) => api.put(`/email/variables/${id}`, data),
+  deleteVariable: (id) => api.delete(`/email/variables/${id}`),
+  toggleVariable: (id) => api.patch(`/email/variables/${id}/toggle`),
+  importVariables: (formData) => api.post('/email/variables/import', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }),
+  searchVariables: (q) => api.get('/email/variables/search', { params: { q } }),
+
+  // Assets
+  getAssets: (params) => api.get('/email/assets', { params }),
+  uploadAssets: (formData) => api.post('/email/assets/upload', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }),
+  getAsset: (id) => api.get(`/email/assets/${id}`),
+  updateAsset: (id, data) => api.put(`/email/assets/${id}`, data),
+  replaceAsset: (id, formData) => api.put(`/email/assets/${id}/replace`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }),
+  deleteAsset: (id) => api.delete(`/email/assets/${id}`),
+
+  // Preview
+  previewEmail: (data) => api.post('/email/preview', data),
+  validatePreview: (data) => api.post('/email/preview/validate', data),
+
+  // Test Send
+  sendTestEmail: (data) => api.post('/email/test-send', data),
+
+  // Components
+  getComponents: (params) => api.get('/email/components', { params }),
+  getComponent: (id) => api.get(`/email/components/${id}`),
+  createComponent: (data) => api.post('/email/components', data),
+  updateComponent: (id, data) => api.put(`/email/components/${id}`, data),
+  deleteComponent: (id) => api.delete(`/email/components/${id}`),
+  duplicateComponent: (id) => api.post(`/email/components/${id}/duplicate`),
+  previewComponent: (id, data) => api.post(`/email/components/${id}/preview`, data),
+
+  // SMTP Config
+  getEmailConfig: () => api.get('/email/config'),
+  saveEmailConfig: (data) => api.put('/email/config', data),
+  testEmailConnection: () => api.post('/email/config/test'),
+
+  // Queue
+  getQueue: (params) => api.get('/email/queue', { params }),
+  getQueueStats: () => api.get('/email/queue/stats'),
+  retryAllQueue: () => api.post('/email/queue/retry-all'),
+  clearSentQueue: () => api.delete('/email/queue/clear-sent'),
+  deleteQueueItem: (id) => api.delete(`/email/queue/${id}`),
+  retryQueueItem: (id) => api.post(`/email/queue/${id}/retry`),
+
+  // Logs
+  getEmailLogs: (params) => api.get('/email/logs', { params }),
+  getEmailLogStats: () => api.get('/email/logs/stats'),
+  getEmailLog: (id) => api.get(`/email/logs/${id}`),
 };
 
 export default api;

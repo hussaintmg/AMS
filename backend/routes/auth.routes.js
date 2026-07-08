@@ -8,6 +8,7 @@ const logger = require('../utils/logger');
 const { getPublicFileUrl } = require('../utils/url');
 const { sendMail } = require('../utils/mailer');
 const forgotPasswordEmailTemplate = require('../constants/forgotPasswordEmailTemplate');
+const emailSender = require('../services/emailSender.service');
 const { getPermissionSettings, resolvePagePermissions } = require('../utils/permissionResolver');
 
 const RESET_WINDOW_MS = 60 * 60 * 1000;
@@ -425,24 +426,44 @@ router.post('/forgot-password', async (req, res, next) => {
       };
       await user.save();
 
-      const template = forgotPasswordEmailTemplate({
-        firstName: user.firstName,
-        lastName: user.lastName,
-        code,
-        expiresInMinutes: Math.floor(RESET_WINDOW_MS / (60 * 1000))
-      });
+      const expiresInMinutes = Math.floor(RESET_WINDOW_MS / (60 * 1000));
+      const resetPasswordLink = `${process.env.APP_URL || ''}/reset-password?token=${forgotToken}`;
+      try {
+        await emailSender.sendTemplateEmail({
+          usageKey: 'forgot_password',
+          to: user.email,
+          context: {
+            user: user.toObject ? user.toObject() : user,
+            auth: {
+              resetCode: code,
+              resetPasswordLink,
+              forgotToken,
+              expiresInMinutes,
+            },
+            resetPasswordLink,
+            resetCode: code,
+            forgotToken,
+            expiresInMinutes,
+          },
+        });
+      } catch (templateError) {
+        logger.warn(`Forgot password email template unavailable, using default: ${templateError.message}`);
+        const template = forgotPasswordEmailTemplate({
+          firstName: user.firstName,
+          lastName: user.lastName,
+          code,
+          expiresInMinutes
+        });
 
-      await sendMail({
-        to: user.email,
-        subject: template.subject,
-        html: template.html,
-        text: template.text
-      });
+        await sendMail({
+          to: user.email,
+          subject: template.subject,
+          html: template.html,
+          text: template.text
+        });
+      }
 
       responseData.forgotToken = forgotToken;
-      if (!isProduction) {
-        responseData.code = code;
-      }
 
       logger.info(`Password reset email sent for ${email}`);
     }

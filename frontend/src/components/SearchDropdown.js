@@ -6,17 +6,17 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-    UserIcon,
-    UsersIcon,
-    TruckIcon,
-    WrenchIcon,
-    DocumentTextIcon,
-    ClipboardDocumentListIcon,
-    CalendarIcon,
-    IdentificationIcon,
-    Square3Stack3DIcon,
-    ExclamationCircleIcon
-} from '@heroicons/react/24/outline';
+    User,
+    Users,
+    Truck,
+    Wrench,
+    FileText,
+    ClipboardList,
+    Calendar,
+    IdCard,
+    Layers,
+    AlertCircle
+} from 'lucide-react';
 import '../styles/searchDropdown.css';
 
 const SearchDropdown = ({ results, loading, error, query, onClose }) => {
@@ -24,18 +24,18 @@ const SearchDropdown = ({ results, loading, error, query, onClose }) => {
 
     const getIcon = (type) => {
         switch (type) {
-            case 'Lead': return <IdentificationIcon />;
-            case 'Customer': return <UsersIcon />;
-            case 'Vehicle': return <TruckIcon />;
-            case 'Part': return <Square3Stack3DIcon />;
-            case 'Invoice': return <DocumentTextIcon />;
-            case 'Quotation': return <DocumentTextIcon />;
-            case 'Booking': return <ClipboardDocumentListIcon />;
-            case 'Sales Order': return <DocumentTextIcon />;
-            case 'Appointment': return <CalendarIcon />;
-            case 'Job Card': return <WrenchIcon />;
-            case 'User': return <UserIcon />;
-            default: return <DocumentTextIcon />;
+            case 'Lead': return <IdCard />;
+            case 'Customer': return <Users />;
+            case 'Vehicle': return <Truck />;
+            case 'Part': return <Layers />;
+            case 'Invoice': return <FileText />;
+            case 'Quotation': return <FileText />;
+            case 'Booking': return <ClipboardList />;
+            case 'Sales Order': return <FileText />;
+            case 'Appointment': return <Calendar />;
+            case 'Job Card': return <Wrench />;
+            case 'User': return <User />;
+            default: return <FileText />;
         }
     };
 
@@ -59,7 +59,7 @@ const SearchDropdown = ({ results, loading, error, query, onClose }) => {
         return (
             <div className="search-dropdown">
                 <div className="search-error">
-                    <ExclamationCircleIcon style={{ width: '2rem', height: '2rem', margin: '0 auto 1rem', color: 'var(--error-500)' }} />
+                    <AlertCircle size={32} style={{ margin: '0 auto 1rem', color: 'var(--error-500)' }} />
                     <p>{error}</p>
                 </div>
             </div>

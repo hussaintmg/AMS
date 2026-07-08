@@ -14,12 +14,29 @@ const { getPermissionSettings, canAccessTarget } = require('../utils/permissionR
 const { normalizeLogPermissionsConfig } = require('../utils/logPermissionResolver');
 const { logFileOperation } = require('../utils/apiLogger');
 const { getPublicFileUrl } = require('../utils/url');
+const Log = require('../models/mongo/Log.model');
 
 const uploadRoot = path.join(__dirname, '..', 'uploads', 'branding');
 const DEFAULT_PAGE_ICON = 'FileText';
 const brandingAssetFields = ['favicon', 'sidebarLogo', 'loginLogo', 'loadingLogo'];
 
 const getUserId = (req) => req.user?.id || req.user?._id;
+
+async function createAuditLog(userId, action, module, details, req) {
+  try {
+    await Log.create({
+      userId,
+      action,
+      module,
+      details: typeof details === 'string' ? details : JSON.stringify(details),
+      ip: req?.ip || '',
+      userAgent: req?.headers?.['user-agent'] || '',
+      timestamp: new Date(),
+    });
+  } catch (err) {
+    console.error('Audit log error:', err.message);
+  }
+}
 
 const withLogPermissionMeta = (config, userId) => ({
   ...normalizeLogPermissionsConfig(config),
@@ -703,6 +720,72 @@ exports.saveSetting = async (req, res, next) => {
     );
 
     res.json({ success: true, message: `${key} saved`, data: { key, value } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.getLeadAssignmentRoles = async (_req, res, next) => {
+  try {
+    const setting = await SystemSetting.findOne({ key: 'lead_assignment_roles' }).lean();
+    const roles = setting && Array.isArray(setting.value) ? setting.value : [];
+    res.json({ success: true, data: { roles } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.updateLeadAssignmentRoles = async (req, res, next) => {
+  try {
+    const { roles } = req.body;
+    if (!Array.isArray(roles)) {
+      return res.status(400).json({ success: false, message: 'roles array is required' });
+    }
+    await SystemSetting.findOneAndUpdate(
+      { key: 'lead_assignment_roles' },
+      { $set: { key: 'lead_assignment_roles', value: roles, category: 'leads', description: 'Role IDs allowed to be assigned as lead assignees' } },
+      { upsert: true, returnDocument: 'after' },
+    );
+    res.json({ success: true, message: 'Lead assignment roles saved', data: { roles } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.getCustomerRoleConfig = async (_req, res, next) => {
+  try {
+    const setting = await SystemSetting.findOne({ key: 'customer_role_config' }).lean();
+    const config = setting?.value || { activeRoleId: null, availableRoleIds: [], updatedAt: null, updatedBy: null };
+    res.json({ success: true, data: config });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.saveCustomerRoleConfig = async (req, res, next) => {
+  try {
+    const userId = getUserId(req);
+    const { activeRoleId, availableRoleIds } = req.body;
+    if (!activeRoleId) {
+      return res.status(400).json({ success: false, message: 'activeRoleId is required' });
+    }
+    if (!Array.isArray(availableRoleIds)) {
+      return res.status(400).json({ success: false, message: 'availableRoleIds array is required' });
+    }
+    const config = {
+      activeRoleId,
+      availableRoleIds,
+      updatedAt: new Date(),
+      updatedBy: userId,
+    };
+    await SystemSetting.findOneAndUpdate(
+      { key: 'customer_role_config' },
+      { $set: { key: 'customer_role_config', value: config, category: 'customers', description: 'Customer role configuration for lead conversion' } },
+      { upsert: true, returnDocument: 'after' },
+    );
+    await createAuditLog(userId, 'Update Customer Role Config', 'Server Management', `Customer role config saved (role: ${activeRoleId})`, req);
+    logFileOperation(req, { action: 'saveCustomerRoleConfig', activeRoleId });
+    res.json({ success: true, message: 'Customer role config saved', data: config });
   } catch (error) {
     next(error);
   }

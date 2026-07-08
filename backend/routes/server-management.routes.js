@@ -687,6 +687,81 @@ router.put('/roles/:id/permissions', requireSuperAdmin, controller.updateRolePer
 router.put('/users/:id/logs-permissions', requireSuperAdmin, controller.updateUserLogsPermissions);
 router.put('/roles/:id/logs-permissions', requireSuperAdmin, controller.saveRoleLogsPermissions);
 
+/**
+ * @swagger
+ * /api/server-management/lead-assignment-roles:
+ *   get:
+ *     summary: Get lead assignment role IDs
+ *     tags: [Server Management]
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200: { description: Role IDs returned }
+ *       401: { description: Unauthorized }
+ *       403: { description: Forbidden }
+ *   put:
+ *     summary: Save lead assignment role IDs
+ *     tags: [Server Management]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [roles]
+ *             properties:
+ *               roles:
+ *                 type: array
+ *                 items: { type: string }
+ *     responses:
+ *       200: { description: Roles saved }
+ *       400: { description: roles array is required }
+ *       401: { description: Unauthorized }
+ *       403: { description: Forbidden }
+ */
+router.get('/lead-assignment-roles', requireSuperAdmin, controller.getLeadAssignmentRoles);
+router.put('/lead-assignment-roles', requireSuperAdmin, controller.updateLeadAssignmentRoles);
+
+/**
+ * @swagger
+ * /api/server-management/customer-role-config:
+ *   get:
+ *     summary: Get customer role config
+ *     tags: [Server Management]
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200: { description: Customer role config returned }
+ *       401: { description: Unauthorized }
+ *       403: { description: Forbidden }
+ *   put:
+ *     summary: Save customer role config
+ *     tags: [Server Management]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [activeRoleId, availableRoleIds]
+ *             properties:
+ *               activeRoleId:
+ *                 type: string
+ *                 description: Role ID assigned to newly converted customers
+ *               availableRoleIds:
+ *                 type: array
+ *                 items: { type: string }
+ *                 description: All role IDs that are considered customer roles
+ *     responses:
+ *       200: { description: Config saved }
+ *       400: { description: Validation error }
+ *       401: { description: Unauthorized }
+ *       403: { description: Forbidden }
+ */
+// ── Customer Role Config ──
+router.get('/customer-role-config', requireSuperAdmin, controller.getCustomerRoleConfig);
+router.put('/customer-role-config', requireSuperAdmin, controller.saveCustomerRoleConfig);
+
 // ── System Settings (permissionMode, logPermissionMode) ──
 router.get('/settings/:key', requireSuperAdmin, controller.getSetting);
 router.get('/settings', requireSuperAdmin, controller.getSetting);

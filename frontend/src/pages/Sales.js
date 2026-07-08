@@ -16,7 +16,7 @@ import toast from 'react-hot-toast';
 import ActionButtons from '../components/ActionButtons';
 import ConfirmModal from '../components/ConfirmModal';
 import { useAuth } from '../context/AuthContext';
-import { PaperAirplaneIcon, CurrencyDollarIcon, ChevronLeftIcon, ChevronRightIcon, DocumentTextIcon, TruckIcon, EyeIcon, PencilSquareIcon, TrashIcon, ArrowUpTrayIcon } from '@heroicons/react/24/outline';
+import { Send, DollarSign, ChevronLeft, ChevronRight, FileText, Truck, Eye, Pencil, Trash2, Upload } from 'lucide-react';
 import BulkUploadModal from '../components/BulkUploadModal';
 
 import SalesFilterBar from '../components/sales/SalesFilterBar';
@@ -455,7 +455,7 @@ function Quotations() {
                         disabled={pagination.page <= 1}
                         style={{ padding: '0.5rem' }}
                     >
-                        <ChevronLeftIcon style={{ width: '1.25rem', height: '1.25rem' }} />
+                        <ChevronLeft size={16} />
                     </button>
                     <span style={{ color: 'var(--gray-600)' }}>Page {pagination.page} of {pagination.totalPages || 1}</span>
                     <button
@@ -464,7 +464,7 @@ function Quotations() {
                         disabled={pagination.page >= pagination.totalPages}
                         style={{ padding: '0.5rem' }}
                     >
-                        <ChevronRightIcon style={{ width: '1.25rem', height: '1.25rem' }} />
+                        <ChevronRight size={16} />
                     </button>
                 </div>
             </div>
@@ -859,7 +859,7 @@ function Bookings() {
                         disabled={pagination.page <= 1}
                         style={{ padding: '0.5rem' }}
                     >
-                        <ChevronLeftIcon style={{ width: '1.25rem', height: '1.25rem' }} />
+                        <ChevronLeft size={16} />
                     </button>
                     <span style={{ color: 'var(--gray-600)' }}>Page {pagination.page} of {pagination.totalPages || 1}</span>
                     <button
@@ -868,7 +868,7 @@ function Bookings() {
                         disabled={pagination.page >= pagination.totalPages}
                         style={{ padding: '0.5rem' }}
                     >
-                        <ChevronRightIcon style={{ width: '1.25rem', height: '1.25rem' }} />
+                        <ChevronRight size={16} />
                     </button>
                 </div>
             </div>
@@ -1297,7 +1297,7 @@ function SalesOrders() {
                             onClick={() => setShowBulkUpload(true)}
                             title="Bulk upload direct sales orders (CSV / XLSX)"
                         >
-                            <ArrowUpTrayIcon style={{ width: 18, height: 18, marginRight: 4 }} />
+                            <Upload size={18} style={{ marginRight: 4 }} />
                             Upload
                         </button>
                         <button className="btn btn-primary" onClick={() => openModal('create')}>
@@ -1361,32 +1361,32 @@ function SalesOrders() {
                                     onDelete={() => handleCancelClick(o)}
                                     customActions={[
                                         ...(canDeliverOrInvoice && !o.invoice_number && o.status === 'confirmed' ? [{
-                                            icon: <DocumentTextIcon className="action-icon" />,
+                                            icon: <FileText size={18} className="action-icon" />,
                                             title: 'Generate Invoice',
                                             onClick: () => handleGenerateInvoice(o),
                                             className: 'btn-info'
                                         }] : []),
                                         ...(canDeliverOrInvoice && o.status === 'invoiced' ? [{
-                                            icon: <TruckIcon className="action-icon" />,
+                                            icon: <Truck size={18} className="action-icon" />,
                                             title: 'Mark Delivered',
                                             onClick: () => handleDeliverClick(o),
                                             className: 'btn-success'
                                         }] : []),
                                         ...(o.invoice_number ? [
                                             {
-                                                icon: <DocumentTextIcon className="action-icon" />,
+                                                icon: <FileText size={18} className="action-icon" />,
                                                 title: 'View Invoice',
                                                 onClick: () => handleViewInvoice(o),
                                                 className: 'btn-outline-primary'
                                             },
                                             ...(o.invoice_status === 'draft' ? [{
-                                                icon: <PencilSquareIcon className="action-icon" />,
+                                                icon: <Pencil size={18} className="action-icon" />,
                                                 title: 'Edit Invoice',
                                                 onClick: () => handleEditInvoice(o),
                                                 className: 'btn-outline-secondary'
                                             }] : []),
                                             ...(o.invoice_status !== 'paid' && o.invoice_status !== 'void' && o.invoice_status !== 'cancelled' ? [{
-                                                icon: <TrashIcon className="action-icon" />,
+                                                icon: <Trash2 size={18} className="action-icon" />,
                                                 title: 'Delete Invoice',
                                                 onClick: () => handleDeleteInvoice(o),
                                                 className: 'btn-outline-danger'
@@ -1423,7 +1423,7 @@ function SalesOrders() {
                         disabled={pagination.page <= 1}
                         style={{ padding: '0.5rem' }}
                     >
-                        <ChevronLeftIcon style={{ width: '1.25rem', height: '1.25rem' }} />
+                        <ChevronLeft size={16} />
                     </button>
                     <span style={{ color: 'var(--gray-600)' }}>Page {pagination.page} of {pagination.totalPages || 1}</span>
                     <button
@@ -1432,7 +1432,7 @@ function SalesOrders() {
                         disabled={pagination.page >= pagination.totalPages}
                         style={{ padding: '0.5rem' }}
                     >
-                        <ChevronRightIcon style={{ width: '1.25rem', height: '1.25rem' }} />
+                        <ChevronRight size={16} />
                     </button>
                 </div>
             </div>
@@ -2155,13 +2155,13 @@ function Invoices() {
                                     onDelete={() => handleVoidClick(inv)}
                                     customActions={[
                                         ...(canSend && inv.status === 'draft' ? [{
-                                            icon: <PaperAirplaneIcon className="action-icon" />,
+                                            icon: <Send size={18} className="action-icon" />,
                                             title: 'Send Invoice',
                                             onClick: () => handleSendClick(inv),
                                             className: 'btn-info'
                                         }] : []),
                                         ...(canRecordPayment && inv.status !== 'paid' && inv.status !== 'cancelled' && inv.balance_amount > 0 ? [{
-                                            icon: <CurrencyDollarIcon className="action-icon" />,
+                                            icon: <DollarSign size={18} className="action-icon" />,
                                             title: 'Record Payment',
                                             onClick: () => openPaymentModal(inv),
                                             className: 'btn-success'
@@ -2197,7 +2197,7 @@ function Invoices() {
                         disabled={pagination.page <= 1}
                         style={{ padding: '0.5rem' }}
                     >
-                        <ChevronLeftIcon style={{ width: '1.25rem', height: '1.25rem' }} />
+                        <ChevronLeft size={16} />
                     </button>
                     <span style={{ color: 'var(--gray-600)' }}>Page {pagination.page} of {pagination.totalPages || 1}</span>
                     <button
@@ -2206,7 +2206,7 @@ function Invoices() {
                         disabled={pagination.page >= pagination.totalPages}
                         style={{ padding: '0.5rem' }}
                     >
-                        <ChevronRightIcon style={{ width: '1.25rem', height: '1.25rem' }} />
+                        <ChevronRight size={16} />
                     </button>
                 </div>
             </div>

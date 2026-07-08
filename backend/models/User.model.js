@@ -123,6 +123,11 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    customer: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Customer",
+      default: null,
+    },
     avatar: {
       type: String,
       default: "",

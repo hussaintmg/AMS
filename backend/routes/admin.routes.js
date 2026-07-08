@@ -64,6 +64,21 @@ router.delete('/departments/:id', authenticate, authorize('super_admin'), depart
 router.patch('/departments/:id/manager', authenticate, authorize('super_admin'), departmentController.assignManager);
 
 // ── Status Management (read: statuses page permission, write: super_admin) ──
+// New collection-based endpoints
+router.get('/status-collections/stats', authenticate, authorizePage('statuses'), statusController.getCollectionStats);
+router.get('/status-collections', authenticate, authorizePage('statuses'), statusController.getAllCollections);
+router.get('/status-collections/:id', authenticate, authorizePage('statuses'), statusController.getCollectionById);
+router.post('/status-collections', authenticate, authorize('super_admin'), statusController.createCollection);
+router.put('/status-collections/:id', authenticate, authorize('super_admin'), statusController.updateCollection);
+router.delete('/status-collections/:id', authenticate, authorize('super_admin'), statusController.deleteCollection);
+router.get('/status-collections/:id/items', authenticate, authorizePage('statuses'), statusController.getCollectionItems);
+router.post('/status-collections/:id/items', authenticate, authorize('super_admin'), statusController.createCollectionItem);
+router.put('/status-items/:itemId', authenticate, authorize('super_admin'), statusController.updateStatusItem);
+router.delete('/status-items/:itemId', authenticate, authorize('super_admin'), statusController.deleteStatusItem);
+router.patch('/status-items/:itemId/toggle', authenticate, authorize('super_admin'), statusController.toggleStatusItem);
+router.patch('/status-items/:itemId/default', authenticate, authorize('super_admin'), statusController.setDefaultStatusItem);
+
+// Old backward-compatible status table routes (kept for existing integrations)
 router.get('/statuses/tables', authenticate, authorizePage('statuses'), statusController.getAvailableTables);
 router.get('/statuses/analytics', authenticate, authorizePage('statuses'), statusController.getStatusAnalytics);
 router.get('/statuses', authenticate, authorizePage('statuses'), statusController.getAllStatuses);

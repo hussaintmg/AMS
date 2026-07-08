@@ -1,446 +1,342 @@
-/**
- * Status Management Page
- * Centralized status management for the entire ERP
- * Created by LOGIXINVENTOR (PVT) Ltd.
- * www.logixinventor.com | AMS
- * Date: 2026-01-06
- */
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { adminAPI } from '../services/api';
-import toast from 'react-hot-toast';
+import { useStatusManagement } from '../context/StatusManagementContext';
 import ErrorPopup from '../components/ErrorPopup';
 import ActionButtons from '../components/ActionButtons';
+import ConfirmModal from '../components/ConfirmModal';
+import StatusFormModal from '../components/statuses/StatusFormModal';
+import StatusDrawer from '../components/statuses/StatusDrawer';
 import '../styles/userManagement.css';
 
 const StatusManagement = () => {
-    const { user } = useAuth();
+  const {
+    collections, stats, loading, saving,
+    drawerOpen, selectedCollection, statusItems, drawerLoading,
+    loadCollections, loadStats,
+    createCollection, updateCollection, deleteCollection,
+    openDrawer, closeDrawer,
+    createStatusItem, updateStatusItem, deleteStatusItem,
+    toggleStatusItem, setDefaultStatusItem,
+  } = useStatusManagement();
 
-    // State
-    const [tables, setTables] = useState([]);
-    const [selectedTable, setSelectedTable] = useState(null);
-    const [statuses, setStatuses] = useState([]);
-    const [loading, setLoading] = useState(false);
-    const [errorPopup, setErrorPopup] = useState(null);
-    const [success, setSuccess] = useState(null);
-    const [stats, setStats] = useState({});
+  const { user } = useAuth();
+  const [errorPopup, setErrorPopup] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterStatus, setFilterStatus] = useState('all');
 
-    // Modal state
-    const [showModal, setShowModal] = useState(false);
-    const [modalMode, setModalMode] = useState('create');
-    const [currentStatus, setCurrentStatus] = useState(null);
+  // Create modal
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [createSaving, setCreateSaving] = useState(false);
 
-    // Form data
-    const [formData, setFormData] = useState({
-        statusName: '',
-        statusCode: '',
-        statusColor: '#6B7280',
-        statusBgColor: '#F3F4F6',
-        description: '',
-        isDefault: false,
-        isFinal: false,
-        isActive: true
-    });
+  // Delete confirm
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [deleteSaving, setDeleteSaving] = useState(false);
 
-    // Fetch initial data (table list and stats)
-    useEffect(() => {
-        const fetchMeta = async () => {
-            try {
-                const [tableRes, statsRes] = await Promise.all([
-                    adminAPI.getAvailableTables(),
-                    adminAPI.getStatusAnalytics()
-                ]);
+  // Load data on mount
+  useEffect(() => {
+    loadCollections();
+    loadStats();
+  }, []);
 
-                setTables(tableRes.data.data);
-                if (tableRes.data.data.length > 0) setSelectedTable(tableRes.data.data[0]);
+  // Refresh when search changes
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const params = {};
+      if (searchQuery.trim()) params.search = searchQuery.trim();
+      if (filterStatus !== 'all') params.isActive = filterStatus;
+      loadCollections(params);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery, filterStatus, loadCollections]);
 
-                setStats(statsRes.data.data);
-            } catch (err) {
-                console.error(err);
-                setErrorPopup({ message: 'Failed to load metadata' });
-                toast.error('Failed to load metadata');
-            }
-        };
-        fetchMeta();
-    }, []);
+  const handleCreate = async (data) => {
+    setCreateSaving(true);
+    try {
+      const result = await createCollection(data);
+      if (result.success) {
+        setShowCreateModal(false);
+      }
+    } finally {
+      setCreateSaving(false);
+    }
+  };
 
-    // Fetch statuses when table selection changes
-    useEffect(() => {
-        if (!selectedTable) return;
-
-        const fetchStatuses = async () => {
-            setLoading(true);
-            try {
-                const response = await adminAPI.getStatusesByTable(selectedTable.table_name, { includeInactive: true });
-                setStatuses(response.data.data.statuses);
-            } catch (err) {
-                setErrorPopup(err.response?.data || { message: 'Failed to load statuses' });
-                toast.error('Failed to load statuses');
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        fetchStatuses();
-    }, [selectedTable]);
-
-    // Form handlers
-    const openModal = (mode, status = null) => {
-        setModalMode(mode);
-        setCurrentStatus(status);
-
-        if (mode === 'create') {
-            setFormData({
-                statusName: '',
-                statusCode: '',
-                statusColor: '#3B82F6',
-                statusBgColor: '#DBEAFE',
-                description: '',
-                isDefault: false,
-                isFinal: false,
-                isActive: true
-            });
-        } else if (status) {
-            setFormData({
-                statusName: status.status_name,
-                statusCode: status.status_code,
-                statusColor: status.status_color || '#6B7280',
-                statusBgColor: status.status_bg_color || '#F3F4F6',
-                description: status.description || '',
-                isDefault: !!status.is_default,
-                isFinal: !!status.is_final,
-                isActive: !!status.is_active
-            });
-        }
-        setShowModal(true);
+  const handleSaveFromDrawer = async (id, formData) => {
+    const payload = {
+      ...formData,
+      usage: formData.usage.filter((u) => u.module || u.page || u.field),
     };
+    const result = await updateCollection(id, payload);
+    return result;
+  };
 
-    const closeModal = () => {
-        setShowModal(false);
-        setCurrentStatus(null);
-    };
+  const handleDelete = async (id) => {
+    setDeleteSaving(true);
+    try {
+      await deleteCollection(id);
+      setDeleteConfirm(null);
+    } finally {
+      setDeleteSaving(false);
+    }
+  };
 
-    const handleInputChange = (e) => {
-        const { name, value, type, checked } = e.target;
-        setFormData(prev => ({
-            ...prev,
-            [name]: type === 'checkbox' ? checked : value
-        }));
-    };
+  const formatDate = (d) => {
+    if (!d) return '-';
+    try {
+      return new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+    } catch {
+      return '-';
+    }
+  };
 
-    // Auto-generate status code from name
-    const handleNameChange = (e) => {
-        const name = e.target.value;
-        setFormData(prev => ({
-            ...prev,
-            statusName: name,
-            statusCode: modalMode === 'create' ? name.toLowerCase().replace(/[^a-z0-9]/g, '_') : prev.statusCode
-        }));
-    };
-
-    // Submit handler
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-
-        try {
-            const body = {
-                ...formData,
-                tableName: selectedTable.table_name,
-                tableSlug: selectedTable.table_slug
-            };
-
-            if (modalMode === 'create') {
-                await adminAPI.createStatus(body);
-            } else {
-                await adminAPI.updateStatus(currentStatus.id, body);
-            }
-
-            toast.success('Status saved successfully!');
-            closeModal();
-
-            // Refresh statuses
-            const refreshRes = await adminAPI.getStatusesByTable(selectedTable.table_name, { includeInactive: true });
-            setStatuses(refreshRes.data.data.statuses);
-
-        } catch (err) {
-            setErrorPopup(err.response?.data || { message: 'Failed to save status' });
-        }
-    };
-
-    // Delete handler
-    const handleDelete = async (status) => {
-        if (!window.confirm(`Delete status "${status.status_name}"?`)) return;
-
-        try {
-            await adminAPI.deleteStatus(status.id);
-
-            setStatuses(prev => prev.filter(s => s.id !== status.id));
-            toast.success('Status deleted successfully!');
-        } catch (err) {
-            toast.error(err.response?.data?.message || 'Failed to delete status');
-        }
-    };
-
-    // Drag and Drop Reordering Handlers (Simplistic approach)
-    const moveStatus = async (index, direction) => {
-        const newStatuses = [...statuses];
-        const [moved] = newStatuses.splice(index, 1);
-        newStatuses.splice(index + direction, 0, moved);
-        setStatuses(newStatuses); // Optimistic update
-
-        // Send new order to backend
-        try {
-            const statusIds = newStatuses.map(s => s.id);
-            await adminAPI.reorderStatuses(selectedTable.table_name, statusIds);
-        } catch (err) {
-            console.error('Failed to reorder', err);
-            toast.error('Failed to update order');
-            // Revert on error would be ideal here
-        }
-    };
-
+  // Filter collections locally for instant feedback alongside API search
+  const displayedCollections = (collections || []).filter((c) => {
+    if (filterStatus === 'active' && !c.isActive) return false;
+    if (filterStatus === 'inactive' && c.isActive) return false;
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
     return (
-        <div className="user-management-page">
-            <div className="page-header">
-                <div>
-                    <h1>System Statuses</h1>
-                    <p className="subtitle">Centralized status configuration</p>
-                </div>
-            </div>
-
-            <ErrorPopup error={errorPopup} onClose={() => setErrorPopup(null)} />
-
-            {/* Layout: Sidebar for Tables, Main for Statuses */}
-            <div className="status-mgmt-layout">
-                {/* Tables Sidebar */}
-                <div className="tables-sidebar">
-                    <h3>Modules</h3>
-                    <div className="tables-list">
-                        {tables.map(table => (
-                            <div
-                                key={table.table_name}
-                                className={`table-item ${selectedTable?.table_name === table.table_name ? 'active' : ''}`}
-                                onClick={() => setSelectedTable(table)}
-                            >
-                                <span className="table-name">{table.table_name.replace(/_/g, ' ').toUpperCase()}</span>
-                                <span className="status-count">{table.status_count}</span>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-
-                {/* Main Content */}
-                <div className="statuses-main">
-                    {selectedTable && (
-                        <>
-                            <div className="section-header">
-                                <h2>{selectedTable.table_name.replace(/_/g, ' ').toUpperCase()} Statuses</h2>
-                                <button className="btn btn-primary btn-sm" onClick={() => openModal('create')}>
-                                    + Add Status
-                                </button>
-                            </div>
-
-                            {loading ? (
-                                <div className="spinner"></div>
-                            ) : (
-                                <div className="statuses-list">
-                                    {statuses.map((status, index) => (
-                                        <div key={status.id} className={`status-card ${!status.is_active ? 'inactive' : ''}`}>
-                                            <div className="status-handle">
-                                                <div className="order-buttons">
-                                                    <button
-                                                        disabled={index === 0}
-                                                        onClick={() => moveStatus(index, -1)}
-                                                    >▲</button>
-                                                    <button
-                                                        disabled={index === statuses.length - 1}
-                                                        onClick={() => moveStatus(index, 1)}
-                                                    >▼</button>
-                                                </div>
-                                            </div>
-
-                                            <div className="status-preview">
-                                                <span
-                                                    className="status-badge-lg"
-                                                    style={{
-                                                        backgroundColor: status.status_bg_color,
-                                                        color: status.status_color,
-                                                        borderColor: status.status_color
-                                                    }}
-                                                >
-                                                    {status.status_icon && <i className={`material-icons`}>{status.status_icon}</i>}
-                                                    {status.status_name}
-                                                </span>
-                                                <small>{status.status_code}</small>
-                                            </div>
-
-                                            <div className="status-attributes">
-                                                {status.is_default && <span className="attr-tag default">Default</span>}
-                                                {status.is_final && <span className="attr-tag final">Final</span>}
-                                                {!status.is_active && <span className="attr-tag inactive">Inactive</span>}
-                                            </div>
-
-                                            <div className="status-desc">{status.description}</div>
-
-                                            <div className="status-actions">
-                                                <ActionButtons
-                                                    onEdit={() => openModal('edit', status)}
-                                                    onDelete={() => handleDelete(status)}
-                                                    showEdit
-                                                    showDelete
-                                                    title={status.status_name}
-                                                />
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </>
-                    )}
-                </div>
-            </div>
-
-            {/* Modal */}
-            {showModal && (
-                <div className="modal-overlay">
-                    <div className="modal-content" onClick={e => e.stopPropagation()}>
-                        <div className="modal-header">
-                            <h2>{modalMode === 'create' ? 'New Status' : 'Edit Status'}</h2>
-                            <button className="modal-close" onClick={closeModal}>×</button>
-                        </div>
-                        <form onSubmit={handleSubmit}>
-                            <div className="modal-body">
-                                <div className="form-row">
-                                    <div className="form-group">
-                                        <label>Status Name *</label>
-                                        <input
-                                            type="text"
-                                            name="statusName"
-                                            value={formData.statusName}
-                                            onChange={handleNameChange}
-                                            required
-                                        />
-                                    </div>
-                                    <div className="form-group">
-                                        <label>Code *</label>
-                                        <input
-                                            type="text"
-                                            name="statusCode"
-                                            value={formData.statusCode}
-                                            onChange={handleInputChange}
-                                            required
-                                            disabled={modalMode === 'edit'} // Lock code on edit
-                                        />
-                                    </div>
-                                </div>
-
-                                <div className="form-row">
-                                    <div className="form-group">
-                                        <label>Text Color</label>
-                                        <div className="color-picker-wrapper">
-                                            <input
-                                                type="color"
-                                                name="statusColor"
-                                                value={formData.statusColor}
-                                                onChange={handleInputChange}
-                                            />
-                                            <input
-                                                type="text"
-                                                name="statusColor"
-                                                value={formData.statusColor}
-                                                onChange={handleInputChange}
-                                            />
-                                        </div>
-                                    </div>
-                                    <div className="form-group">
-                                        <label>Background Color</label>
-                                        <div className="color-picker-wrapper">
-                                            <input
-                                                type="color"
-                                                name="statusBgColor"
-                                                value={formData.statusBgColor}
-                                                onChange={handleInputChange}
-                                            />
-                                            <input
-                                                type="text"
-                                                name="statusBgColor"
-                                                value={formData.statusBgColor}
-                                                onChange={handleInputChange}
-                                            />
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="form-group">
-                                    <label>Description</label>
-                                    <input
-                                        type="text"
-                                        name="description"
-                                        value={formData.description}
-                                        onChange={handleInputChange}
-                                    />
-                                </div>
-
-                                <div className="checkbox-row">
-                                    <label className="checkbox-label">
-                                        <input
-                                            type="checkbox"
-                                            name="isDefault"
-                                            checked={formData.isDefault}
-                                            onChange={handleInputChange}
-                                        />
-                                        Is Default (First status)
-                                    </label>
-                                    <label className="checkbox-label">
-                                        <input
-                                            type="checkbox"
-                                            name="isFinal"
-                                            checked={formData.isFinal}
-                                            onChange={handleInputChange}
-                                        />
-                                        Is Final (Completed/Closed)
-                                    </label>
-                                    <label className="checkbox-label">
-                                        <input
-                                            type="checkbox"
-                                            name="isActive"
-                                            checked={formData.isActive}
-                                            onChange={handleInputChange}
-                                        />
-                                        Active
-                                    </label>
-                                </div>
-
-                                {/* Live Preview */}
-                                <div className="preview-box">
-                                    <label>Preview:</label>
-                                    <span
-                                        className="status-badge-lg"
-                                        style={{
-                                            backgroundColor: formData.statusBgColor,
-                                            color: formData.statusColor,
-                                            borderColor: formData.statusColor,
-                                            padding: '8px 16px',
-                                            borderRadius: '20px',
-                                            display: 'inline-block',
-                                            border: '1px solid'
-                                        }}
-                                    >
-                                        {formData.statusName || 'Status Name'}
-                                    </span>
-                                </div>
-                            </div>
-                            <div className="modal-footer">
-                                <button type="button" className="btn btn-secondary" onClick={closeModal}>Cancel</button>
-                                <button type="submit" className="btn btn-primary">Save Changes</button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
-        </div>
+      (c.name || '').toLowerCase().includes(q) ||
+      (c.key || '').toLowerCase().includes(q) ||
+      (c.description || '').toLowerCase().includes(q) ||
+      (c.usage || []).some((u) =>
+        (u.module || '').toLowerCase().includes(q) ||
+        (u.page || '').toLowerCase().includes(q) ||
+        (u.field || '').toLowerCase().includes(q)
+      )
     );
+  });
+
+  return (
+    <div className="user-management-page">
+      <div className="page-header">
+        <div>
+          <h1>Status Collections</h1>
+          <p className="subtitle">Manage status collections and their items</p>
+        </div>
+        <button className="btn btn-primary" onClick={() => setShowCreateModal(true)}>
+          + Create Status Collection
+        </button>
+      </div>
+
+      <ErrorPopup error={errorPopup} onClose={() => setErrorPopup(null)} />
+
+      {/* Stats */}
+      {stats && (
+        <div className="stats-grid">
+          <div className="stat-card">
+            <div className="stat-icon">&#x1F4CB;</div>
+            <div className="stat-content">
+              <span className="stat-value">{stats.total || 0}</span>
+              <span className="stat-label">Total Collections</span>
+            </div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-icon">&#x2705;</div>
+            <div className="stat-content">
+              <span className="stat-value">{stats.active || 0}</span>
+              <span className="stat-label">Active</span>
+            </div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-icon">&#x274C;</div>
+            <div className="stat-content">
+              <span className="stat-value">{stats.inactive || 0}</span>
+              <span className="stat-label">Inactive</span>
+            </div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-icon">&#x1F4A0;</div>
+            <div className="stat-content">
+              <span className="stat-value">{stats.totalItems || 0}</span>
+              <span className="stat-label">Total Status Items</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Search & Filter */}
+      <div style={{ display: 'flex', gap: '12px', marginBottom: '20px', flexWrap: 'wrap' }}>
+        <input
+          type="text"
+          className="form-control"
+          style={{ maxWidth: '320px' }}
+          placeholder="Search collections..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+        />
+        <select
+          className="form-control"
+          style={{ maxWidth: '160px' }}
+          value={filterStatus}
+          onChange={(e) => setFilterStatus(e.target.value)}
+        >
+          <option value="all">All</option>
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
+        </select>
+      </div>
+
+      {/* Loading */}
+      {loading && (
+        <div style={{ textAlign: 'center', padding: '40px' }}>
+          <div className="spinner"></div>
+        </div>
+      )}
+
+      {/* Desktop Table */}
+      {!loading && (
+        <div className="table-container desktop-only">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Key</th>
+                <th>Status Count</th>
+                <th>Active Items</th>
+                <th>Usage Count</th>
+                <th>Status</th>
+                <th>Created</th>
+                <th style={{ width: '100px' }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {displayedCollections.length === 0 ? (
+                <tr>
+                  <td colSpan="8" style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>
+                    No status collections found
+                  </td>
+                </tr>
+              ) : (
+                displayedCollections.map((col) => (
+                  <tr
+                    key={col._id || col.id}
+                    onClick={() => openDrawer(col._id || col.id)}
+                    style={{ cursor: 'pointer' }}
+                    className={!col.isActive ? 'inactive-row' : ''}
+                  >
+                    <td><strong>{col.name}</strong></td>
+                    <td style={{ fontFamily: 'monospace', fontSize: '12px' }}>{col.key}</td>
+                    <td>{col.statusCount ?? 0}</td>
+                    <td>{col.activeStatusCount ?? 0}</td>
+                    <td>{(col.usage || []).filter((u) => u.module).length}</td>
+                    <td>
+                      <span className={`badge ${col.isActive ? 'badge-active' : 'badge-inactive'}`}>
+                        {col.isActive ? 'Active' : 'Inactive'}
+                      </span>
+                    </td>
+                    <td>{formatDate(col.createdAt)}</td>
+                    <td onClick={(e) => e.stopPropagation()}>
+                      <div className="action-buttons">
+                        <button
+                          className="btn-action btn-edit"
+                          onClick={() => openDrawer(col._id || col.id)}
+                          title="View Details"
+                        >&#128065;</button>
+                        <button
+                          className="btn-action btn-delete"
+                          onClick={() => setDeleteConfirm(col)}
+                          title="Delete"
+                        >&#128465;</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Mobile Cards */}
+      {!loading && (
+        <div className="mobile-cards-container mobile-only">
+          {displayedCollections.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>
+              No status collections found
+            </div>
+          ) : (
+            displayedCollections.map((col) => (
+              <div
+                key={col._id || col.id}
+                className="user-card"
+                onClick={() => openDrawer(col._id || col.id)}
+                style={{ cursor: 'pointer' }}
+              >
+                <div className="user-card-header">
+                  <strong>{col.name}</strong>
+                  <span className={`badge ${col.isActive ? 'badge-active' : 'badge-inactive'}`}>
+                    {col.isActive ? 'Active' : 'Inactive'}
+                  </span>
+                </div>
+                <div className="user-card-body">
+                  <div className="user-card-field">
+                    <span className="field-label">Key</span>
+                    <span>{col.key}</span>
+                  </div>
+                  <div className="user-card-field">
+                    <span className="field-label">Statuses</span>
+                    <span>{col.statusCount ?? 0} total, {col.activeStatusCount ?? 0} active</span>
+                  </div>
+                  <div className="user-card-field">
+                    <span className="field-label">Created</span>
+                    <span>{formatDate(col.createdAt)}</span>
+                  </div>
+                </div>
+                <div className="user-card-actions">
+                  <button
+                    className="btn btn-sm btn-secondary"
+                    onClick={(e) => { e.stopPropagation(); openDrawer(col._id || col.id); }}
+                  >View</button>
+                  <button
+                    className="btn btn-sm btn-delete"
+                    onClick={(e) => { e.stopPropagation(); setDeleteConfirm(col); }}
+                  >Delete</button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
+      {/* Create Modal */}
+      <StatusFormModal
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        mode="create"
+        onSubmit={handleCreate}
+        loading={createSaving}
+      />
+
+      {/* Drawer */}
+      <StatusDrawer
+        isOpen={drawerOpen}
+        onClose={closeDrawer}
+        collection={selectedCollection}
+        statusItems={statusItems}
+        onSaveCollection={handleSaveFromDrawer}
+        onDeleteCollection={(id) => deleteCollection(id)}
+        onCreateItem={createStatusItem}
+        onUpdateItem={updateStatusItem}
+        onDeleteItem={deleteStatusItem}
+        onToggleItem={toggleStatusItem}
+        onSetDefault={setDefaultStatusItem}
+        saving={saving}
+      />
+
+      {/* Delete Collection Confirm */}
+      <ConfirmModal
+        isOpen={!!deleteConfirm}
+        title="Delete Status Collection"
+        message={`Are you sure you want to delete "${deleteConfirm?.name}"? Its statuses will be deactivated.`}
+        onConfirm={() => handleDelete(deleteConfirm?._id || deleteConfirm?.id)}
+        onCancel={() => setDeleteConfirm(null)}
+        confirmText="Delete"
+        cancelText="Cancel"
+        type="danger"
+      />
+    </div>
+  );
 };
 
 export default StatusManagement;

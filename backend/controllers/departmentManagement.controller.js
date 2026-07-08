@@ -1,6 +1,6 @@
 const { Department, User, Log } = require('../models');
 const { logFileOperation } = require('../utils/apiLogger');
-const logger = require('../utils/logger');
+const { normalizePhone } = require('../utils/phone.util');
 
 /**
  * @swagger
@@ -15,19 +15,28 @@ const logger = require('../utils/logger');
  */
 const getDepartmentStats = async (req, res, next) => {
   try {
-    const [total, active, root] = await Promise.all([
+    const [total, active, inactive, root, totalManagers] = await Promise.all([
       Department.countDocuments(),
       Department.countDocuments({ isActive: true }),
+      Department.countDocuments({ isActive: false }),
       Department.countDocuments({ parent: null }),
+      Department.countDocuments({ manager: { $ne: null } }),
     ]);
-    const usersWithDept = await User.countDocuments({ department: { $ne: null } });
+    const activeStaffResult = await User.aggregate([
+      { $match: { status: 'active', isActive: true, department: { $ne: null } } },
+      { $count: 'count' },
+    ]);
+    const totalActiveStaff = activeStaffResult.length > 0 ? activeStaffResult[0].count : 0;
     res.json({
       success: true,
       data: {
         total_departments: total,
         active_departments: active,
+        inactive_departments: inactive,
         root_departments: root,
-        users_with_department: usersWithDept,
+        users_with_department: totalActiveStaff,
+        total_active_staff: totalActiveStaff,
+        total_managers: totalManagers,
       },
     });
   } catch (error) {
@@ -53,48 +62,66 @@ const getDepartmentStats = async (req, res, next) => {
 const getAllDepartments = async (req, res, next) => {
   try {
     const depts = await Department.find()
-      .populate('manager', 'firstName lastName email')
+      .populate('manager', 'firstName lastName email status department')
+      .populate('createdBy', 'firstName lastName email')
       .sort({ name: 1 })
       .lean();
+
+    const staffCounts = await User.aggregate([
+      { $match: { status: 'active', isActive: true, department: { $ne: null } } },
+      { $group: { _id: '$department', count: { $sum: 1 } } },
+    ]);
+    const countMap = {};
+    staffCounts.forEach(s => {
+      countMap[s._id.toString()] = s.count;
+    });
+
+    const buildDeptOutput = (d) => {
+      let staffCount = countMap[d._id.toString()] || 0;
+      if (d.manager && d.manager.department && String(d.manager.department) === String(d._id)) {
+        staffCount = Math.max(0, staffCount - 1);
+      }
+      const managerActive = d.manager && d.manager.status === 'active' && d.manager.department;
+      const managerDeactivated = d.manager && (!managerActive);
+      return {
+        id: d._id,
+        _id: d._id,
+        name: d.name,
+        code: d.code,
+        description: d.description || '',
+        parent_id: d.parent,
+        manager_id: d.manager?._id || null,
+        manager_name: (d.manager && managerActive)
+          ? `${d.manager.firstName || ''} ${d.manager.lastName || ''}`.trim()
+          : '',
+        manager_deactivated: managerDeactivated,
+        is_active: d.isActive,
+        isActive: d.isActive,
+        email: d.email || '',
+        phone: d.phone || '',
+        location: d.location || '',
+        budget: d.budget || 0,
+        staff_count: staffCount,
+        total_users: staffCount,
+        created_at: d.createdAt,
+        createdAt: d.createdAt,
+        created_by: d.createdBy
+          ? { id: d.createdBy._id, name: `${d.createdBy.firstName || ''} ${d.createdBy.lastName || ''}`.trim(), email: d.createdBy.email }
+          : null,
+      };
+    };
 
     const buildTree = (parentId) => {
       return depts
         .filter((d) => String(d.parent || '') === String(parentId || ''))
         .map((d) => ({
-          id: d._id,
-          _id: d._id,
-          name: d.name,
-          code: d.code,
-          description: d.description,
-          parent_id: d.parent,
-          manager_id: d.manager?._id || null,
-          manager_name: d.manager ? `${d.manager.firstName} ${d.manager.lastName}`.trim() : '',
-          is_active: d.isActive,
-          isActive: d.isActive,
-          email: d.email,
-          phone: d.phone,
-          location: d.location,
-          budget: d.budget,
-          total_users: 0,
+          ...buildDeptOutput(d),
           children: buildTree(d._id),
         }));
     };
+
     const hierarchy = buildTree(null);
-    const flat = depts.map((d) => ({
-      id: d._id,
-      _id: d._id,
-      name: d.name,
-      code: d.code,
-      parent_id: d.parent,
-      manager_id: d.manager?._id || null,
-      manager_name: d.manager ? `${d.manager.firstName} ${d.manager.lastName}`.trim() : '',
-      is_active: d.isActive,
-      description: d.description,
-      email: d.email,
-      phone: d.phone,
-      location: d.location,
-      budget: d.budget,
-    }));
+    const flat = depts.map(d => buildDeptOutput(d));
 
     res.json({ success: true, data: { hierarchy, flat } });
   } catch (error) {
@@ -107,7 +134,7 @@ const getAllDepartments = async (req, res, next) => {
  * /admin/departments/{id}:
  *   get:
  *     tags: [Department Management]
- *     summary: Get department by ID
+ *     summary: Get department by ID with staff list
  *     security: [{ cookieAuth: [], bearerAuth: [] }]
  *     parameters:
  *       - in: path
@@ -116,19 +143,55 @@ const getAllDepartments = async (req, res, next) => {
  *         schema: { type: string }
  *     responses:
  *       200:
- *         description: Department data
+ *         description: Department data with staff
  *       404:
  *         description: Department not found
  */
 const getDepartmentById = async (req, res, next) => {
   try {
     const dept = await Department.findById(req.params.id)
-      .populate('manager', 'firstName lastName email')
+      .populate('manager', 'firstName lastName email phone status department isActive')
       .populate('parent', 'name code')
+      .populate('createdBy', 'firstName lastName email')
+      .populate('updatedBy', 'firstName lastName email')
       .lean();
     if (!dept) return res.status(404).json({ success: false, message: 'Department not found' });
-    const userCount = await User.countDocuments({ department: dept._id });
-    res.json({ success: true, data: { ...dept, total_users: userCount } });
+
+    const managerActive = dept.manager && dept.manager.status === 'active' && dept.manager.isActive;
+
+    const staffQuery = {
+      department: dept._id,
+      status: 'active',
+      isActive: true,
+    };
+    if (dept.manager) {
+      staffQuery._id = { $ne: dept.manager._id };
+    }
+    const staff = await User.find(staffQuery)
+      .populate('role', 'name displayName')
+      .select('firstName lastName email phone status isActive designation role')
+      .sort({ firstName: 1 })
+      .lean();
+
+    const staffCount = staff.length;
+
+    const totalStaffCountResult = await User.countDocuments({ department: dept._id });
+    const totalStaffCount = totalStaffCountResult;
+
+    res.json({
+      success: true,
+      data: {
+        ...dept,
+        manager_name: managerActive
+          ? `${dept.manager.firstName || ''} ${dept.manager.lastName || ''}`.trim()
+          : '',
+        manager_deactivated: dept.manager && !managerActive,
+        staff_count: staffCount,
+        total_users: staffCount,
+        total_staff: totalStaffCount,
+        staff,
+      },
+    });
   } catch (error) {
     next(error);
   }
@@ -179,7 +242,7 @@ const createDepartment = async (req, res, next) => {
       parent: parentId || null,
       manager: managerId || null,
       email: email || '',
-      phone: phone || '',
+      phone: normalizePhone(phone) || '',
       location: location || '',
       budget: budget || 0,
       isActive: isActive !== undefined ? isActive : true,
@@ -257,7 +320,7 @@ const updateDepartment = async (req, res, next) => {
     if (parentId !== undefined) dept.parent = parentId || null;
     if (managerId !== undefined) dept.manager = managerId || null;
     if (email !== undefined) dept.email = email;
-    if (phone !== undefined) dept.phone = phone;
+    if (phone !== undefined) dept.phone = normalizePhone(phone) || '';
     if (location !== undefined) dept.location = location;
     if (budget !== undefined) dept.budget = budget;
     if (isActive !== undefined) dept.isActive = isActive;
@@ -309,7 +372,6 @@ const deleteDepartment = async (req, res, next) => {
     dept.updatedBy = req.user?.id || req.user?._id;
     await dept.save();
 
-    // Also deactivate child departments
     await Department.updateMany({ parent: dept._id }, { isActive: false });
 
     await Log.create({
