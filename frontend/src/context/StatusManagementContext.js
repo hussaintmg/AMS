@@ -24,7 +24,7 @@ export function StatusManagementProvider({ children }) {
         setCollections(res.data.data || []);
       }
     } catch (err) {
-      showApiError(err, 'Failed to load status collections');
+      showApiError(err, 'Failed to load option collections');
     } finally {
       setLoading(false);
     }
@@ -45,13 +45,13 @@ export function StatusManagementProvider({ children }) {
     setSaving(true);
     try {
       const res = await adminAPI.createStatusCollection(data);
-      ensureSuccess(res, 'Status collection created');
-      showApiSuccess(res, 'Status collection created');
+      ensureSuccess(res, 'Option collection created');
+      showApiSuccess(res, 'Option collection created');
       await loadCollections();
       await loadStats();
       return { success: true, data: res.data.data };
     } catch (err) {
-      showApiError(err, 'Failed to create status collection');
+      showApiError(err, 'Failed to create option collection');
       return { success: false, error: err };
     } finally {
       setSaving(false);
@@ -62,15 +62,15 @@ export function StatusManagementProvider({ children }) {
     setSaving(true);
     try {
       const res = await adminAPI.updateStatusCollection(id, data);
-      ensureSuccess(res, 'Status collection updated');
-      showApiSuccess(res, 'Status collection updated');
+      ensureSuccess(res, 'Option collection updated');
+      showApiSuccess(res, 'Option collection updated');
       if (selectedCollection && (selectedCollection._id === id || selectedCollection.id === id)) {
         await openDrawer(id);
       }
       await loadCollections();
       return { success: true, data: res.data.data };
     } catch (err) {
-      showApiError(err, 'Failed to update status collection');
+      showApiError(err, 'Failed to update option collection');
       return { success: false, error: err };
     } finally {
       setSaving(false);
@@ -81,8 +81,8 @@ export function StatusManagementProvider({ children }) {
     setSaving(true);
     try {
       const res = await adminAPI.deleteStatusCollection(id);
-      ensureSuccess(res, 'Status collection deactivated');
-      showApiSuccess(res, 'Status collection deactivated');
+      ensureSuccess(res, 'Option collection deactivated');
+      showApiSuccess(res, 'Option collection deactivated');
       if (drawerOpen && selectedCollection && (selectedCollection._id === id || selectedCollection.id === id)) {
         closeDrawer();
       }
@@ -90,7 +90,7 @@ export function StatusManagementProvider({ children }) {
       await loadStats();
       return { success: true };
     } catch (err) {
-      showApiError(err, 'Failed to delete status collection');
+      showApiError(err, 'Failed to delete option collection');
       return { success: false, error: err };
     } finally {
       setSaving(false);
@@ -110,7 +110,7 @@ export function StatusManagementProvider({ children }) {
         setStatusItems([]);
       }
     } catch (err) {
-      showApiError(err, 'Failed to load status collection');
+      showApiError(err, 'Failed to load option collection');
       closeDrawer();
     } finally {
       setDrawerLoading(false);
@@ -130,7 +130,7 @@ export function StatusManagementProvider({ children }) {
         setStatusItems(res.data.data || []);
       }
     } catch (err) {
-      showApiError(err, 'Failed to load status items');
+      showApiError(err, 'Failed to load option items');
     }
   }, []);
 
@@ -138,8 +138,8 @@ export function StatusManagementProvider({ children }) {
     setSaving(true);
     try {
       const res = await adminAPI.createStatusCollectionItem(collectionId, data);
-      ensureSuccess(res, 'Status item created');
-      showApiSuccess(res, 'Status item created');
+      ensureSuccess(res, 'Option item created');
+      showApiSuccess(res, 'Option item created');
       await loadStatusItems(collectionId);
       if (selectedCollection && (selectedCollection._id === collectionId || selectedCollection.id === collectionId)) {
         setSelectedCollection((prev) => ({
@@ -150,7 +150,7 @@ export function StatusManagementProvider({ children }) {
       }
       return { success: true, data: res.data.data };
     } catch (err) {
-      showApiError(err, 'Failed to create status item');
+      showApiError(err, 'Failed to create option item');
       return { success: false, error: err };
     } finally {
       setSaving(false);
@@ -161,14 +161,14 @@ export function StatusManagementProvider({ children }) {
     setSaving(true);
     try {
       const res = await adminAPI.updateStatusItem(itemId, data);
-      ensureSuccess(res, 'Status item updated');
-      showApiSuccess(res, 'Status item updated');
+      ensureSuccess(res, 'Option item updated');
+      showApiSuccess(res, 'Option item updated');
       if (selectedCollection) {
         await loadStatusItems(selectedCollection._id || selectedCollection.id);
       }
       return { success: true, data: res.data.data };
     } catch (err) {
-      showApiError(err, 'Failed to update status item');
+      showApiError(err, 'Failed to update option item');
       return { success: false, error: err };
     } finally {
       setSaving(false);
@@ -179,14 +179,14 @@ export function StatusManagementProvider({ children }) {
     setSaving(true);
     try {
       const res = await adminAPI.deleteStatusItem(itemId);
-      ensureSuccess(res, 'Status item deactivated');
-      showApiSuccess(res, 'Status item deactivated');
+      ensureSuccess(res, 'Option item deactivated');
+      showApiSuccess(res, 'Option item deactivated');
       if (selectedCollection) {
         await loadStatusItems(selectedCollection._id || selectedCollection.id);
       }
       return { success: true };
     } catch (err) {
-      showApiError(err, 'Failed to delete status item');
+      showApiError(err, 'Failed to delete option item');
       return { success: false, error: err };
     } finally {
       setSaving(false);
@@ -197,14 +197,14 @@ export function StatusManagementProvider({ children }) {
     setSaving(true);
     try {
       const res = await adminAPI.toggleStatusItem(itemId);
-      ensureSuccess(res, 'Status item toggled');
-      showApiSuccess(res, 'Status item toggled');
+      ensureSuccess(res, 'Option item toggled');
+      showApiSuccess(res, 'Option item toggled');
       if (selectedCollection) {
         await loadStatusItems(selectedCollection._id || selectedCollection.id);
       }
       return { success: true };
     } catch (err) {
-      showApiError(err, 'Failed to toggle status item');
+      showApiError(err, 'Failed to toggle option item');
       return { success: false, error: err };
     } finally {
       setSaving(false);
@@ -216,13 +216,13 @@ export function StatusManagementProvider({ children }) {
     try {
       const res = await adminAPI.setDefaultStatusItem(itemId);
       ensureSuccess(res, 'Default status set');
-      showApiSuccess(res, 'Default status updated');
+      showApiSuccess(res, 'Default option updated');
       if (selectedCollection) {
         await loadStatusItems(selectedCollection._id || selectedCollection.id);
       }
       return { success: true };
     } catch (err) {
-      showApiError(err, 'Failed to set default status');
+      showApiError(err, 'Failed to set default option');
       return { success: false, error: err };
     } finally {
       setSaving(false);

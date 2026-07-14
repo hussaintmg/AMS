@@ -1,722 +1,467 @@
-/**
- * Warehouse Management Page
- * Professional corporate UI for managing warehouses
- * Created by LOGIXINVENTOR (PVT) Ltd.
- * info@logixinventor.com +92 333 3836851
- * www.logixinventor.com | AMS
- * Date: 2026-01-07
- */
-
-import React, { useState, useEffect, useCallback } from 'react';
-import SearchableSelect from '../components/SearchableSelect';
-import { useAuth } from '../context/AuthContext';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { warehouseAPI } from '../services/api';
 import toast from 'react-hot-toast';
-import ErrorPopup from '../components/ErrorPopup';
 import ActionButtons from '../components/ActionButtons';
+import ToggleSwitch from '../components/ToggleSwitch';
+import ConfirmModal from '../components/ConfirmModal';
+import useModalKeyboard from '../hooks/useModalKeyboard';
 import '../styles/warehouseManagement.css';
 
-const WarehouseManagement = () => {
-    const { user: currentUser } = useAuth();
+const toArray = (value) => Array.isArray(value) ? value : [];
 
-    // State
-    const [warehouses, setWarehouses] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [errorPopup, setErrorPopup] = useState(null);
-    const [stats, setStats] = useState({});
+function WarehouseManagement() {
+  const [warehouses, setWarehouses] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState('');
+  const [pagination, setPagination] = useState({ page: 1, limit: 15, total: 0, totalPages: 1 });
+  const [stats, setStats] = useState({});
 
-    // Pagination & filtering
-    const [page, setPage] = useState(1);
-    const [limit] = useState(15);
-    const [totalPages, setTotalPages] = useState(1);
-    const [total, setTotal] = useState(0);
-    const [search, setSearch] = useState('');
-    const [cityFilter, setCityFilter] = useState('');
-    const [statusFilter, setStatusFilter] = useState('');
+  // Modal
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalMode, setModalMode] = useState('create');
+  const [currentItem, setCurrentItem] = useState(null);
+  const [formData, setFormData] = useState({});
+  const [saving, setSaving] = useState(false);
 
-    // Modal states
-    const [showModal, setShowModal] = useState(false);
-    const [modalMode, setModalMode] = useState('create');
-    const [selectedWarehouse, setSelectedWarehouse] = useState(null);
-    const [showInventoryModal, setShowInventoryModal] = useState(false);
-    const [inventoryData, setInventoryData] = useState(null);
+  // Drawer
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerItem, setDrawerItem] = useState(null);
+  const drawerRef = useRef(null);
 
-    // Reference data
-    const [cities, setCities] = useState([]);
-    const [managers, setManagers] = useState([]);
+  // Delete
+  const [deleteTarget, setDeleteTarget] = useState(null);
 
-    // Form data
-    const [formData, setFormData] = useState({
-        name: '',
-        code: '',
-        address: '',
-        city: '',
-        phone: '',
-        email: '',
-        managerId: '',
-        capacity: ''
-    });
+  // ── Drawer keyboard ──────────────────────────────────────────────────
 
-    // Debounced search state
-    const [debouncedSearch, setDebouncedSearch] = useState('');
+  useEffect(() => {
+    if (!drawerOpen) return;
+    const handleKey = (e) => { if (e.key === 'Escape') closeDrawer(); };
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
+  }, [drawerOpen]);
 
-    // Fetch warehouses
-    const fetchWarehouses = useCallback(async () => {
-        try {
-            setLoading(true);
-            const params = {
-                page,
-                limit,
-                search: debouncedSearch,
-                ...(cityFilter && { city: cityFilter }),
-                ...(statusFilter && { isActive: statusFilter === 'active' })
-            };
+  // ── Data fetching ────────────────────────────────────────────────────
 
-            const response = await warehouseAPI.getAll(params);
-            const responseData = response?.data?.data || {};
-            setWarehouses(responseData.warehouses || []);
-            setTotalPages(responseData.pagination?.totalPages || 1);
-            setTotal(responseData.pagination?.total || 0);
-        } catch (err) {
-            console.error('Error fetching warehouses:', err);
-            toast.error('Failed to load warehouses');
-            setWarehouses([]);
-        } finally {
-            setLoading(false);
-        }
-    }, [page, limit, debouncedSearch, cityFilter, statusFilter]);
+  const fetchStats = useCallback(async () => {
+    try {
+      const res = await warehouseAPI.getStats();
+      if (res.data.success) setStats(res.data.data || {});
+    } catch (error) {
+      console.error('Failed to fetch stats:', error);
+    }
+  }, []);
 
-    // Fetch reference data
-    const fetchReferenceData = useCallback(async () => {
-        try {
-            const [citiesRes, managersRes, statsRes] = await Promise.all([
-                warehouseAPI.getCities(),
-                warehouseAPI.getManagers(),
-                warehouseAPI.getStats()
-            ]);
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = { search, page: pagination.page, limit: pagination.limit };
+      const res = await warehouseAPI.getAll(params);
+      if (res.data.success) {
+        setWarehouses(toArray(res.data.data));
+        if (res.data.pagination) setPagination(res.data.pagination);
+      }
+    } catch (error) {
+      toast.error('Failed to fetch warehouses');
+      console.error(error);
+    } finally {
+      setLoading(false);
+    }
+  }, [search, pagination.page, pagination.limit]);
 
-            setCities(citiesRes?.data?.data || []);
-            setManagers(managersRes?.data?.data || []);
-            setStats(statsRes?.data?.data || {});
-        } catch (err) {
-            console.error('Error fetching reference data:', err);
-            setCities([]);
-            setManagers([]);
-        }
-    }, []);
+  useEffect(() => { fetchStats(); }, [fetchStats]);
+  useEffect(() => { fetchData(); }, [fetchData]);
 
-    useEffect(() => {
-        fetchWarehouses();
-    }, [fetchWarehouses]);
+  // ── Handlers ─────────────────────────────────────────────────────────
 
-    useEffect(() => {
-        fetchReferenceData();
-    }, [fetchReferenceData]);
+  const handleSearch = (e) => {
+    setSearch(e.target.value);
+    setPagination(prev => ({ ...prev, page: 1 }));
+  };
 
-    // Debounce search
-    useEffect(() => {
-        const timer = setTimeout(() => {
-            setDebouncedSearch(search);
-            setPage(1);
-        }, 500);
-        return () => clearTimeout(timer);
-    }, [search]);
+  const paginate = (page) => setPagination(prev => ({ ...prev, page }));
 
-    // Handle form input change
-    const handleInputChange = (e) => {
-        const { name, value } = e.target;
-        setFormData(prev => ({ ...prev, [name]: value }));
-    };
+  // ── Modal ────────────────────────────────────────────────────────────
 
-    // Open modal
-    const openModal = (mode, warehouse = null) => {
-        setModalMode(mode);
-        setSelectedWarehouse(warehouse);
+  const openModal = (mode, item = null) => {
+    setModalMode(mode);
+    setCurrentItem(item);
+    setFormData(item ? { ...item } : { isActive: true });
+    setModalOpen(true);
+  };
 
-        if (mode === 'create') {
-            setFormData({
-                name: '',
-                code: '',
-                address: '',
-                city: '',
-                phone: '',
-                email: '',
-                managerId: '',
-                capacity: ''
-            });
-        } else if (warehouse) {
-            setFormData({
-                name: warehouse.name,
-                code: warehouse.code,
-                address: warehouse.address || '',
-                city: warehouse.city || '',
-                phone: warehouse.phone || '',
-                email: warehouse.email || '',
-                managerId: warehouse.manager_id || '',
-                capacity: warehouse.capacity || '',
-                isActive: warehouse.is_active,
-                phone: warehouse.phone || warehouse.manager_phone || '',
-                email: warehouse.email || warehouse.manager_email || ''
-            });
-        }
+  const closeModal = () => {
+    setModalOpen(false);
+    setFormData({});
+    setCurrentItem(null);
+  };
 
-        setShowModal(true);
-    };
+  useModalKeyboard(modalOpen, closeModal, null);
 
-    // Close modal
-    const closeModal = () => {
-        setShowModal(false);
-        setSelectedWarehouse(null);
-    };
+  const handleInputChange = (e) => {
+    const { name, value, type, checked } = e.target;
+    setFormData(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
+  };
 
-    // Open inventory modal
-    const openInventoryModal = async (warehouse) => {
-        try {
-            const response = await warehouseAPI.getInventory(warehouse.id);
-            setInventoryData(response?.data?.data || null);
-            setSelectedWarehouse(warehouse);
-            setShowInventoryModal(true);
-        } catch (err) {
-            console.error('Error fetching inventory:', err);
-            toast.error('Failed to load inventory');
-        }
-    };
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!formData.warehouseName?.trim()) { toast.error('Warehouse name is required'); return; }
+    if (!formData.code?.trim()) { toast.error('Code is required'); return; }
+    setSaving(true);
+    try {
+      const data = { ...formData };
+      if (data.capacity) data.capacity = Number(data.capacity);
 
-    // Close inventory modal
-    const closeInventoryModal = () => {
-        setShowInventoryModal(false);
-        setInventoryData(null);
-        setSelectedWarehouse(null);
-    };
+      const id = currentItem?._id;
+      const res = id
+        ? await warehouseAPI.update(id, data)
+        : await warehouseAPI.create(data);
 
-    // Create warehouse
-    const handleCreateWarehouse = async (e) => {
-        e.preventDefault();
-        try {
-            await warehouseAPI.create(formData);
-            toast.success('Warehouse created successfully!');
-            closeModal();
-            fetchWarehouses();
-            fetchReferenceData();
-        } catch (err) {
-            console.error('Error creating warehouse:', err);
-            setErrorPopup(err.response?.data || { message: 'Failed to create warehouse' });
-        }
-    };
+      if (res.data.success) {
+        toast.success(res.data.message);
+        fetchData();
+        fetchStats();
+        closeModal();
+      }
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Operation failed');
+    } finally {
+      setSaving(false);
+    }
+  };
 
-    // Update warehouse
-    const handleUpdateWarehouse = async (e) => {
-        e.preventDefault();
-        try {
-            await warehouseAPI.update(selectedWarehouse.id, formData);
-            toast.success('Warehouse updated successfully!');
-            closeModal();
-            fetchWarehouses();
-        } catch (err) {
-            console.error('Error updating warehouse:', err);
-            setErrorPopup(err.response?.data || { message: 'Failed to update warehouse' });
-        }
-    };
+  // ── Delete ───────────────────────────────────────────────────────────
 
-    // Delete warehouse
-    const handleDeleteWarehouse = async (warehouseId, warehouseName) => {
-        if (!window.confirm(`Are you sure you want to delete warehouse "${warehouseName}"?`)) {
-            return;
-        }
-        try {
-            await warehouseAPI.delete(warehouseId);
-            toast.success('Warehouse deleted successfully!');
-            fetchWarehouses();
-            fetchReferenceData();
-        } catch (err) {
-            console.error('Error deleting warehouse:', err);
-            setErrorPopup(err.response?.data || { message: 'Failed to delete warehouse' });
-        }
-    };
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    try {
+      const res = await warehouseAPI.delete(deleteTarget._id);
+      if (res.data.success) {
+        toast.success('Deleted successfully');
+        fetchData();
+        fetchStats();
+        setDeleteTarget(null);
+        if (drawerItem?._id === deleteTarget._id) closeDrawer();
+      }
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Delete failed');
+    }
+  };
 
-    // Format currency
-    const formatCurrency = (amount) => {
-        return `PKR ${Number(amount || 0).toLocaleString()}`;
-    };
+  // ── Drawer ───────────────────────────────────────────────────────────
 
+  const openDrawer = (item) => {
+    setDrawerItem(item);
+    setDrawerOpen(true);
+  };
+
+  const closeDrawer = () => {
+    setDrawerOpen(false);
+    setDrawerItem(null);
+  };
+
+  // ── Render helpers ───────────────────────────────────────────────────
+
+  const renderStatus = (item) => (
+    <span className={`badge-st ${item.isActive ? 'active' : 'inactive'}`}>
+      {item.isActive ? 'Active' : 'Inactive'}
+    </span>
+  );
+
+  const renderActions = (item) => (
+    <ActionButtons
+      onEdit={() => openModal('edit', item)}
+      onDelete={() => setDeleteTarget(item)}
+      extraActions={[{ label: 'View', icon: '👁️', onClick: () => openDrawer(item) }]}
+    />
+  );
+
+  const renderPagination = () => {
+    const { page, totalPages } = pagination;
+    if (totalPages <= 1) return null;
     return (
-        <div className="warehouse-management-page">
-            {/* Page Header */}
-            <div className="page-header">
-                <div className="header-content">
-                    <h1>Warehouse Management</h1>
-                    <p className="subtitle">Manage storage locations and inventory distribution</p>
-                </div>
-                <button className="btn btn-primary btn-create" onClick={() => openModal('create')}>
-                    <span className="icon">+</span>
-                    Add Warehouse
-                </button>
-            </div>
-
-            {/* Stats Cards */}
-            <div className="stats-grid">
-                <div className="stat-card stat-total">
-                    <div className="stat-icon">🏭</div>
-                    <div className="stat-content">
-                        <span className="stat-value">{stats.total_warehouses || 0}</span>
-                        <span className="stat-label">Total Warehouses</span>
-                    </div>
-                </div>
-                <div className="stat-card stat-vehicles">
-                    <div className="stat-icon">🚗</div>
-                    <div className="stat-content">
-                        <span className="stat-value">{stats.total_vehicles || 0}</span>
-                        <span className="stat-label">Vehicles Stored</span>
-                    </div>
-                </div>
-                <div className="stat-card stat-parts">
-                    <div className="stat-icon">🔧</div>
-                    <div className="stat-content">
-                        <span className="stat-value">{stats.total_parts || 0}</span>
-                        <span className="stat-label">Parts Stored</span>
-                    </div>
-                </div>
-                <div className="stat-card stat-cities">
-                    <div className="stat-icon">📍</div>
-                    <div className="stat-content">
-                        <span className="stat-value">{stats.cities_covered || 0}</span>
-                        <span className="stat-label">Cities Covered</span>
-                    </div>
-                </div>
-                <div className="stat-card stat-value">
-                    <div className="stat-icon">💵</div>
-                    <div className="stat-content">
-                        <span className="stat-value">{formatCurrency(stats.total_value)}</span>
-                        <span className="stat-label">Total Inventory Value</span>
-                    </div>
-                </div>
-            </div>
-
-            <ErrorPopup error={errorPopup} onClose={() => setErrorPopup(null)} />
-
-            {/* Filters */}
-            <div className="filters-bar">
-                <div className="search-box">
-                    <input
-                        type="text"
-                        placeholder="Search by name, code, or city..."
-                        value={search}
-                        onChange={(e) => setSearch(e.target.value)}
-                        className="search-input"
-                    />
-                    <span className="search-icon">🔍</span>
-                </div>
-
-                <SearchableSelect
-                    value={cityFilter}
-                    onChange={(e) => { setCityFilter(e.target.value); setPage(1); }}
-                    className="filter-select"
-                >
-                    <option value="">All Cities</option>
-                    {cities.map(city => (
-                        <option key={city} value={city}>{city}</option>
-                    ))}
-                </SearchableSelect>
-
-                <SearchableSelect
-                    value={statusFilter}
-                    onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
-                    className="filter-select"
-                >
-                    <option value="">All Status</option>
-                    <option value="active">Active</option>
-                    <option value="inactive">Inactive</option>
-                </SearchableSelect>
-
-                <span className="results-count">{total} warehouses found</span>
-            </div>
-
-            {/* Warehouses Table */}
-            <div className="table-container">
-                {loading ? (
-                    <div className="loading-state">
-                        <div className="spinner"></div>
-                        <p>Loading warehouses...</p>
-                    </div>
-                ) : warehouses.length === 0 ? (
-                    <div className="empty-state">
-                        <div className="empty-icon">🏭</div>
-                        <h3>No Warehouses Found</h3>
-                        <p>No warehouses match your search criteria.</p>
-                    </div>
-                ) : (
-                    <table className="data-table">
-                        <thead>
-                            <tr>
-                                <th>Code</th>
-                                <th>Name</th>
-                                <th>City</th>
-                                <th>Manager</th>
-                                <th>Vehicles</th>
-                                <th>Parts</th>
-                                <th>Total Value</th>
-                                <th>Status</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {warehouses.map(warehouse => (
-                                <tr key={warehouse.id} className={!warehouse.is_active ? 'row-inactive' : ''}>
-                                    <td>
-                                        <strong className="warehouse-code">{warehouse.code}</strong>
-                                    </td>
-                                    <td>
-                                        <div className="warehouse-info">
-                                            <span className="warehouse-name">{warehouse.name}</span>
-                                            {warehouse.address && <span className="warehouse-address">{warehouse.address}</span>}
-                                        </div>
-                                    </td>
-                                    <td>{warehouse.city || '-'}</td>
-                                    <td>
-                                        {warehouse.manager_name ? (
-                                            <div className="manager-info">
-                                                <span className="manager-name">{warehouse.manager_name}</span>
-                                                {warehouse.manager_email && <span className="manager-email">{warehouse.manager_email}</span>}
-                                            </div>
-                                        ) : (
-                                            <span className="no-manager">Not Assigned</span>
-                                        )}
-                                    </td>
-                                    <td className="count-cell">{warehouse.vehicle_count || 0}</td>
-                                    <td className="count-cell">{warehouse.parts_count || 0}</td>
-                                    <td className="value-cell">{formatCurrency(warehouse.total_value)}</td>
-                                    <td>
-                                        <span className={`badge ${warehouse.is_active ? 'badge-success' : 'badge-danger'}`}>
-                                            {warehouse.is_active ? 'Active' : 'Inactive'}
-                                        </span>
-                                    </td>
-                                    <td>
-                                        <div className="action-group">
-                                            <button
-                                                className="btn-icon btn-view"
-                                                onClick={() => openInventoryModal(warehouse)}
-                                                title="View Inventory"
-                                            >
-                                                📦
-                                            </button>
-                                            <ActionButtons
-                                                onEdit={() => openModal('edit', warehouse)}
-                                                onDelete={() => handleDeleteWarehouse(warehouse.id, warehouse.name)}
-                                                title={warehouse.name}
-                                                showEdit
-                                                showDelete
-                                            />
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                )}
-            </div>
-
-            {/* Pagination */}
-            {totalPages > 1 && (
-                <div className="pagination">
-                    <button
-                        className="btn-page"
-                        onClick={() => setPage(p => Math.max(1, p - 1))}
-                        disabled={page === 1}
-                    >
-                        ← Previous
-                    </button>
-
-                    <div className="page-numbers">
-                        {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                            let pageNum;
-                            if (totalPages <= 5) {
-                                pageNum = i + 1;
-                            } else if (page <= 3) {
-                                pageNum = i + 1;
-                            } else if (page >= totalPages - 2) {
-                                pageNum = totalPages - 4 + i;
-                            } else {
-                                pageNum = page - 2 + i;
-                            }
-                            return (
-                                <button
-                                    key={pageNum}
-                                    className={`btn-page ${page === pageNum ? 'active' : ''}`}
-                                    onClick={() => setPage(pageNum)}
-                                >
-                                    {pageNum}
-                                </button>
-                            );
-                        })}
-                    </div>
-
-                    <button
-                        className="btn-page"
-                        onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                        disabled={page === totalPages}
-                    >
-                        Next →
-                    </button>
-                </div>
-            )}
-
-            {/* Create/Edit Modal */}
-            {showModal && (
-                <div className="modal-overlay">
-                    <div className="modal-content modal-md" onClick={e => e.stopPropagation()}>
-                        <div className="modal-header">
-                            <h2>{modalMode === 'create' ? 'Add New Warehouse' : 'Edit Warehouse'}</h2>
-                            <button className="modal-close" onClick={closeModal}>×</button>
-                        </div>
-
-                        <form onSubmit={modalMode === 'create' ? handleCreateWarehouse : handleUpdateWarehouse}>
-                            <div className="modal-body">
-                                <div className="form-section">
-                                    <h3>Warehouse Information</h3>
-                                    <div className="form-row">
-                                        <div className="form-group">
-                                            <label htmlFor="name">Name *</label>
-                                            <input
-                                                id="name"
-                                                type="text"
-                                                name="name"
-                                                value={formData.name}
-                                                onChange={handleInputChange}
-                                                required
-                                                placeholder="Warehouse name"
-                                            />
-                                        </div>
-                                        <div className="form-group">
-                                            <label htmlFor="code">Code *</label>
-                                            <input
-                                                id="code"
-                                                type="text"
-                                                name="code"
-                                                value={formData.code}
-                                                onChange={handleInputChange}
-                                                required
-                                                placeholder="e.g., WH-001"
-                                                maxLength={20}
-                                            />
-                                        </div>
-                                    </div>
-                                    <div className="form-row">
-                                        <div className="form-group full-width">
-                                            <label htmlFor="address">Address</label>
-                                            <textarea
-                                                id="address"
-                                                name="address"
-                                                value={formData.address}
-                                                onChange={handleInputChange}
-                                                placeholder="Full address..."
-                                                rows={2}
-                                            />
-                                        </div>
-                                    </div>
-                                    <div className="form-row">
-                                        <div className="form-group">
-                                            <label htmlFor="city">City</label>
-                                            <input
-                                                id="city"
-                                                type="text"
-                                                name="city"
-                                                value={formData.city}
-                                                onChange={handleInputChange}
-                                                placeholder="City"
-                                            />
-                                        </div>
-                                        <div className="form-group">
-                                            <label htmlFor="managerId">Manager</label>
-                                            <SearchableSelect
-                                                id="managerId"
-                                                name="managerId"
-                                                value={formData.managerId}
-                                                onChange={handleInputChange}
-                                            >
-                                                <option value="">Select Manager</option>
-                                                {managers.map(manager => (
-                                                    <option key={manager.id} value={manager.id}>{manager.name}</option>
-                                                ))}
-                                            </SearchableSelect>
-                                        </div>
-                                    </div>
-                                    <div className="form-row">
-                                        <div className="form-group">
-                                            <label htmlFor="capacity">Capacity (Units)</label>
-                                            <input
-                                                id="capacity"
-                                                type="number"
-                                                name="capacity"
-                                                value={formData.capacity}
-                                                onChange={handleInputChange}
-                                                placeholder="Total storage capacity"
-                                            />
-                                        </div>
-                                        <div className="form-group">
-                                            <label htmlFor="isActive">Status</label>
-                                            <SearchableSelect
-                                                id="isActive"
-                                                name="isActive"
-                                                value={formData.isActive}
-                                                onChange={(e) => setFormData(prev => ({ ...prev, isActive: e.target.value === 'true' }))}
-                                            >
-                                                <option value="true">Active</option>
-                                                <option value="false">Inactive</option>
-                                            </SearchableSelect>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="form-section">
-                                    <h3>Contact Information</h3>
-                                    <div className="form-row">
-                                        <div className="form-group">
-                                            <label htmlFor="phone">Phone</label>
-                                            <input
-                                                id="phone"
-                                                type="text"
-                                                name="phone"
-                                                value={formData.phone}
-                                                onChange={handleInputChange}
-                                                placeholder="Phone number"
-                                            />
-                                        </div>
-                                        <div className="form-group">
-                                            <label htmlFor="email">Email</label>
-                                            <input
-                                                id="email"
-                                                type="email"
-                                                name="email"
-                                                value={formData.email}
-                                                onChange={handleInputChange}
-                                                placeholder="Email address"
-                                            />
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="modal-footer">
-                                <button type="button" className="btn btn-secondary" onClick={closeModal}>
-                                    Cancel
-                                </button>
-                                <button type="submit" className="btn btn-primary">
-                                    {modalMode === 'create' ? 'Add Warehouse' : 'Save Changes'}
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
-
-            {/* Inventory Modal */}
-            {showInventoryModal && inventoryData && (
-                <div className="modal-overlay">
-                    <div className="modal-content modal-lg" onClick={e => e.stopPropagation()}>
-                        <div className="modal-header">
-                            <h2>Warehouse Inventory: {selectedWarehouse?.name}</h2>
-                            <button className="modal-close" onClick={closeInventoryModal}>×</button>
-                        </div>
-
-                        <div className="modal-body">
-                            <div className="inventory-summary">
-                                <div className="summary-item">
-                                    <span className="summary-label">Vehicles</span>
-                                    <span className="summary-value">{inventoryData.summary?.vehicleCount || 0}</span>
-                                </div>
-                                <div className="summary-item">
-                                    <span className="summary-label">Parts</span>
-                                    <span className="summary-value">{inventoryData.summary?.partsCount || 0}</span>
-                                </div>
-                                <div className="summary-item">
-                                    <span className="summary-label">Vehicle Value</span>
-                                    <span className="summary-value">{formatCurrency(inventoryData.summary?.vehicleValue)}</span>
-                                </div>
-                                <div className="summary-item">
-                                    <span className="summary-label">Parts Value</span>
-                                    <span className="summary-value">{formatCurrency(inventoryData.summary?.partsValue)}</span>
-                                </div>
-                            </div>
-
-                            {inventoryData.vehicles?.length > 0 && (
-                                <div className="inventory-section">
-                                    <h3>🚗 Vehicles ({inventoryData.vehicles.length})</h3>
-                                    <table className="data-table compact">
-                                        <thead>
-                                            <tr>
-                                                <th>VIN</th>
-                                                <th>Vehicle</th>
-                                                <th>Color</th>
-                                                <th>Status</th>
-                                                <th>Price</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {inventoryData.vehicles?.slice(0, 10).map(v => (
-                                                <tr key={v.id}>
-                                                    <td>{v.vin}</td>
-                                                    <td>{v.make_name} {v.model_name} {v.variant_name}</td>
-                                                    <td>{v.color_name}</td>
-                                                    <td><span className="badge badge-info">{v.status}</span></td>
-                                                    <td>{formatCurrency(v.selling_price)}</td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                    {inventoryData.vehicles.length > 10 && (
-                                        <p className="more-items">...and {inventoryData.vehicles.length - 10} more vehicles</p>
-                                    )}
-                                </div>
-                            )}
-
-                            {inventoryData.parts?.length > 0 && (
-                                <div className="inventory-section">
-                                    <h3>🔧 Parts ({inventoryData.parts.length})</h3>
-                                    <table className="data-table compact">
-                                        <thead>
-                                            <tr>
-                                                <th>Part #</th>
-                                                <th>Name</th>
-                                                <th>Brand</th>
-                                                <th>Stock</th>
-                                                <th>Bin</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {inventoryData.parts?.slice(0, 10).map(p => (
-                                                <tr key={p.id}>
-                                                    <td>{p.part_number}</td>
-                                                    <td>{p.name}</td>
-                                                    <td>{p.brand || '-'}</td>
-                                                    <td>{p.current_stock} {p.unit}</td>
-                                                    <td>{p.bin_location || '-'}</td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                    {inventoryData.parts.length > 10 && (
-                                        <p className="more-items">...and {inventoryData.parts.length - 10} more parts</p>
-                                    )}
-                                </div>
-                            )}
-
-                            {inventoryData.vehicles?.length === 0 && inventoryData.parts?.length === 0 && (
-                                <div className="empty-inventory">
-                                    <p>No inventory in this warehouse</p>
-                                </div>
-                            )}
-                        </div>
-
-                        <div className="modal-footer">
-                            <button type="button" className="btn btn-secondary" onClick={closeInventoryModal}>
-                                Close
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+      <div className="pagination">
+        <button className="btn-page" disabled={page <= 1} onClick={() => paginate(page - 1)}>Previous</button>
+        <div className="page-numbers">
+          {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
+            let p;
+            if (totalPages <= 7) { p = i + 1; }
+            else if (page <= 4) { p = i + 1; }
+            else if (page >= totalPages - 3) { p = totalPages - 6 + i; }
+            else { p = page - 3 + i; }
+            return (
+              <button key={p} className={`btn-page ${p === page ? 'active' : ''}`} onClick={() => paginate(p)}>{p}</button>
+            );
+          })}
         </div>
+        <button className="btn-page" disabled={page >= totalPages} onClick={() => paginate(page + 1)}>Next</button>
+      </div>
     );
-};
+  };
+
+  // ── Table ────────────────────────────────────────────────────────────
+
+  const renderTable = () => (
+    <div className="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>Code</th>
+            <th>Warehouse Name</th>
+            <th>Type</th>
+            <th>City</th>
+            <th>Manager</th>
+            <th>Capacity</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {warehouses.length === 0 ? (
+            <tr><td colSpan="8" style={{ textAlign: 'center' }}>No warehouses found</td></tr>
+          ) : warehouses.map(item => (
+            <tr key={item._id} onClick={() => openDrawer(item)} style={{ cursor: 'pointer' }}>
+              <td><strong className="wh-code">{item.code}</strong></td>
+              <td>{item.warehouseName}</td>
+              <td>{item.type || '—'}</td>
+              <td>{item.city || '—'}</td>
+              <td>{item.manager || '—'}</td>
+              <td>{item.capacity ? `${item.capacity.toLocaleString()} u` : '—'}</td>
+              <td>{renderStatus(item)}</td>
+              <td onClick={e => e.stopPropagation()}>{renderActions(item)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+
+  // ── Mobile cards ─────────────────────────────────────────────────────
+
+  const renderCards = () => (
+    <div className="mobile-cards">
+      {warehouses.length === 0 ? (
+        <div className="empty-state">No warehouses found</div>
+      ) : warehouses.map(item => (
+        <div key={item._id} className="data-card" onClick={() => openDrawer(item)}>
+          <div className="card-field"><strong>{item.warehouseName}</strong> <span className="wh-code">({item.code})</span></div>
+          {item.type && <div className="card-field"><label>Type:</label><span>{item.type}</span></div>}
+          {item.city && <div className="card-field"><label>City:</label><span>{item.city}</span></div>}
+          {item.manager && <div className="card-field"><label>Manager:</label><span>{item.manager}</span></div>}
+          {item.capacity && <div className="card-field"><label>Capacity:</label><span>{item.capacity.toLocaleString()} units</span></div>}
+          <div className="card-field">{renderStatus(item)}</div>
+          <div className="card-actions" onClick={e => e.stopPropagation()}>
+            <ActionButtons onEdit={() => openModal('edit', item)} onDelete={() => setDeleteTarget(item)} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+
+  // ── Form ─────────────────────────────────────────────────────────────
+
+  const renderForm = () => (
+    <>
+      <div className="form-group">
+        <label>Warehouse Name *</label>
+        <input type="text" name="warehouseName" value={formData.warehouseName || ''} onChange={handleInputChange} required autoFocus />
+      </div>
+      <div className="form-group">
+        <label>Code *</label>
+        <input type="text" name="code" value={formData.code || ''} onChange={handleInputChange} required placeholder="e.g. WH-001" />
+      </div>
+      <div className="grid-cols-2">
+        <div className="form-group">
+          <label>Type</label>
+          <input type="text" name="type" value={formData.type || ''} onChange={handleInputChange} placeholder="e.g. Main, Service" />
+        </div>
+        <div className="form-group">
+          <label>Capacity (units)</label>
+          <input type="number" name="capacity" value={formData.capacity ?? ''} onChange={handleInputChange} min="0" />
+        </div>
+      </div>
+      <div className="form-group">
+        <label>Manager</label>
+        <input type="text" name="manager" value={formData.manager || ''} onChange={handleInputChange} placeholder="Manager name" />
+      </div>
+      <div className="grid-cols-2">
+        <div className="form-group">
+          <label>Phone</label>
+          <input type="text" name="phone" value={formData.phone || ''} onChange={handleInputChange} placeholder="Phone number" />
+        </div>
+        <div className="form-group">
+          <label>Email</label>
+          <input type="email" name="email" value={formData.email || ''} onChange={handleInputChange} placeholder="Email address" />
+        </div>
+      </div>
+      <div className="form-group">
+        <label>Address</label>
+        <textarea name="address" value={formData.address || ''} onChange={handleInputChange} />
+      </div>
+      <div className="form-group">
+        <label>City</label>
+        <input type="text" name="city" value={formData.city || ''} onChange={handleInputChange} placeholder="City" />
+      </div>
+      <div className="form-group">
+        <label style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <ToggleSwitch checked={formData.isActive !== false} onChange={(v) => setFormData(prev => ({ ...prev, isActive: v }))} />
+          Active
+        </label>
+      </div>
+    </>
+  );
+
+  // ── Drawer content ───────────────────────────────────────────────────
+
+  const renderDrawerContent = () => {
+    if (!drawerItem) return null;
+    const fields = [
+      { label: 'Warehouse Name', value: drawerItem.warehouseName },
+      { label: 'Code', value: drawerItem.code },
+      { label: 'Type', value: drawerItem.type },
+      { label: 'Manager', value: drawerItem.manager },
+      { label: 'Phone', value: drawerItem.phone },
+      { label: 'Email', value: drawerItem.email },
+      { label: 'Address', value: drawerItem.address },
+      { label: 'City', value: drawerItem.city },
+      { label: 'Capacity', value: drawerItem.capacity ? `${drawerItem.capacity.toLocaleString()} units` : '—' },
+    ];
+    return (
+      <div className="drawer-content">
+        <div className="drawer-section">
+          <h4>Warehouse Information</h4>
+          <div className="drawer-grid">
+            {fields.map(f => (
+              <div key={f.label} className="drawer-row">
+                <span className="drawer-label">{f.label}</span>
+                <span className="drawer-value">{f.value || '—'}</span>
+              </div>
+            ))}
+            <div className="drawer-row drawer-row-full">
+              <span className="drawer-label">Status</span>
+              <span className="drawer-value">{renderStatus(drawerItem)}</span>
+            </div>
+          </div>
+        </div>
+        <div className="drawer-actions">
+          <button className="btn-primary" onClick={() => { closeDrawer(); setTimeout(() => openModal('edit', drawerItem), 100); }}>
+            Edit Warehouse
+          </button>
+          <button className="btn-secondary" onClick={() => setDeleteTarget(drawerItem)}>
+            Delete
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="wh-page">
+      {/* Header */}
+      <div className="page-header">
+        <h1>
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" width="28">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+          </svg>
+          Warehouse Management
+        </h1>
+      </div>
+
+      {/* Stats */}
+      <div className="stats-grid">
+        <div className="stat-card">
+          <div className="stat-icon total">🏭</div>
+          <div className="stat-info"><h3>Total</h3><div className="value">{stats.total ?? 0}</div></div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-icon active-st">✅</div>
+          <div className="stat-info"><h3>Active</h3><div className="value">{stats.active ?? 0}</div></div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-icon inactive-st">❌</div>
+          <div className="stat-info"><h3>Inactive</h3><div className="value">{stats.inactive ?? 0}</div></div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-icon cap">📦</div>
+          <div className="stat-info"><h3>Cities</h3><div className="value">{stats.citiesCovered ?? 0}</div></div>
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="content-card">
+        <div className="action-bar">
+          <div className="search-box">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <input type="text" placeholder="Search by name, code, city, manager..." value={search} onChange={handleSearch} />
+          </div>
+          <button className="add-btn" onClick={() => openModal('create')}>
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" width="20">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+            </svg>
+            Add Warehouse
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="flex justify-center p-12"><div className="spinner"></div></div>
+        ) : (
+          <>
+            <div className="desktop-table">{renderTable()}</div>
+            <div className="mobile-cards-view">{renderCards()}</div>
+            {renderPagination()}
+          </>
+        )}
+      </div>
+
+      {/* Modal */}
+      {modalOpen && (
+        <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) closeModal(); }}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>{modalMode === 'create' ? 'Add Warehouse' : 'Edit Warehouse'}</h2>
+              <button className="close-btn" onClick={closeModal}>✕</button>
+            </div>
+            <form onSubmit={handleSubmit}>
+              <div className="modal-body">{renderForm()}</div>
+              <div className="modal-footer">
+                <button type="button" className="btn-secondary" onClick={closeModal} disabled={saving}>Cancel</button>
+                <button type="submit" className="btn-primary" disabled={saving}>
+                  {saving ? <><span className="spinner-mini"></span> Saving...</> : modalMode === 'create' ? 'Add Warehouse' : 'Save Changes'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Drawer */}
+      {drawerOpen && (
+        <div className="drawer-overlay" onClick={(e) => { if (e.target === e.currentTarget) closeDrawer(); }}>
+          <div className="drawer-panel" ref={drawerRef} onClick={e => e.stopPropagation()}>
+            <div className="drawer-header">
+              <h3>{drawerItem?.warehouseName || 'Warehouse Details'}</h3>
+              <button className="drawer-close" onClick={closeDrawer}>&times;</button>
+            </div>
+            <div className="drawer-body">
+              {renderDrawerContent()}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete confirm */}
+      <ConfirmModal
+        isOpen={!!deleteTarget}
+        title="Delete Warehouse"
+        message={`Are you sure you want to delete "${deleteTarget?.warehouseName || ''}"?`}
+        onConfirm={handleDelete}
+        onCancel={() => setDeleteTarget(null)}
+        confirmText="Delete"
+        type="danger"
+      />
+    </div>
+  );
+}
 
 export default WarehouseManagement;

@@ -5,8 +5,10 @@
 import React, { useRef, useState, useCallback } from 'react';
 import { Upload, Download } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { getBulkImportSampleUrl, BULK_IMPORT_DOWNLOAD_NAMES } from '../constants/bulkImportSamples';
+import { BULK_IMPORT_DOWNLOAD_NAMES } from '../constants/bulkImportSamples';
+import api from '../services/api';
 import { runClientBulkImport } from '../utils/bulkImportClient';
+import useModalKeyboard from '../hooks/useModalKeyboard';
 import './BulkUploadModal.css';
 
 function downloadBlob(blob, filename) {
@@ -84,26 +86,21 @@ export default function BulkUploadModal({
         try {
             setDownloading(true);
             setErrorMessage('');
-            const url = getBulkImportSampleUrl(templateType, format);
-            if (!url) {
-                throw new Error('Unknown import type or format.');
-            }
-            const res = await fetch(url, { credentials: 'same-origin' });
-            if (!res.ok) {
-                throw new Error(
-                    res.status === 404
-                        ? `Sample file missing (${url}). Rebuild the app or contact support.`
-                        : `Download failed (${res.status}).`
-                );
-            }
-            const blob = await res.blob();
+            const res = await api.get(`/bulk-import/template/${templateType}?format=${format}`, {
+                responseType: 'blob'
+            });
+            const blob = res.data;
             const name =
                 BULK_IMPORT_DOWNLOAD_NAMES[templateType]?.[format] ||
                 `ams_import_template.${format}`;
             downloadBlob(blob, name);
             toast.success(`Sample ${format.toUpperCase()} downloaded`);
         } catch (e) {
-            const msg = e.message || 'Download failed';
+            const msg =
+                e.response?.data?.message ||
+                (typeof e.response?.data === 'string' ? e.response.data : null) ||
+                e.message ||
+                'Download failed';
             setErrorMessage(msg);
             toast.error(msg);
         } finally {
@@ -128,11 +125,15 @@ export default function BulkUploadModal({
                 return;
             }
             setResult(data);
-            const { created, failed, total } = data.summary || {};
+            const { created, updated = 0, failed, total } = data.summary || {};
+            const parts = [];
+            if (created) parts.push(`${created} created`);
+            if (updated) parts.push(`${updated} updated`);
+            const summary = parts.length ? parts.join(', ') : '0 created';
             if (failed === 0) {
-                toast.success(`Imported ${created} of ${total} row(s).`);
+                toast.success(`${summary} (${total} total).`);
             } else {
-                toast(`Imported ${created} of ${total} row(s). ${failed} row(s) need attention.`, {
+                toast(`${summary}, ${failed} failed.`, {
                     icon: '⚠️'
                 });
             }
@@ -149,6 +150,8 @@ export default function BulkUploadModal({
             setSubmitting(false);
         }
     };
+
+    useModalKeyboard(isOpen, handleClose, handleSubmit, submitting);
 
     if (!isOpen) return null;
 
@@ -250,6 +253,7 @@ export default function BulkUploadModal({
                             }`}
                         >
                             Processed {result.summary.total} row(s): {result.summary.created} imported
+                            {result.summary.updated > 0 ? `, ${result.summary.updated} updated` : ''}
                             {result.summary.failed > 0 ? `, ${result.summary.failed} failed` : ''}.
                             {result.errors?.length > 0 ? (
                                 <ul className="bulk-upload-row-errors">

@@ -114,7 +114,6 @@
   color: var(--gray-500);
   white-space: nowrap;
   border-bottom: 2px solid transparent;
-  margin-bottom: -2px;
   transition: all var(--transition-fast);
 }
 

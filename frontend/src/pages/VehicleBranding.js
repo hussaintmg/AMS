@@ -11,6 +11,7 @@ import { ArrowUpTrayIcon } from '@heroicons/react/24/outline';
 import VehicleBrandingTable from '../components/VehicleBrandingTable';
 import VehicleBrandingForm from '../components/VehicleBrandingForm';
 import ErrorPopup from '../components/ErrorPopup';
+import ConfirmModal from '../components/ConfirmModal';
 import BulkUploadModal from '../components/BulkUploadModal';
 import { useAuth } from '../context/AuthContext';
 import vehicleBrandingService from '../services/vehicleBrandingService';
@@ -53,6 +54,10 @@ const VehicleBranding = () => {
         steps: []
     });
     const [showBulkUpload, setShowBulkUpload] = useState(false);
+    const [selectedBrandIds, setSelectedBrandIds] = useState(new Set());
+    const [deleteAllTarget, setDeleteAllTarget] = useState(null);
+    const [deleteTarget, setDeleteTarget] = useState(null);
+    const [deletingAll, setDeletingAll] = useState(false);
 
     // ═══════════════════════════════════════════════════════════════════════════
     // FETCH BRANDS
@@ -190,7 +195,14 @@ const VehicleBranding = () => {
     // DELETE OPERATION
     // ═══════════════════════════════════════════════════════════════════════════
 
-    const handleDeleteBrand = async (brandId) => {
+    const handleDeleteBrand = (brandId) => {
+        setDeleteTarget(brandId);
+    };
+
+    const handleSingleDeleteConfirm = async () => {
+        if (!deleteTarget) return;
+        const brandId = deleteTarget;
+        setDeleteTarget(null);
         try {
             setLoading(true);
 
@@ -244,6 +256,35 @@ const VehicleBranding = () => {
             );
         } finally {
             setLoading(false);
+        }
+    };
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // BULK DELETE
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    const handleBulkDelete = async () => {
+        setDeletingAll(true);
+        try {
+            const ids = Array.from(selectedBrandIds);
+            for (const id of ids) {
+                const response = await vehicleBrandingService.deleteBrand(id);
+                if (!response.success) throw new Error(`Failed to delete brand ${id}`);
+            }
+            setSuccessMessage(`${ids.length} brand(s) deleted successfully!`);
+            setSelectedBrandIds(new Set());
+            setDeleteAllTarget(null);
+            fetchBrands(pagination.page, searchTerm, filterActive);
+            setTimeout(() => setSuccessMessage(''), 3000);
+        } catch (err) {
+            const errorMessage = err.message || 'Failed to delete brands';
+            showErrorPopup('Bulk Delete Error', errorMessage, [
+                'Some brands might be linked to vehicles',
+                'Check the selected brands',
+                'Try again or contact support'
+            ]);
+        } finally {
+            setDeletingAll(false);
         }
     };
 
@@ -337,6 +378,18 @@ const VehicleBranding = () => {
                         <option value="false">Inactive Only</option>
                     </select>
                 </div>
+
+                {(searchTerm || filterActive !== null) && (
+                    <button
+                        type="button"
+                        className="btn btn-sm btn-outline filter-reset-btn"
+                        onClick={() => { setSearchTerm(''); setFilterActive(null); fetchBrands(1, '', null); }}
+                        disabled={loading}
+                        title="Reset all filters"
+                    >
+                        Reset
+                    </button>
+                )}
             </div>
 
             {/* Brands Table */}
@@ -345,9 +398,16 @@ const VehicleBranding = () => {
                 onEdit={handleEditBrand}
                 onDelete={handleDeleteBrand}
                 onStatusChange={handleBulkStatusChange}
+                onBulkDelete={(ids) => { setSelectedBrandIds(new Set(ids)); setDeleteAllTarget(true); }}
+                selectedBrandIds={selectedBrandIds}
+                onSelectedBrandIdsChange={setSelectedBrandIds}
                 loading={loading}
                 error={error}
                 pagination={pagination}
+                searchTerm={searchTerm}
+                onSearchTermChange={(v) => { setSearchTerm(v); fetchBrands(1, v, filterActive); }}
+                filterActive={filterActive}
+                onFilterActiveChange={(v) => { setFilterActive(v); fetchBrands(1, searchTerm, v); }}
             />
 
             {/* Pagination Controls */}
@@ -391,6 +451,28 @@ const VehicleBranding = () => {
                 brandData={selectedBrand}
                 onSubmit={handleFormSubmit}
                 onCancel={handleCloseForm}
+            />
+
+            {/* Single Delete Confirmation */}
+            <ConfirmModal
+                isOpen={!!deleteTarget}
+                title="Delete Brand"
+                message={`Are you sure you want to delete brand "${brands.find(b => b.id === deleteTarget)?.name || ''}"? This action cannot be undone.`}
+                onConfirm={handleSingleDeleteConfirm}
+                onCancel={() => setDeleteTarget(null)}
+                confirmText="Delete"
+                type="danger"
+            />
+
+            {/* Bulk Delete Confirmation */}
+            <ConfirmModal
+                isOpen={!!deleteAllTarget}
+                title="Delete Selected Brands"
+                message={`Are you sure you want to delete ${selectedBrandIds.size} brand(s)? This action cannot be undone.`}
+                onConfirm={handleBulkDelete}
+                onCancel={() => { setDeleteAllTarget(null); setSelectedBrandIds(new Set()); }}
+                confirmText={deletingAll ? 'Deleting...' : 'Delete All'}
+                type="danger"
             />
 
             {/* Error Popup */}

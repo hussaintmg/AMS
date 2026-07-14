@@ -5,13 +5,12 @@ const employees = require('../controllers/employees.controller');
 
 const roles = ['super_admin', 'admin', 'hr_admin'];
 
+router.get('/stats', authenticate, authorize(...roles), employees.getStats);
 router.get('/', authenticate, authorize(...roles), employees.listEmployees);
 router.get('/:id', authenticate, authorize(...roles), employees.getEmployee);
-router.post('/', authenticate, authorize(...roles), employees.upsertEmployee);
-router.put('/:id', authenticate, authorize(...roles), (req, res, next) => {
-    req.body = { ...req.body, id: parseInt(req.params.id, 10) };
-    employees.upsertEmployee(req, res, next);
-});
-router.delete('/:id', authenticate, authorize('super_admin', 'admin', 'hr_admin'), employees.deactivateEmployee);
+router.post('/', authenticate, authorize(...roles), employees.createEmployee);
+router.put('/:id', authenticate, authorize(...roles), employees.updateEmployee);
+router.patch('/:id/toggle', authenticate, authorize(...roles), employees.toggleEmployeeStatus);
+router.delete('/:id', authenticate, authorize(...roles), employees.deleteEmployee);
 
 module.exports = router;

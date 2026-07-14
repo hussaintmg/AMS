@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import ConfirmModal from '../ConfirmModal';
 import StatusItemFormModal from './StatusItemFormModal';
+import ToggleSwitch from '../ToggleSwitch';
 
 function StatusDrawer({
   isOpen, onClose, collection, statusItems,
@@ -190,7 +191,7 @@ function StatusDrawer({
                     </div>
                     <div className="form-group checkbox-group">
                       <label style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <input type="checkbox" name="isActive" checked={editForm.isActive} onChange={handleFieldChange} />
+                        <ToggleSwitch checked={editForm.isActive} onChange={(v) => setEditForm((prev) => ({ ...prev, isActive: v }))} />
                         Active
                       </label>
                     </div>
@@ -210,7 +211,7 @@ function StatusDrawer({
                       <span className="dept-detail-value">{collection?.description || '-'}</span>
                     </div>
                     <div className="dept-detail-row">
-                      <span className="dept-detail-label">Status Items</span>
+                      <span className="dept-detail-label">Option Items</span>
                       <span className="dept-detail-value">{itemCount}</span>
                     </div>
                     <div className="dept-detail-row">
@@ -230,7 +231,7 @@ function StatusDrawer({
             <div className="dept-drawer-section">
               <h4>Usage</h4>
               <small style={{ display: 'block', marginBottom: '12px', color: '#94a3b8' }}>
-                Where this status collection is intended to be used.
+                Where this option collection is intended to be used.
               </small>
               <div className="dept-detail-grid">
                 {isEditing ? (
@@ -294,16 +295,16 @@ function StatusDrawer({
               </div>
             </div>
 
-            {/* ── Status Items Section ── */}
+            {/* ── Option Items Section ── */}
             <div className="dept-drawer-section">
               <div className="section-header" style={{ marginBottom: '16px', paddingBottom: '12px' }}>
-                <h4 style={{ margin: 0 }}>Status Items ({itemCount})</h4>
-                <button className="btn btn-primary btn-sm" onClick={handleAddItem} type="button">+ Add Status</button>
+                <h4 style={{ margin: 0 }}>Option Items ({itemCount})</h4>
+                <button className="btn btn-primary btn-sm" onClick={handleAddItem} type="button">+ Add Option</button>
               </div>
 
               {itemCount === 0 ? (
                 <div style={{ textAlign: 'center', padding: '40px 20px', color: '#94a3b8' }}>
-                  No status items yet. Click "Add Status" to create one.
+                  No option items yet. Click "Add Option" to create one.
                 </div>
               ) : (
                 <>
@@ -343,10 +344,7 @@ function StatusDrawer({
                             <td>
                               <div className="action-buttons">
                                 <button className="btn-action btn-edit" onClick={() => handleEditItem(item)} title="Edit">&#9998;</button>
-                                <button className="btn-action" onClick={() => onToggleItem(item._id || item.id)}
-                                  title={item.isActive ? 'Deactivate' : 'Activate'}>
-                                  {item.isActive ? '\u{1F4A4}' : '\u{2705}'}
-                                </button>
+                                <ToggleSwitch checked={item.isActive} onChange={() => onToggleItem(item._id || item.id)} />
                                 {!item.isDefault && (
                                   <button className="btn-action" onClick={() => onSetDefault(item._id || item.id)}
                                     title="Set as default" style={{ fontSize: '14px', color: '#f59e0b' }}>&#9733;</button>
@@ -379,9 +377,7 @@ function StatusDrawer({
                           </div>
                           <div className="status-item-card-actions">
                             <button className="btn btn-sm btn-secondary" onClick={() => handleEditItem(item)}>Edit</button>
-                            <button className="btn btn-sm btn-secondary" onClick={() => onToggleItem(item._id || item.id)}>
-                              {item.isActive ? 'Deactivate' : 'Activate'}
-                            </button>
+                            <ToggleSwitch checked={item.isActive} onChange={() => onToggleItem(item._id || item.id)} />
                             {!item.isDefault && (
                               <button className="btn btn-sm btn-secondary" onClick={() => onSetDefault(item._id || item.id)}>
                                 Set Default
@@ -415,8 +411,8 @@ function StatusDrawer({
       {/* ── Delete Collection Confirm ── */}
       <ConfirmModal
         isOpen={showDeleteConfirm}
-        title="Delete Status Collection"
-        message={`Are you sure you want to delete "${collection?.name}"? Its statuses will be deactivated.`}
+        title="Delete Option Collection"
+        message={`Are you sure you want to delete "${collection?.name}"? Its options will be deactivated.`}
         onConfirm={handleDelete}
         onCancel={() => setShowDeleteConfirm(false)}
         confirmText="Delete"
@@ -427,7 +423,7 @@ function StatusDrawer({
       {/* ── Delete Item Confirm ── */}
       <ConfirmModal
         isOpen={!!deleteItemConfirm}
-        title="Delete Status Item"
+        title="Delete Option Item"
         message={`Are you sure you want to delete "${deleteItemConfirm?.label}"?`}
         onConfirm={handleDeleteItemConfirm}
         onCancel={() => setDeleteItemConfirm(null)}

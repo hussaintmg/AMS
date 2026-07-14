@@ -61,6 +61,7 @@ const { authenticate, authorizePage } = require('../middleware/auth');
  *               sortOrder: { type: integer }
  *               category: { type: string, enum: [vehicle, service, parts, general, corporate, other], description: Only for types }
  *               level: { type: integer, minimum: 0, maximum: 10, description: Only for priorities }
+ *               portalModules: { type: array, items: { type: string, enum: [services, vehicles, parts] }, description: Only for types }
  *     responses:
  *       201: { description: Item created }
  *       400: { description: Validation error }
@@ -94,6 +95,7 @@ const { authenticate, authorizePage } = require('../middleware/auth');
  *               isActive: { type: boolean }
  *               category: { type: string, description: Only for types }
  *               level: { type: integer, description: Only for priorities }
+ *               portalModules: { type: array, items: { type: string, enum: [services, vehicles, parts] }, description: Only for types }
  *     responses:
  *       200: { description: Item updated }
  *       404: { description: Not found }

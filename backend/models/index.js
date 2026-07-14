@@ -41,6 +41,7 @@ const EmailAsset = require('./EmailAsset.model');
 const EmailComponent = require('./EmailComponent.model');
 const EmailVariable = require('./EmailVariable.model');
 const EmailConfig = require('./EmailConfig.model');
+const { VehicleMake, VehicleModel, VehicleVariant, VehicleColor, PartCategory, Supplier } = require('./VehicleMaster.model');
 
 module.exports = {
   Role,
@@ -86,4 +87,10 @@ module.exports = {
   EmailComponent,
   EmailVariable,
   EmailConfig,
+  VehicleMake,
+  VehicleModel,
+  VehicleVariant,
+  VehicleColor,
+  PartCategory,
+  Supplier,
 };

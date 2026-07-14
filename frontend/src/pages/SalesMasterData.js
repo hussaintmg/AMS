@@ -1,449 +1,920 @@
-/**
- * Sales Master Data Page - CRUD for Quotation/Booking/Order/Invoice Statuses & Priorities
- * Created by LOGIXINVENTOR (PVT) Ltd.
- * info@logixinventor.com +92 333 3836851
- * www.logixinventor.com | AMS
- */
-
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { ArrowUpDown, ArrowUp, ArrowDown, Upload } from 'lucide-react';
+import { salesMasterAPI } from '../services/api';
 import toast from 'react-hot-toast';
-import {
-    PlusIcon,
-    PencilIcon,
-    TrashIcon,
-    XMarkIcon,
-    CheckIcon,
-    DocumentTextIcon,
-    CalendarIcon,
-    ShoppingCartIcon,
-    CurrencyDollarIcon,
-    FlagIcon
-} from '@heroicons/react/24/outline';
-import api from '../services/api';
+import ActionButtons from '../components/ActionButtons';
+import ToggleSwitch from '../components/ToggleSwitch';
+import ConfirmModal from '../components/ConfirmModal';
+import EmailDrawer from '../components/EmailDrawer';
+import useModalKeyboard from '../hooks/useModalKeyboard';
+import '../styles/salesMasterData.css';
+import '../styles/emailTemplates.css';
 
-// Reusing styles from LeadMasterData/global index.css + custom tweaks
-const styles = `
-.sales-master-container { padding: 1.5rem; }
-.sales-master-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
-.sales-master-title { font-size: 1.75rem; font-weight: 700; color: var(--text-primary); }
-.stats-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 1rem; margin-bottom: 1.5rem; }
-.stat-card { background: white; border-radius: 12px; padding: 1.25rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; align-items: center; gap: 1rem; }
-.stat-icon { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; }
-.stat-icon svg { width: 24px; height: 24px; color: white; }
-.stat-icon.quotations { background: linear-gradient(135deg, #6366f1, #4f46e5); }
-.stat-icon.bookings { background: linear-gradient(135deg, #ec4899, #db2777); }
-.stat-icon.orders { background: linear-gradient(135deg, #10b981, #059669); }
-.stat-icon.invoices { background: linear-gradient(135deg, #f59e0b, #d97706); }
-.stat-icon.priorities { background: linear-gradient(135deg, #8b5cf6, #7c3aed); }
-.stat-content h3 { font-size: 1.5rem; font-weight: 700; color: var(--text-primary); }
-.stat-content p { font-size: 0.875rem; color: var(--text-secondary); }
-.tabs-container { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; border-bottom: 2px solid #e5e7eb; padding-bottom: 0; overflow-x: auto; }
-.tab-btn { padding: 0.75rem 1.5rem; font-size: 0.875rem; font-weight: 600; color: #6b7280; background: transparent; border: none; cursor: pointer; border-bottom: 3px solid transparent; margin-bottom: -2px; transition: all 0.2s; display: flex; align-items: center; gap: 0.5rem; white-space: nowrap; }
-.tab-btn:hover { color: #3b82f6; }
-.tab-btn.active { color: #3b82f6; border-bottom-color: #3b82f6; }
-.tab-btn svg { width: 18px; height: 18px; }
-.content-card { background: white; border-radius: 12px; padding: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-.content-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
-.data-table { width: 100%; border-collapse: collapse; }
-.data-table th { text-align: left; padding: 0.75rem 1rem; background: #f9fafb; color: #6b7280; font-weight: 600; font-size: 0.8125rem; text-transform: uppercase; }
-.data-table td { padding: 0.75rem 1rem; border-bottom: 1px solid #e5e7eb; }
-.data-table tr:hover { background: #f9fafb; }
-.color-badge { display: inline-flex; align-items: center; gap: 0.375rem; padding: 0.25rem 0.625rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; }
-.color-badge.info { background: #dbeafe; color: #1d4ed8; }
-.color-badge.success { background: #dcfce7; color: #16a34a; }
-.color-badge.warning { background: #fef3c7; color: #d97706; }
-.color-badge.error { background: #fee2e2; color: #dc2626; }
-.color-badge.gray { background: #f3f4f6; color: #6b7280; }
-.color-badge.primary { background: #e0e7ff; color: #4338ca; }
-.status-badge { display: inline-flex; align-items: center; gap: 0.375rem; padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; }
-.status-badge.active { background: #dcfce7; color: #16a34a; }
-.status-badge.inactive { background: #fee2e2; color: #dc2626; }
-.actions-cell { display: flex; gap: 0.5rem; }
-.btn-icon { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border: none; border-radius: 6px; cursor: pointer; transition: all 0.2s; }
-.btn-icon svg { width: 16px; height: 16px; }
-.btn-icon.edit { background: #dbeafe; color: #2563eb; }
-.btn-icon.edit:hover { background: #2563eb; color: white; }
-.btn-icon.delete { background: #fee2e2; color: #dc2626; }
-.btn-icon.delete:hover { background: #dc2626; color: white; }
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; animation: fadeIn 0.2s; }
-.modal-content { background: white; border-radius: 16px; width: 100%; max-width: 500px; max-height: 90vh; overflow-y: auto; animation: slideUp 0.3s; }
-.modal-header { padding: 1.25rem 1.5rem; border-bottom: 1px solid #e5e7eb; display: flex; justify-content: space-between; align-items: center; }
-.modal-header h3 { font-size: 1.125rem; font-weight: 700; color: var(--text-primary); }
-.modal-close { background: none; border: none; cursor: pointer; color: var(--text-secondary); }
-.modal-close svg { width: 24px; height: 24px; }
-.modal-body { padding: 1.5rem; }
-.form-group { margin-bottom: 1rem; }
-.form-group label { display: block; font-size: 0.875rem; font-weight: 600; color: #374151; margin-bottom: 0.375rem; }
-.form-input { width: 100%; padding: 0.625rem 0.875rem; border: 1px solid #d1d5db; border-radius: 8px; font-size: 0.875rem; transition: all 0.2s; }
-.form-input:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1); }
-.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
-.color-select { display: flex; gap: 0.5rem; flex-wrap: wrap; }
-.color-option { width: 32px; height: 32px; border-radius: 8px; cursor: pointer; border: 2px solid transparent; transition: all 0.2s; }
-.color-option:hover { transform: scale(1.1); }
-.color-option.selected { border-color: #374151; box-shadow: 0 0 0 2px white, 0 0 0 4px #374151; }
-.color-option.info { background: #3b82f6; }
-.color-option.success { background: #10b981; }
-.color-option.warning { background: #f59e0b; }
-.color-option.error { background: #ef4444; }
-.color-option.gray { background: #6b7280; }
-.color-option.primary { background: #4f46e5; }
-.empty-state { text-align: center; padding: 3rem; color: #6b7280; }
-@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-@keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-@media (max-width: 1200px) { .stats-grid { grid-template-columns: repeat(3, 1fr); } }
-@media (max-width: 640px) { .stats-grid { grid-template-columns: 1fr; } .tabs-container { overflow-x: auto; } .form-row { grid-template-columns: 1fr; } }
-`;
+const toArray = (value) => Array.isArray(value) ? value : [];
 
-// Color options for badges
-const colorOptions = ['info', 'success', 'warning', 'error', 'gray', 'primary'];
+const TABS = [
+  { key: 'payment-terms', label: 'Payment Terms', icon: 'credit_card' },
+  { key: 'delivery-terms', label: 'Delivery Terms', icon: 'local_shipping' },
+  { key: 'quotation-validities', label: 'Quotation Validity', icon: 'schedule' },
+  { key: 'discount-types', label: 'Discount Types', icon: 'local_offer' },
+  { key: 'sales-order-types', label: 'Sales Order Types', icon: 'description' },
+  { key: 'invoice-types', label: 'Invoice Types', icon: 'receipt' },
+];
+
+const API_MAP = {
+  'payment-terms': {
+    create: 'createPaymentTerm', update: 'updatePaymentTerm',
+    get: 'getPaymentTerms', del: 'deletePaymentTerm',
+  },
+  'delivery-terms': {
+    create: 'createDeliveryTerm', update: 'updateDeliveryTerm',
+    get: 'getDeliveryTerms', del: 'deleteDeliveryTerm',
+  },
+  'quotation-validities': {
+    create: 'createQuotationValidity', update: 'updateQuotationValidity',
+    get: 'getQuotationValidities', del: 'deleteQuotationValidity',
+  },
+  'discount-types': {
+    create: 'createDiscountType', update: 'updateDiscountType',
+    get: 'getDiscountTypes', del: 'deleteDiscountType',
+  },
+  'sales-order-types': {
+    create: 'createSalesOrderType', update: 'updateSalesOrderType',
+    get: 'getSalesOrderTypes', del: 'deleteSalesOrderType',
+  },
+  'invoice-types': {
+    create: 'createInvoiceType', update: 'updateInvoiceType',
+    get: 'getInvoiceTypes', del: 'deleteInvoiceType',
+  },
+};
+
+const STATS_KEYS = {
+  'payment-terms': 'paymentTerms',
+  'delivery-terms': 'deliveryTerms',
+  'quotation-validities': 'quotationValidities',
+  'discount-types': 'discountTypes',
+  'sales-order-types': 'salesOrderTypes',
+  'invoice-types': 'invoiceTypes',
+};
+
+const TAB_STAT_ICONS = {
+  'payment-terms': 'payment',
+  'delivery-terms': 'delivery',
+  'quotation-validities': 'validity',
+  'discount-types': 'discount',
+  'sales-order-types': 'order-type',
+  'invoice-types': 'invoice-type',
+};
+
+const STAT_EMOJIS = {
+  payment: '💳', delivery: '🚚', validity: '⏱️',
+  discount: '🏷️', 'order-type': '📄', 'invoice-type': '🧾',
+};
 
 function SalesMasterData() {
-    const [activeTab, setActiveTab] = useState('quotation-statuses');
-    const [loading, setLoading] = useState(true);
-    const [stats, setStats] = useState({});
+  const [activeTab, setActiveTab] = useState('payment-terms');
+  const [stats, setStats] = useState({});
+  const [loading, setLoading] = useState(false);
+  const [tableData, setTableData] = useState([]);
+  const [search, setSearch] = useState('');
+  const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
 
-    // Data states
-    const [data, setData] = useState([]);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalMode, setModalMode] = useState('create');
+  const [currentItem, setCurrentItem] = useState(null);
+  const [formData, setFormData] = useState({});
+  const [saving, setSaving] = useState(false);
 
-    // Modal states
-    const [showModal, setShowModal] = useState(false);
-    const [modalMode, setModalMode] = useState('create');
-    const [editingItem, setEditingItem] = useState(null);
-    const [formData, setFormData] = useState({});
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [drawerItem, setDrawerItem] = useState(null);
+  const [nameFilter, setNameFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [codeFilter, setCodeFilter] = useState('');
+  const [descriptionFilter, setDescriptionFilter] = useState('');
+  const [daysFilter, setDaysFilter] = useState('');
+  const [valueFilter, setValueFilter] = useState('');
+  const [typeFilter, setTypeFilter] = useState('');
+  const [sortField, setSortField] = useState('name');
+  const [sortDir, setSortDir] = useState('asc');
+  const formRef = useRef(null);
 
-    // Load stats on mount
-    useEffect(() => {
-        loadStats();
-    }, []);
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [deleteAllTarget, setDeleteAllTarget] = useState(false);
+  const [deletingAll, setDeletingAll] = useState(false);
 
-    // Load data when tab changes
-    useEffect(() => {
-        loadTabData(activeTab);
-    }, [activeTab]);
+  const toggleSelect = (id) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
 
-    const loadStats = async () => {
-        try {
-            const res = await api.get('/sales-master/stats');
-            if (res.data.success) {
-                setStats(res.data.data);
-            }
-        } catch (error) {
-            console.error('Failed to load stats:', error);
-        }
-    };
+  const toggleSelectAll = () => {
+    setSelectedIds(prev => prev.size === filteredItems.length && filteredItems.length > 0 ? new Set() : new Set(filteredItems.map(d => d._id)));
+  };
 
-    const loadTabData = useCallback(async (tab) => {
-        setLoading(true);
-        try {
-            const res = await api.get(`/sales-master/${tab}`);
-            if (res.data.success) {
-                setData(res.data.data);
-            }
-        } catch (error) {
-            toast.error('Failed to load data');
-        } finally {
-            setLoading(false);
-        }
-    }, []);
+  const handleBulkDelete = async () => {
+    setDeletingAll(true);
+    try {
+      const ids = Array.from(selectedIds);
+      for (const id of ids) {
+        await salesMasterAPI[API_MAP[activeTab].del](id);
+      }
+      toast.success(`${ids.length} item(s) deleted`);
+      setSelectedIds(new Set());
+      setDeleteAllTarget(false);
+      fetchTableData();
+      fetchStats();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Bulk delete failed');
+    } finally {
+      setDeletingAll(false);
+    }
+  };
 
-    const handleAdd = () => {
-        setModalMode('create');
-        setEditingItem(null);
-        setFormData(getDefaultFormData(activeTab));
-        setShowModal(true);
-    };
+  const fetchStats = useCallback(async () => {
+    try {
+      const res = await salesMasterAPI.getStats();
+      if (res.data.success) setStats(res.data.data || {});
+    } catch (error) {
+      console.error('Failed to fetch stats:', error);
+    }
+  }, []);
 
-    const handleEdit = (item) => {
-        setModalMode('edit');
-        setEditingItem(item);
-        setFormData({ ...item, is_active: item.is_active === 1 || item.is_active === true });
-        setShowModal(true);
-    };
+  const fetchTableData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const apiKey = API_MAP[activeTab]?.get;
+      if (!apiKey) { setTableData([]); return; }
+      const params = { search, page: pagination.page, limit: pagination.limit };
+      const res = await salesMasterAPI[apiKey](params);
+      if (res.data.success) {
+        setTableData(toArray(res.data.data));
+        if (res.data.pagination) setPagination(res.data.pagination);
+      }
+    } catch (error) {
+      toast.error('Failed to fetch data');
+      console.error(error);
+    } finally {
+      setLoading(false);
+    }
+  }, [activeTab, search, pagination.page, pagination.limit]);
 
-    const handleDelete = async (id) => {
-        if (!window.confirm('Are you sure you want to delete this item?')) return;
+  useEffect(() => { fetchStats(); }, [fetchStats]);
+  useEffect(() => { fetchTableData(); }, [fetchTableData]);
 
-        try {
-            const res = await api.delete(`/sales-master/${activeTab}/${id}`);
-            if (res.data.success) {
-                toast.success('Deleted successfully');
-                loadTabData(activeTab);
-                loadStats();
-            }
-        } catch (error) {
-            toast.error(error.response?.data?.message || 'Failed to delete');
-        }
-    };
+  const handleTabChange = (tab) => {
+    setActiveTab(tab);
+    setSearch('');
+    setSelectedIds(new Set());
+    setDeleteAllTarget(false);
+    setPagination(prev => ({ ...prev, page: 1 }));
+  };
 
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        try {
-            const endpoint = `/sales-master/${activeTab}${modalMode === 'edit' ? `/${editingItem.id}` : ''}`;
-            const method = modalMode === 'edit' ? 'put' : 'post';
+  const handleSearch = (e) => {
+    setSearch(e.target.value);
+    setPagination(prev => ({ ...prev, page: 1 }));
+  };
 
-            const res = await api[method](endpoint, formData);
-            if (res.data.success) {
-                toast.success(res.data.message);
-                setShowModal(false);
-                loadTabData(activeTab);
-                loadStats();
-            }
-        } catch (error) {
-            toast.error(error.response?.data?.message || 'Failed to save');
-        }
-    };
+  const openModal = (mode, item = null) => {
+    setModalMode(mode);
+    setCurrentItem(item);
+    setFormData(item ? { ...item } : { isActive: true });
+    setModalOpen(true);
+  };
 
-    const getDefaultFormData = () => {
-        // All endpoints share same schema for now
-        return { name: '', display_name: '', color: 'gray', sort_order: 0, is_active: true };
-    };
+  const closeModal = () => {
+    setModalOpen(false);
+    setFormData({});
+    setCurrentItem(null);
+  };
 
-    const renderTable = () => {
-        if (loading) {
-            return <div className="empty-state">Loading...</div>;
-        }
+  useModalKeyboard(modalOpen, closeModal, () => formRef.current?.requestSubmit());
 
-        if (!data.length) {
-            return <div className="empty-state">No data found. Click "Add New" to create one.</div>;
-        }
+  const handleInputChange = (e) => {
+    const { name, value, type, checked } = e.target;
+    setFormData(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
+  };
 
-        return (
-            <table className="data-table">
-                <thead>
-                    <tr>
-                        <th>Name (Key)</th>
-                        <th>Display Name</th>
-                        <th>Color</th>
-                        <th>Ordering</th>
-                        <th>Count</th>
-                        <th>Status</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {data.map(item => (
-                        <tr key={item.id}>
-                            <td><code>{item.name}</code></td>
-                            <td><strong>{item.display_name}</strong></td>
-                            <td>
-                                <span className={`color-badge ${item.color || 'gray'}`}>
-                                    {item.color || 'gray'}
-                                </span>
-                            </td>
-                            <td>{item.sort_order}</td>
-                            <td>{item.usage_count || 0}</td>
-                            <td>
-                                <span className={`status-badge ${item.is_active ? 'active' : 'inactive'}`}>
-                                    {item.is_active ? 'Active' : 'Inactive'}
-                                </span>
-                            </td>
-                            <td className="actions-cell">
-                                <button className="btn-icon edit" onClick={() => handleEdit(item)}>
-                                    <PencilIcon />
-                                </button>
-                                <button className="btn-icon delete" onClick={() => handleDelete(item.id)}>
-                                    <TrashIcon />
-                                </button>
-                            </td>
-                        </tr>
-                    ))}
-                </tbody>
-            </table>
-        );
-    };
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!formData.name?.trim()) { toast.error('Name is required'); return; }
+    setSaving(true);
+    try {
+      const data = { ...formData };
+      if (data.days) data.days = Number(data.days);
+      if (data.value) data.value = Number(data.value);
 
-    const renderModalForm = () => {
-        return (
-            <>
-                <div className="form-row">
-                    <div className="form-group">
-                        <label>Name (Key) *</label>
-                        <input
-                            type="text"
-                            className="form-input"
-                            value={formData.name || ''}
-                            onChange={e => setFormData({ ...formData, name: e.target.value.toLowerCase().replace(/\s+/g, '_') })}
-                            required
-                        />
-                    </div>
-                    <div className="form-group">
-                        <label>Display Name *</label>
-                        <input
-                            type="text"
-                            className="form-input"
-                            value={formData.display_name || ''}
-                            onChange={e => setFormData({ ...formData, display_name: e.target.value })}
-                            required
-                        />
-                    </div>
-                </div>
-                <div className="form-group">
-                    <label>Color</label>
-                    <div className="color-select">
-                        {colorOptions.map(color => (
-                            <div
-                                key={color}
-                                className={`color-option ${color} ${formData.color === color ? 'selected' : ''}`}
-                                onClick={() => setFormData({ ...formData, color })}
-                                title={color}
-                            />
-                        ))}
-                    </div>
-                </div>
-                <div className="form-row">
-                    <div className="form-group">
-                        <label>Sort Order</label>
-                        <input
-                            type="number"
-                            className="form-input"
-                            value={formData.sort_order || 0}
-                            onChange={e => setFormData({ ...formData, sort_order: parseInt(e.target.value) || 0 })}
-                        />
-                    </div>
-                    <div className="form-group">
-                        <label>Active</label>
-                        <div
-                            className={`toggle-switch ${formData.is_active ? 'active' : ''}`}
-                            onClick={() => setFormData({ ...formData, is_active: !formData.is_active })}
-                        />
-                    </div>
-                </div>
-            </>
-        );
-    };
+      const ops = API_MAP[activeTab];
+      const id = currentItem?._id;
+      const res = id
+        ? await salesMasterAPI[ops.update](id, data)
+        : await salesMasterAPI[ops.create](data);
 
-    const getTabTitle = () => {
-        switch (activeTab) {
-            case 'quotation-statuses': return 'Quotation Status';
-            case 'booking-statuses': return 'Booking Status';
-            case 'order-statuses': return 'Order Status';
-            case 'invoice-statuses': return 'Invoice Status';
-            case 'priorities': return 'Priority';
-            default: return 'Item';
-        }
-    };
+      if (res.data.success) {
+        toast.success(res.data.message);
+        fetchTableData();
+        fetchStats();
+        closeModal();
+      }
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Operation failed');
+    } finally {
+      setSaving(false);
+    }
+  };
 
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    try {
+      const res = await salesMasterAPI[API_MAP[activeTab].del](deleteTarget._id);
+      if (res.data.success) {
+        toast.success('Deleted successfully');
+        fetchTableData();
+        fetchStats();
+        setDeleteTarget(null);
+      }
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Delete failed');
+    }
+  };
+
+  const handleToggleActive = async (item) => {
+    const prev = item.isActive;
+    const next = !prev;
+    item.isActive = next;
+    if (item === drawerItem) setDrawerItem({ ...drawerItem });
+    try {
+      const op = API_MAP[activeTab]?.update;
+      if (!op) return;
+      const res = await salesMasterAPI[op](item._id, { isActive: next });
+      if (res.data.success) {
+        toast.success(res.data.message);
+        fetchTableData();
+        fetchStats();
+      } else {
+        item.isActive = prev;
+        if (item === drawerItem) setDrawerItem({ ...drawerItem });
+      }
+    } catch (error) {
+      item.isActive = prev;
+      if (item === drawerItem) setDrawerItem({ ...drawerItem });
+      toast.error(error.response?.data?.message || 'Failed to toggle status');
+    }
+  };
+
+  const paginate = (page) => setPagination(prev => ({ ...prev, page }));
+
+  const renderPagination = () => {
+    const { page, totalPages } = pagination;
+    if (totalPages <= 1) return null;
     return (
-        <>
-            <style>{styles}</style>
-            <div className="sales-master-container">
-                <div className="sales-master-header">
-                    <h1 className="sales-master-title">Sales Master Data</h1>
-                </div>
-
-                {/* Stats Cards */}
-                <div className="stats-grid">
-                    <div className="stat-card">
-                        <div className="stat-icon quotations"><DocumentTextIcon /></div>
-                        <div className="stat-content">
-                            <h3>{stats.quotationStatuses?.active || 0}</h3>
-                            <p>Quote Statuses</p>
-                        </div>
-                    </div>
-                    <div className="stat-card">
-                        <div className="stat-icon bookings"><CalendarIcon /></div>
-                        <div className="stat-content">
-                            <h3>{stats.bookingStatuses?.active || 0}</h3>
-                            <p>Booking Statuses</p>
-                        </div>
-                    </div>
-                    <div className="stat-card">
-                        <div className="stat-icon orders"><ShoppingCartIcon /></div>
-                        <div className="stat-content">
-                            <h3>{stats.orderStatuses?.active || 0}</h3>
-                            <p>Order Statuses</p>
-                        </div>
-                    </div>
-                    <div className="stat-card">
-                        <div className="stat-icon invoices"><CurrencyDollarIcon /></div>
-                        <div className="stat-content">
-                            <h3>{stats.invoiceStatuses?.active || 0}</h3>
-                            <p>Invoice Statuses</p>
-                        </div>
-                    </div>
-                    <div className="stat-card">
-                        <div className="stat-icon priorities"><FlagIcon /></div>
-                        <div className="stat-content">
-                            <h3>{stats.priorities?.active || 0}</h3>
-                            <p>Priorities</p>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Tabs */}
-                <div className="tabs-container">
-                    <button
-                        className={`tab-btn ${activeTab === 'quotation-statuses' ? 'active' : ''}`}
-                        onClick={() => setActiveTab('quotation-statuses')}
-                    >
-                        <DocumentTextIcon /> Quotation Statuses
-                    </button>
-                    <button
-                        className={`tab-btn ${activeTab === 'booking-statuses' ? 'active' : ''}`}
-                        onClick={() => setActiveTab('booking-statuses')}
-                    >
-                        <CalendarIcon /> Booking Statuses
-                    </button>
-                    <button
-                        className={`tab-btn ${activeTab === 'order-statuses' ? 'active' : ''}`}
-                        onClick={() => setActiveTab('order-statuses')}
-                    >
-                        <ShoppingCartIcon /> Order Statuses
-                    </button>
-                    <button
-                        className={`tab-btn ${activeTab === 'invoice-statuses' ? 'active' : ''}`}
-                        onClick={() => setActiveTab('invoice-statuses')}
-                    >
-                        <CurrencyDollarIcon /> Invoice Statuses
-                    </button>
-                    <button
-                        className={`tab-btn ${activeTab === 'priorities' ? 'active' : ''}`}
-                        onClick={() => setActiveTab('priorities')}
-                    >
-                        <FlagIcon /> Priorities
-                    </button>
-                </div>
-
-                {/* Content */}
-                <div className="content-card">
-                    <div className="content-header">
-                        <h2>{getTabTitle()}es</h2>
-                        <button className="btn-add" onClick={handleAdd}>
-                            <PlusIcon /> Add {getTabTitle()}
-                        </button>
-                    </div>
-                    {renderTable()}
-                </div>
-
-                {/* Modal */}
-                {showModal && (
-                    <div className="modal-overlay">
-                        <div className="modal-content" onClick={e => e.stopPropagation()}>
-                            <div className="modal-header">
-                                <h3>{modalMode === 'create' ? 'Add' : 'Edit'} {getTabTitle()}</h3>
-                                <button className="modal-close" onClick={() => setShowModal(false)}>
-                                    <XMarkIcon />
-                                </button>
-                            </div>
-                            <form onSubmit={handleSubmit}>
-                                <div className="modal-body">
-                                    {renderModalForm()}
-                                </div>
-                                <div className="modal-footer">
-                                    <button type="button" className="btn-cancel" onClick={() => setShowModal(false)}>
-                                        Cancel
-                                    </button>
-                                    <button type="submit" className="btn-save">
-                                        <CheckIcon /> Save
-                                    </button>
-                                </div>
-                            </form>
-                        </div>
-                    </div>
-                )}
-            </div>
-        </>
+      <div className="pagination">
+        <button className="btn-page" disabled={page <= 1} onClick={() => paginate(page - 1)}>Previous</button>
+        <div className="page-numbers">
+          {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
+            let p;
+            if (totalPages <= 7) { p = i + 1; }
+            else if (page <= 4) { p = i + 1; }
+            else if (page >= totalPages - 3) { p = totalPages - 6 + i; }
+            else { p = page - 3 + i; }
+            return (
+              <button key={p} className={`btn-page ${p === page ? 'active' : ''}`} onClick={() => paginate(p)}>{p}</button>
+            );
+          })}
+        </div>
+        <button className="btn-page" disabled={page >= totalPages} onClick={() => paginate(page + 1)}>Next</button>
+      </div>
     );
+  };
+
+  const handleSort = (field) => {
+    if (sortField === field) { setSortDir(d => d === 'asc' ? 'desc' : 'asc'); }
+    else { setSortField(field); setSortDir('asc'); }
+  };
+
+  const SortIcon = ({ field }) => {
+    if (sortField !== field) return <ArrowUpDown size={14} style={{ verticalAlign: 'middle', marginLeft: 4 }} />;
+    return sortDir === 'asc'
+      ? <ArrowUp size={14} style={{ verticalAlign: 'middle', marginLeft: 4 }} />
+      : <ArrowDown size={14} style={{ verticalAlign: 'middle', marginLeft: 4 }} />;
+  };
+
+  const filteredItems = useMemo(() => {
+    let data = [...tableData];
+    const term = (v) => (v || '').toString().toLowerCase();
+    if (nameFilter) data = data.filter(item => term(item.name).includes(term(nameFilter)));
+    if (codeFilter) data = data.filter(item => term(item.code).includes(term(codeFilter)));
+    if (descriptionFilter) data = data.filter(item => term(item.description).includes(term(descriptionFilter)));
+    if (statusFilter !== 'all') data = data.filter(item => item.isActive === (statusFilter === 'active'));
+    if (daysFilter) data = data.filter(item => String(item.days ?? '').includes(daysFilter));
+    if (valueFilter) data = data.filter(item => String(item.value ?? '').includes(valueFilter));
+    if (typeFilter) data = data.filter(item => item.type === typeFilter);
+    data.sort((a, b) => {
+      let aVal = a[sortField], bVal = b[sortField];
+      if (aVal == null) aVal = '';
+      if (bVal == null) bVal = '';
+      let cmp;
+      if (typeof aVal === 'number' && typeof bVal === 'number') cmp = aVal - bVal;
+      else if (typeof aVal === 'boolean' && typeof bVal === 'boolean') cmp = (aVal === bVal) ? 0 : aVal ? 1 : -1;
+      else cmp = String(aVal).localeCompare(String(bVal));
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+    return data;
+  }, [tableData, nameFilter, statusFilter, codeFilter, descriptionFilter, sortField, sortDir, daysFilter, valueFilter, typeFilter]);
+
+  const renderDrawerContent = () => {
+    if (!drawerItem) return null;
+    const item = drawerItem;
+    const Detail = ({ label: lbl, value }) => (
+      <div className="drawer-detail-row" style={{ padding: '8px 0', borderBottom: '1px solid var(--border-light)', display: 'flex', justifyContent: 'space-between' }}>
+        <span style={{ fontWeight: 600, color: 'var(--text-secondary)', fontSize: '0.85rem' }}>{lbl}</span>
+        <span style={{ color: 'var(--text-primary)' }}>{value ?? '-'}</span>
+      </div>
+    );
+    const statusBadge = (active) => (
+      <span className={`status-capsule ${active ? 'active' : ''}`} onClick={(e) => { e.stopPropagation(); handleToggleActive(item); }}><span className="capsule-circle" /></span>
+    );
+    const tabKey = activeTab;
+    if (tabKey === 'payment-terms') return (<><Detail label="Name" value={item.name} /><Detail label="Code" value={item.code} /><Detail label="Days" value={item.days ? `Net ${item.days}` : '-'} /><Detail label="Description" value={item.description} /><Detail label="Status" value={statusBadge(item.isActive)} /></>);
+    if (tabKey === 'delivery-terms') return (<><Detail label="Name" value={item.name} /><Detail label="Code" value={item.code} /><Detail label="Description" value={item.description} /><Detail label="Status" value={statusBadge(item.isActive)} /></>);
+    if (tabKey === 'quotation-validities') return (<><Detail label="Name" value={item.name} /><Detail label="Code" value={item.code} /><Detail label="Valid Days" value={item.days ? `${item.days} days` : '-'} /><Detail label="Description" value={item.description} /><Detail label="Status" value={statusBadge(item.isActive)} /></>);
+    if (tabKey === 'discount-types') return (<><Detail label="Name" value={item.name} /><Detail label="Code" value={item.code} /><Detail label="Type" value={item.type} /><Detail label="Value" value={item.type === 'percentage' ? `${item.value}%` : `$${Number(item.value || 0).toFixed(2)}`} /><Detail label="Description" value={item.description} /><Detail label="Status" value={statusBadge(item.isActive)} /></>);
+    if (tabKey === 'sales-order-types') return (<><Detail label="Name" value={item.name} /><Detail label="Code" value={item.code} /><Detail label="Description" value={item.description} /><Detail label="Status" value={statusBadge(item.isActive)} /></>);
+    if (tabKey === 'invoice-types') return (<><Detail label="Name" value={item.name} /><Detail label="Code" value={item.code} /><Detail label="Description" value={item.description} /><Detail label="Status" value={statusBadge(item.isActive)} /></>);
+    return null;
+  };
+
+  const renderStatus = (item) => (
+    <span className={`status-capsule ${item.isActive ? 'active' : ''}`} onClick={(e) => { e.stopPropagation(); handleToggleActive(item); }}>
+      <span className="capsule-circle" />
+    </span>
+  );
+
+  const renderActions = (item) => (
+    <ActionButtons onEdit={() => openModal('edit', item)} onDelete={() => setDeleteTarget(item)} />
+  );
+
+  const nameFilterInput = <input type="text" className="form-input filter-input" placeholder="Filter..." value={nameFilter} onChange={(e) => setNameFilter(e.target.value)} onClick={(e) => e.stopPropagation()} />;
+  const codeFilterInput = <input type="text" className="form-input filter-input" placeholder="Filter code..." value={codeFilter} onChange={(e) => setCodeFilter(e.target.value)} onClick={(e) => e.stopPropagation()} />;
+  const descFilterInput = <input type="text" className="form-input filter-input" placeholder="Filter desc..." value={descriptionFilter} onChange={(e) => setDescriptionFilter(e.target.value)} onClick={(e) => e.stopPropagation()} />;
+  const statusFilterSelect = (
+    <select className="form-input filter-input" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} onClick={(e) => e.stopPropagation()}>
+      <option value="all">All</option>
+      <option value="active">Active</option>
+      <option value="inactive">Inactive</option>
+    </select>
+  );
+  const daysFilterInput = <input type="text" className="form-input filter-input" placeholder="Filter days..." value={daysFilter} onChange={(e) => setDaysFilter(e.target.value)} onClick={(e) => e.stopPropagation()} />;
+  const valueFilterInput = <input type="text" className="form-input filter-input" placeholder="Filter value..." value={valueFilter} onChange={(e) => setValueFilter(e.target.value)} onClick={(e) => e.stopPropagation()} />;
+  const typeFilterSelect = (
+    <select className="form-input filter-input" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} onClick={(e) => e.stopPropagation()}>
+      <option value="">All</option>
+      <option value="percentage">Percentage</option>
+      <option value="fixed">Fixed</option>
+    </select>
+  );
+
+  const renderTable = (headers, rows, filterCols = [], sortFields = []) => (
+    <div className="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th style={{ width: 40 }}><input type="checkbox" checked={selectedIds.size === filteredItems.length && filteredItems.length > 0} onChange={toggleSelectAll} /></th>
+            {headers.map((h, i) => (
+              <th key={h} className={sortFields[i] ? 'sortable' : ''} onClick={sortFields[i] ? () => handleSort(sortFields[i]) : undefined}>
+                {h}
+                {sortFields[i] && <SortIcon field={sortFields[i]} />}
+              </th>
+            ))}
+          </tr>
+          <tr className="filter-row">
+            <th></th>
+            {headers.map((h, i) => (
+              <th key={`f-${h}`}>{filterCols[i] || null}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.length === 0 ? (
+            <tr><td colSpan={headers.length + 1} style={{ textAlign: 'center' }}>No records found</td></tr>
+          ) : rows}
+        </tbody>
+      </table>
+    </div>
+  );
+
+  const renderCards = (items, renderCardContent) => (
+    <div className="mobile-cards">
+      {items.length === 0 ? (
+        <div className="empty-state">No records found</div>
+      ) : items.map(item => (
+        <div key={item._id} className="data-card">
+          {renderCardContent(item)}
+          <div className="card-actions">
+            <ActionButtons onEdit={() => openModal('edit', item)} onDelete={() => setDeleteTarget(item)} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+
+  // ── Payment Terms ────────────────────────────────────────────────────
+
+  const renderPaymentTermsTable = () => renderTable(
+    ['Name', 'Code', 'Days', 'Description', 'Status', 'Actions'],
+    filteredItems.map(item => (
+      <tr key={item._id} onClick={() => setDrawerItem(item)} style={{ cursor: 'pointer' }}>
+        <td onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selectedIds.has(item._id)} onChange={() => toggleSelect(item._id)} /></td>
+        <td onClick={(e) => e.stopPropagation()}><strong>{item.name}</strong></td>
+        <td>{item.code || '—'}</td>
+        <td>{item.days ? `Net ${item.days}` : '—'}</td>
+        <td>{item.description || '—'}</td>
+        <td>{renderStatus(item)}</td>
+        <td onClick={(e) => e.stopPropagation()}>{renderActions(item)}</td>
+      </tr>
+    )),
+    [nameFilterInput, codeFilterInput, daysFilterInput, descFilterInput, statusFilterSelect, null],
+    ['name', 'code', 'days', 'description', 'isActive', null]
+  );
+
+  const renderPaymentTermsCards = () => renderCards(tableData, item => (
+    <>
+      <div className="card-field"><strong>{item.name}</strong></div>
+      {item.code && <div className="card-field"><label>Code:</label><span>{item.code}</span></div>}
+      {item.days && <div className="card-field"><label>Days:</label><span>Net {item.days}</span></div>}
+      {item.description && <div className="card-field"><label>Description:</label><span>{item.description}</span></div>}
+      <div className="card-field">{renderStatus(item)}</div>
+    </>
+  ));
+
+  const renderPaymentTermForm = () => (
+    <>
+      <div className="form-group">
+        <label>Name *</label>
+        <input type="text" name="name" value={formData.name || ''} onChange={handleInputChange} required autoFocus />
+      </div>
+      <div className="form-group">
+        <label>Code</label>
+        <input type="text" name="code" value={formData.code || ''} onChange={handleInputChange} placeholder="e.g. NET30" />
+      </div>
+      <div className="form-group">
+        <label>Net Days</label>
+        <input type="number" name="days" value={formData.days ?? ''} onChange={handleInputChange} min="0" placeholder="e.g. 30" />
+      </div>
+      <div className="form-group">
+        <label>Description</label>
+        <textarea name="description" value={formData.description || ''} onChange={handleInputChange} />
+      </div>
+      <div className="form-group">
+        <label style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <ToggleSwitch checked={formData.isActive !== false} onChange={(v) => setFormData(prev => ({ ...prev, isActive: v }))} />
+          Active
+        </label>
+      </div>
+    </>
+  );
+
+  // ── Delivery Terms ───────────────────────────────────────────────────
+
+  const renderDeliveryTermsTable = () => renderTable(
+    ['Name', 'Code', 'Description', 'Status', 'Actions'],
+    filteredItems.map(item => (
+      <tr key={item._id} onClick={() => setDrawerItem(item)} style={{ cursor: 'pointer' }}>
+        <td onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selectedIds.has(item._id)} onChange={() => toggleSelect(item._id)} /></td>
+        <td onClick={(e) => e.stopPropagation()}><strong>{item.name}</strong></td>
+        <td>{item.code || '—'}</td>
+        <td>{item.description || '—'}</td>
+        <td>{renderStatus(item)}</td>
+        <td onClick={(e) => e.stopPropagation()}>{renderActions(item)}</td>
+      </tr>
+    )),
+    [nameFilterInput, codeFilterInput, descFilterInput, statusFilterSelect, null],
+    ['name', 'code', 'description', 'isActive', null]
+  );
+
+  const renderDeliveryTermsCards = () => renderCards(tableData, item => (
+    <>
+      <div className="card-field"><strong>{item.name}</strong></div>
+      {item.code && <div className="card-field"><label>Code:</label><span>{item.code}</span></div>}
+      {item.description && <div className="card-field"><label>Description:</label><span>{item.description}</span></div>}
+      <div className="card-field">{renderStatus(item)}</div>
+    </>
+  ));
+
+  const renderDeliveryTermForm = () => (
+    <>
+      <div className="form-group">
+        <label>Name *</label>
+        <input type="text" name="name" value={formData.name || ''} onChange={handleInputChange} required autoFocus />
+      </div>
+      <div className="form-group">
+        <label>Code</label>
+        <input type="text" name="code" value={formData.code || ''} onChange={handleInputChange} placeholder="e.g. EXW" />
+      </div>
+      <div className="form-group">
+        <label>Description</label>
+        <textarea name="description" value={formData.description || ''} onChange={handleInputChange} />
+      </div>
+      <div className="form-group">
+        <label style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <ToggleSwitch checked={formData.isActive !== false} onChange={(v) => setFormData(prev => ({ ...prev, isActive: v }))} />
+          Active
+        </label>
+      </div>
+    </>
+  );
+
+  // ── Quotation Validities ─────────────────────────────────────────────
+
+  const renderQuotationValiditiesTable = () => renderTable(
+    ['Name', 'Code', 'Valid Days', 'Description', 'Status', 'Actions'],
+    filteredItems.map(item => (
+      <tr key={item._id} onClick={() => setDrawerItem(item)} style={{ cursor: 'pointer' }}>
+        <td onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selectedIds.has(item._id)} onChange={() => toggleSelect(item._id)} /></td>
+        <td onClick={(e) => e.stopPropagation()}><strong>{item.name}</strong></td>
+        <td>{item.code || '—'}</td>
+        <td>{item.days ? `${item.days} days` : '—'}</td>
+        <td>{item.description || '—'}</td>
+        <td>{renderStatus(item)}</td>
+        <td onClick={(e) => e.stopPropagation()}>{renderActions(item)}</td>
+      </tr>
+    )),
+    [nameFilterInput, codeFilterInput, daysFilterInput, descFilterInput, statusFilterSelect, null],
+    ['name', 'code', 'days', 'description', 'isActive', null]
+  );
+
+  const renderQuotationValiditiesCards = () => renderCards(tableData, item => (
+    <>
+      <div className="card-field"><strong>{item.name}</strong></div>
+      {item.code && <div className="card-field"><label>Code:</label><span>{item.code}</span></div>}
+      {item.days && <div className="card-field"><label>Valid Days:</label><span>{item.days} days</span></div>}
+      {item.description && <div className="card-field"><label>Description:</label><span>{item.description}</span></div>}
+      <div className="card-field">{renderStatus(item)}</div>
+    </>
+  ));
+
+  const renderQuotationValidityForm = () => (
+    <>
+      <div className="form-group">
+        <label>Name *</label>
+        <input type="text" name="name" value={formData.name || ''} onChange={handleInputChange} required autoFocus />
+      </div>
+      <div className="form-group">
+        <label>Code</label>
+        <input type="text" name="code" value={formData.code || ''} onChange={handleInputChange} placeholder="e.g. VAL30" />
+      </div>
+      <div className="form-group">
+        <label>Valid Days</label>
+        <input type="number" name="days" value={formData.days ?? ''} onChange={handleInputChange} min="0" placeholder="e.g. 30" />
+      </div>
+      <div className="form-group">
+        <label>Description</label>
+        <textarea name="description" value={formData.description || ''} onChange={handleInputChange} />
+      </div>
+      <div className="form-group">
+        <label style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <ToggleSwitch checked={formData.isActive !== false} onChange={(v) => setFormData(prev => ({ ...prev, isActive: v }))} />
+          Active
+        </label>
+      </div>
+    </>
+  );
+
+  // ── Discount Types ───────────────────────────────────────────────────
+
+  const renderDiscountTypesTable = () => renderTable(
+    ['Name', 'Code', 'Type', 'Value', 'Description', 'Status', 'Actions'],
+    filteredItems.map(item => (
+      <tr key={item._id} onClick={() => setDrawerItem(item)} style={{ cursor: 'pointer' }}>
+        <td onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selectedIds.has(item._id)} onChange={() => toggleSelect(item._id)} /></td>
+        <td onClick={(e) => e.stopPropagation()}><strong>{item.name}</strong></td>
+        <td>{item.code || '—'}</td>
+        <td><span className="status-badge" style={{ background: '#f1f5f9', color: '#475569' }}>{item.type || 'percentage'}</span></td>
+        <td>{item.type === 'percentage' ? `${item.value}%` : `$${Number(item.value || 0).toFixed(2)}`}</td>
+        <td>{item.description || '—'}</td>
+        <td>{renderStatus(item)}</td>
+        <td onClick={(e) => e.stopPropagation()}>{renderActions(item)}</td>
+      </tr>
+    )),
+    [nameFilterInput, codeFilterInput, typeFilterSelect, valueFilterInput, descFilterInput, statusFilterSelect, null],
+    ['name', 'code', 'type', 'value', 'description', 'isActive', null]
+  );
+
+  const renderDiscountTypesCards = () => renderCards(tableData, item => (
+    <>
+      <div className="card-field"><strong>{item.name}</strong></div>
+      {item.code && <div className="card-field"><label>Code:</label><span>{item.code}</span></div>}
+      <div className="card-field"><label>Type:</label><span>{item.type || 'percentage'}</span></div>
+      <div className="card-field"><label>Value:</label><span>{item.type === 'percentage' ? `${item.value}%` : `$${Number(item.value || 0).toFixed(2)}`}</span></div>
+      {item.description && <div className="card-field"><label>Description:</label><span>{item.description}</span></div>}
+      <div className="card-field">{renderStatus(item)}</div>
+    </>
+  ));
+
+  const renderDiscountTypeForm = () => (
+    <>
+      <div className="form-group">
+        <label>Name *</label>
+        <input type="text" name="name" value={formData.name || ''} onChange={handleInputChange} required autoFocus />
+      </div>
+      <div className="form-group">
+        <label>Code</label>
+        <input type="text" name="code" value={formData.code || ''} onChange={handleInputChange} placeholder="e.g. BULK-10" />
+      </div>
+      <div className="grid-cols-2">
+        <div className="form-group">
+          <label>Discount Type</label>
+          <select name="type" value={formData.type || 'percentage'} onChange={handleInputChange}>
+            <option value="percentage">Percentage (%)</option>
+            <option value="fixed">Fixed Amount ($)</option>
+          </select>
+        </div>
+        <div className="form-group">
+          <label>Value</label>
+          <input type="number" name="value" value={formData.value ?? ''} onChange={handleInputChange} min="0" step={formData.type === 'percentage' ? '1' : '0.01'} />
+        </div>
+      </div>
+      <div className="form-group">
+        <label>Description</label>
+        <textarea name="description" value={formData.description || ''} onChange={handleInputChange} />
+      </div>
+      <div className="form-group">
+        <label style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <ToggleSwitch checked={formData.isActive !== false} onChange={(v) => setFormData(prev => ({ ...prev, isActive: v }))} />
+          Active
+        </label>
+      </div>
+    </>
+  );
+
+  // ── Sales Order Types ────────────────────────────────────────────────
+
+  const renderSalesOrderTypesTable = () => renderTable(
+    ['Name', 'Code', 'Description', 'Status', 'Actions'],
+    filteredItems.map(item => (
+      <tr key={item._id} onClick={() => setDrawerItem(item)} style={{ cursor: 'pointer' }}>
+        <td onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selectedIds.has(item._id)} onChange={() => toggleSelect(item._id)} /></td>
+        <td onClick={(e) => e.stopPropagation()}><strong>{item.name}</strong></td>
+        <td>{item.code || '—'}</td>
+        <td>{item.description || '—'}</td>
+        <td>{renderStatus(item)}</td>
+        <td onClick={(e) => e.stopPropagation()}>{renderActions(item)}</td>
+      </tr>
+    )),
+    [nameFilterInput, codeFilterInput, descFilterInput, statusFilterSelect, null],
+    ['name', 'code', 'description', 'isActive', null]
+  );
+
+  const renderSalesOrderTypesCards = () => renderCards(tableData, item => (
+    <>
+      <div className="card-field"><strong>{item.name}</strong></div>
+      {item.code && <div className="card-field"><label>Code:</label><span>{item.code}</span></div>}
+      {item.description && <div className="card-field"><label>Description:</label><span>{item.description}</span></div>}
+      <div className="card-field">{renderStatus(item)}</div>
+    </>
+  ));
+
+  const renderSalesOrderTypeForm = () => (
+    <>
+      <div className="form-group">
+        <label>Name *</label>
+        <input type="text" name="name" value={formData.name || ''} onChange={handleInputChange} required autoFocus />
+      </div>
+      <div className="form-group">
+        <label>Code</label>
+        <input type="text" name="code" value={formData.code || ''} onChange={handleInputChange} placeholder="e.g. SO-STD" />
+      </div>
+      <div className="form-group">
+        <label>Description</label>
+        <textarea name="description" value={formData.description || ''} onChange={handleInputChange} />
+      </div>
+      <div className="form-group">
+        <label style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <ToggleSwitch checked={formData.isActive !== false} onChange={(v) => setFormData(prev => ({ ...prev, isActive: v }))} />
+          Active
+        </label>
+      </div>
+    </>
+  );
+
+  // ── Invoice Types ────────────────────────────────────────────────────
+
+  const renderInvoiceTypesTable = () => renderTable(
+    ['Name', 'Code', 'Description', 'Status', 'Actions'],
+    filteredItems.map(item => (
+      <tr key={item._id} onClick={() => setDrawerItem(item)} style={{ cursor: 'pointer' }}>
+        <td onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selectedIds.has(item._id)} onChange={() => toggleSelect(item._id)} /></td>
+        <td onClick={(e) => e.stopPropagation()}><strong>{item.name}</strong></td>
+        <td>{item.code || '—'}</td>
+        <td>{item.description || '—'}</td>
+        <td>{renderStatus(item)}</td>
+        <td onClick={(e) => e.stopPropagation()}>{renderActions(item)}</td>
+      </tr>
+    )),
+    [nameFilterInput, codeFilterInput, descFilterInput, statusFilterSelect, null],
+    ['name', 'code', 'description', 'isActive', null]
+  );
+
+  const renderInvoiceTypesCards = () => renderCards(tableData, item => (
+    <>
+      <div className="card-field"><strong>{item.name}</strong></div>
+      {item.code && <div className="card-field"><label>Code:</label><span>{item.code}</span></div>}
+      {item.description && <div className="card-field"><label>Description:</label><span>{item.description}</span></div>}
+      <div className="card-field">{renderStatus(item)}</div>
+    </>
+  ));
+
+  const renderInvoiceTypeForm = () => (
+    <>
+      <div className="form-group">
+        <label>Name *</label>
+        <input type="text" name="name" value={formData.name || ''} onChange={handleInputChange} required autoFocus />
+      </div>
+      <div className="form-group">
+        <label>Code</label>
+        <input type="text" name="code" value={formData.code || ''} onChange={handleInputChange} placeholder="e.g. INV-STD" />
+      </div>
+      <div className="form-group">
+        <label>Description</label>
+        <textarea name="description" value={formData.description || ''} onChange={handleInputChange} />
+      </div>
+      <div className="form-group">
+        <label style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <ToggleSwitch checked={formData.isActive !== false} onChange={(v) => setFormData(prev => ({ ...prev, isActive: v }))} />
+          Active
+        </label>
+      </div>
+    </>
+  );
+
+  // ── Form & table lookup ──────────────────────────────────────────────
+
+  const FORMS = {
+    'payment-terms': renderPaymentTermForm,
+    'delivery-terms': renderDeliveryTermForm,
+    'quotation-validities': renderQuotationValidityForm,
+    'discount-types': renderDiscountTypeForm,
+    'sales-order-types': renderSalesOrderTypeForm,
+    'invoice-types': renderInvoiceTypeForm,
+  };
+
+  const TABLES = {
+    'payment-terms': { table: renderPaymentTermsTable, cards: renderPaymentTermsCards },
+    'delivery-terms': { table: renderDeliveryTermsTable, cards: renderDeliveryTermsCards },
+    'quotation-validities': { table: renderQuotationValiditiesTable, cards: renderQuotationValiditiesCards },
+    'discount-types': { table: renderDiscountTypesTable, cards: renderDiscountTypesCards },
+    'sales-order-types': { table: renderSalesOrderTypesTable, cards: renderSalesOrderTypesCards },
+    'invoice-types': { table: renderInvoiceTypesTable, cards: renderInvoiceTypesCards },
+  };
+
+  const TAB_LABELS = {
+    'payment-terms': 'Payment Term',
+    'delivery-terms': 'Delivery Term',
+    'quotation-validities': 'Quotation Validity',
+    'discount-types': 'Discount Type',
+    'sales-order-types': 'Sales Order Type',
+    'invoice-types': 'Invoice Type',
+  };
+
+  return (
+    <div className="sales-master-page">
+      <div className="page-header">
+        <h1>
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" width="28">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+          </svg>
+          Sales Master Data
+        </h1>
+      </div>
+
+      {/* Stats */}
+      <div className="stats-grid">
+        {TABS.map(tab => {
+          const iconClass = TAB_STAT_ICONS[tab.key];
+          return (
+            <div key={tab.key} className="stat-card">
+              <div className={`stat-icon ${iconClass}`}>{STAT_EMOJIS[iconClass]}</div>
+              <div className="stat-info">
+                <h3>{tab.label}</h3>
+                <div className="value">{stats[STATS_KEYS[tab.key]] ?? 0}</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Content */}
+      <div className="tabs-container">
+        <div className="tabs-header">
+          {TABS.map(tab => (
+            <button key={tab.key} className={`tab-btn ${activeTab === tab.key ? 'active' : ''}`} onClick={() => handleTabChange(tab.key)}>
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="tab-content">
+          <div className="action-bar">
+            <div className="search-box">
+              <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input type="text" placeholder="Search..." value={search} onChange={handleSearch} />
+            </div>
+            <button className="add-btn" onClick={() => openModal('create')}>
+              <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" width="20">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+              </svg>
+              Add New
+            </button>
+          </div>
+
+          {loading ? (
+            <div className="flex justify-center p-12"><div className="spinner"></div></div>
+          ) : (
+            <>
+              <div className="desktop-table">{TABLES[activeTab].table()}</div>
+              <div className="mobile-cards-view">{TABLES[activeTab].cards()}</div>
+              {renderPagination()}
+            </>
+          )}
+
+          {selectedIds.size > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, marginTop: 12 }}>
+              <span style={{ fontWeight: 600, color: '#991b1b' }}>{selectedIds.size} selected</span>
+              <button className="btn btn-danger btn-sm" onClick={() => setDeleteAllTarget(true)}>Delete All</button>
+              <button className="btn btn-secondary btn-sm" onClick={() => setSelectedIds(new Set())}>Deselect All</button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Modal */}
+      {modalOpen && (
+        <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) closeModal(); }}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>{modalMode === 'create' ? 'Create' : 'Edit'} {TAB_LABELS[activeTab]}</h2>
+              <button className="close-btn" onClick={closeModal}>✕</button>
+            </div>
+            <form ref={formRef} onSubmit={handleSubmit}>
+              <div className="modal-body">{FORMS[activeTab]()}</div>
+              <div className="modal-footer">
+                <button type="button" className="btn-secondary" onClick={closeModal} disabled={saving}>Cancel</button>
+                <button type="submit" className="btn-primary" disabled={saving}>
+                  {saving ? <><span className="spinner-mini"></span> Saving...</> : modalMode === 'create' ? 'Create' : 'Update'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Drawer */}
+      <EmailDrawer
+        isOpen={!!drawerItem}
+        onClose={() => setDrawerItem(null)}
+        title={drawerItem?.name || ''}
+        width="50%"
+      >
+        <div style={{ padding: '0 4px' }}>
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+            <button className="btn btn-primary" style={{ padding: '6px 16px', fontSize: '0.85rem' }} onClick={() => { const item = drawerItem; setDrawerItem(null); openModal('edit', item); }}>
+              Edit
+            </button>
+            <button className="btn btn-danger" style={{ padding: '6px 16px', fontSize: '0.85rem' }} onClick={() => { const item = drawerItem; setDrawerItem(null); setDeleteTarget(item); }}>
+              Delete
+            </button>
+          </div>
+          {renderDrawerContent()}
+        </div>
+      </EmailDrawer>
+
+      {/* Delete confirmation */}
+      <ConfirmModal
+        isOpen={!!deleteTarget}
+        title="Delete Record"
+        message={`Are you sure you want to delete "${deleteTarget?.name || ''}"?`}
+        onConfirm={handleDelete}
+        onCancel={() => setDeleteTarget(null)}
+        confirmText="Delete"
+        type="danger"
+      />
+
+      {/* Bulk Delete Confirmation */}
+      <ConfirmModal
+        isOpen={deleteAllTarget}
+        title="Delete Selected Records"
+        message={`Are you sure you want to delete ${selectedIds.size} record(s)? This action cannot be undone.`}
+        onConfirm={handleBulkDelete}
+        onCancel={() => setDeleteAllTarget(false)}
+        confirmText={deletingAll ? 'Deleting...' : 'Delete All'}
+        type="danger"
+      />
+    </div>
+  );
 }
 
 export default SalesMasterData;

@@ -106,7 +106,6 @@ const requireAuth = [authenticate];
  *         application/json:
  *           schema:
  *             type: object
- *             required: [firstName]
  *             required: [firstName, email]
  *             properties:
  *               firstName: { type: string }

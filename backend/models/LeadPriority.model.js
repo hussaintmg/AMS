@@ -12,7 +12,6 @@ const leadPrioritySchema = new mongoose.Schema({
   updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
 }, { timestamps: true });
 
-leadPrioritySchema.index({ code: 1 });
 leadPrioritySchema.index({ isActive: 1, sortOrder: 1 });
 
 module.exports = mongoose.model('LeadPriority', leadPrioritySchema);

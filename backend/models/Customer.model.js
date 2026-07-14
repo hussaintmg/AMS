@@ -36,7 +36,6 @@ customerSchema.virtual('name').get(function () {
   return [this.firstName, this.lastName].filter(Boolean).join(' ');
 });
 
-customerSchema.index({ customerCode: 1 });
 customerSchema.index({ email: 1 });
 customerSchema.index({ phone: 1 });
 customerSchema.index({ isActive: 1, deletedAt: 1 });

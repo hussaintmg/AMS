@@ -8,13 +8,18 @@
  * Updated: 2026-04-05 - Added Part Categories tab
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
-import SearchableSelect from '../components/SearchableSelect';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { ArrowUpDown, ArrowUp, ArrowDown, Upload } from 'lucide-react';
+import VehicleMasterModal from '../components/vehicle/VehicleMasterModal';
 import { vehicleMasterAPI } from '../services/api';
 import toast from 'react-hot-toast';
 import ErrorPopup from '../components/ErrorPopup';
 import ActionButtons from '../components/ActionButtons';
+import ConfirmModal from '../components/ConfirmModal';
+import EmailDrawer from '../components/EmailDrawer';
 import '../styles/vehicleMasterData.css';
+import '../styles/emailTemplates.css';
+import '../styles/userManagement.css';
 
 const VehicleMasterData = () => {
     // Active tab state
@@ -30,18 +35,99 @@ const VehicleMasterData = () => {
     const [colors, setColors] = useState([]);
     const [categories, setCategories] = useState([]);
     const [suppliers, setSuppliers] = useState([]);
+    const [conditions, setConditions] = useState([]);
 
     // Modal states
     const [showModal, setShowModal] = useState(false);
     const [modalMode, setModalMode] = useState('create');
     const [selectedItem, setSelectedItem] = useState(null);
 
-    // Form data
-    const [formData, setFormData] = useState({});
+    // Drawer
+    const [drawerItem, setDrawerItem] = useState(null);
+
+    // Delete
+    const [deleteTarget, setDeleteTarget] = useState(null);
+    const [selectedIds, setSelectedIds] = useState(new Set());
+    const [deleteAllTarget, setDeleteAllTarget] = useState(null);
+    const [deletingAll, setDeletingAll] = useState(false);
+
+    const toggleSelect = (id) => {
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id); else next.add(id);
+        return next;
+      });
+    };
+
+    const toggleSelectAll = () => {
+      const data = filteredItems;
+      setSelectedIds(prev => prev.size === data.length && data.length > 0 ? new Set() : new Set(data.map(d => d.id)));
+    };
+
+    const handleBulkDelete = async () => {
+      setDeletingAll(true);
+      try {
+        const ids = Array.from(selectedIds);
+        const deleteFns = {
+          makes: vehicleMasterAPI.deleteMake,
+          models: vehicleMasterAPI.deleteModel,
+          variants: vehicleMasterAPI.deleteVariant,
+          colors: vehicleMasterAPI.deleteColor,
+          categories: vehicleMasterAPI.deleteCategory,
+          suppliers: vehicleMasterAPI.deleteSupplier,
+          conditions: vehicleMasterAPI.deleteCondition,
+        };
+        const fn = deleteFns[activeTab];
+        for (const id of ids) {
+          await fn(id);
+        }
+        toast.success(`${ids.length} ${activeTab} deleted`);
+        setSelectedIds(new Set());
+        setDeleteAllTarget(null);
+        handleSaved();
+      } catch (err) {
+        setErrorPopup(err.response?.data || { message: 'Failed to delete' });
+      } finally {
+        setDeletingAll(false);
+      }
+    };
 
     // Filters
     const [makeFilter, setMakeFilter] = useState('');
     const [modelFilter, setModelFilter] = useState('');
+    const [nameFilter, setNameFilter] = useState('');
+    const [statusFilter, setStatusFilter] = useState('all');
+    const [countryFilter, setCountryFilter] = useState('');
+    const [yearFilter, setYearFilter] = useState('');
+    const [bodyTypeFilter, setBodyTypeFilter] = useState('');
+    const [fuelFilter, setFuelFilter] = useState('');
+    const [transmissionFilter, setTransmissionFilter] = useState('');
+    const [supplierTypeFilter, setSupplierTypeFilter] = useState('');
+    const [supplierCityFilter, setSupplierCityFilter] = useState('');
+    const [codeFilter, setCodeFilter] = useState('');
+    const [contactFilter, setContactFilter] = useState('');
+    const [descriptionFilter, setDescriptionFilter] = useState('');
+    const [parentFilter, setParentFilter] = useState('');
+    const [metallicFilter, setMetallicFilter] = useState('all');
+    const [modelCountFilter, setModelCountFilter] = useState('');
+    const [vehicleCountFilter, setVehicleCountFilter] = useState('');
+    const [variantCountFilter, setVariantCountFilter] = useState('');
+    const [basePriceFilter, setBasePriceFilter] = useState('');
+    const [hexFilter, setHexFilter] = useState('');
+    const [additionalCostFilter, setAdditionalCostFilter] = useState('');
+    const [partsCountFilter, setPartsCountFilter] = useState('');
+    const [subCategoryCountFilter, setSubCategoryCountFilter] = useState('');
+    const [partsPoFilter, setPartsPoFilter] = useState('');
+
+    const handleTabChange = (tab) => {
+        setActiveTab(tab);
+        setSelectedIds(new Set());
+        setDeleteAllTarget(null);
+    };
+
+    // Sorting
+    const [sortField, setSortField] = useState('name');
+    const [sortDir, setSortDir] = useState('asc');
 
     // ═══════════════════════════════════════════════════════════════════════
     // DATA FETCHING
@@ -138,16 +224,32 @@ const VehicleMasterData = () => {
         }
     }, []);
 
-    // Fetch data on tab change
+    const fetchConditions = useCallback(async () => {
+        try {
+            setLoading(true);
+            const res = await vehicleMasterAPI.getConditions();
+            setConditions(res?.data?.data?.conditions || []);
+        } catch (err) {
+            console.error('Error fetching conditions:', err);
+            toast.error('Failed to load conditions');
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    // Fetch data on tab change — always load makes + models for modal dropdowns
     useEffect(() => {
         fetchStats();
-        if (activeTab === 'makes') fetchMakes();
-        else if (activeTab === 'models') fetchModels();
+        fetchMakes();
+        fetchModels();
+        if (activeTab === 'makes') { /* already fetched */ }
+        else if (activeTab === 'models') { /* already fetched */ }
         else if (activeTab === 'variants') fetchVariants();
         else if (activeTab === 'colors') fetchColors();
         else if (activeTab === 'categories') fetchCategories();
         else if (activeTab === 'suppliers') fetchSuppliers();
-    }, [activeTab, fetchStats, fetchMakes, fetchModels, fetchVariants, fetchColors, fetchCategories, fetchSuppliers]);
+        else if (activeTab === 'conditions') fetchConditions();
+    }, [activeTab, fetchStats, fetchMakes, fetchModels, fetchVariants, fetchColors, fetchCategories, fetchSuppliers, fetchConditions]);
 
     // ═══════════════════════════════════════════════════════════════════════
     // MODAL HANDLERS
@@ -156,135 +258,30 @@ const VehicleMasterData = () => {
     const openModal = (mode, item = null) => {
         setModalMode(mode);
         setSelectedItem(item);
-
-        if (mode === 'create') {
-            // Default form data based on active tab
-            if (activeTab === 'makes') {
-                setFormData({ name: '', country: '', logo: '', isActive: true });
-            } else if (activeTab === 'models') {
-                setFormData({ makeId: '', name: '', year: new Date().getFullYear(), bodyType: 'sedan', fuelType: 'petrol', transmission: 'automatic', engineCapacity: '', seatingCapacity: 5, isActive: true });
-            } else if (activeTab === 'variants') {
-                setFormData({ modelId: '', name: '', basePrice: '', features: '', isActive: true });
-            } else if (activeTab === 'colors') {
-                setFormData({ name: '', hexCode: '#000000', isMetallic: false, additionalCost: 0, isActive: true });
-            } else if (activeTab === 'categories') {
-                setFormData({ name: '', description: '', parentId: '', isActive: true });
-            } else if (activeTab === 'suppliers') {
-                setFormData({ supplierCode: '', name: '', type: 'oem', contactPerson: '', email: '', phone: '', address: '', city: '', country: 'Pakistan', taxNumber: '', paymentTerms: '', creditLimit: 0, isActive: true });
-            }
-        } else if (item) {
-            // Edit mode - populate form
-            if (activeTab === 'makes') {
-                setFormData({ name: item.name, country: item.country || '', logo: item.logo || '', isActive: item.is_active });
-            } else if (activeTab === 'models') {
-                setFormData({ makeId: item.make_id, name: item.name, year: item.year, bodyType: item.body_type, fuelType: item.fuel_type, transmission: item.transmission, engineCapacity: item.engine_capacity || '', seatingCapacity: item.seating_capacity || 5, isActive: item.is_active });
-            } else if (activeTab === 'variants') {
-                setFormData({ modelId: item.model_id, name: item.name, basePrice: item.base_price, features: item.features || '', isActive: item.is_active });
-            } else if (activeTab === 'colors') {
-                setFormData({ name: item.name, hexCode: item.hex_code || '#000000', isMetallic: item.is_metallic, additionalCost: item.additional_cost || 0, isActive: item.is_active });
-            } else if (activeTab === 'categories') {
-                setFormData({ name: item.name, description: item.description || '', parentId: item.parent_id || '', isActive: item.is_active });
-            } else if (activeTab === 'suppliers') {
-                setFormData({ 
-                    supplierCode: item.supplier_code, name: item.name, type: item.type, 
-                    contactPerson: item.contact_person || '', email: item.email || '', phone: item.phone || '', 
-                    address: item.address || '', city: item.city || '', country: item.country || '', 
-                    taxNumber: item.tax_number || '', paymentTerms: item.payment_terms || '', 
-                    creditLimit: item.credit_limit || 0, isActive: item.is_active 
-                });
-            }
-        }
         setShowModal(true);
     };
 
     const closeModal = () => {
         setShowModal(false);
         setSelectedItem(null);
-        setFormData({});
     };
 
-    const handleInputChange = (e) => {
-        const { name, value, type, checked } = e.target;
-        setFormData(prev => ({
-            ...prev,
-            [name]: type === 'checkbox' ? checked : value
-        }));
+    const handleSaved = () => {
+        fetchStats();
+        fetchMakes();
+        fetchModels();
+        if (activeTab === 'variants') fetchVariants();
+        else if (activeTab === 'colors') fetchColors();
+        else if (activeTab === 'categories') fetchCategories();
+        else if (activeTab === 'suppliers') fetchSuppliers();
+        else if (activeTab === 'conditions') fetchConditions();
     };
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // CRUD OPERATIONS
-    // ═══════════════════════════════════════════════════════════════════════
-
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        try {
-            if (activeTab === 'makes') {
-                if (modalMode === 'create') {
-                    await vehicleMasterAPI.createMake(formData);
-                    toast.success('Make created successfully');
-                } else {
-                    await vehicleMasterAPI.updateMake(selectedItem.id, formData);
-                    toast.success('Make updated successfully');
-                }
-                fetchMakes();
-            } else if (activeTab === 'models') {
-                if (modalMode === 'create') {
-                    await vehicleMasterAPI.createModel(formData);
-                    toast.success('Model created successfully');
-                } else {
-                    await vehicleMasterAPI.updateModel(selectedItem.id, formData);
-                    toast.success('Model updated successfully');
-                }
-                fetchModels();
-            } else if (activeTab === 'variants') {
-                if (modalMode === 'create') {
-                    await vehicleMasterAPI.createVariant(formData);
-                    toast.success('Variant created successfully');
-                } else {
-                    await vehicleMasterAPI.updateVariant(selectedItem.id, formData);
-                    toast.success('Variant updated successfully');
-                }
-                fetchVariants();
-            } else if (activeTab === 'colors') {
-                if (modalMode === 'create') {
-                    await vehicleMasterAPI.createColor(formData);
-                    toast.success('Color created successfully');
-                } else {
-                    await vehicleMasterAPI.updateColor(selectedItem.id, formData);
-                    toast.success('Color updated successfully');
-                }
-                fetchColors();
-            } else if (activeTab === 'categories') {
-                if (modalMode === 'create') {
-                    await vehicleMasterAPI.createCategory(formData);
-                    toast.success('Category created successfully');
-                } else {
-                    await vehicleMasterAPI.updateCategory(selectedItem.id, formData);
-                    toast.success('Category updated successfully');
-                }
-                fetchCategories();
-            } else if (activeTab === 'suppliers') {
-                if (modalMode === 'create') {
-                    await vehicleMasterAPI.createSupplier(formData);
-                    toast.success('Supplier created successfully');
-                } else {
-                    await vehicleMasterAPI.updateSupplier(selectedItem.id, formData);
-                    toast.success('Supplier updated successfully');
-                }
-                fetchSuppliers();
-            }
-            fetchStats();
-            closeModal();
-        } catch (err) {
-            console.error('Error saving:', err);
-            setErrorPopup(err.response?.data || { message: 'Failed to save' });
-        }
-    };
-
-    const handleDelete = async (item) => {
+    const handleDeleteConfirm = async () => {
+        if (!deleteTarget) return;
+        const item = deleteTarget;
         const name = item.name;
-        if (!window.confirm(`Are you sure you want to delete "${name}"?`)) return;
-
+        setDeleteTarget(null);
         try {
             if (activeTab === 'makes') {
                 await vehicleMasterAPI.deleteMake(item.id);
@@ -304,6 +301,9 @@ const VehicleMasterData = () => {
             } else if (activeTab === 'suppliers') {
                 await vehicleMasterAPI.deleteSupplier(item.id);
                 fetchSuppliers();
+            } else if (activeTab === 'conditions') {
+                await vehicleMasterAPI.deleteCondition(item.id);
+                fetchConditions();
             }
             toast.success(`${name} deleted successfully`);
             fetchStats();
@@ -325,8 +325,29 @@ const VehicleMasterData = () => {
             case 'colors': return 'Color';
             case 'categories': return 'Category';
             case 'suppliers': return 'Supplier';
+            case 'conditions': return 'Condition';
             default: return '';
         }
+    };
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // SORTING
+    // ═══════════════════════════════════════════════════════════════════════
+
+    const handleSort = (field) => {
+        if (sortField === field) {
+            setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+        } else {
+            setSortField(field);
+            setSortDir('asc');
+        }
+    };
+
+    const SortIcon = ({ field }) => {
+        if (sortField !== field) return <ArrowUpDown size={14} style={{ verticalAlign: 'middle', marginLeft: 4 }} />;
+        return sortDir === 'asc'
+            ? <ArrowUp size={14} style={{ verticalAlign: 'middle', marginLeft: 4 }} />
+            : <ArrowDown size={14} style={{ verticalAlign: 'middle', marginLeft: 4 }} />;
     };
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -334,21 +355,52 @@ const VehicleMasterData = () => {
     // ═══════════════════════════════════════════════════════════════════════
 
     const renderMakesTable = () => (
-        <table className="data-table">
+        <table>
             <thead>
                 <tr>
-                    <th>Name</th>
-                    <th>Country</th>
-                    <th>Models</th>
-                    <th>Vehicles</th>
-                    <th>Status</th>
+                    <th style={{ width: 40 }}><input type="checkbox" checked={selectedIds.size === filteredItems.length && filteredItems.length > 0} onChange={toggleSelectAll} /></th>
+                    <th className="sortable" onClick={() => handleSort('name')}>Name <SortIcon field="name" /></th>
+                    <th>Logo</th>
+                    <th className="sortable" onClick={() => handleSort('country')}>Country <SortIcon field="country" /></th>
+                    <th className="sortable" onClick={() => handleSort('model_count')}>Models <SortIcon field="model_count" /></th>
+                    <th className="sortable" onClick={() => handleSort('vehicle_count')}>Vehicles <SortIcon field="vehicle_count" /></th>
+                    <th className="sortable" onClick={() => handleSort('is_active')}>Status <SortIcon field="is_active" /></th>
                     <th>Actions</th>
+                </tr>
+                <tr className="filter-row">
+                    <th></th>
+                    <th><input type="text" className="form-input filter-input" placeholder="Filter name..." value={nameFilter} onChange={(e) => setNameFilter(e.target.value)} onClick={(e) => e.stopPropagation()} /></th>
+                    <th></th>
+                    <th><input type="text" className="form-input filter-input" placeholder="Filter country..." value={countryFilter} onChange={(e) => setCountryFilter(e.target.value)} onClick={(e) => e.stopPropagation()} /></th>
+                    <th><input type="number" className="form-input filter-input" placeholder="Models..." value={modelCountFilter} onChange={(e) => setModelCountFilter(e.target.value)} onClick={(e) => e.stopPropagation()} /></th>
+                    <th><input type="number" className="form-input filter-input" placeholder="Vehicles..." value={vehicleCountFilter} onChange={(e) => setVehicleCountFilter(e.target.value)} onClick={(e) => e.stopPropagation()} /></th>
+                    <th>
+                        <select className="form-input filter-input" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} onClick={(e) => e.stopPropagation()}>
+                            <option value="all">All</option>
+                            <option value="active">Active</option>
+                            <option value="inactive">Inactive</option>
+                        </select>
+                    </th>
+                    <th></th>
                 </tr>
             </thead>
             <tbody>
-                {makes.map(make => (
-                    <tr key={make.id}>
+                {filteredItems.map(make => (
+                    <tr key={make.id} onClick={() => setDrawerItem(make)} style={{ cursor: 'pointer' }}>
+                        <td style={{ width: 40 }} onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selectedIds.has(make.id)} onChange={() => toggleSelect(make.id)} /></td>
                         <td><strong>{make.name}</strong></td>
+                        <td>
+                            {make.logo ? (
+                                <img
+                                    className="make-logo"
+                                    src={make.logo}
+                                    alt={`${make.name} logo`}
+                                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                                />
+                            ) : (
+                                <span className="make-logo-placeholder">-</span>
+                            )}
+                        </td>
                         <td>{make.country || '-'}</td>
                         <td>{make.model_count || 0}</td>
                         <td>{make.vehicle_count || 0}</td>
@@ -357,10 +409,10 @@ const VehicleMasterData = () => {
                                 {make.is_active ? 'Active' : 'Inactive'}
                             </span>
                         </td>
-                        <td>
+                        <td onClick={(e) => e.stopPropagation()}>
                             <ActionButtons
                                 onEdit={() => openModal('edit', make)}
-                                onDelete={() => handleDelete(make)}
+                                onDelete={() => setDeleteTarget(make)}
                                 title={make.name}
                                 showEdit
                                 showDelete
@@ -372,24 +424,67 @@ const VehicleMasterData = () => {
         </table>
     );
 
+    const BODY_TYPES = ['Sedan', 'SUV', 'Hatchback', 'Coupe', 'Convertible', 'Pickup', 'Van', 'Wagon', 'Crossover'];
+    const FUEL_TYPES = ['Petrol', 'Diesel', 'Electric', 'Hybrid', 'CNG', 'LPG'];
+    const TRANSMISSION_TYPES = ['Manual', 'Automatic', 'CVT', 'AMT', 'DCT'];
+
     const renderModelsTable = () => (
-        <table className="data-table">
+        <table>
             <thead>
                 <tr>
-                    <th>Make</th>
-                    <th>Model</th>
-                    <th>Year</th>
-                    <th>Body Type</th>
-                    <th>Fuel</th>
-                    <th>Transmission</th>
-                    <th>Variants</th>
-                    <th>Status</th>
+                    <th style={{ width: 40 }}><input type="checkbox" checked={selectedIds.size === filteredItems.length && filteredItems.length > 0} onChange={toggleSelectAll} /></th>
+                    <th className="sortable" onClick={() => handleSort('make_name')}>Make <SortIcon field="make_name" /></th>
+                    <th className="sortable" onClick={() => handleSort('name')}>Model <SortIcon field="name" /></th>
+                    <th className="sortable" onClick={() => handleSort('year')}>Year <SortIcon field="year" /></th>
+                    <th className="sortable" onClick={() => handleSort('body_type')}>Body Type <SortIcon field="body_type" /></th>
+                    <th className="sortable" onClick={() => handleSort('fuel_type')}>Fuel <SortIcon field="fuel_type" /></th>
+                    <th className="sortable" onClick={() => handleSort('transmission')}>Transmission <SortIcon field="transmission" /></th>
+                    <th className="sortable" onClick={() => handleSort('variant_count')}>Variants <SortIcon field="variant_count" /></th>
+                    <th className="sortable" onClick={() => handleSort('is_active')}>Status <SortIcon field="is_active" /></th>
                     <th>Actions</th>
+                </tr>
+                <tr className="filter-row">
+                    <th>
+                        <select className="form-input filter-input" value={makeFilter} onChange={(e) => setMakeFilter(e.target.value)} onClick={(e) => e.stopPropagation()}>
+                            <option value="">All Makes</option>
+                            {makes.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                        </select>
+                    </th>
+                    <th><input type="text" className="form-input filter-input" placeholder="Filter model..." value={nameFilter} onChange={(e) => setNameFilter(e.target.value)} onClick={(e) => e.stopPropagation()} /></th>
+                    <th><input type="text" className="form-input filter-input" placeholder="Filter year..." value={yearFilter} onChange={(e) => setYearFilter(e.target.value)} onClick={(e) => e.stopPropagation()} /></th>
+                    <th>
+                        <select className="form-input filter-input" value={bodyTypeFilter} onChange={(e) => setBodyTypeFilter(e.target.value)} onClick={(e) => e.stopPropagation()}>
+                            <option value="">All</option>
+                            {BODY_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                        </select>
+                    </th>
+                    <th>
+                        <select className="form-input filter-input" value={fuelFilter} onChange={(e) => setFuelFilter(e.target.value)} onClick={(e) => e.stopPropagation()}>
+                            <option value="">All</option>
+                            {FUEL_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                        </select>
+                    </th>
+                    <th>
+                        <select className="form-input filter-input" value={transmissionFilter} onChange={(e) => setTransmissionFilter(e.target.value)} onClick={(e) => e.stopPropagation()}>
+                            <option value="">All</option>
+                            {TRANSMISSION_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                        </select>
+                    </th>
+                    <th><input type="number" className="form-input filter-input" placeholder="Variants..." value={variantCountFilter} onChange={(e) => setVariantCountFilter(e.target.value)} onClick={(e) => e.stopPropagation()} /></th>
+                    <th>
+                        <select className="form-input filter-input" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} onClick={(e) => e.stopPropagation()}>
+                            <option value="all">All</option>
+                            <option value="active">Active</option>
+                            <option value="inactive">Inactive</option>
+                        </select>
+                    </th>
+                    <th></th>
                 </tr>
             </thead>
             <tbody>
-                {models.map(model => (
-                    <tr key={model.id}>
+                {filteredItems.map(model => (
+                    <tr key={model.id} onClick={() => setDrawerItem(model)} style={{ cursor: 'pointer' }}>
+                        <td style={{ width: 40 }} onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selectedIds.has(model.id)} onChange={() => toggleSelect(model.id)} /></td>
                         <td>{model.make_name}</td>
                         <td><strong>{model.name}</strong></td>
                         <td>{model.year || '-'}</td>
@@ -402,10 +497,10 @@ const VehicleMasterData = () => {
                                 {model.is_active ? 'Active' : 'Inactive'}
                             </span>
                         </td>
-                        <td>
+                        <td onClick={(e) => e.stopPropagation()}>
                             <ActionButtons
                                 onEdit={() => openModal('edit', model)}
-                                onDelete={() => handleDelete(model)}
+                                onDelete={() => setDeleteTarget(model)}
                                 title={model.name}
                                 showEdit
                                 showDelete
@@ -418,21 +513,51 @@ const VehicleMasterData = () => {
     );
 
     const renderVariantsTable = () => (
-        <table className="data-table">
+        <table>
             <thead>
                 <tr>
-                    <th>Make</th>
-                    <th>Model</th>
-                    <th>Variant</th>
-                    <th>Base Price</th>
-                    <th>Vehicles</th>
-                    <th>Status</th>
+                    <th style={{ width: 40 }}><input type="checkbox" checked={selectedIds.size === filteredItems.length && filteredItems.length > 0} onChange={toggleSelectAll} /></th>
+                    <th className="sortable" onClick={() => handleSort('make_name')}>Make <SortIcon field="make_name" /></th>
+                    <th className="sortable" onClick={() => handleSort('model_name')}>Model <SortIcon field="model_name" /></th>
+                    <th className="sortable" onClick={() => handleSort('name')}>Variant <SortIcon field="name" /></th>
+                    <th className="sortable" onClick={() => handleSort('base_price')}>Base Price <SortIcon field="base_price" /></th>
+                    <th className="sortable" onClick={() => handleSort('vehicle_count')}>Vehicles <SortIcon field="vehicle_count" /></th>
+                    <th className="sortable" onClick={() => handleSort('is_active')}>Status <SortIcon field="is_active" /></th>
                     <th>Actions</th>
+                </tr>
+                <tr className="filter-row">
+                    <th></th>
+                    <th>
+                        <select className="form-input filter-input" value={makeFilter} onChange={(e) => { setMakeFilter(e.target.value); setModelFilter(''); }} onClick={(e) => e.stopPropagation()}>
+                            <option value="">All Makes</option>
+                            {makes.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                        </select>
+                    </th>
+                    <th>
+                        <select className="form-input filter-input" value={modelFilter} onChange={(e) => setModelFilter(e.target.value)} onClick={(e) => e.stopPropagation()}>
+                            <option value="">All Models</option>
+                            {models.filter(m => !makeFilter || String(m.make_id) === String(makeFilter)).map(m => (
+                                <option key={m.id} value={m.id}>{m.name}</option>
+                            ))}
+                        </select>
+                    </th>
+                    <th><input type="text" className="form-input filter-input" placeholder="Filter variant..." value={nameFilter} onChange={(e) => setNameFilter(e.target.value)} onClick={(e) => e.stopPropagation()} /></th>
+                    <th><input type="number" className="form-input filter-input" placeholder="Base price..." value={basePriceFilter} onChange={(e) => setBasePriceFilter(e.target.value)} onClick={(e) => e.stopPropagation()} /></th>
+                    <th><input type="number" className="form-input filter-input" placeholder="Vehicles..." value={vehicleCountFilter} onChange={(e) => setVehicleCountFilter(e.target.value)} onClick={(e) => e.stopPropagation()} /></th>
+                    <th>
+                        <select className="form-input filter-input" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} onClick={(e) => e.stopPropagation()}>
+                            <option value="all">All</option>
+                            <option value="active">Active</option>
+                            <option value="inactive">Inactive</option>
+                        </select>
+                    </th>
+                    <th></th>
                 </tr>
             </thead>
             <tbody>
-                {variants.map(variant => (
-                    <tr key={variant.id}>
+                {filteredItems.map(variant => (
+                    <tr key={variant.id} onClick={() => setDrawerItem(variant)} style={{ cursor: 'pointer' }}>
+                        <td style={{ width: 40 }} onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selectedIds.has(variant.id)} onChange={() => toggleSelect(variant.id)} /></td>
                         <td>{variant.make_name}</td>
                         <td>{variant.model_name}</td>
                         <td><strong>{variant.name}</strong></td>
@@ -443,10 +568,10 @@ const VehicleMasterData = () => {
                                 {variant.is_active ? 'Active' : 'Inactive'}
                             </span>
                         </td>
-                        <td>
+                        <td onClick={(e) => e.stopPropagation()}>
                             <ActionButtons
                                 onEdit={() => openModal('edit', variant)}
-                                onDelete={() => handleDelete(variant)}
+                                onDelete={() => setDeleteTarget(variant)}
                                 title={variant.name}
                                 showEdit
                                 showDelete
@@ -459,21 +584,45 @@ const VehicleMasterData = () => {
     );
 
     const renderColorsTable = () => (
-        <table className="data-table">
+        <table>
             <thead>
                 <tr>
-                    <th>Color</th>
+                    <th style={{ width: 40 }}><input type="checkbox" checked={selectedIds.size === filteredItems.length && filteredItems.length > 0} onChange={toggleSelectAll} /></th>
+                    <th className="sortable" onClick={() => handleSort('name')}>Color <SortIcon field="name" /></th>
                     <th>Preview</th>
-                    <th>Metallic</th>
-                    <th>Additional Cost</th>
-                    <th>Vehicles</th>
-                    <th>Status</th>
+                    <th className="sortable" onClick={() => handleSort('is_metallic')}>Metallic <SortIcon field="is_metallic" /></th>
+                    <th className="sortable" onClick={() => handleSort('additional_cost')}>Add. Cost <SortIcon field="additional_cost" /></th>
+                    <th className="sortable" onClick={() => handleSort('vehicle_count')}>Vehicles <SortIcon field="vehicle_count" /></th>
+                    <th className="sortable" onClick={() => handleSort('is_active')}>Status <SortIcon field="is_active" /></th>
                     <th>Actions</th>
+                </tr>
+                <tr className="filter-row">
+                    <th></th>
+                    <th><input type="text" className="form-input filter-input" placeholder="Filter color..." value={nameFilter} onChange={(e) => setNameFilter(e.target.value)} onClick={(e) => e.stopPropagation()} /></th>
+                    <th><input type="text" className="form-input filter-input" placeholder="Hex..." value={hexFilter} onChange={(e) => setHexFilter(e.target.value)} onClick={(e) => e.stopPropagation()} /></th>
+                    <th>
+                        <select className="form-input filter-input" value={metallicFilter} onChange={(e) => setMetallicFilter(e.target.value)} onClick={(e) => e.stopPropagation()}>
+                            <option value="all">All</option>
+                            <option value="yes">Yes</option>
+                            <option value="no">No</option>
+                        </select>
+                    </th>
+                    <th><input type="number" className="form-input filter-input" placeholder="Add. cost..." value={additionalCostFilter} onChange={(e) => setAdditionalCostFilter(e.target.value)} onClick={(e) => e.stopPropagation()} /></th>
+                    <th><input type="number" className="form-input filter-input" placeholder="Vehicles..." value={vehicleCountFilter} onChange={(e) => setVehicleCountFilter(e.target.value)} onClick={(e) => e.stopPropagation()} /></th>
+                    <th>
+                        <select className="form-input filter-input" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} onClick={(e) => e.stopPropagation()}>
+                            <option value="all">All</option>
+                            <option value="active">Active</option>
+                            <option value="inactive">Inactive</option>
+                        </select>
+                    </th>
+                    <th></th>
                 </tr>
             </thead>
             <tbody>
-                {colors.map(color => (
-                    <tr key={color.id}>
+                {filteredItems.map(color => (
+                    <tr key={color.id} onClick={() => setDrawerItem(color)} style={{ cursor: 'pointer' }}>
+                        <td style={{ width: 40 }} onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selectedIds.has(color.id)} onChange={() => toggleSelect(color.id)} /></td>
                         <td><strong>{color.name}</strong></td>
                         <td>
                             <div
@@ -490,10 +639,10 @@ const VehicleMasterData = () => {
                                 {color.is_active ? 'Active' : 'Inactive'}
                             </span>
                         </td>
-                        <td>
+                        <td onClick={(e) => e.stopPropagation()}>
                             <ActionButtons
                                 onEdit={() => openModal('edit', color)}
-                                onDelete={() => handleDelete(color)}
+                                onDelete={() => setDeleteTarget(color)}
                                 title={color.name}
                                 showEdit
                                 showDelete
@@ -506,21 +655,39 @@ const VehicleMasterData = () => {
     );
 
     const renderCategoriesTable = () => (
-        <table className="data-table">
+        <table>
             <thead>
                 <tr>
-                    <th>Category Name</th>
-                    <th>Description</th>
-                    <th>Parent Category</th>
-                    <th>Parts</th>
-                    <th>Sub-Categories</th>
-                    <th>Status</th>
+                    <th style={{ width: 40 }}><input type="checkbox" checked={selectedIds.size === filteredItems.length && filteredItems.length > 0} onChange={toggleSelectAll} /></th>
+                    <th className="sortable" onClick={() => handleSort('name')}>Category Name <SortIcon field="name" /></th>
+                    <th className="sortable" onClick={() => handleSort('description')}>Description <SortIcon field="description" /></th>
+                    <th className="sortable" onClick={() => handleSort('parent_name')}>Parent Category <SortIcon field="parent_name" /></th>
+                    <th className="sortable" onClick={() => handleSort('parts_count')}>Parts <SortIcon field="parts_count" /></th>
+                    <th className="sortable" onClick={() => handleSort('sub_category_count')}>Sub-Categories <SortIcon field="sub_category_count" /></th>
+                    <th className="sortable" onClick={() => handleSort('is_active')}>Status <SortIcon field="is_active" /></th>
                     <th>Actions</th>
+                </tr>
+                <tr className="filter-row">
+                    <th></th>
+                    <th><input type="text" className="form-input filter-input" placeholder="Filter name..." value={nameFilter} onChange={(e) => setNameFilter(e.target.value)} onClick={(e) => e.stopPropagation()} /></th>
+                    <th><input type="text" className="form-input filter-input" placeholder="Filter desc..." value={descriptionFilter} onChange={(e) => setDescriptionFilter(e.target.value)} onClick={(e) => e.stopPropagation()} /></th>
+                    <th><input type="text" className="form-input filter-input" placeholder="Filter parent..." value={parentFilter} onChange={(e) => setParentFilter(e.target.value)} onClick={(e) => e.stopPropagation()} /></th>
+                    <th><input type="number" className="form-input filter-input" placeholder="Parts..." value={partsCountFilter} onChange={(e) => setPartsCountFilter(e.target.value)} onClick={(e) => e.stopPropagation()} /></th>
+                    <th><input type="number" className="form-input filter-input" placeholder="Sub-cats..." value={subCategoryCountFilter} onChange={(e) => setSubCategoryCountFilter(e.target.value)} onClick={(e) => e.stopPropagation()} /></th>
+                    <th>
+                        <select className="form-input filter-input" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} onClick={(e) => e.stopPropagation()}>
+                            <option value="all">All</option>
+                            <option value="active">Active</option>
+                            <option value="inactive">Inactive</option>
+                        </select>
+                    </th>
+                    <th></th>
                 </tr>
             </thead>
             <tbody>
-                {categories.map(cat => (
-                    <tr key={cat.id}>
+                {filteredItems.map(cat => (
+                    <tr key={cat.id} onClick={() => setDrawerItem(cat)} style={{ cursor: 'pointer' }}>
+                        <td style={{ width: 40 }} onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selectedIds.has(cat.id)} onChange={() => toggleSelect(cat.id)} /></td>
                         <td><strong>{cat.name}</strong></td>
                         <td>{cat.description || '-'}</td>
                         <td>{cat.parent_name || <span className="badge badge-info">Root</span>}</td>
@@ -531,10 +698,10 @@ const VehicleMasterData = () => {
                                 {cat.is_active ? 'Active' : 'Inactive'}
                             </span>
                         </td>
-                        <td>
+                        <td onClick={(e) => e.stopPropagation()}>
                             <ActionButtons
                                 onEdit={() => openModal('edit', cat)}
-                                onDelete={() => handleDelete(cat)}
+                                onDelete={() => setDeleteTarget(cat)}
                                 title={cat.name}
                                 showEdit
                                 showDelete
@@ -546,23 +713,49 @@ const VehicleMasterData = () => {
         </table>
     );
 
+    const SUPPLIER_TYPES = ['local', 'international', 'manufacturer', 'distributor'];
+
     const renderSuppliersTable = () => (
-        <table className="data-table">
+        <table>
             <thead>
                 <tr>
-                    <th>Code</th>
-                    <th>Supplier Name</th>
-                    <th>Type</th>
+                    <th style={{ width: 40 }}><input type="checkbox" checked={selectedIds.size === filteredItems.length && filteredItems.length > 0} onChange={toggleSelectAll} /></th>
+                    <th className="sortable" onClick={() => handleSort('supplier_code')}>Code <SortIcon field="supplier_code" /></th>
+                    <th className="sortable" onClick={() => handleSort('name')}>Supplier Name <SortIcon field="name" /></th>
+                    <th className="sortable" onClick={() => handleSort('type')}>Type <SortIcon field="type" /></th>
                     <th>Contact Info</th>
-                    <th>Location</th>
+                    <th className="sortable" onClick={() => handleSort('city')}>Location <SortIcon field="city" /></th>
                     <th>Parts/POs</th>
-                    <th>Status</th>
+                    <th className="sortable" onClick={() => handleSort('is_active')}>Status <SortIcon field="is_active" /></th>
                     <th>Actions</th>
+                </tr>
+                <tr className="filter-row">
+                    <th></th>
+                    <th><input type="text" className="form-input filter-input" placeholder="Filter code..." value={codeFilter} onChange={(e) => setCodeFilter(e.target.value)} onClick={(e) => e.stopPropagation()} /></th>
+                    <th><input type="text" className="form-input filter-input" placeholder="Filter name..." value={nameFilter} onChange={(e) => setNameFilter(e.target.value)} onClick={(e) => e.stopPropagation()} /></th>
+                    <th>
+                        <select className="form-input filter-input" value={supplierTypeFilter} onChange={(e) => setSupplierTypeFilter(e.target.value)} onClick={(e) => e.stopPropagation()}>
+                            <option value="">All</option>
+                            {SUPPLIER_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                        </select>
+                    </th>
+                    <th><input type="text" className="form-input filter-input" placeholder="Filter contact..." value={contactFilter} onChange={(e) => setContactFilter(e.target.value)} onClick={(e) => e.stopPropagation()} /></th>
+                    <th><input type="text" className="form-input filter-input" placeholder="Filter city..." value={supplierCityFilter} onChange={(e) => setSupplierCityFilter(e.target.value)} onClick={(e) => e.stopPropagation()} /></th>
+                    <th><input type="number" className="form-input filter-input" placeholder="Parts/POs..." value={partsPoFilter} onChange={(e) => setPartsPoFilter(e.target.value)} onClick={(e) => e.stopPropagation()} /></th>
+                    <th>
+                        <select className="form-input filter-input" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} onClick={(e) => e.stopPropagation()}>
+                            <option value="all">All</option>
+                            <option value="active">Active</option>
+                            <option value="inactive">Inactive</option>
+                        </select>
+                    </th>
+                    <th></th>
                 </tr>
             </thead>
             <tbody>
-                {suppliers.map(sup => (
-                    <tr key={sup.id}>
+                {filteredItems.map(sup => (
+                    <tr key={sup.id} onClick={() => setDrawerItem(sup)} style={{ cursor: 'pointer' }}>
+                        <td style={{ width: 40 }} onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selectedIds.has(sup.id)} onChange={() => toggleSelect(sup.id)} /></td>
                         <td><span className="code">{sup.supplier_code}</span></td>
                         <td><strong>{sup.name}</strong></td>
                         <td><span className={`badge badge-outline`}>{sup.type?.toUpperCase()}</span></td>
@@ -585,10 +778,10 @@ const VehicleMasterData = () => {
                                 {sup.is_active ? 'Active' : 'Inactive'}
                             </span>
                         </td>
-                        <td>
+                        <td onClick={(e) => e.stopPropagation()}>
                             <ActionButtons
                                 onEdit={() => openModal('edit', sup)}
-                                onDelete={() => handleDelete(sup)}
+                                onDelete={() => setDeleteTarget(sup)}
                                 title={sup.name}
                                 showEdit
                                 showDelete
@@ -600,288 +793,225 @@ const VehicleMasterData = () => {
         </table>
     );
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // MODAL FORMS
-    // ═══════════════════════════════════════════════════════════════════════
-
-    const renderMakeForm = () => (
-        <>
-            <div className="form-group">
-                <label>Make Name *</label>
-                <input type="text" name="name" value={formData.name || ''} onChange={handleInputChange} required placeholder="e.g., Toyota, Honda" />
-            </div>
-            <div className="form-group">
-                <label>Country</label>
-                <input type="text" name="country" value={formData.country || ''} onChange={handleInputChange} placeholder="e.g., Japan, USA" />
-            </div>
-            <div className="form-group">
-                <label>Logo URL</label>
-                <input type="text" name="logo" value={formData.logo || ''} onChange={handleInputChange} placeholder="https://..." />
-            </div>
-            <div className="form-group checkbox-group">
-                <label>
-                    <input type="checkbox" name="isActive" checked={formData.isActive !== false} onChange={handleInputChange} />
-                    Active
-                </label>
-            </div>
-        </>
+    const renderConditionsTable = () => (
+        <table>
+            <thead>
+                <tr>
+                    <th style={{ width: 40 }}><input type="checkbox" checked={selectedIds.size === filteredItems.length && filteredItems.length > 0} onChange={toggleSelectAll} /></th>
+                    <th className="sortable" onClick={() => handleSort('name')}>Name <SortIcon field="name" /></th>
+                    <th className="sortable" onClick={() => handleSort('description')}>Description <SortIcon field="description" /></th>
+                    <th className="sortable" onClick={() => handleSort('is_active')}>Status <SortIcon field="is_active" /></th>
+                    <th>Actions</th>
+                </tr>
+                <tr className="filter-row">
+                    <th></th>
+                    <th><input type="text" className="form-input filter-input" placeholder="Filter name..." value={nameFilter} onChange={(e) => setNameFilter(e.target.value)} onClick={(e) => e.stopPropagation()} /></th>
+                    <th><input type="text" className="form-input filter-input" placeholder="Filter description..." value={descriptionFilter} onChange={(e) => setDescriptionFilter(e.target.value)} onClick={(e) => e.stopPropagation()} /></th>
+                    <th>
+                        <select className="form-input filter-input" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} onClick={(e) => e.stopPropagation()}>
+                            <option value="all">All</option>
+                            <option value="active">Active</option>
+                            <option value="inactive">Inactive</option>
+                        </select>
+                    </th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {filteredItems.map(cond => (
+                    <tr key={cond.id} onClick={() => setDrawerItem(cond)} style={{ cursor: 'pointer' }}>
+                        <td style={{ width: 40 }} onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selectedIds.has(cond.id)} onChange={() => toggleSelect(cond.id)} /></td>
+                        <td><strong>{cond.name}</strong></td>
+                        <td>{cond.description || '-'}</td>
+                        <td>
+                            <span className={`badge ${cond.is_active ? 'badge-success' : 'badge-secondary'}`}>
+                                {cond.is_active ? 'Active' : 'Inactive'}
+                            </span>
+                        </td>
+                        <td onClick={(e) => e.stopPropagation()}>
+                            <ActionButtons
+                                onEdit={() => openModal('edit', cond)}
+                                onDelete={() => setDeleteTarget(cond)}
+                                title={cond.name}
+                                showEdit
+                                showDelete
+                            />
+                        </td>
+                    </tr>
+                ))}
+            </tbody>
+        </table>
     );
 
-    const renderModelForm = () => (
-        <>
-            <div className="form-row">
-                <div className="form-group">
-                    <label>Make *</label>
-                    <SearchableSelect name="makeId" value={formData.makeId || ''} onChange={handleInputChange} required>
-                        <option value="">Select Make</option>
-                        {makes.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-                    </SearchableSelect>
-                </div>
-                <div className="form-group">
-                    <label>Model Name *</label>
-                    <input type="text" name="name" value={formData.name || ''} onChange={handleInputChange} required placeholder="e.g., Corolla, Civic" />
-                </div>
-            </div>
-            <div className="form-row">
-                <div className="form-group">
-                    <label>Year</label>
-                    <input type="number" name="year" value={formData.year || ''} onChange={handleInputChange} min="1990" max="2030" />
-                </div>
-                <div className="form-group">
-                    <label>Body Type</label>
-                    <SearchableSelect name="bodyType" value={formData.bodyType || 'sedan'} onChange={handleInputChange}>
-                        <option value="sedan">Sedan</option>
-                        <option value="suv">SUV</option>
-                        <option value="hatchback">Hatchback</option>
-                        <option value="coupe">Coupe</option>
-                        <option value="truck">Truck</option>
-                        <option value="van">Van</option>
-                        <option value="wagon">Wagon</option>
-                        <option value="convertible">Convertible</option>
-                    </SearchableSelect>
-                </div>
-            </div>
-            <div className="form-row">
-                <div className="form-group">
-                    <label>Fuel Type</label>
-                    <SearchableSelect name="fuelType" value={formData.fuelType || 'petrol'} onChange={handleInputChange}>
-                        <option value="petrol">Petrol</option>
-                        <option value="diesel">Diesel</option>
-                        <option value="hybrid">Hybrid</option>
-                        <option value="electric">Electric</option>
-                        <option value="cng">CNG</option>
-                        <option value="lpg">LPG</option>
-                    </SearchableSelect>
-                </div>
-                <div className="form-group">
-                    <label>Transmission</label>
-                    <SearchableSelect name="transmission" value={formData.transmission || 'automatic'} onChange={handleInputChange}>
-                        <option value="automatic">Automatic</option>
-                        <option value="manual">Manual</option>
-                        <option value="cvt">CVT</option>
-                    </SearchableSelect>
-                </div>
-            </div>
-            <div className="form-row">
-                <div className="form-group">
-                    <label>Engine Capacity</label>
-                    <input type="text" name="engineCapacity" value={formData.engineCapacity || ''} onChange={handleInputChange} placeholder="e.g., 1.8L, 2000cc" />
-                </div>
-                <div className="form-group">
-                    <label>Seating Capacity</label>
-                    <input type="number" name="seatingCapacity" value={formData.seatingCapacity || 5} onChange={handleInputChange} min="2" max="12" />
-                </div>
-            </div>
-            <div className="form-group checkbox-group">
-                <label>
-                    <input type="checkbox" name="isActive" checked={formData.isActive !== false} onChange={handleInputChange} />
-                    Active
-                </label>
-            </div>
-        </>
-    );
-
-    const renderVariantForm = () => (
-        <>
-            <div className="form-row">
-                <div className="form-group">
-                    <label>Make *</label>
-                    <SearchableSelect
-                        value={makeFilter || ''}
-                        onChange={(e) => {
-                            setMakeFilter(e.target.value);
-                            setFormData(prev => ({ ...prev, modelId: '' }));
-                        }}
-                    >
-                        <option value="">Select Make</option>
-                        {makes.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-                    </SearchableSelect>
-                </div>
-                <div className="form-group">
-                    <label>Model *</label>
-                    <SearchableSelect name="modelId" value={formData.modelId || ''} onChange={handleInputChange} required>
-                        <option value="">Select Model</option>
-                        {models.filter(m => !makeFilter || m.make_id === parseInt(makeFilter)).map(m => (
-                            <option key={m.id} value={m.id}>{m.name}</option>
-                        ))}
-                    </SearchableSelect>
-                </div>
-            </div>
-            <div className="form-group">
-                <label>Variant Name *</label>
-                <input type="text" name="name" value={formData.name || ''} onChange={handleInputChange} required placeholder="e.g., Base, Sport, Premium" />
-            </div>
-            <div className="form-group">
-                <label>Base Price (PKR)</label>
-                <input type="number" name="basePrice" value={formData.basePrice || ''} onChange={handleInputChange} min="0" placeholder="0" />
-            </div>
-            <div className="form-group">
-                <label>Features</label>
-                <textarea name="features" value={formData.features || ''} onChange={handleInputChange} rows={3} placeholder="Key features..." />
-            </div>
-            <div className="form-group checkbox-group">
-                <label>
-                    <input type="checkbox" name="isActive" checked={formData.isActive !== false} onChange={handleInputChange} />
-                    Active
-                </label>
-            </div>
-        </>
-    );
-
-    const renderColorForm = () => (
-        <>
-            <div className="form-row">
-                <div className="form-group">
-                    <label>Color Name *</label>
-                    <input type="text" name="name" value={formData.name || ''} onChange={handleInputChange} required placeholder="e.g., Pearl White" />
-                </div>
-                <div className="form-group">
-                    <label>Hex Code</label>
-                    <div className="color-input-wrapper">
-                        <input type="color" name="hexCode" value={formData.hexCode || '#000000'} onChange={handleInputChange} />
-                        <input type="text" value={formData.hexCode || '#000000'} onChange={(e) => setFormData(prev => ({ ...prev, hexCode: e.target.value }))} />
+    const renderMakesCards = () => (
+        <div className="mobile-cards-container">
+            {filteredItems.map(make => (
+                <div key={make.id} className={`data-card ${!make.is_active ? 'card-inactive' : ''}`} onClick={() => setDrawerItem(make)}>
+                    <div className="data-card-top">
+                        <div className="data-card-avatar">{make.name?.[0] || 'M'}</div>
+                        <div className="data-card-info">
+                            <span className="data-card-title">{make.name}</span>
+                            <span className="data-card-subtitle">{make.country || '-'}</span>
+                        </div>
+                        <span className={`badge-pill ${make.is_active ? 'status-active' : 'status-inactive'}`}>{make.is_active ? 'Active' : 'Inactive'}</span>
+                    </div>
+                    <div className="data-card-body">
+                        <div className="data-card-row"><span className="row-icon">🚗</span><span className="row-label">Models</span><span className="row-value">{make.model_count || 0}</span></div>
+                        <div className="data-card-row"><span className="row-icon">🚙</span><span className="row-label">Vehicles</span><span className="row-value">{make.vehicle_count || 0}</span></div>
+                    </div>
+                    <div className="data-card-footer" onClick={e => e.stopPropagation()}>
+                        <ActionButtons onEdit={() => openModal('edit', make)} onDelete={() => setDeleteTarget(make)} title={make.name} showEdit showDelete />
                     </div>
                 </div>
-            </div>
-            <div className="form-row">
-                <div className="form-group">
-                    <label>Additional Cost (PKR)</label>
-                    <input type="number" name="additionalCost" value={formData.additionalCost || 0} onChange={handleInputChange} min="0" />
-                </div>
-                <div className="form-group checkbox-group">
-                    <label>
-                        <input type="checkbox" name="isMetallic" checked={formData.isMetallic || false} onChange={handleInputChange} />
-                        Metallic Finish
-                    </label>
-                </div>
-            </div>
-            <div className="form-group checkbox-group">
-                <label>
-                    <input type="checkbox" name="isActive" checked={formData.isActive !== false} onChange={handleInputChange} />
-                    Active
-                </label>
-            </div>
-        </>
+            ))}
+        </div>
     );
 
-    const renderCategoryForm = () => (
-        <>
-            <div className="form-group">
-                <label>Category Name *</label>
-                <input type="text" name="name" value={formData.name || ''} onChange={handleInputChange} required placeholder="e.g., Engine Parts, Brake System, Electrical" />
-            </div>
-            <div className="form-group">
-                <label>Description</label>
-                <textarea name="description" value={formData.description || ''} onChange={handleInputChange} rows={2} placeholder="Brief description of this category..." />
-            </div>
-            <div className="form-group">
-                <label>Parent Category</label>
-                <SearchableSelect name="parentId" value={formData.parentId || ''} onChange={handleInputChange}>
-                    <option value="">None (Root Category)</option>
-                    {categories
-                        .filter(c => !selectedItem || c.id !== selectedItem.id)
-                        .map(c => (
-                            <option key={c.id} value={c.id}>{c.name}</option>
-                        ))
-                    }
-                </SearchableSelect>
-            </div>
-            <div className="form-group checkbox-group">
-                <label>
-                    <input type="checkbox" name="isActive" checked={formData.isActive !== false} onChange={handleInputChange} />
-                    Active
-                </label>
-            </div>
-        </>
+    const renderModelsCards = () => (
+        <div className="mobile-cards-container">
+            {filteredItems.map(model => (
+                <div key={model.id} className={`data-card ${!model.is_active ? 'card-inactive' : ''}`} onClick={() => setDrawerItem(model)}>
+                    <div className="data-card-top">
+                        <div className="data-card-avatar avatar-cyan">{model.name?.[0] || 'M'}</div>
+                        <div className="data-card-info">
+                            <span className="data-card-title">{model.name}</span>
+                            <span className="data-card-subtitle">{model.make_name} · {model.year}</span>
+                        </div>
+                        <span className={`badge-pill ${model.is_active ? 'status-active' : 'status-inactive'}`}>{model.is_active ? 'Active' : 'Inactive'}</span>
+                    </div>
+                    <div className="data-card-body">
+                        <div className="data-card-row"><span className="row-icon">🔧</span><span className="row-label">Body</span><span className="row-value">{model.body_type || '-'}</span></div>
+                        <div className="data-card-row"><span className="row-icon">⛽</span><span className="row-label">Fuel</span><span className="row-value">{model.fuel_type || '-'}</span></div>
+                        <div className="data-card-row"><span className="row-icon">⚙️</span><span className="row-label">Trans</span><span className="row-value">{model.transmission || '-'}</span></div>
+                        <div className="data-card-row"><span className="row-icon">📋</span><span className="row-label">Variants</span><span className="row-value">{model.variant_count || 0}</span></div>
+                    </div>
+                    <div className="data-card-footer" onClick={e => e.stopPropagation()}>
+                        <ActionButtons onEdit={() => openModal('edit', model)} onDelete={() => setDeleteTarget(model)} title={model.name} showEdit showDelete />
+                    </div>
+                </div>
+            ))}
+        </div>
     );
 
-    const renderSupplierForm = () => (
-        <>
-            <div className="form-row">
-                <div className="form-group">
-                    <label>Supplier Code *</label>
-                    <input type="text" name="supplierCode" value={formData.supplierCode || ''} onChange={handleInputChange} required placeholder="e.g., SUP-001" />
+    const renderVariantsCards = () => (
+        <div className="mobile-cards-container">
+            {filteredItems.map(variant => (
+                <div key={variant.id} className={`data-card ${!variant.is_active ? 'card-inactive' : ''}`} onClick={() => setDrawerItem(variant)}>
+                    <div className="data-card-top">
+                        <div className="data-card-avatar avatar-green">{variant.name?.[0] || 'V'}</div>
+                        <div className="data-card-info">
+                            <span className="data-card-title">{variant.name}</span>
+                            <span className="data-card-subtitle">{variant.make_name} · {variant.model_name}</span>
+                        </div>
+                        <span className={`badge-pill ${variant.is_active ? 'status-active' : 'status-inactive'}`}>{variant.is_active ? 'Active' : 'Inactive'}</span>
+                    </div>
+                    <div className="data-card-body">
+                        <div className="data-card-row"><span className="row-icon">💰</span><span className="row-label">Price</span><span className="row-value">PKR {Number(variant.base_price || 0).toLocaleString()}</span></div>
+                        <div className="data-card-row"><span className="row-icon">🚙</span><span className="row-label">Vehicles</span><span className="row-value">{variant.vehicle_count || 0}</span></div>
+                    </div>
+                    <div className="data-card-footer" onClick={e => e.stopPropagation()}>
+                        <ActionButtons onEdit={() => openModal('edit', variant)} onDelete={() => setDeleteTarget(variant)} title={variant.name} showEdit showDelete />
+                    </div>
                 </div>
-                <div className="form-group">
-                    <label>Supplier Name *</label>
-                    <input type="text" name="name" value={formData.name || ''} onChange={handleInputChange} required placeholder="e.g., Indus Motor Company" />
+            ))}
+        </div>
+    );
+
+    const renderColorsCards = () => (
+        <div className="mobile-cards-container">
+            {filteredItems.map(color => (
+                <div key={color.id} className={`data-card ${!color.is_active ? 'card-inactive' : ''}`} onClick={() => setDrawerItem(color)}>
+                    <div className="data-card-top">
+                        <div className="data-card-avatar avatar-purple" style={{ background: color.hex_code || '#6366f1' }}>{color.name?.[0] || 'C'}</div>
+                        <div className="data-card-info">
+                            <span className="data-card-title">{color.name}</span>
+                            <span className="data-card-subtitle">{color.hex_code || '-'}</span>
+                        </div>
+                        <span className={`badge-pill ${color.is_active ? 'status-active' : 'status-inactive'}`}>{color.is_active ? 'Active' : 'Inactive'}</span>
+                    </div>
+                    <div className="data-card-body">
+                        <div className="data-card-row"><span className="row-icon">✨</span><span className="row-label">Metallic</span><span className="row-value">{color.is_metallic ? 'Yes' : 'No'}</span></div>
+                        <div className="data-card-row"><span className="row-icon">💰</span><span className="row-label">Add. Cost</span><span className="row-value">PKR {Number(color.additional_cost || 0).toLocaleString()}</span></div>
+                        <div className="data-card-row"><span className="row-icon">🚙</span><span className="row-label">Vehicles</span><span className="row-value">{color.vehicle_count || 0}</span></div>
+                    </div>
+                    <div className="data-card-footer" onClick={e => e.stopPropagation()}>
+                        <ActionButtons onEdit={() => openModal('edit', color)} onDelete={() => setDeleteTarget(color)} title={color.name} showEdit showDelete />
+                    </div>
                 </div>
-            </div>
-            <div className="form-row">
-                <div className="form-group">
-                    <label>Supplier Type *</label>
-                    <SearchableSelect name="type" value={formData.type || 'oem'} onChange={handleInputChange} required>
-                        <option value="oem">OEM (Manufacturer)</option>
-                        <option value="distributor">Distributor</option>
-                        <option value="local_vendor">Local Vendor</option>
-                    </SearchableSelect>
+            ))}
+        </div>
+    );
+
+    const renderCategoriesCards = () => (
+        <div className="mobile-cards-container">
+            {filteredItems.map(cat => (
+                <div key={cat.id} className={`data-card ${!cat.is_active ? 'card-inactive' : ''}`} onClick={() => setDrawerItem(cat)}>
+                    <div className="data-card-top">
+                        <div className="data-card-avatar avatar-amber">{cat.name?.[0] || 'C'}</div>
+                        <div className="data-card-info">
+                            <span className="data-card-title">{cat.name}</span>
+                            <span className="data-card-subtitle">{cat.parent_name || <span className="badge-pill status-active" style={{ padding: '1px 6px', fontSize: 10 }}>Root</span>}</span>
+                        </div>
+                        <span className={`badge-pill ${cat.is_active ? 'status-active' : 'status-inactive'}`}>{cat.is_active ? 'Active' : 'Inactive'}</span>
+                    </div>
+                    <div className="data-card-body">
+                        <div className="data-card-row"><span className="row-icon">📝</span><span className="row-label">Desc</span><span className="row-value">{cat.description || '-'}</span></div>
+                        <div className="data-card-row"><span className="row-icon">🔧</span><span className="row-label">Parts</span><span className="row-value">{cat.parts_count || 0}</span></div>
+                        <div className="data-card-row"><span className="row-icon">📂</span><span className="row-label">Sub-Cats</span><span className="row-value">{cat.sub_category_count || 0}</span></div>
+                    </div>
+                    <div className="data-card-footer" onClick={e => e.stopPropagation()}>
+                        <ActionButtons onEdit={() => openModal('edit', cat)} onDelete={() => setDeleteTarget(cat)} title={cat.name} showEdit showDelete />
+                    </div>
                 </div>
-                <div className="form-group">
-                    <label>Contact Person</label>
-                    <input type="text" name="contactPerson" value={formData.contactPerson || ''} onChange={handleInputChange} placeholder="e.g., John Doe" />
+            ))}
+        </div>
+    );
+
+    const renderSuppliersCards = () => (
+        <div className="mobile-cards-container">
+            {filteredItems.map(sup => (
+                <div key={sup.id} className={`data-card ${!sup.is_active ? 'card-inactive' : ''}`} onClick={() => setDrawerItem(sup)}>
+                    <div className="data-card-top">
+                        <div className="data-card-avatar avatar-rose">{sup.name?.[0] || 'S'}</div>
+                        <div className="data-card-info">
+                            <span className="data-card-title">{sup.name}</span>
+                            <span className="data-card-subtitle">{sup.supplier_code}</span>
+                        </div>
+                        <span className={`badge-pill ${sup.is_active ? 'status-active' : 'status-inactive'}`}>{sup.is_active ? 'Active' : 'Inactive'}</span>
+                    </div>
+                    <div className="data-card-body">
+                        <div className="data-card-row"><span className="row-icon">🏷️</span><span className="row-label">Type</span><span className="row-value">{sup.type?.toUpperCase()}</span></div>
+                        <div className="data-card-row"><span className="row-icon">👤</span><span className="row-label">Contact</span><span className="row-value">{sup.contact_person || '-'}{sup.email ? `, ${sup.email}` : ''}</span></div>
+                        <div className="data-card-row"><span className="row-icon">📞</span><span className="row-label">Phone</span><span className="row-value">{sup.phone || '-'}</span></div>
+                        <div className="data-card-row"><span className="row-icon">📍</span><span className="row-label">Location</span><span className="row-value">{sup.city}{sup.country ? `, ${sup.country}` : ''}</span></div>
+                        <div className="data-card-row"><span className="row-icon">📦</span><span className="row-label">Parts</span><span className="row-value">{sup.parts_count || 0} / POs: {sup.po_count || 0}</span></div>
+                    </div>
+                    <div className="data-card-footer" onClick={e => e.stopPropagation()}>
+                        <ActionButtons onEdit={() => openModal('edit', sup)} onDelete={() => setDeleteTarget(sup)} title={sup.name} showEdit showDelete />
+                    </div>
                 </div>
-            </div>
-            <div className="form-row">
-                <div className="form-group">
-                    <label>Email</label>
-                    <input type="email" name="email" value={formData.email || ''} onChange={handleInputChange} placeholder="supplier@example.com" />
+            ))}
+        </div>
+    );
+
+    const renderConditionsCards = () => (
+        <div className="mobile-cards-container">
+            {filteredItems.map(cond => (
+                <div key={cond.id} className={`data-card ${!cond.is_active ? 'card-inactive' : ''}`} onClick={() => setDrawerItem(cond)}>
+                    <div className="data-card-top">
+                        <div className="data-card-avatar">{cond.name?.[0] || 'C'}</div>
+                        <div className="data-card-info">
+                            <span className="data-card-title">{cond.name}</span>
+                            <span className="data-card-subtitle">{cond.description || '-'}</span>
+                        </div>
+                        <span className={`badge-pill ${cond.is_active ? 'status-active' : 'status-inactive'}`}>{cond.is_active ? 'Active' : 'Inactive'}</span>
+                    </div>
+                    <div className="data-card-footer" onClick={e => e.stopPropagation()}>
+                        <ActionButtons onEdit={() => openModal('edit', cond)} onDelete={() => setDeleteTarget(cond)} title={cond.name} showEdit showDelete />
+                    </div>
                 </div>
-                <div className="form-group">
-                    <label>Phone</label>
-                    <input type="text" name="phone" value={formData.phone || ''} onChange={handleInputChange} placeholder="+92 3XX XXXXXXX" />
-                </div>
-            </div>
-            <div className="form-row">
-                <div className="form-group">
-                    <label>City</label>
-                    <input type="text" name="city" value={formData.city || ''} onChange={handleInputChange} placeholder="e.g., Karachi" />
-                </div>
-                <div className="form-group">
-                    <label>Country</label>
-                    <input type="text" name="country" value={formData.country || 'Pakistan'} onChange={handleInputChange} />
-                </div>
-            </div>
-            <div className="form-group">
-                <label>Address</label>
-                <textarea name="address" value={formData.address || ''} onChange={handleInputChange} rows={2} placeholder="Full address..." />
-            </div>
-            <div className="form-row">
-                <div className="form-group">
-                    <label>Tax Number (NTN/GST)</label>
-                    <input type="text" name="taxNumber" value={formData.taxNumber || ''} onChange={handleInputChange} />
-                </div>
-                <div className="form-group">
-                    <label>Payment Terms</label>
-                    <input type="text" name="paymentTerms" value={formData.paymentTerms || ''} onChange={handleInputChange} placeholder="e.g., Net 30" />
-                </div>
-            </div>
-            <div className="form-group checkbox-group">
-                <label>
-                    <input type="checkbox" name="isActive" checked={formData.isActive !== false} onChange={handleInputChange} />
-                    Active
-                </label>
-            </div>
-        </>
+            ))}
+        </div>
     );
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -896,7 +1026,117 @@ const VehicleMasterData = () => {
             case 'colors': return colors;
             case 'categories': return categories;
             case 'suppliers': return suppliers;
+            case 'conditions': return conditions;
             default: return [];
+        }
+    };
+
+    const filteredItems = useMemo(() => {
+        const dataMap = { makes, models, variants, colors, categories, suppliers, conditions };
+        let data = [...(dataMap[activeTab] || [])];
+
+        // Per-column filters
+        const term = (v) => (v ?? '').toString().toLowerCase();
+        if (activeTab === 'makes') {
+            if (nameFilter) data = data.filter(m => term(m.name).includes(term(nameFilter)));
+            if (countryFilter) data = data.filter(m => term(m.country).includes(term(countryFilter)));
+            if (modelCountFilter) data = data.filter(m => term(m.model_count).includes(term(modelCountFilter)));
+            if (vehicleCountFilter) data = data.filter(m => term(m.vehicle_count).includes(term(vehicleCountFilter)));
+            if (statusFilter !== 'all') data = data.filter(m => m.is_active === (statusFilter === 'active'));
+        } else if (activeTab === 'models') {
+            if (makeFilter) data = data.filter(m => String(m.make_id) === String(makeFilter));
+            if (nameFilter) data = data.filter(m => term(m.name).includes(term(nameFilter)));
+            if (yearFilter) data = data.filter(m => term(m.year).includes(term(yearFilter)));
+            if (bodyTypeFilter) data = data.filter(m => term(m.body_type) === term(bodyTypeFilter));
+            if (fuelFilter) data = data.filter(m => term(m.fuel_type) === term(fuelFilter));
+            if (transmissionFilter) data = data.filter(m => term(m.transmission) === term(transmissionFilter));
+            if (variantCountFilter) data = data.filter(m => term(m.variant_count).includes(term(variantCountFilter)));
+            if (statusFilter !== 'all') data = data.filter(m => m.is_active === (statusFilter === 'active'));
+        } else if (activeTab === 'variants') {
+            if (makeFilter) data = data.filter(v => String(v.make_id) === String(makeFilter));
+            if (modelFilter) data = data.filter(v => String(v.model_id) === String(modelFilter));
+            if (nameFilter) data = data.filter(v => term(v.name).includes(term(nameFilter)));
+            if (basePriceFilter) data = data.filter(v => term(v.base_price).includes(term(basePriceFilter)));
+            if (vehicleCountFilter) data = data.filter(v => term(v.vehicle_count).includes(term(vehicleCountFilter)));
+            if (statusFilter !== 'all') data = data.filter(v => v.is_active === (statusFilter === 'active'));
+        } else if (activeTab === 'colors') {
+            if (nameFilter) data = data.filter(c => term(c.name).includes(term(nameFilter)));
+            if (hexFilter) data = data.filter(c => term(c.hex_code).includes(term(hexFilter)));
+            if (metallicFilter !== 'all') data = data.filter(c => c.is_metallic === (metallicFilter === 'yes'));
+            if (additionalCostFilter) data = data.filter(c => term(c.additional_cost).includes(term(additionalCostFilter)));
+            if (vehicleCountFilter) data = data.filter(c => term(c.vehicle_count).includes(term(vehicleCountFilter)));
+            if (statusFilter !== 'all') data = data.filter(c => c.is_active === (statusFilter === 'active'));
+        } else if (activeTab === 'categories') {
+            if (nameFilter) data = data.filter(c => term(c.name).includes(term(nameFilter)));
+            if (descriptionFilter) data = data.filter(c => term(c.description).includes(term(descriptionFilter)));
+            if (parentFilter) data = data.filter(c => term(c.parent_name).includes(term(parentFilter)));
+            if (partsCountFilter) data = data.filter(c => term(c.parts_count).includes(term(partsCountFilter)));
+            if (subCategoryCountFilter) data = data.filter(c => term(c.sub_category_count).includes(term(subCategoryCountFilter)));
+            if (statusFilter !== 'all') data = data.filter(c => c.is_active === (statusFilter === 'active'));
+        } else if (activeTab === 'suppliers') {
+            if (codeFilter) data = data.filter(s => term(s.supplier_code).includes(term(codeFilter)));
+            if (nameFilter) data = data.filter(s => term(s.name).includes(term(nameFilter)));
+            if (supplierTypeFilter) data = data.filter(s => term(s.type) === term(supplierTypeFilter));
+            if (contactFilter) data = data.filter(s => term(s.contact_person).includes(term(contactFilter)) || term(s.email).includes(term(contactFilter)) || term(s.phone).includes(term(contactFilter)));
+            if (supplierCityFilter) data = data.filter(s => term(s.city).includes(term(supplierCityFilter)));
+            if (partsPoFilter) data = data.filter(s => term(s.parts_count).includes(term(partsPoFilter)) || term(s.po_count).includes(term(partsPoFilter)));
+            if (statusFilter !== 'all') data = data.filter(s => s.is_active === (statusFilter === 'active'));
+        } else if (activeTab === 'conditions') {
+            if (nameFilter) data = data.filter(c => term(c.name).includes(term(nameFilter)));
+            if (descriptionFilter) data = data.filter(c => term(c.description).includes(term(descriptionFilter)));
+            if (statusFilter !== 'all') data = data.filter(c => c.is_active === (statusFilter === 'active'));
+        }
+
+        // Sorting
+        data.sort((a, b) => {
+            let aVal = a[sortField], bVal = b[sortField];
+            if (aVal == null) aVal = '';
+            if (bVal == null) bVal = '';
+            let cmp;
+            if (typeof aVal === 'number' && typeof bVal === 'number') {
+                cmp = aVal - bVal;
+            } else if (typeof aVal === 'boolean' && typeof bVal === 'boolean') {
+                cmp = (aVal === bVal) ? 0 : aVal ? 1 : -1;
+            } else {
+                cmp = String(aVal).localeCompare(String(bVal));
+            }
+            return sortDir === 'asc' ? cmp : -cmp;
+        });
+
+        return data;
+    }, [makes, models, variants, colors, categories, suppliers, conditions, activeTab, nameFilter, statusFilter, makeFilter, modelFilter, countryFilter, yearFilter, bodyTypeFilter, fuelFilter, transmissionFilter, supplierTypeFilter, supplierCityFilter, descriptionFilter, parentFilter, metallicFilter, codeFilter, contactFilter, modelCountFilter, vehicleCountFilter, variantCountFilter, basePriceFilter, hexFilter, additionalCostFilter, partsCountFilter, subCategoryCountFilter, partsPoFilter, sortField, sortDir]);
+
+    const renderDrawerContent = () => {
+        if (!drawerItem) return null;
+        const item = drawerItem;
+        const Detail = ({ label, value }) => (
+            <div className="drawer-detail-row" style={{ padding: '8px 0', borderBottom: '1px solid var(--border-light)', display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ fontWeight: 600, color: 'var(--text-secondary)', fontSize: '0.85rem' }}>{label}</span>
+                <span style={{ color: 'var(--text-primary)' }}>{value ?? '-'}</span>
+            </div>
+        );
+        const statusBadge = (active) => (
+            <span className={`status-badge ${active ? 'status-active' : 'status-inactive'}`}>
+                {active ? 'Active' : 'Inactive'}
+            </span>
+        );
+
+        switch(activeTab) {
+            case 'makes':
+                return (<><Detail label="Name" value={item.name} /><Detail label="Logo" value={item.logo ? <img className="make-logo make-logo-drawer" src={item.logo} alt={`${item.name} logo`} /> : '-'} /><Detail label="Country" value={item.country} /><Detail label="Models" value={item.model_count} /><Detail label="Vehicles" value={item.vehicle_count} /><Detail label="Status" value={statusBadge(item.is_active)} /></>);
+            case 'models':
+                return (<><Detail label="Make" value={item.make_name} /><Detail label="Model" value={item.name} /><Detail label="Year" value={item.year} /><Detail label="Body Type" value={item.body_type} /><Detail label="Fuel" value={item.fuel_type} /><Detail label="Transmission" value={item.transmission} /><Detail label="Variants" value={item.variant_count} /><Detail label="Status" value={statusBadge(item.is_active)} /></>);
+            case 'variants':
+                return (<><Detail label="Make" value={item.make_name} /><Detail label="Model" value={item.model_name} /><Detail label="Variant" value={item.name} /><Detail label="Base Price" value={`PKR ${Number(item.base_price || 0).toLocaleString()}`} /><Detail label="Vehicles" value={item.vehicle_count} /><Detail label="Status" value={statusBadge(item.is_active)} /></>);
+            case 'colors':
+                return (<><Detail label="Color" value={item.name} /><Detail label="Hex" value={item.hex_code} /><Detail label="Metallic" value={item.is_metallic ? 'Yes' : 'No'} /><Detail label="Additional Cost" value={`PKR ${Number(item.additional_cost || 0).toLocaleString()}`} /><Detail label="Vehicles" value={item.vehicle_count} /><Detail label="Status" value={statusBadge(item.is_active)} /></>);
+            case 'categories':
+                return (<><Detail label="Name" value={item.name} /><Detail label="Description" value={item.description} /><Detail label="Parent" value={item.parent_name || 'Root'} /><Detail label="Parts" value={item.parts_count} /><Detail label="Sub-Categories" value={item.sub_category_count} /><Detail label="Status" value={statusBadge(item.is_active)} /></>);
+            case 'suppliers':
+                return (<><Detail label="Code" value={item.supplier_code} /><Detail label="Name" value={item.name} /><Detail label="Type" value={item.type} /><Detail label="Contact" value={item.contact_person} /><Detail label="Email" value={item.email} /><Detail label="Phone" value={item.phone} /><Detail label="City" value={item.city} /><Detail label="Country" value={item.country} /><Detail label="Parts" value={item.parts_count} /><Detail label="POs" value={item.po_count} /><Detail label="Status" value={statusBadge(item.is_active)} /></>);
+            case 'conditions':
+                return (<><Detail label="Name" value={item.name} /><Detail label="Description" value={item.description} /><Detail label="Status" value={statusBadge(item.is_active)} /></>);
+            default: return null;
         }
     };
 
@@ -912,14 +1152,16 @@ const VehicleMasterData = () => {
                     <h1>Vehicle Master Data</h1>
                     <p className="subtitle">Manage vehicle makes, models, variants, colors, part categories, and suppliers</p>
                 </div>
-                <button className="btn btn-primary btn-create" onClick={() => openModal('create')}>
-                    <span className="icon">+</span>
-                    Add {getTabLabel()}
-                </button>
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                    <button className="btn btn-primary btn-create" onClick={() => openModal('create')}>
+                        <span className="icon">+</span>
+                        Add {getTabLabel()}
+                    </button>
+                </div>
             </div>
 
             {/* Stats Cards */}
-            <div className="stats-grid stats-grid-6">
+            <div className="stats-grid stats-grid-7">
                 <div className={`stat-card ${activeTab === 'makes' ? 'active' : ''}`} onClick={() => setActiveTab('makes')}>
                     <div className="stat-icon">🏭</div>
                     <div className="stat-content">
@@ -962,6 +1204,13 @@ const VehicleMasterData = () => {
                         <span className="stat-label">Suppliers</span>
                     </div>
                 </div>
+                <div className={`stat-card ${activeTab === 'conditions' ? 'active' : ''}`} onClick={() => setActiveTab('conditions')}>
+                    <div className="stat-icon">📋</div>
+                    <div className="stat-content">
+                        <span className="stat-value">{stats.total_conditions || 0}</span>
+                        <span className="stat-label">Conditions</span>
+                    </div>
+                </div>
             </div>
 
             <ErrorPopup error={errorPopup} onClose={() => setErrorPopup(null)} />
@@ -969,32 +1218,26 @@ const VehicleMasterData = () => {
             {/* Tabs */}
             <div className="tabs-container">
                 <div className="tabs">
-                    <button className={`tab ${activeTab === 'makes' ? 'active' : ''}`} onClick={() => setActiveTab('makes')}>Makes</button>
-                    <button className={`tab ${activeTab === 'models' ? 'active' : ''}`} onClick={() => setActiveTab('models')}>Models</button>
-                    <button className={`tab ${activeTab === 'variants' ? 'active' : ''}`} onClick={() => setActiveTab('variants')}>Variants</button>
-                    <button className={`tab ${activeTab === 'colors' ? 'active' : ''}`} onClick={() => setActiveTab('colors')}>Colors</button>
-                    <button className={`tab ${activeTab === 'categories' ? 'active' : ''}`} onClick={() => setActiveTab('categories')}>Categories</button>
-                    <button className={`tab ${activeTab === 'suppliers' ? 'active' : ''}`} onClick={() => setActiveTab('suppliers')}>Suppliers</button>
+                    <button className={`tab ${activeTab === 'makes' ? 'active' : ''}`} onClick={() => handleTabChange('makes')}>Makes</button>
+                    <button className={`tab ${activeTab === 'models' ? 'active' : ''}`} onClick={() => handleTabChange('models')}>Models</button>
+                    <button className={`tab ${activeTab === 'variants' ? 'active' : ''}`} onClick={() => handleTabChange('variants')}>Variants</button>
+                    <button className={`tab ${activeTab === 'colors' ? 'active' : ''}`} onClick={() => handleTabChange('colors')}>Colors</button>
+                    <button className={`tab ${activeTab === 'categories' ? 'active' : ''}`} onClick={() => handleTabChange('categories')}>Categories</button>
+                    <button className={`tab ${activeTab === 'suppliers' ? 'active' : ''}`} onClick={() => handleTabChange('suppliers')}>Suppliers</button>
+                    <button className={`tab ${activeTab === 'conditions' ? 'active' : ''}`} onClick={() => handleTabChange('conditions')}>Conditions</button>
                 </div>
 
-                {/* Filters for Models/Variants */}
-                {(activeTab === 'models' || activeTab === 'variants') && (
-                    <div className="filters-bar">
-                        <SearchableSelect value={makeFilter} onChange={(e) => { setMakeFilter(e.target.value); setModelFilter(''); }}>
-                            <option value="">All Makes</option>
-                            {makes.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-                        </SearchableSelect>
-                        {activeTab === 'variants' && (
-                            <SearchableSelect value={modelFilter} onChange={(e) => setModelFilter(e.target.value)} disabled={!makeFilter}>
-                                <option value="">All Models</option>
-                                {models.filter(m => !makeFilter || m.make_id === parseInt(makeFilter)).map(m => (
-                                    <option key={m.id} value={m.id}>{m.name}</option>
-                                ))}
-                            </SearchableSelect>
-                        )}
-                    </div>
-                )}
+
             </div>
+
+            {/* Bulk Delete Bar */}
+            {selectedIds.size > 0 && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, marginBottom: 12 }}>
+                    <span style={{ fontWeight: 600, color: '#991b1b' }}>{selectedIds.size} selected</span>
+                    <button className="btn btn-danger btn-sm" onClick={() => setDeleteAllTarget(true)}>Delete Selected</button>
+                    <button className="btn btn-secondary btn-sm" onClick={() => setSelectedIds(new Set())}>Deselect All</button>
+                </div>
+            )}
 
             {/* Data Table */}
             <div className="table-container">
@@ -1009,45 +1252,79 @@ const VehicleMasterData = () => {
                         <h3>No {activeTab} found</h3>
                         <p>Click the "Add" button to create one.</p>
                     </div>
+                ) : filteredItems.length === 0 ? (
+                    <div className="empty-state">
+                        <div className="empty-icon">🔍</div>
+                        <h3>No matches found</h3>
+                        <p>Try adjusting your filters.</p>
+                    </div>
                 ) : (
                     <>
-                        {activeTab === 'makes' && renderMakesTable()}
-                        {activeTab === 'models' && renderModelsTable()}
-                        {activeTab === 'variants' && renderVariantsTable()}
-                        {activeTab === 'colors' && renderColorsTable()}
-                        {activeTab === 'categories' && renderCategoriesTable()}
-                        {activeTab === 'suppliers' && renderSuppliersTable()}
+                        {activeTab === 'makes' && <><div className="desktop-table desktop-only">{renderMakesTable()}</div><div className="mobile-only">{renderMakesCards()}</div></>}
+                        {activeTab === 'models' && <><div className="desktop-table desktop-only">{renderModelsTable()}</div><div className="mobile-only">{renderModelsCards()}</div></>}
+                        {activeTab === 'variants' && <><div className="desktop-table desktop-only">{renderVariantsTable()}</div><div className="mobile-only">{renderVariantsCards()}</div></>}
+                        {activeTab === 'colors' && <><div className="desktop-table desktop-only">{renderColorsTable()}</div><div className="mobile-only">{renderColorsCards()}</div></>}
+                        {activeTab === 'categories' && <><div className="desktop-table desktop-only">{renderCategoriesTable()}</div><div className="mobile-only">{renderCategoriesCards()}</div></>}
+                        {activeTab === 'suppliers' && <><div className="desktop-table desktop-only">{renderSuppliersTable()}</div><div className="mobile-only">{renderSuppliersCards()}</div></>}
+                        {activeTab === 'conditions' && <><div className="desktop-table desktop-only">{renderConditionsTable()}</div><div className="mobile-only">{renderConditionsCards()}</div></>}
                     </>
                 )}
             </div>
 
             {/* Modal */}
             {showModal && (
-                <div className="modal-overlay">
-                    <div className="modal-content" onClick={e => e.stopPropagation()}>
-                        <div className="modal-header">
-                            <h2>{modalMode === 'create' ? 'Add' : 'Edit'} {getTabLabel()}</h2>
-                            <button className="modal-close" onClick={closeModal}>×</button>
-                        </div>
-                        <form onSubmit={handleSubmit}>
-                            <div className="modal-body">
-                                {activeTab === 'makes' && renderMakeForm()}
-                                {activeTab === 'models' && renderModelForm()}
-                                {activeTab === 'variants' && renderVariantForm()}
-                                {activeTab === 'colors' && renderColorForm()}
-                                {activeTab === 'categories' && renderCategoryForm()}
-                                {activeTab === 'suppliers' && renderSupplierForm()}
-                            </div>
-                            <div className="modal-footer">
-                                <button type="button" className="btn btn-secondary" onClick={closeModal}>Cancel</button>
-                                <button type="submit" className="btn btn-primary">
-                                    {modalMode === 'create' ? 'Create' : 'Save Changes'}
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
+                <VehicleMasterModal
+                    key={`${modalMode}-${selectedItem?._id || 'new'}`}
+                    type={{ makes: 'make', models: 'model', variants: 'variant', colors: 'color', categories: 'category', suppliers: 'supplier', conditions: 'condition' }[activeTab] || activeTab}
+                    mode={modalMode}
+                    item={selectedItem}
+                    makes={makes}
+                    models={models}
+                    categories={categories}
+                    onClose={closeModal}
+                    onSaved={handleSaved}
+                />
             )}
+
+            <EmailDrawer
+                isOpen={!!drawerItem}
+                onClose={() => setDrawerItem(null)}
+                title={drawerItem ? drawerItem.name : ''}
+                width="50%"
+            >
+                <div style={{ padding: '0 4px' }}>
+                    <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+                        <button className="btn btn-primary" style={{ padding: '6px 16px', fontSize: '0.85rem' }} onClick={() => { const item = drawerItem; setDrawerItem(null); openModal('edit', item); }}>
+                            Edit
+                        </button>
+                        <button className="btn btn-danger" style={{ padding: '6px 16px', fontSize: '0.85rem' }} onClick={() => { const item = drawerItem; setDrawerItem(null); setDeleteTarget(item); }}>
+                            Delete
+                        </button>
+                    </div>
+                    {renderDrawerContent()}
+                </div>
+            </EmailDrawer>
+
+            <ConfirmModal
+                isOpen={!!deleteTarget}
+                title={`Delete ${getTabLabel()}`}
+                message={`Are you sure you want to delete "${deleteTarget?.name || ''}"?`}
+                onConfirm={handleDeleteConfirm}
+                onCancel={() => setDeleteTarget(null)}
+                confirmText="Delete"
+                type="danger"
+            />
+
+            {/* Bulk Delete Confirmation */}
+            <ConfirmModal
+                isOpen={!!deleteAllTarget}
+                title={`Delete Selected ${getTabLabel()}s`}
+                message={`Are you sure you want to delete ${selectedIds.size} ${getTabLabel().toLowerCase()}(s)? This action cannot be undone.`}
+                onConfirm={handleBulkDelete}
+                onCancel={() => setDeleteAllTarget(null)}
+                confirmText={deletingAll ? 'Deleting...' : 'Delete All'}
+                type="danger"
+            />
         </div>
     );
 };

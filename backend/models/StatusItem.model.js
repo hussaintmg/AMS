@@ -23,7 +23,7 @@ const statusItemSchema = new mongoose.Schema({
   isActive: { type: Boolean, default: true },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
-}, { timestamps: true });
+}, { timestamps: true, suppressReservedKeysWarning: true });
 
 statusItemSchema.index({ collection: 1, value: 1 }, { unique: true });
 statusItemSchema.index({ collection: 1, order: 1 });

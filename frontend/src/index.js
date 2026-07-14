@@ -17,6 +17,10 @@ import { UserManagementProvider } from './context/UserManagementContext';
 import { StatusManagementProvider } from './context/StatusManagementContext';
 import { ProfileProvider } from './context/ProfileContext';
 import { LogsProvider } from './context/LogsContext';
+import { EmployeesProvider } from './context/EmployeesContext';
+import { LeavesProvider } from './context/LeavesContext';
+import { ExpensesProvider } from './context/ExpensesContext';
+import { LedgerProvider } from './context/LedgerContext';
 import App from './App';
 import './styles/index.css';
 
@@ -30,6 +34,10 @@ root.render(
                         <AppDataProvider>
                             <ServerManagementProvider>
                                 <UserManagementProvider>
+                                    <EmployeesProvider>
+                                    <LeavesProvider>
+                                    <ExpensesProvider>
+                                    <LedgerProvider>
                                     <StatusManagementProvider>
                                     <LogsProvider>
                                         <ProfileProvider>
@@ -44,6 +52,10 @@ root.render(
                                     </ProfileProvider>
                                     </LogsProvider>
                                     </StatusManagementProvider>
+                                    </LedgerProvider>
+                                    </ExpensesProvider>
+                                    </LeavesProvider>
+                                    </EmployeesProvider>
                                 </UserManagementProvider>
                             </ServerManagementProvider>
                         </AppDataProvider>

@@ -1,3 +1,4 @@
-﻿"# AMS Customer (Lead) bulk import. REQUIRED columns: first_name, last_name, phone. OPTIONAL: email, source_id, source (name), city, priority, status, interested_in, notes. Match ""source"" to Lead Sources name if source_id is empty."
-"first_name*","last_name*","phone*","email","source_id","source","city","priority","status","interested_in","notes"
-"John","Doe","+923001234567","john.doe@example.com","","Walk-in","Karachi","medium","new","SUV OMODA 5","Imported row"
+# AMS Lead bulk import. REQUIRED: customer_name, email, phone. city/source/type/priority/status/department must match existing names (blank = skip). customer_type = individual|corporate. assigned_to = user email or full name (must be an allowed assignee). Dates accept YYYY-MM-DD, DD/MM/YYYY, 13 Jul 2026, etc.
+"customer_name","email","phone","alternate_phone","address","city","state","country","zip_code","source","type","priority","status","customer_type","lead_value","probability","expected_close_date","next_follow_up","description","assigned_to","department"
+"John Doe","john.doe@example.com","+923001234567","","House 12, Street 5","Karachi","Sindh","Pakistan","74000","Whatsapp","Parts and vahicles","High","complete","individual","2500000","50","2026-08-15","20/07/2026","Interested in SUV","Jhon Smith","Jhon Smith"
+"Ali Khan","ali.khan@example.com","03011234567","03331234567","Plot 45, Gulberg","Karachi","Punjab","Pakistan","54000","Insta","no","Low","ok","corporate","5000000","75","15 Aug 2026","2026-07-25","Fleet purchase inquiry","me","NO"

@@ -1,34 +1,50 @@
-/**
- * Service Master Data Routes
- * RESTful API for managing Service Types, Labor Rates, Packages, and Warranty
- * Created by LOGIXINVENTOR (PVT) Ltd.
- * info@logixinventor.com +92 333 3836851
- * www.logixinventor.com | AMS
- * Date: 2026-01-09
- */
-
 const express = require('express');
 const router = express.Router();
-const serviceMasterController = require('../controllers/serviceMasterController');
-const { authenticate } = require('../middleware/auth');
+const ctrl = require('../controllers/serviceMasterController');
+const { authenticate, authorize } = require('../middleware/auth');
+const writeRoles = ['super_admin', 'admin', 'service_manager'];
+
+/**
+ * @swagger
+ * tags:
+ *   name: Service Master Data
+ *   description: Service Types, Labor Rates, Service Packages, Warranty Types
+ */
 
 // ═══════════════════════════════════════════════════════════════════════════
-// STATISTICS
+// STATS
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**
  * @swagger
  * /api/service-master/stats:
  *   get:
- *     summary: Get master data statistics
+ *     summary: Get counts for all service master entities
  *     tags: [Service Master Data]
- *     security:
- *       - bearerAuth: []
+ *     security: [{ bearerAuth: [] }]
  *     responses:
  *       200:
- *         description: Statistics retrieved successfully
+ *         description: Stats retrieved
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     serviceTypes:
+ *                       type: number
+ *                     laborRates:
+ *                       type: number
+ *                     packages:
+ *                       type: number
+ *                     warranties:
+ *                       type: number
  */
-router.get('/stats', authenticate, serviceMasterController.getStats);
+router.get('/stats', authenticate, ctrl.getStats);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SERVICE TYPES
@@ -40,84 +56,84 @@ router.get('/stats', authenticate, serviceMasterController.getStats);
  *   get:
  *     summary: Get all service types
  *     tags: [Service Master Data]
- *     security:
- *       - bearerAuth: []
+ *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - in: query
  *         name: search
- *         schema:
- *           type: string
+ *         schema: { type: string }
  *       - in: query
- *         name: categoryId
- *         schema:
- *           type: integer
+ *         name: is_active
+ *         schema: { type: boolean }
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, default: 1 }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 100 }
  *     responses:
  *       200:
  *         description: List of service types
  */
-router.get('/types', authenticate, serviceMasterController.getServiceTypes);
+router.get('/types', authenticate, ctrl.getServiceTypes);
 
 /**
  * @swagger
  * /api/service-master/types:
  *   post:
- *     summary: Create new service type
+ *     summary: Create a service type
  *     tags: [Service Master Data]
- *     security:
- *       - bearerAuth: []
+ *     security: [{ bearerAuth: [] }]
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
- *             required:
- *               - name
- *               - basePrice
+ *             required: [name]
  *             properties:
- *               name:
- *                 type: string
- *               description:
- *                 type: string
- *               basePrice:
- *                 type: number
- *               estimatedHours:
- *                 type: number
- *               categoryId:
- *                 type: integer
+ *               name: { type: string }
+ *               code: { type: string }
+ *               description: { type: string }
+ *               basePrice: { type: number }
+ *               estimatedHours: { type: number }
+ *               category: { type: string }
+ *               isActive: { type: boolean }
  *     responses:
  *       201:
- *         description: Created successfully
+ *         description: Created
  */
-router.post('/types', authenticate, serviceMasterController.createServiceType);
+router.post('/types', authenticate, authorize(...writeRoles), ctrl.createServiceType);
 
 /**
  * @swagger
  * /api/service-master/types/{id}:
  *   put:
- *     summary: Update service type
+ *     summary: Update a service type
  *     tags: [Service Master Data]
- *     security:
- *       - bearerAuth: []
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
  *     responses:
  *       200:
- *         description: Updated successfully
- */
-router.put('/types/:id', authenticate, serviceMasterController.updateServiceType);
-
-/**
- * @swagger
- * /api/service-master/types/{id}:
+ *         description: Updated
  *   delete:
- *     summary: Delete service type
+ *     summary: Delete a service type
  *     tags: [Service Master Data]
- *     security:
- *       - bearerAuth: []
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
  *     responses:
  *       200:
- *         description: Deleted successfully
+ *         description: Deleted
  */
-router.delete('/types/:id', authenticate, serviceMasterController.deleteServiceType);
+router.put('/types/:id', authenticate, authorize(...writeRoles), ctrl.updateServiceType);
+router.delete('/types/:id', authenticate, authorize(...writeRoles), ctrl.deleteServiceType);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // LABOR RATES
@@ -129,17 +145,78 @@ router.delete('/types/:id', authenticate, serviceMasterController.deleteServiceT
  *   get:
  *     summary: Get all labor rates
  *     tags: [Service Master Data]
- *     security:
- *       - bearerAuth: []
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: search
+ *         schema: { type: string }
+ *       - in: query
+ *         name: is_active
+ *         schema: { type: boolean }
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, default: 1 }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 100 }
  *     responses:
  *       200:
  *         description: List of labor rates
+ *   post:
+ *     summary: Create a labor rate
+ *     tags: [Service Master Data]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name]
+ *             properties:
+ *               name: { type: string }
+ *               code: { type: string }
+ *               rate: { type: number }
+ *               duration: { type: number }
+ *               description: { type: string }
+ *               isActive: { type: boolean }
+ *     responses:
+ *       201:
+ *         description: Created
  */
-router.get('/labor-rates', authenticate, serviceMasterController.getLaborRates);
+router.get('/labor-rates', authenticate, ctrl.getLaborRates);
+router.post('/labor-rates', authenticate, authorize(...writeRoles), ctrl.createLaborRate);
 
-router.post('/labor-rates', authenticate, serviceMasterController.createLaborRate);
-router.put('/labor-rates/:id', authenticate, serviceMasterController.updateLaborRate);
-router.delete('/labor-rates/:id', authenticate, serviceMasterController.deleteLaborRate);
+/**
+ * @swagger
+ * /api/service-master/labor-rates/{id}:
+ *   put:
+ *     summary: Update a labor rate
+ *     tags: [Service Master Data]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Updated
+ *   delete:
+ *     summary: Delete a labor rate
+ *     tags: [Service Master Data]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Deleted
+ */
+router.put('/labor-rates/:id', authenticate, authorize(...writeRoles), ctrl.updateLaborRate);
+router.delete('/labor-rates/:id', authenticate, authorize(...writeRoles), ctrl.deleteLaborRate);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SERVICE PACKAGES
@@ -151,22 +228,99 @@ router.delete('/labor-rates/:id', authenticate, serviceMasterController.deleteLa
  *   get:
  *     summary: Get all service packages
  *     tags: [Service Master Data]
- *     security:
- *       - bearerAuth: []
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: search
+ *         schema: { type: string }
+ *       - in: query
+ *         name: is_active
+ *         schema: { type: boolean }
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, default: 1 }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 100 }
  *     responses:
  *       200:
  *         description: List of packages
+ *   post:
+ *     summary: Create a service package
+ *     tags: [Service Master Data]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [packageName]
+ *             properties:
+ *               packageName: { type: string }
+ *               services:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     name: { type: string }
+ *                     quantity: { type: integer }
+ *                     price: { type: number }
+ *               price: { type: number }
+ *               duration: { type: number }
+ *               warranty: { type: string }
+ *               description: { type: string }
+ *               isActive: { type: boolean }
+ *     responses:
+ *       201:
+ *         description: Created
  */
-router.get('/packages', authenticate, serviceMasterController.getServicePackages);
-router.get('/packages/:id', authenticate, serviceMasterController.getPackageById);
+router.get('/packages', authenticate, ctrl.getServicePackages);
+router.post('/packages', authenticate, authorize(...writeRoles), ctrl.createServicePackage);
 
-router.post('/packages', authenticate, serviceMasterController.createPackage);
-router.put('/packages/:id', authenticate, serviceMasterController.updatePackage);
-router.delete('/packages/:id', authenticate, serviceMasterController.deletePackage);
-
-// Package Items
-router.post('/packages/:id/items', authenticate, serviceMasterController.addPackageItem);
-router.delete('/packages/:id/items/:itemId', authenticate, serviceMasterController.removePackageItem);
+/**
+ * @swagger
+ * /api/service-master/packages/{id}:
+ *   get:
+ *     summary: Get a service package by ID
+ *     tags: [Service Master Data]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Package details
+ *   put:
+ *     summary: Update a service package
+ *     tags: [Service Master Data]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Updated
+ *   delete:
+ *     summary: Delete a service package
+ *     tags: [Service Master Data]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Deleted
+ */
+router.get('/packages/:id', authenticate, ctrl.getPackageById);
+router.put('/packages/:id', authenticate, authorize(...writeRoles), ctrl.updateServicePackage);
+router.delete('/packages/:id', authenticate, authorize(...writeRoles), ctrl.deleteServicePackage);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // WARRANTY TYPES
@@ -178,22 +332,78 @@ router.delete('/packages/:id/items/:itemId', authenticate, serviceMasterControll
  *   get:
  *     summary: Get all warranty types
  *     tags: [Service Master Data]
- *     security:
- *       - bearerAuth: []
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: search
+ *         schema: { type: string }
+ *       - in: query
+ *         name: is_active
+ *         schema: { type: boolean }
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, default: 1 }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 100 }
  *     responses:
  *       200:
  *         description: List of warranty types
+ *   post:
+ *     summary: Create a warranty type
+ *     tags: [Service Master Data]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name]
+ *             properties:
+ *               name: { type: string }
+ *               code: { type: string }
+ *               description: { type: string }
+ *               durationMonths: { type: integer }
+ *               durationKm: { type: integer }
+ *               terms: { type: string }
+ *               isActive: { type: boolean }
+ *     responses:
+ *       201:
+ *         description: Created
  */
-router.get('/warranties', authenticate, serviceMasterController.getWarranties);
+router.get('/warranties', authenticate, ctrl.getWarrantyTypes);
+router.post('/warranties', authenticate, authorize(...writeRoles), ctrl.createWarrantyType);
 
-router.post('/warranties', authenticate, serviceMasterController.createWarranty);
-router.put('/warranties/:id', authenticate, serviceMasterController.updateWarranty);
-router.delete('/warranties/:id', authenticate, serviceMasterController.deleteWarranty);
-
-// ═══════════════════════════════════════════════════════════════════════════
-// LOOKUPS
-// ═══════════════════════════════════════════════════════════════════════════
-
-router.get('/categories', authenticate, serviceMasterController.getCategories);
+/**
+ * @swagger
+ * /api/service-master/warranties/{id}:
+ *   put:
+ *     summary: Update a warranty type
+ *     tags: [Service Master Data]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Updated
+ *   delete:
+ *     summary: Delete a warranty type
+ *     tags: [Service Master Data]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Deleted
+ */
+router.put('/warranties/:id', authenticate, authorize(...writeRoles), ctrl.updateWarrantyType);
+router.delete('/warranties/:id', authenticate, authorize(...writeRoles), ctrl.deleteWarrantyType);
 
 module.exports = router;

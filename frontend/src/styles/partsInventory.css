@@ -70,7 +70,6 @@
 }
 
 .parts-inventory-page .stat-icon {
-    font-size: 2rem;
     width: 50px;
     height: 50px;
     display: flex;
@@ -78,6 +77,7 @@
     justify-content: center;
     border-radius: 10px;
     background: #f3f4f6;
+    flex-shrink: 0;
 }
 
 .parts-inventory-page .stat-total .stat-icon {
@@ -188,7 +188,9 @@
     left: 0.75rem;
     top: 50%;
     transform: translateY(-50%);
-    color: #9ca3af;
+    display: flex;
+    align-items: center;
+    pointer-events: none;
 }
 
 .parts-inventory-page .filter-select {
@@ -208,10 +210,11 @@
 
 /* Table Container */
 .parts-inventory-page .table-container {
-    background: white;
-    border-radius: 12px;
+    background: #fff;
+    border: 1px solid #edf2f7;
+    border-radius: 16px;
     overflow: hidden;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
     margin-bottom: 1.5rem;
 }
 
@@ -221,25 +224,25 @@
 }
 
 .parts-inventory-page .data-table th {
-    background: #f8fafc;
-    padding: 1rem;
+    background: #f9fafb;
+    padding: 0.75rem 1rem;
     text-align: left;
     font-weight: 600;
-    font-size: 0.8rem;
-    color: #64748b;
+    font-size: 0.75rem;
+    color: #6b7280;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    border-bottom: 2px solid #e5e7eb;
+    border-bottom: 1px solid #e5e7eb;
 }
 
 .parts-inventory-page .data-table td {
     padding: 1rem;
     border-bottom: 1px solid #f3f4f6;
-    font-size: 0.9rem;
+    font-size: 0.875rem;
 }
 
 .parts-inventory-page .data-table tbody tr:hover {
-    background: #f8fafc;
+    background: #f9fafb;
 }
 
 .parts-inventory-page .data-table tbody tr.row-warning {
@@ -602,4 +605,81 @@
 
 .parts-inventory-page .btn-secondary:hover {
     background: #e5e7eb;
+}
+
+.parts-inventory-page .btn-sm {
+    padding: 4px 10px;
+    font-size: 0.8rem;
+    border-radius: 6px;
+}
+
+.parts-inventory-page .btn-outline {
+    background: transparent;
+    border: 1px solid var(--primary-color, #3b82f6);
+    color: var(--primary-color, #3b82f6);
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+
+.parts-inventory-page .btn-outline:hover {
+    background: var(--primary-color, #3b82f6);
+    color: #fff;
+}
+
+.parts-inventory-page .spinner-mini {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: partsSpin 0.6s linear infinite;
+    margin-right: 6px;
+    vertical-align: middle;
+}
+
+@keyframes partsSpin {
+    to { transform: rotate(360deg); }
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+    .parts-inventory-page .tabs-container {
+        flex-wrap: wrap;
+    }
+    .parts-inventory-page .tab-btn {
+        flex: 1;
+        text-align: center;
+        font-size: 0.85rem;
+        padding: 0.6rem 0.5rem;
+    }
+    .parts-inventory-page .filters-bar {
+        flex-direction: column;
+    }
+    .parts-inventory-page .search-box {
+        min-width: 100%;
+    }
+    .parts-inventory-page .filter-select {
+        min-width: 100%;
+    }
+    .parts-inventory-page .results-count {
+        margin-left: 0;
+    }
+    .parts-inventory-page .page-header {
+        flex-direction: column;
+        gap: 1rem;
+    }
+    .parts-inventory-page .btn-create {
+        width: 100%;
+        justify-content: center;
+    }
+    .parts-inventory-page .modal-lg {
+        max-width: 100%;
+        margin: 0 0.5rem;
+    }
+    .parts-inventory-page .form-row {
+        grid-template-columns: 1fr;
+    }
 }

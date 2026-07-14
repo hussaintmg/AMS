@@ -69,13 +69,7 @@ const MASTER_LINKS = [
         roles: ['super_admin', 'admin', 'accountant', 'hr_admin']
     },
     {
-        to: '/settings#doc-templates',
-        title: 'Print templates',
-        description: 'Invoice and document templates for PDF output.',
-        roles: ['super_admin']
-    },
-    {
-        to: '/settings#payment-methods',
+        to: '/payment-methods',
         title: 'Payment methods',
         description: 'Cash, bank, card, and custom payment channels.',
         roles: ['super_admin']

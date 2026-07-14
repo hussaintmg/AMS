@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs grep -ohE -- '--[a-zA-Z0-9-]+\\\\s*:')",
+      "Bash(xargs grep -ohE 'var\\\\\\(--[a-zA-Z0-9-]+')",
+      "Bash(node -e ' *)"
+    ]
+  }
+}

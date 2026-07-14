@@ -1,249 +1,357 @@
-/**
- * Leave requests & balances
- */
-
 import React, { useState, useEffect, useCallback } from 'react';
-import toast from 'react-hot-toast';
-import SearchableSelect from '../components/SearchableSelect';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { employeeAPI, leavesAPI } from '../services/api';
+import { useLeaves } from '../context/LeavesContext';
+import toast from 'react-hot-toast';
+import ErrorPopup from '../components/ErrorPopup';
+import ConfirmModal from '../components/ConfirmModal';
+import ActionButtons from '../components/ActionButtons';
+import LeaveFormModal from './LeaveFormModal';
+import LeaveDrawer from './LeaveDrawer';
 import '../styles/userManagement.css';
 
+const STATUS_BADGE = {
+  pending: 'badge-warning', approved: 'badge-success',
+  rejected: 'badge-danger', cancelled: 'badge-secondary',
+};
+
 const Leaves = () => {
-    const { hasRole } = useAuth();
-    const canApprove = hasRole(['super_admin', 'admin', 'hr_admin']);
+  const { user: currentUser, hasRole } = useAuth();
+  const {
+    leaves: ctxLeaves, employees, stats,
+    loading: ctxLoading, saving,
+    loadLeaves, loadReferenceData,
+    createLeave, updateLeave, deleteLeave, approveRejectLeave,
+    setLeaves,
+  } = useLeaves();
+  const [loading, setLoading] = useState(true);
+  const [errorPopup, setErrorPopup] = useState(null);
 
-    const [types, setTypes] = useState([]);
-    const [requests, setRequests] = useState([]);
-    const [employees, setEmployees] = useState([]);
-    const [balances, setBalances] = useState([]);
-    const [empFilter, setEmpFilter] = useState('');
-    const [modal, setModal] = useState(false);
-    const [form, setForm] = useState({
-        employee_id: '',
-        leave_type_id: '',
-        start_date: '',
-        end_date: '',
-        days_requested: '',
-        reason: ''
-    });
+  const [page, setPage] = useState(1);
+  const [limit] = useState(15);
+  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [searchParams] = useSearchParams();
+  const urlSearch = searchParams.get('search') || '';
 
-    const load = useCallback(async () => {
-        try {
-            const [tRes, rRes, eRes] = await Promise.all([
-                leavesAPI.listTypes(),
-                leavesAPI.listRequests({}),
-                employeeAPI.list({ limit: 200 })
-            ]);
-            setTypes(tRes.data.data || []);
-            setRequests(rRes.data.data || []);
-            setEmployees(eRes.data.data?.employees || []);
-        } catch (e) {
-            console.error(e);
-        }
-    }, []);
+  const [search, setSearch] = useState(urlSearch);
+  const [statusFilter, setStatusFilter] = useState('');
+  const [empFilter, setEmpFilter] = useState('');
 
-    useEffect(() => {
-        load();
-    }, [load]);
+  const [showModal, setShowModal] = useState(false);
+  const [modalMode, setModalMode] = useState('create');
+  const [selectedLeave, setSelectedLeave] = useState(null);
 
-    const loadBalances = async (employeeId) => {
-        if (!employeeId) {
-            setBalances([]);
-            return;
-        }
-        try {
-            const res = await leavesAPI.listBalances({ employee_id: employeeId });
-            setBalances(res.data.data || []);
-        } catch (e) {
-            console.error(e);
-        }
-    };
+  const [drawerLeave, setDrawerLeave] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(null);
 
-    useEffect(() => {
-        if (empFilter) loadBalances(empFilter);
-        else setBalances([]);
-    }, [empFilter]);
+  const canApprove = hasRole(['super_admin', 'admin', 'hr_admin']);
 
-    const empOptions = employees.map((e) => ({ id: String(e.id), name: `${e.full_name} (${e.employee_code})` }));
-    const typeOptions = types.map((t) => ({ id: String(t.id), name: t.name }));
+  const fetchLeaves = useCallback(async () => {
+    try {
+      setLoading(true);
+      const params = { page, limit, ...(search && { search }), ...(statusFilter && { status: statusFilter }), ...(empFilter && { employee: empFilter }) };
+      const response = await loadLeaves(params);
+      if (response) {
+        const list = response.leaves || [];
+        setLeaves(list);
+        setTotalPages(Math.ceil(response.pagination?.total / limit) || 1);
+        setTotal(response.pagination?.total || 0);
+      }
+    } catch (err) {
+      toast.error('Failed to load leaves');
+    } finally {
+      setLoading(false);
+    }
+  }, [page, limit, search, statusFilter, empFilter, loadLeaves, setLeaves]);
 
-    const submit = async (e) => {
-        e.preventDefault();
-        try {
-            await leavesAPI.submitRequest({
-                employee_id: parseInt(form.employee_id, 10),
-                leave_type_id: parseInt(form.leave_type_id, 10),
-                start_date: form.start_date,
-                end_date: form.end_date,
-                days_requested: parseFloat(form.days_requested),
-                reason: form.reason
-            });
-            toast.success('Leave request submitted');
-            setModal(false);
-            setForm({ employee_id: '', leave_type_id: '', start_date: '', end_date: '', days_requested: '', reason: '' });
-            load();
-        } catch (err) { /* */ }
-    };
+  useEffect(() => { if (currentUser) fetchLeaves(); }, [currentUser, fetchLeaves]);
 
-    const setStatus = async (id, status) => {
-        try {
-            await leavesAPI.setRequestStatus(id, { status });
-            toast.success(`Request ${status}`);
-            load();
-        } catch (err) { /* */ }
-    };
+  useEffect(() => { if (currentUser) loadReferenceData().catch(() => {}); }, [currentUser, loadReferenceData]);
 
-    const filteredReq = empFilter
-        ? requests.filter((r) => String(r.employee_id) === String(empFilter))
-        : requests;
+  useEffect(() => { if (urlSearch) setSearch(urlSearch); }, [urlSearch]);
 
-    return (
-        <div className="user-management-page">
-            <div className="page-header">
-                <div>
-                    <h1>Leaves</h1>
-                    <p className="text-muted">Requests, approvals, and balances by employee</p>
-                </div>
-                <div className="header-actions">
-                    <div style={{ minWidth: 220 }}>
-                        <SearchableSelect
-                            options={empOptions}
-                            value={empFilter}
-                            onChange={(ev) => setEmpFilter(ev.target.value)}
-                            placeholder="Filter by employee"
-                        />
-                    </div>
-                    <button type="button" className="btn btn-primary" onClick={() => setModal(true)}>New request</button>
-                </div>
-            </div>
+  useEffect(() => {
+    if (!currentUser) return;
+    const timer = setTimeout(() => { setPage(1); fetchLeaves(); }, 300);
+    return () => clearTimeout(timer);
+  }, [currentUser, search, statusFilter, empFilter, fetchLeaves]);
 
-            {!!balances.length && (
-                <div className="card" style={{ marginBottom: '1rem' }}>
-                    <h3 style={{ fontSize: '1rem', marginBottom: '0.75rem' }}>Balances (selected year)</h3>
-                    <div className="table-responsive">
-                        <table className="data-table">
-                            <thead>
-                                <tr>
-                                    <th>Type</th>
-                                    <th>Allocated</th>
-                                    <th>Used</th>
-                                    <th>Remaining</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {balances.map((b) => (
-                                    <tr key={b.id}>
-                                        <td>{b.leave_type_name}</td>
-                                        <td>{b.days_allocated}</td>
-                                        <td>{b.days_used}</td>
-                                        <td>{(parseFloat(b.days_allocated) - parseFloat(b.days_used)).toFixed(1)}</td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            )}
+  const openModal = (mode, leave = null) => {
+    setModalMode(mode);
+    setSelectedLeave(leave);
+    setShowModal(true);
+  };
 
-            <div className="card">
-                <div className="table-responsive">
-                    <table className="data-table">
-                        <thead>
-                            <tr>
-                                <th>Employee</th>
-                                <th>Type</th>
-                                <th>Dates</th>
-                                <th>Days</th>
-                                <th>Status</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {filteredReq.map((r) => (
-                                <tr key={r.id}>
-                                    <td>{r.employee_name} <small>{r.employee_code}</small></td>
-                                    <td>{r.leave_type_name}</td>
-                                    <td>{r.start_date} → {r.end_date}</td>
-                                    <td>{r.days_requested}</td>
-                                    <td><span className="badge badge-secondary">{r.status}</span></td>
-                                    <td>
-                                        {canApprove && r.status === 'pending' ? (
-                                            <>
-                                                <button type="button" className="btn btn-sm btn-success" style={{ marginRight: 6 }} onClick={() => setStatus(r.id, 'approved')}>Approve</button>
-                                                <button type="button" className="btn btn-sm btn-secondary" onClick={() => setStatus(r.id, 'rejected')}>Reject</button>
-                                            </>
-                                        ) : '—'}
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+  const closeModal = () => { setShowModal(false); setSelectedLeave(null); };
 
-            {modal && (
-                <div className="modal-overlay" onClick={() => setModal(false)}>
-                    <div
-                        className="modal-content modal-md"
-                        role="dialog"
-                        aria-modal="true"
-                        aria-labelledby="hr-leave-modal-title"
-                        onClick={(ev) => ev.stopPropagation()}
-                    >
-                        <div className="modal-header">
-                            <h2 id="hr-leave-modal-title">New leave request</h2>
-                            <button type="button" className="modal-close" onClick={() => setModal(false)} aria-label="Close">×</button>
-                        </div>
-                        <form onSubmit={submit}>
-                            <div className="modal-body">
-                                <div className="form-group">
-                                    <label>Employee</label>
-                                    <SearchableSelect
-                                        options={empOptions}
-                                        value={form.employee_id}
-                                        onChange={(ev) => setForm({ ...form, employee_id: ev.target.value })}
-                                        required
-                                    />
-                                </div>
-                                <div className="form-group">
-                                    <label>Leave type</label>
-                                    <SearchableSelect
-                                        options={typeOptions}
-                                        value={form.leave_type_id}
-                                        onChange={(ev) => setForm({ ...form, leave_type_id: ev.target.value })}
-                                        required
-                                    />
-                                </div>
-                                <div className="form-row">
-                                    <div className="form-group">
-                                        <label>Start</label>
-                                        <input type="date" className="form-control" value={form.start_date} onChange={(ev) => setForm({ ...form, start_date: ev.target.value })} required />
-                                    </div>
-                                    <div className="form-group">
-                                        <label>End</label>
-                                        <input type="date" className="form-control" value={form.end_date} onChange={(ev) => setForm({ ...form, end_date: ev.target.value })} required />
-                                    </div>
-                                </div>
-                                <div className="form-group">
-                                    <label>Days requested</label>
-                                    <input type="number" step="0.5" className="form-control" value={form.days_requested} onChange={(ev) => setForm({ ...form, days_requested: ev.target.value })} required />
-                                </div>
-                                <div className="form-group">
-                                    <label>Reason</label>
-                                    <textarea className="form-control" rows={3} value={form.reason} onChange={(ev) => setForm({ ...form, reason: ev.target.value })} />
-                                </div>
-                            </div>
-                            <div className="modal-footer">
-                                <button type="button" className="btn btn-secondary" onClick={() => setModal(false)}>Cancel</button>
-                                <button type="submit" className="btn btn-primary">Submit</button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
+  const handleCreate = async (formData) => {
+    const result = await createLeave(formData);
+    if (result.success) { closeModal(); fetchLeaves(); }
+    else if (result.error) setErrorPopup(result.error);
+  };
+
+  const handleUpdate = async (formData) => {
+    const id = selectedLeave?._id || selectedLeave?.id;
+    const result = await updateLeave(id, formData);
+    if (result.success) { closeModal(); fetchLeaves(); }
+    else if (result.error) setErrorPopup(result.error);
+  };
+
+  const handleDelete = async () => {
+    if (!confirmDelete) return;
+    const id = confirmDelete._id || confirmDelete.id;
+    const result = await deleteLeave(id);
+    if (result.success) { setConfirmDelete(null); fetchLeaves(); }
+    else if (result.error) setErrorPopup(result.error);
+  };
+
+  const handleApproveReject = async (id, status) => {
+    const result = await approveRejectLeave(id, status);
+    if (!result.success && result.error) setErrorPopup(result.error);
+    if (result.success) fetchLeaves();
+  };
+
+  const empOptions = employees.map(e => ({
+    id: e._id || e.id,
+    name: `${e.firstName || e.first_name || ''} ${e.lastName || e.last_name || ''}`.trim() || e.email || '',
+  }));
+
+  const empName = (l) => {
+    if (l.employee) return `${l.employee.firstName || ''} ${l.employee.lastName || ''}`.trim() || '-';
+    return '-';
+  };
+
+  return (
+    <div className="user-management-page">
+      <div className="page-header">
+        <div className="header-content">
+          <h1>Leaves</h1>
+          <p className="subtitle">Manage leave requests, approvals, and balances</p>
         </div>
-    );
+        <button className="btn btn-primary btn-create" onClick={() => openModal('create')}>
+          <span className="icon">+</span> New Leave Request
+        </button>
+      </div>
+
+      <div className="stats-grid">
+        <div className="stat-card stat-total">
+          <div className="stat-icon">📋</div>
+          <div className="stat-content">
+            <span className="stat-value">{stats.total || 0}</span>
+            <span className="stat-label">Total Requests</span>
+          </div>
+        </div>
+        <div className="stat-card" style={{ borderLeft: '4px solid #f59e0b' }}>
+          <div className="stat-icon">⏳</div>
+          <div className="stat-content">
+            <span className="stat-value">{stats.pending || 0}</span>
+            <span className="stat-label">Pending</span>
+          </div>
+        </div>
+        <div className="stat-card" style={{ borderLeft: '4px solid #22c55e' }}>
+          <div className="stat-icon">✓</div>
+          <div className="stat-content">
+            <span className="stat-value">{stats.approved || 0}</span>
+            <span className="stat-label">Approved</span>
+          </div>
+        </div>
+        <div className="stat-card" style={{ borderLeft: '4px solid #ef4444' }}>
+          <div className="stat-icon">✕</div>
+          <div className="stat-content">
+            <span className="stat-value">{stats.rejected || 0}</span>
+            <span className="stat-label">Rejected</span>
+          </div>
+        </div>
+      </div>
+
+      <ErrorPopup error={errorPopup} onClose={() => setErrorPopup(null)} />
+
+      <div className="filters-bar">
+        <div className="search-box">
+          <input type="text" placeholder="Search by reason..."
+            value={search} onChange={(e) => setSearch(e.target.value)} className="search-input" />
+          <span className="search-icon">🔍</span>
+        </div>
+        <select className="form-control" style={{ width: 140 }} value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}>
+          <option value="">All Status</option>
+          <option value="pending">Pending</option>
+          <option value="approved">Approved</option>
+          <option value="rejected">Rejected</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+        <span className="results-count">{total} requests found</span>
+      </div>
+
+      <div className="table-container desktop-only">
+        {loading ? (
+          <div className="loading-state"><div className="spinner"></div><p>Loading leaves...</p></div>
+        ) : ctxLeaves.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-icon">📅</div>
+            <h3>No Leave Requests Found</h3>
+            <p>No leave requests match your search criteria.</p>
+          </div>
+        ) : (
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Employee</th>
+                <th>Leave Type</th>
+                <th>Start</th>
+                <th>End</th>
+                <th>Days</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ctxLeaves.map(leave => {
+                const id = leave._id || leave.id;
+                return (
+                  <tr key={id} onClick={() => setDrawerLeave(leave)} style={{ cursor: 'pointer' }}>
+                    <td>{empName(leave)}</td>
+                    <td><span className="badge badge-info">{leave.leaveType || '-'}</span></td>
+                    <td>{leave.startDate ? new Date(leave.startDate).toLocaleDateString('en-GB') : '-'}</td>
+                    <td>{leave.endDate ? new Date(leave.endDate).toLocaleDateString('en-GB') : '-'}</td>
+                    <td>{leave.days || '-'}</td>
+                    <td>
+                      <span className={`badge ${STATUS_BADGE[leave.status] || 'badge-secondary'}`}>
+                        {leave.status || '-'}
+                      </span>
+                    </td>
+                    <td onClick={e => e.stopPropagation()}>
+                      {leave.status === 'pending' ? (
+                        <div className="action-buttons">
+                          {canApprove && (
+                            <>
+                              <button className="btn btn-sm btn-success" onClick={() => handleApproveReject(id, 'approved')}>Approve</button>
+                              <button className="btn btn-sm btn-secondary" onClick={() => handleApproveReject(id, 'rejected')}>Reject</button>
+                            </>
+                          )}
+                          <ActionButtons
+                            onEdit={() => openModal('edit', leave)}
+                            onDelete={() => setConfirmDelete(leave)}
+                            showEdit showDelete
+                          />
+                        </div>
+                      ) : (
+                        <ActionButtons
+                          onEdit={() => openModal('edit', leave)}
+                          onDelete={() => setConfirmDelete(leave)}
+                          showEdit showDelete
+                        />
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <div className="mobile-only">
+        {loading ? (
+          <div className="loading-state"><div className="spinner"></div><p>Loading leaves...</p></div>
+        ) : ctxLeaves.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-icon">📅</div>
+            <h3>No Leave Requests Found</h3>
+          </div>
+        ) : (
+          <div className="cards-grid">
+            {ctxLeaves.map(leave => {
+              const id = leave._id || leave.id;
+              const statusKey = (leave.status || '').toLowerCase();
+              return (
+                <div key={id} className="data-card" onClick={() => setDrawerLeave(leave)}>
+                  <div className="data-card-top">
+                    <div className="data-card-avatar">
+                      {((leave.employee?.firstName?.[0] || '') + (leave.employee?.lastName?.[0] || '')).trim() || '?'}
+                    </div>
+                    <div className="data-card-info">
+                      <span className="data-card-title">{empName(leave)}</span>
+                      <span className="data-card-subtitle">{leave.leaveType || '-'}</span>
+                    </div>
+                    <span className={`badge-pill status-${statusKey}`}>{leave.status || '-'}</span>
+                  </div>
+                  <div className="data-card-body">
+                    <div className="data-card-row">
+                      <span className="row-icon">📅</span>
+                      <span className="row-label">Dates</span>
+                      <span className="row-value">
+                        {leave.startDate ? new Date(leave.startDate).toLocaleDateString('en-GB') : '-'} → {leave.endDate ? new Date(leave.endDate).toLocaleDateString('en-GB') : '-'}
+                      </span>
+                    </div>
+                    <div className="data-card-row">
+                      <span className="row-icon">📆</span>
+                      <span className="row-label">Days</span>
+                      <span className="row-value">{leave.days || '-'}</span>
+                    </div>
+                    <div className="data-card-row">
+                      <span className="row-icon">💬</span>
+                      <span className="row-label">Reason</span>
+                      <span className="row-value">{leave.reason || '-'}</span>
+                    </div>
+                  </div>
+                  <div className="data-card-footer" onClick={e => e.stopPropagation()}>
+                    {leave.status === 'pending' && canApprove && (
+                      <>
+                        <button className="btn btn-sm btn-success" onClick={() => handleApproveReject(id, 'approved')}>✓ Approve</button>
+                        <button className="btn btn-sm btn-secondary" onClick={() => handleApproveReject(id, 'rejected')}>✕ Reject</button>
+                      </>
+                    )}
+                    <ActionButtons
+                      onEdit={() => openModal('edit', leave)}
+                      onDelete={() => setConfirmDelete(leave)}
+                      showEdit showDelete
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {totalPages > 1 && (
+        <div className="pagination">
+          <button className="btn-page" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>← Previous</button>
+          <div className="page-numbers">
+            {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+              let pn; if (totalPages <= 5) pn = i + 1;
+              else if (page <= 3) pn = i + 1;
+              else if (page >= totalPages - 2) pn = totalPages - 4 + i;
+              else pn = page - 2 + i;
+              return <button key={pn} className={`btn-page ${page === pn ? 'active' : ''}`} onClick={() => setPage(pn)}>{pn}</button>;
+            })}
+          </div>
+          <button className="btn-page" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>Next →</button>
+        </div>
+      )}
+
+      <ConfirmModal
+        isOpen={!!confirmDelete}
+        title="Delete Leave Request"
+        message="Delete this leave request?"
+        confirmText="Delete"
+        onConfirm={handleDelete}
+        onCancel={() => setConfirmDelete(null)}
+      />
+
+      <LeaveFormModal
+        isOpen={showModal} mode={modalMode} initialData={selectedLeave}
+        employees={employees}
+        onClose={closeModal}
+        onSubmit={modalMode === 'create' ? handleCreate : handleUpdate}
+        loading={saving}
+      />
+
+      <LeaveDrawer isOpen={!!drawerLeave} onClose={() => setDrawerLeave(null)} leave={drawerLeave} />
+    </div>
+  );
 };
 
 export default Leaves;

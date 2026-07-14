@@ -1,104 +1,119 @@
-/**
- * Leaves controller
- */
+const Leave = require('../models/Leave.model');
+const Employee = require('../models/Employee.model');
+const AppError = require('../utils/AppError');
 
-const { query } = require('../config/database');
-const { AppError } = require('../middleware/errorHandler');
-const logger = require('../utils/logger');
+const getUserId = (req) => req.user?.id || req.user?._id;
 
-const listTypes = async (req, res, next) => {
-    try {
-        const rows = await query('SELECT * FROM leave_types WHERE is_active = TRUE ORDER BY name');
-        res.json({ success: true, data: rows });
-    } catch (e) {
-        next(e);
+exports.listLeaves = async (req, res, next) => {
+  try {
+    const { search, status, leaveType, employee, from, to, page = 1, limit = 50 } = req.query;
+    const filter = { isDeleted: false };
+    if (search) filter['$or'] = [
+      { reason: { $regex: search, $options: 'i' } },
+    ];
+    if (status) filter.status = status;
+    if (leaveType) filter.leaveType = leaveType;
+    if (employee) filter.employee = employee;
+    if (from || to) {
+      filter.startDate = {};
+      if (from) filter.startDate.$gte = new Date(from);
+      if (to) filter.startDate.$lte = new Date(to);
     }
+
+    const items = await Leave.find(filter)
+      .populate('employee', 'firstName lastName employeeCode')
+      .populate('approvedBy', 'firstName lastName email')
+      .populate('createdBy', 'firstName lastName email')
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(Number(limit));
+
+    const total = await Leave.countDocuments(filter);
+
+    res.json({ success: true, data: { leaves: items, total, page: Number(page), limit: Number(limit) } });
+  } catch (error) { next(error); }
 };
 
-const listBalances = async (req, res, next) => {
-    try {
-        const { employee_id, year } = req.query;
-        if (!employee_id) throw new AppError('employee_id is required', 400);
-        const y = year || new Date().getFullYear();
-        const rows = await query(
-            `SELECT lb.*, lt.name AS leave_type_name, lt.code AS leave_type_code
-             FROM leave_balances lb JOIN leave_types lt ON lt.id = lb.leave_type_id
-             WHERE lb.employee_id = ? AND lb.year = ?`,
-            [employee_id, y]
-        );
-        res.json({ success: true, data: rows });
-    } catch (e) {
-        next(e);
-    }
+exports.getLeave = async (req, res, next) => {
+  try {
+    const item = await Leave.findOne({ _id: req.params.id, isDeleted: false })
+      .populate('employee', 'firstName lastName employeeCode department')
+      .populate('approvedBy', 'firstName lastName email')
+      .populate('createdBy', 'firstName lastName email');
+    if (!item) throw new AppError('Leave not found', 404);
+    res.json({ success: true, data: { leave: item } });
+  } catch (error) { next(error); }
 };
 
-const listRequests = async (req, res, next) => {
-    try {
-        const { employee_id, status } = req.query;
-        let sql = `
-            SELECT lr.*, fn_employee_full_name(lr.employee_id) AS employee_name,
-                   e.employee_code, lt.name AS leave_type_name
-            FROM leave_requests lr
-            JOIN employees e ON e.id = lr.employee_id
-            JOIN leave_types lt ON lt.id = lr.leave_type_id
-            WHERE 1=1`;
-        const p = [];
-        if (employee_id) {
-            sql += ' AND lr.employee_id = ?';
-            p.push(employee_id);
-        }
-        if (status) {
-            sql += ' AND lr.status = ?';
-            p.push(status);
-        }
-        sql += ' ORDER BY lr.created_at DESC';
-        const rows = await query(sql, p);
-        res.json({ success: true, data: rows });
-    } catch (e) {
-        next(e);
+exports.createLeave = async (req, res, next) => {
+  try {
+    const { employee, leaveType, startDate, endDate, days, reason } = req.body;
+    if (!employee || !leaveType || !startDate || !endDate || !days) {
+      throw new AppError('Employee, leave type, start date, end date, and days are required', 400);
     }
+    const empExists = await Employee.findOne({ _id: employee, isDeleted: false, isActive: true });
+    if (!empExists) throw new AppError('Employee not found or inactive', 400);
+
+    const item = await Leave.create({
+      employee, leaveType, startDate, endDate, days, reason: reason || '',
+      status: 'pending', createdBy: getUserId(req), updatedBy: getUserId(req),
+    });
+    res.status(201).json({ success: true, message: 'Leave request created', data: { leave: item } });
+  } catch (error) { next(error); }
 };
 
-const submitRequest = async (req, res, next) => {
-    try {
-        const { employee_id, leave_type_id, start_date, end_date, days_requested, reason } = req.body;
-        if (!employee_id || !leave_type_id || !start_date || !end_date || days_requested == null) {
-            throw new AppError('employee_id, leave_type_id, start_date, end_date, days_requested required', 400);
-        }
-        await query('SET @leave_req_id = NULL');
-        await query('CALL sp_leave_request_submit(?,?,?,?,?,?,@leave_req_id)', [
-            parseInt(employee_id, 10),
-            parseInt(leave_type_id, 10),
-            start_date,
-            end_date,
-            parseFloat(days_requested),
-            reason || null
-        ]);
-        const out = await query('SELECT @leave_req_id AS id');
-        const id = out[0]?.id;
-        const rows = await query('SELECT * FROM leave_requests WHERE id = ?', [id]);
-        res.status(201).json({ success: true, data: rows[0] });
-    } catch (e) {
-        logger.error('submitRequest', e);
-        if (e.sqlMessage) return next(new AppError(e.sqlMessage, 400));
-        next(e);
-    }
+exports.updateLeave = async (req, res, next) => {
+  try {
+    const item = await Leave.findOne({ _id: req.params.id, isDeleted: false });
+    if (!item) throw new AppError('Leave not found', 404);
+    const updFields = ['leaveType', 'startDate', 'endDate', 'days', 'reason'];
+    updFields.forEach(f => { if (req.body[f] !== undefined) item[f] = req.body[f]; });
+    item.updatedBy = getUserId(req);
+    await item.save();
+    res.json({ success: true, message: 'Leave updated', data: { leave: item } });
+  } catch (error) { next(error); }
 };
 
-const setRequestStatus = async (req, res, next) => {
-    try {
-        const { status } = req.body;
-        if (!['approved', 'rejected', 'cancelled'].includes(status)) {
-            throw new AppError('status must be approved, rejected, or cancelled', 400);
-        }
-        await query('CALL sp_leave_request_set_status(?,?,?)', [req.params.id, status, req.user.id]);
-        const rows = await query('SELECT * FROM leave_requests WHERE id = ?', [req.params.id]);
-        res.json({ success: true, data: rows[0] });
-    } catch (e) {
-        logger.error('setRequestStatus', e);
-        if (e.sqlMessage) return next(new AppError(e.sqlMessage, 400));
-        next(e);
+exports.approveRejectLeave = async (req, res, next) => {
+  try {
+    const { status } = req.body;
+    if (!['approved', 'rejected', 'cancelled'].includes(status)) {
+      throw new AppError('Status must be approved, rejected, or cancelled', 400);
     }
+    const item = await Leave.findOne({ _id: req.params.id, isDeleted: false });
+    if (!item) throw new AppError('Leave not found', 404);
+    if (item.status !== 'pending') throw new AppError('Only pending requests can be updated', 400);
+    item.status = status;
+    if (status === 'approved' || status === 'rejected') item.approvedBy = getUserId(req);
+    item.updatedBy = getUserId(req);
+    await item.save();
+    res.json({ success: true, message: `Leave ${status}`, data: { leave: item } });
+  } catch (error) { next(error); }
 };
 
-module.exports = { listTypes, listBalances, listRequests, submitRequest, setRequestStatus };
+exports.deleteLeave = async (req, res, next) => {
+  try {
+    const item = await Leave.findOne({ _id: req.params.id, isDeleted: false });
+    if (!item) throw new AppError('Leave not found', 404);
+    item.isDeleted = true;
+    item.updatedBy = getUserId(req);
+    await item.save();
+    res.json({ success: true, message: 'Leave deleted' });
+  } catch (error) { next(error); }
+};
+
+exports.getStats = async (req, res, next) => {
+  try {
+    const [total, pending, approved, rejected] = await Promise.all([
+      Leave.countDocuments({ isDeleted: false }),
+      Leave.countDocuments({ isDeleted: false, status: 'pending' }),
+      Leave.countDocuments({ isDeleted: false, status: 'approved' }),
+      Leave.countDocuments({ isDeleted: false, status: 'rejected' }),
+    ]);
+    const thisMonth = new Date();
+    thisMonth.setDate(1);
+    thisMonth.setHours(0, 0, 0, 0);
+    const monthCount = await Leave.countDocuments({ isDeleted: false, createdAt: { $gte: thisMonth } });
+    res.json({ success: true, data: { total, pending, approved, rejected, thisMonth: monthCount } });
+  } catch (error) { next(error); }
+};

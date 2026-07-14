@@ -4,6 +4,7 @@ const User = require('../models/User.model');
 const SystemSetting = require('../models/SystemSetting.model');
 const LeadSource = require('../models/LeadSource.model');
 const LeadType = require('../models/LeadType.model');
+const LeadCity = require('../models/LeadCity.model');
 const StatusCollection = require('../models/StatusCollection.model');
 const StatusItem = require('../models/StatusItem.model');
 const Department = require('../models/Department.model');
@@ -72,9 +73,10 @@ exports.getCustomerMeta = async (req, res) => {
       statuses = await StatusItem.find({ collection: statusCollection._id, isActive: true }).sort({ order: 1 }).lean();
     }
 
-    const [sources, types, departments] = await Promise.all([
+    const [sources, types, cities, departments] = await Promise.all([
       LeadSource.find({ isActive: true }).sort({ sortOrder: 1 }).lean(),
       LeadType.find({ isActive: true }).sort({ name: 1 }).lean(),
+      LeadCity.find({ isActive: true }).sort({ sortOrder: 1, name: 1 }).lean(),
       Department.find({ isActive: true }).select('name').sort({ name: 1 }).lean(),
     ]);
 
@@ -100,6 +102,7 @@ exports.getCustomerMeta = async (req, res) => {
         statusCollectionName: statusCollection ? statusCollection.name : null,
         sources,
         types,
+        cities,
         users,
         departments,
         leadAssignmentRolesConfigured: allowedRoleIds.length > 0,

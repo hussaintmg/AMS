@@ -101,34 +101,71 @@ const Payroll = () => {
 
             <div className="card" style={{ marginBottom: '1rem' }}>
                 {loading ? <div className="loading-inline">Loading…</div> : (
-                    <div className="table-responsive">
-                        <table className="data-table">
-                            <thead>
-                                <tr>
-                                    <th>Label</th>
-                                    <th>From</th>
-                                    <th>To</th>
-                                    <th>Status</th>
-                                    <th>Lines</th>
-                                    <th />
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {periods.map((p) => (
-                                    <tr key={p.id} style={{ background: selected === p.id ? 'rgba(59, 130, 246, 0.08)' : undefined }}>
-                                        <td>{p.label}</td>
-                                        <td>{p.period_start}</td>
-                                        <td>{p.period_end}</td>
-                                        <td><span className="badge badge-info">{p.status}</span></td>
-                                        <td>{p.line_count}</td>
-                                        <td>
+                    <>
+                        <div className="desktop-only">
+                            <div className="table-responsive">
+                                <table className="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Label</th>
+                                            <th>From</th>
+                                            <th>To</th>
+                                            <th>Status</th>
+                                            <th>Lines</th>
+                                            <th />
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {periods.map((p) => (
+                                            <tr key={p.id} style={{ background: selected === p.id ? 'rgba(59, 130, 246, 0.08)' : undefined }}>
+                                                <td>{p.label}</td>
+                                                <td>{p.period_start}</td>
+                                                <td>{p.period_end}</td>
+                                                <td><span className="badge badge-info">{p.status}</span></td>
+                                                <td>{p.line_count}</td>
+                                                <td>
+                                                    <button type="button" className="btn btn-sm btn-secondary" onClick={() => loadLines(p.id)}>Open</button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div className="mobile-only">
+                            <div className="mobile-cards-container">
+                                {periods.length === 0 ? (
+                                    <div style={{ textAlign: 'center', color: '#999', padding: 20 }}>No periods found</div>
+                                ) : periods.map((p) => (
+                                    <div key={p.id} className={`data-card ${selected === p.id ? 'card-inactive' : ''}`} style={{ background: selected === p.id ? 'rgba(59, 130, 246, 0.08)' : undefined }} onClick={() => loadLines(p.id)}>
+                                        <div className="data-card-top">
+                                            <div className="data-card-avatar avatar-amber">{p.label?.[0] || 'P'}</div>
+                                            <div className="data-card-info">
+                                                <span className="data-card-title">{p.label}</span>
+                                                <span className="data-card-subtitle">{p.line_count} lines</span>
+                                            </div>
+                                            <span className={`badge-pill status-${p.status === 'locked' || p.status === 'posted' ? 'active' : p.status === 'draft' ? 'pending' : 'inactive'}`}>{p.status}</span>
+                                        </div>
+                                        <div className="data-card-body">
+                                            <div className="data-card-row">
+                                                <span className="row-icon">📅</span>
+                                                <span className="row-label">From</span>
+                                                <span className="row-value">{p.period_start}</span>
+                                            </div>
+                                            <div className="data-card-row">
+                                                <span className="row-icon">📅</span>
+                                                <span className="row-label">To</span>
+                                                <span className="row-value">{p.period_end}</span>
+                                            </div>
+                                        </div>
+                                        <div className="data-card-footer" onClick={e => e.stopPropagation()}>
                                             <button type="button" className="btn btn-sm btn-secondary" onClick={() => loadLines(p.id)}>Open</button>
-                                        </td>
-                                    </tr>
+                                        </div>
+                                    </div>
                                 ))}
-                            </tbody>
-                        </table>
-                    </div>
+                            </div>
+                        </div>
+                    </>
                 )}
             </div>
 
@@ -144,29 +181,70 @@ const Payroll = () => {
                             </div>
                         )}
                     </div>
-                    <div className="table-responsive">
-                        <table className="data-table">
-                            <thead>
-                                <tr>
-                                    <th>Employee</th>
-                                    <th>Gross</th>
-                                    <th>Deductions</th>
-                                    <th>Net</th>
-                                    <th>GL</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {(linesData.lines || []).map((ln) => (
-                                    <tr key={ln.id}>
-                                        <td>{ln.employee_name} <small className="text-muted">{ln.employee_code}</small></td>
-                                        <td>{Number(ln.gross_amount).toLocaleString()}</td>
-                                        <td>{Number(ln.deductions).toLocaleString()}</td>
-                                        <td>{Number(ln.net_amount).toLocaleString()}</td>
-                                        <td>{ln.ledger_transaction_id ? `#${ln.ledger_transaction_id}` : '—'}</td>
+                    <div className="desktop-only">
+                        <div className="table-responsive">
+                            <table className="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Employee</th>
+                                        <th>Gross</th>
+                                        <th>Deductions</th>
+                                        <th>Net</th>
+                                        <th>GL</th>
                                     </tr>
-                                ))}
-                            </tbody>
-                        </table>
+                                </thead>
+                                <tbody>
+                                    {(linesData.lines || []).map((ln) => (
+                                        <tr key={ln.id}>
+                                            <td>{ln.employee_name} <small className="text-muted">{ln.employee_code}</small></td>
+                                            <td>{Number(ln.gross_amount).toLocaleString()}</td>
+                                            <td>{Number(ln.deductions).toLocaleString()}</td>
+                                            <td>{Number(ln.net_amount).toLocaleString()}</td>
+                                            <td>{ln.ledger_transaction_id ? `#${ln.ledger_transaction_id}` : '—'}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div className="mobile-only">
+                        <div className="mobile-cards-container">
+                            {(linesData.lines || []).length === 0 ? (
+                                <div style={{ textAlign: 'center', color: '#999', padding: 20 }}>No lines found</div>
+                            ) : (linesData.lines || []).map((ln) => (
+                                <div key={ln.id} className="data-card">
+                                    <div className="data-card-top">
+                                        <div className="data-card-avatar avatar-green">{ln.employee_name?.[0] || 'E'}</div>
+                                        <div className="data-card-info">
+                                            <span className="data-card-title">{ln.employee_name}</span>
+                                            <span className="data-card-subtitle">{ln.employee_code}</span>
+                                        </div>
+                                    </div>
+                                    <div className="data-card-body">
+                                        <div className="data-card-row">
+                                            <span className="row-icon">💰</span>
+                                            <span className="row-label">Gross</span>
+                                            <span className="row-value">{Number(ln.gross_amount).toLocaleString()}</span>
+                                        </div>
+                                        <div className="data-card-row">
+                                            <span className="row-icon">📉</span>
+                                            <span className="row-label">Deduct</span>
+                                            <span className="row-value">{Number(ln.deductions).toLocaleString()}</span>
+                                        </div>
+                                        <div className="data-card-row">
+                                            <span className="row-icon">✅</span>
+                                            <span className="row-label">Net</span>
+                                            <span className="row-value">{Number(ln.net_amount).toLocaleString()}</span>
+                                        </div>
+                                        <div className="data-card-row">
+                                            <span className="row-icon">📋</span>
+                                            <span className="row-label">GL</span>
+                                            <span className="row-value">{ln.ledger_transaction_id ? `#${ln.ledger_transaction_id}` : '—'}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
                     </div>
                 </div>
             )}

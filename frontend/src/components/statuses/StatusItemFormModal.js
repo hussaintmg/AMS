@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import useModalKeyboard from '../../hooks/useModalKeyboard';
+import ToggleSwitch from '../../components/ToggleSwitch';
 
 const toSlug = (str) =>
   String(str || '').trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').replace(/-+/g, '-').replace(/^-|-$/g, '');
@@ -36,7 +37,7 @@ function StatusItemFormModal({
 
   const validate = () => {
     const errs = {};
-    if (!formData.label.trim()) errs.label = 'Status label is required';
+    if (!formData.label.trim()) errs.label = 'Option label is required';
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -78,7 +79,7 @@ function StatusItemFormModal({
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
         <div className="modal-header">
-          <h2>{mode === 'create' ? 'Add Status' : 'Edit Status'}</h2>
+          <h2>{mode === 'create' ? 'Add Option' : 'Edit Option'}</h2>
           <button className="modal-close" onClick={onClose} type="button">&times;</button>
         </div>
 
@@ -141,7 +142,7 @@ function StatusItemFormModal({
               </div>
               <div className="form-group checkbox-group">
                 <label style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <input type="checkbox" name="isActive" checked={formData.isActive} onChange={handleChange} />
+                  <ToggleSwitch checked={formData.isActive} onChange={(v) => setFormData((prev) => ({ ...prev, isActive: v }))} />
                   Active
                 </label>
               </div>
@@ -153,7 +154,7 @@ function StatusItemFormModal({
               Cancel
             </button>
             <button type="submit" className="btn btn-primary" disabled={loading}>
-              {loading ? <><span className="spinner-mini"></span> Saving...</> : mode === 'create' ? 'Add Status' : 'Save Changes'}
+              {loading ? <><span className="spinner-mini"></span> Saving...</> : mode === 'create' ? 'Add Option' : 'Save Changes'}
             </button>
           </div>
         </form>

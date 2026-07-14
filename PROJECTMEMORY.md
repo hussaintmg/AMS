@@ -1,113 +1,194 @@
-# PROJECT MEMORY — Email Management Phase 2
+# PROJECT MEMORY — AMSERP Full Application
 
-## Theme Removal
+## Current Architecture
+- **Backend**: Node.js/Express with MySQL (stored procedures + direct queries) and MongoDB (email module)
+- **Frontend**: React with context-based state management (some pages) and direct API + local state (others)
+- **Two patterns coexist**: Context-based (Customers, Leads, StatusManagement, ServerManagement) and direct API (Warehouse, Vehicles, PartsInventory)
 
-**Files deleted (content replaced with REMOVED marker due to no shell access):**
-- `backend/models/EmailTheme.model.js`
-- `backend/controllers/emailThemes.controller.js`
-- `frontend/src/pages/email/EmailThemes.js`
-- `frontend/src/pages/email/EmailThemeFormModal.js`
-- `frontend/src/context/EmailThemesContext.js`
+---
 
-**Modifications:**
-- `backend/models/index.js` — Removed EmailTheme import/export
-- `backend/models/EmailTemplate.model.js` — Removed `themeOverride` field
-- `backend/models/EmailLog.model.js` — Removed `theme` field
-- `backend/services/emailRenderer.service.js` — Removed all theme resolution (resolveThemeColors, injectThemeHeaderFooter, EmailTheme queries). Template now handles its own styling via `template.css`
-- `backend/services/emailSender.service.js` — Removed `themeId` from log creation
-- `backend/controllers/emailTemplates.controller.js` — Removed `themeOverride` populate
-- `backend/controllers/emailPreview.controller.js` — Removed `themeId` from request/options
-- `backend/controllers/emailTest.controller.js` — Removed null theme arg from renderWithTemplate
-- `backend/routes/email.routes.js` — Removed 6 theme routes + their Swagger docs + theme tag
-- `frontend/src/services/api.js` — Removed 6 theme API methods
-- `frontend/src/context/EmailContext.js` — Removed EmailThemesProvider
-- `frontend/src/pages/EmailTemplates.js` — Removed theme tab and route
+## Completed Work
 
-## Variables Module (Admin CRUD)
+### Service Master Controller
+- `backend/controllers/serviceMasterController.js` — Was a stub, now has full CRUD with MySQL queries, validation, pagination, deletion checks. 22 methods. All route aliases preserved.
 
-**New files:**
-- `backend/models/EmailVariable.model.js` — Schema: name, key, reference, description, category, isActive, isDeleted, createdBy, updatedBy, timestamps
-- `backend/controllers/emailVariables.controller.js` — Full CRUD + bulk import (CSV/JSON) + search + getAllGrouped (merges admin vars + registry vars)
-- `frontend/src/pages/email/EmailVariables.js` — List page with table/cards, search, category/status filters, pagination, detail drawer
-- `frontend/src/pages/email/EmailVariableFormModal.js` — Create/Edit modal with validation, name/reference/category/description/active
-- `frontend/src/pages/email/EmailBulkImportModal.js` — CSV file upload or JSON paste, preview rows, import with result report
+### Lead Status Config → StatusManagement
+- `frontend/src/pages/StatusManagement.js` — Added "Lead Status Configuration" card below stats grid: dropdown of all status collections, save button, uses `serverManagementAPI.saveSetting('lead_status_collection_id', ...)`
+- `frontend/src/pages/ServerManagement.js` — Removed "Lead Status Configuration" tab, state vars, handlers, data loading, and conditional rendering
+- Lead Assignment tab remains in ServerManagement
 
-**Existing file replaced:**
-- `frontend/src/context/EmailVariablesContext.js` — Replaced with mutable context: addVariable, updateVariable, removeVariable with optimistic updates
+### Lead Assistant / Lead Type Mapping
+- Already in LeadMasterData.js under Types tab (portalModules checkboxes for Parts/Vehicles/Services)
+- No Lead Assistant tab existed in ServerManagement — only Lead Assignment (stays) and Lead Status Configuration (moved)
 
-**New API endpoints:**
-- `GET /email/variables` — List with pagination, search, category, isActive filters
-- `GET /email/variables/:id` — Get single variable
-- `POST /email/variables` — Create variable
-- `PUT /email/variables/:id` — Update variable
-- `DELETE /email/variables/:id` — Soft delete
-- `PATCH /email/variables/:id/toggle` — Toggle isActive
-- `POST /email/variables/import` — Bulk import CSV/JSON
-- `GET /email/variables/all-grouped` — All variables (admin + registry) grouped by category
-- `GET /email/variables/search` — Search across admin + registry variables
+### ERP Settings Cleanup
+- `frontend/src/pages/Settings.js` — Removed "System Settings" tab (entire SystemSettingsTab function), removed "Print Templates" tab (DocumentTemplatesTab import + conditional render)
+- Kept: Companies, Branches, Currencies, Tax Config, Payment Methods
+- Updated SETTINGS_HASH_TABS, tabs array, and page description
 
-## Components Redesign
+### Payment Methods
+- Already exists as a tab in Settings.js (`PaymentMethodsTab` function)
+- Uses `paymentMethodsAPI` from `../services/api`
+- Backend: `backend/controllers/paymentMethods.controller.js` with full CRUD
 
-**Model update:**
-- `backend/models/EmailComponent.model.js` — Added `parameters` array with sub-schema: name, key, type (12 types), label, defaultValue, required, options, placeholder, order
+### Email Management (Phases 1-15)
+- Theme removal, Variables module, Components redesign, Variable picker, Clean routing, Fixed modals, Builder refactored, Contexts split, Drawer standards, CSS standardized, Responsive layout, Form behavior, Optimistic updates, Quick create, SearchableSelect
+- See detailed breakdown in email section below
 
-**Controller additions:**
-- `backend/controllers/emailComponents.controller.js` — Parameters handling in create/update, new `preview` endpoint resolves `{{param.key}}` placeholders, variable placeholders, and component references
+---
 
-**New file:**
-- `frontend/src/pages/email/EmailComponentEditor.js` — Full 3-panel editor:
-  - LEFT: HTML/CSS textarea (toggleable tabs, +Var button)
-  - CENTER: Live iframe preview (debounced 300ms, resolves parameters + variables)
-  - RIGHT: Parameters panel (add/remove/edit params with type-specific inputs, sample values for preview)
+## Pending Work
 
-**Updated files:**
-- `frontend/src/pages/email/EmailComponents.js` — Added "Open Editor" button per card, drawer shows parameters
-- `frontend/src/pages/email/EmailComponentFormModal.js` — Added parameters array editor with add/remove/edit
+### Low Priority
+- Lease page — does not exist (Leaves page already handles leave management)
+- Salary/Branch pages — not separate pages (handled within Settings and Employees)
+- No shell access — cannot run npm build/typecheck to verify compilation
 
-**New API endpoint:**
-- `POST /email/components/:id/preview` — Preview component with sample parameter and variable values
+---
 
-## Variable Picker (Reusable)
+## DataTable Component (New)
+- `frontend/src/components/DataTable.js` — Reusable standard table component
+- Props: `columns`, `data`, `loading`, `onRowClick`, `pagination`, `onPageChange`, `rowClassName`, `children`, `tableOnly`, `emptyMessage`
+- Responsive: desktop table with `data-table` class, mobile cards with `user-card` class
+- No built-in search/filter (designed for server-side API filtering)
+- Pagination: Previous/Next with page counter
+- Row click support, custom row classes, column render functions, badge support
 
-**New file:**
-- `frontend/src/components/VariablePicker.js` — Reusable modal component with search, grouped display, double-click/click to select. Fetches variables from `GET /email/variables/search`
+### Pages Using DataTable
+- **WarehouseManagement.js** — 9 columns, row click → edit modal, inventory modal button in actions
+- **Vehicles.js** — 9 columns, row click → edit modal, status/condition badges, bulk upload
+- **PartsInventory.js** — 9 columns, row click → edit modal, stock adjustment button, stock status badges
+- **Leaves.js** — 7 columns, status badges (approved/rejected/pending), approve/reject action buttons
+- **Expenses.js** — 7 columns, two tabs (expenses/categories), post/status actions
+- **Ledger.js** — 7 columns, currency formatting for debit/credit, export buttons preserved
+- **Employees.js** — 7 columns, row click → edit modal, inactive row styling
 
-**Updated files:**
-- `frontend/src/pages/email/EmailBuilder.js` — Refactored to use VariablePicker component instead of inline implementation. Removed direct dependency on EmailVariablesContext
-- `frontend/src/pages/email/EmailComponentEditor.js` — Uses VariablePicker for inserting variables into HTML/CSS editors
+## Service Master Controller
+- `backend/controllers/serviceMasterController.js` — Full CRUD (was stub). 22 methods with MySQL queries, validation, pagination, deletion checks.
 
-## Updated Routes & Tabs
+## Lead Status Config Moved
+- `frontend/src/pages/StatusManagement.js` — Added lead status collection selector card
+- `frontend/src/pages/ServerManagement.js` — Removed Lead Status Configuration tab (Lead Assignment stays)
 
-**Final 7 tabs** in `EmailTemplates.js`:
-1. Templates → `/email/templates`
-2. Sections → `/email/sections`
-3. Components → `/email/components`
-4. Variables → `/email/variables`
-5. Usage → `/email/usage`
-6. SMTP → `/email/config`
-7. Queue → `/email/queue`
+## ERP Settings Cleanup
+- `frontend/src/pages/Settings.js` — Removed System Settings and Print Templates tabs. Kept: Companies, Branches, Currencies, Tax Config, Payment Methods
 
-**New routes:**
-- `/email/components/:id/editor` → EmailComponentEditor
-- `/email/variables` → EmailVariables
+## Payroll Removed
+- Route `/hr/payroll` removed from `App.js`
+- Sidebar entry removed from `pages.js`
 
-**Removed routes:**
-- `/email/themes` → EmailThemes
+## Sales Sidebar Cleanup
+- Removed individual sidebar entries for Quotations, Bookings, Invoices, Payments
+- Only main "Sales" link remains (points to `/sales/orders`)
 
-## Sections Improvements
+## Form Modals
+- `LeadFormModal.js` — City (SearchableSelect + quick-create), Source/Type/Priority/Status all have in-form create
+- `CustomerFormModal.js` — City/Source/Type/Status all have in-form create via LeadQuickCreateModal/LeadStatusItemModal
 
-- Added stats grid (total sections, total parameters, active sections, total templates)
-- Template count per section in sidebar list
-- Added `useEmailTemplatesContext` to EmailSections for template count lookup
+## Reports Page
+- Already complete: category navigation (Sales, Inventory, Financials, Service), fetch/display from API, export CSV/XLSX/PDF
 
-## API Service Updates (`frontend/src/services/api.js`)
+---
 
-**Removed:**
-- `getThemes`, `getTheme`, `createTheme`, `updateTheme`, `deleteTheme`, `activateTheme`
+## Service Management Pages (Phases 2-7 Completed)
 
-**Added:**
-- `getVariables` (with params), `getVariable`, `createVariable`, `updateVariable`, `deleteVariable`, `toggleVariable`, `importVariables`
-- `previewComponent`
+### Service Appointments & Job Cards (`Service.js`)
+- Rewritten from 1100→974 lines with two clean tabs (Appointments, Job Cards)
+- **Appointments**: Service types from MongoDB `serviceMasterAPI.getTypes()`, useModalKeyboard (ESC/Enter), overlay click close, saving states, date autoFocus, ConfirmModal for cancel, mobile cards, DataTable
+- **Job Cards**: Service types + labor rates + warranties from `serviceMasterAPI`, auto-fill description/rate/hours on type select, labor rate override, warranty type dropdown, Add Service/Add Part sub-modals with auto-fill, live totals (labor + parts − discount + tax), status inline selects, ConfirmModal for cancel/complete
+- **Fixed modals**: overlay click close, useModalKeyboard, autoFocus, saving states
+- **Desktop**: DataTable with action buttons. **Mobile**: user-card layout
 
-## Orphaned Files
-- `frontend/src/pages/email/EmailLogs.js` — Content replaced with REMOVED marker
+### Employees (`Employees.js`)
+- Rewritten with branch selection, company/branch auto-select when single, department stays
+- `useModalKeyboard`, `ConfirmModal` for deactivation, saving states, mobile cards
+- Backend controller updated to handle `branch_id` in INSERT/UPDATE
+- QA fixes: `company_id` added to emptyForm + openEdit, DataTable wrapped in `desktop-only` to prevent duplicate mobile cards
+
+### Leaves (`Leaves.js`)
+- Rewritten with status filter, employee filter, DataTable + mobile cards
+- `useModalKeyboard` on new request modal, saving states, color-coded status badges
+- Desktop: DataTable with approve/reject. Mobile: user-card layout
+
+### Expenses (`Expenses.js`)
+- Rewritten with clean tabs (expenses/categories), category CRUD (edit + deactivate via ConfirmModal)
+- `useModalKeyboard` on both modals, saving states, mobile cards, DataTable
+- Expense edit blocked if posted. Desktop: DataTable. Mobile: user-card layout
+
+### Ledger (`Ledger.js`)
+- EmailDrawer detail drawer on row click, pending-migration banner for stub response
+- Summary cards (debit/credit/total), export CSV/XLSX/PDF
+- QA fix: separated draft/committed filters to stop auto-submit on keystroke
+
+### Reports (`Reports.js`)
+- Complete rewrite from sidebar layout to 8-tab clean design (Leads, Customers, Sales, Inventory, Service, Expenses, Payments, Employee)
+- Date range filters (from/to), summary report cards grid, export placeholder buttons
+- No chart imports (no chart.js/react-chartjs-2), no runtime errors
+- Responsive: CSS grid auto-fill cards, media query breakpoints at 768px/480px
+
+## Swagger Documentation
+- Added comprehensive JSDoc Swagger annotations to:
+  - `backend/routes/employees.routes.js` — Employee schema, CRUD endpoints
+  - `backend/routes/leaves.routes.js` — LeaveRequest schema, type/balance/request endpoints
+  - `backend/routes/expenses.routes.js` — ExpenseCategory + Expense schemas
+  - `backend/routes/ledger.routes.js` — LedgerEntry schema, filter params
+  - `backend/routes/service-master.routes.js` — ServiceType/LaborRate/Package/Warranty schemas
+
+## Backend Fixes
+- `employees.controller.js` — Added `branch_id` to INSERT column list and UPDATE SET clause
+- `serviceManagement.controller.js` — Added `discount`/`taxAmount` to createJobCard INSERT, added logger import + error logging to all 24 catch blocks
+- `service-master.routes.js` — Added `authorize(...writeRoles)` to all 12 POST/PUT/DELETE routes (was missing role-based auth)
+- `expenses.controller.js` — Fixed `code.toUpperCase()` crash when `code` is a number (added `String()` wrapper)
+
+## QA Phase Fixes
+- `Service.js`: Added `useModalKeyboard` to Add Service and Add Part sub-modals (ESC close, Enter submit)
+- `Employees.js`: Added `company_id` to `emptyForm` and `openEdit` function, wrapped DataTable in `desktop-only`
+- `Ledger.js`: Separated `draftFilters` (input-bound) from `committedFilters` (API-bound) to eliminate redundant API calls on keystroke
+- `Reports.js`: Complete rewrite with 8 tabs, no chart imports, date filters, card grid, export placeholders
+
+---
+
+## Known Architecture Details
+
+### API Response Patterns
+- `r.data?.data?.items` — paginated lists
+- `r.data?.data` — single items
+- `r.data?.data?.collections` — status collections
+- `r.data?.data?.value` — settings values
+
+### Field Naming
+- Active fields use `isActive` (camelCase) in MongoDB, `is_active` (snake_case) in MySQL
+- All timestamps: `createdAt`, `updatedAt` (MongoDB); `created_at`, `updated_at` (MySQL)
+- Soft delete: `isDeleted` / `is_deleted`
+
+### Module Patterns
+- **Context-based modules**: Customers, Leads, StatusManagement, ServerManagement — use context providers, drawer components, form modals
+- **Direct-API modules**: Warehouse, Vehicles, PartsInventory — inline API calls, local state
+
+### Routing
+- `frontend/src/App.js` — main route definitions
+- `frontend/src/constants/pages.js` — sidebar navigation config
+- `frontend/src/services/api.js` — all API service objects
+
+---
+
+## Email Module (Completed)
+
+### Themes — REMOVED
+All files replaced with REMOVED markers. 6 routes + Swagger docs removed from email.routes.js. All theme resolution removed from emailRenderer.service.js.
+
+### Variables Module
+Full CRUD: model, controller, API, frontend list page, form modal, bulk import modal, mutable context.
+
+### Components Redesign
+Parameters array added to model. 3-panel editor (HTML/CSS, live preview, parameters). Preview endpoint resolves `{{param.key}}` placeholders.
+
+### Other
+- VariablePicker reusable component
+- Clean routing with 7 tabs
+- 7 standardized form modals with validation/loading/keyboard
+- Builder refactored (templateId prop, autosave, Save/Publish/Close)
+- 8 context files composed in EmailContext.js
+- Reusable EmailDrawer component
+- CSS standardized to use design tokens
+- Responsive rules, optimistic updates, quick create, SearchableSelect

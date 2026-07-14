@@ -1,20 +1,18 @@
-/**
- * Vehicle Parts Inventory Page
- * Professional corporate UI for managing vehicle parts with manufacturer/third-party categorization
- * Created by LOGIXINVENTOR (PVT) Ltd.
- * info@logixinventor.com +92 333 3836851
- * www.logixinventor.com | AMS
- * Date: 2026-01-06
- */
-
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { partsAPI } from '../services/api';
+import { partsAPI, vehicleMasterAPI } from '../services/api';
 import toast from 'react-hot-toast';
+import { Package, Search, Plus, Upload } from 'lucide-react';
 import ErrorPopup from '../components/ErrorPopup';
 import ActionButtons from '../components/ActionButtons';
 import SearchableSelect from '../components/SearchableSelect';
+import DataTable from '../components/DataTable';
+import ConfirmModal from '../components/ConfirmModal';
+import BulkUploadModal from '../components/BulkUploadModal';
+import useModalKeyboard from '../hooks/useModalKeyboard';
+import CategoryFormModal from './parts/CategoryFormModal';
+import SupplierFormModal from './parts/SupplierFormModal';
 import '../styles/partsInventory.css';
 
 const PartsInventory = () => {
@@ -46,6 +44,46 @@ const PartsInventory = () => {
     const [modalMode, setModalMode] = useState('create');
     const [selectedPart, setSelectedPart] = useState(null);
     const [showStockModal, setShowStockModal] = useState(false);
+    const stockFormRef = useRef(null);
+    const [showCategoryModal, setShowCategoryModal] = useState(false);
+    const [showSupplierModal, setShowSupplierModal] = useState(false);
+    const [showConfirmDelete, setShowConfirmDelete] = useState(false);
+    const [deleteTarget, setDeleteTarget] = useState(null);
+    const [showBulkUpload, setShowBulkUpload] = useState(false);
+    const [selectedIds, setSelectedIds] = useState(new Set());
+    const [deleteAllTarget, setDeleteAllTarget] = useState(null);
+    const [deletingAll, setDeletingAll] = useState(false);
+
+    const toggleSelect = (id) => {
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id); else next.add(id);
+        return next;
+      });
+    };
+
+    const toggleSelectAll = () => {
+      setSelectedIds(prev => prev.size === parts.length ? new Set() : new Set(parts.map(p => p.id)));
+    };
+
+    const handleBulkDelete = async () => {
+      setDeletingAll(true);
+      try {
+        const ids = Array.from(selectedIds);
+        for (const id of ids) {
+          await partsAPI.delete(id);
+        }
+        toast.success(`${ids.length} part(s) deleted`);
+        setSelectedIds(new Set());
+        setDeleteAllTarget(null);
+        fetchParts();
+        fetchReferenceData();
+      } catch (err) {
+        setErrorPopup(err.response?.data || { message: 'Failed to delete parts' });
+      } finally {
+        setDeletingAll(false);
+      }
+    };
 
     // Reference data
     const [categories, setCategories] = useState([]);
@@ -234,9 +272,21 @@ const PartsInventory = () => {
         setSelectedPart(null);
     };
 
+    useModalKeyboard(showStockModal, closeStockModal, () => stockFormRef.current?.requestSubmit());
+
+    // Part form submit handler
+    const handlePartFormSubmit = (e) => {
+        if (e) e.preventDefault();
+        if (modalMode === 'create') {
+            handleCreatePart(e);
+        } else {
+            handleUpdatePart(e);
+        }
+    };
+
     // Create part
     const handleCreatePart = async (e) => {
-        e.preventDefault();
+        if (e) e.preventDefault();
         try {
             await partsAPI.create(formData);
             toast.success('Part created successfully!');
@@ -251,7 +301,7 @@ const PartsInventory = () => {
 
     // Update part
     const handleUpdatePart = async (e) => {
-        e.preventDefault();
+        if (e) e.preventDefault();
         try {
             await partsAPI.update(selectedPart.id, formData);
             toast.success('Part updated successfully!');
@@ -263,20 +313,40 @@ const PartsInventory = () => {
         }
     };
 
-    // Delete part
-    const handleDeletePart = async (partId, partNumber) => {
-        if (!window.confirm(`Are you sure you want to delete part "${partNumber}"?`)) {
-            return;
-        }
+    // Confirm delete
+    const openDeleteConfirm = (part) => {
+        setDeleteTarget(part);
+        setShowConfirmDelete(true);
+    };
+
+    // Execute delete
+    const handleConfirmDelete = async () => {
+        if (!deleteTarget) return;
         try {
-            await partsAPI.delete(partId);
+            await partsAPI.delete(deleteTarget.id);
             toast.success('Part deleted successfully!');
+            setShowConfirmDelete(false);
+            setDeleteTarget(null);
             fetchParts();
             fetchReferenceData();
         } catch (err) {
             console.error('Error deleting part:', err);
             setErrorPopup(err.response?.data || { message: 'Failed to delete part' });
+            setShowConfirmDelete(false);
+            setDeleteTarget(null);
         }
+    };
+
+    // Quick-create: category
+    const handleCategoryCreated = (newCat) => {
+        fetchReferenceData();
+        setFormData(prev => ({ ...prev, categoryId: String(newCat.id) }));
+    };
+
+    // Quick-create: supplier
+    const handleSupplierCreated = (newSup) => {
+        fetchReferenceData();
+        setFormData(prev => ({ ...prev, supplierId: String(newSup.id) }));
     };
 
     // Adjust stock
@@ -293,6 +363,8 @@ const PartsInventory = () => {
             setErrorPopup(err.response?.data || { message: 'Failed to adjust stock' });
         }
     };
+
+    useModalKeyboard(showModal, closeModal, handlePartFormSubmit);
 
     // Get stock status badge
     const getStockStatusBadge = (stockStatus) => {
@@ -357,6 +429,79 @@ const PartsInventory = () => {
         return Number.isFinite(n) ? n : fallback;
     };
 
+    const partsColumns = [
+        {
+          header: <input type="checkbox" checked={selectedIds.size === parts.length && parts.length > 0} onChange={toggleSelectAll} />,
+          accessor: '_checkbox',
+          style: { width: 40 },
+          render: (row) => (
+            <input type="checkbox" checked={selectedIds.has(row.id)} onChange={() => toggleSelect(row.id)} onClick={(e) => e.stopPropagation()} />
+          ),
+          hideOnMobile: true
+        },
+        {
+            header: 'Part #',
+            accessor: 'part_number',
+            render: (row) => <strong className="part-number">{row.part_number}</strong>
+        },
+        {
+            header: 'Name', accessor: 'name',
+            render: (row) => (
+                <div className="part-info">
+                    <span className="part-name">{row.name}</span>
+                    {row.brand && <span className="part-brand">{row.brand}</span>}
+                </div>
+            )
+        },
+        {
+            header: 'Source', accessor: 'source_type',
+            render: (row) => {
+                const badge = getSourceTypeBadge(row.source_type);
+                return <span className={`badge ${badge.class}`}>{badge.text}</span>;
+            }
+        },
+        { header: 'Category', accessor: 'category_name' },
+        {
+            header: 'Stock', accessor: 'current_stock',
+            render: (row) => <><span className="stock-qty">{row.current_stock}</span><span className="stock-unit"> {row.unit}</span></>
+        },
+        {
+            header: 'Status', accessor: 'stock_status',
+            render: (row) => {
+                const badge = getStockStatusBadge(row.stock_status);
+                return <span className={`badge ${badge.class}`}>{badge.text}</span>;
+            }
+        },
+        {
+            header: 'Purchase Price', accessor: 'purchase_price',
+            render: (row) => <span className="price-cell">{formatCurrency(row.purchase_price)}</span>
+        },
+        {
+            header: 'Selling Price', accessor: 'selling_price',
+            render: (row) => <span className="price-cell">{formatCurrency(row.selling_price)}</span>
+        },
+        {
+            header: 'Actions',
+            accessor: 'actions',
+            style: { width: '120px' },
+            render: (row) => (
+                <div className="action-group" onClick={(e) => e.stopPropagation()}>
+                    <button className="btn-icon btn-adjust" onClick={() => openStockModal(row)} title="Adjust Stock">
+                        <Package size={16} />
+                    </button>
+                    <ActionButtons
+                        onEdit={() => openModal('edit', row)}
+                        onDelete={() => openDeleteConfirm(row)}
+                        title={row.part_number}
+                        showEdit
+                        showDelete
+                    />
+                </div>
+            ),
+            hideOnMobile: true
+        },
+    ];
+
     return (
         <div className="parts-inventory-page">
             {/* Page Header */}
@@ -365,44 +510,65 @@ const PartsInventory = () => {
                     <h1>Parts Inventory</h1>
                     <p className="subtitle">Manage vehicle parts from manufacturers and third-party suppliers</p>
                 </div>
-                <button className="btn btn-primary btn-create" onClick={() => openModal('create')}>
-                    <span className="icon">+</span>
-                    Add Part
-                </button>
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                    <button
+                        type="button"
+                        className="btn btn-secondary btn-create"
+                        onClick={() => setShowBulkUpload(true)}
+                        title="Bulk upload parts (CSV / XLSX)"
+                    >
+                        <Upload size={18} style={{ marginRight: 6 }} />
+                        Upload
+                    </button>
+                    <button className="btn btn-primary btn-create" onClick={() => openModal('create')}>
+                        <Plus size={18} />
+                        <span>Add Part</span>
+                    </button>
+                </div>
             </div>
 
             {/* Stats Cards */}
             <div className="stats-grid">
                 <div className="stat-card stat-total">
-                    <div className="stat-icon">🔧</div>
+                    <div className="stat-icon">
+                        <Package size={24} style={{ color: '#3b82f6' }} />
+                    </div>
                     <div className="stat-content">
                         <span className="stat-value">{stats.total_parts || 0}</span>
                         <span className="stat-label">Total Parts</span>
                     </div>
                 </div>
                 <div className="stat-card stat-manufacturer">
-                    <div className="stat-icon">🏭</div>
+                    <div className="stat-icon">
+                        <Package size={24} style={{ color: '#22c55e' }} />
+                    </div>
                     <div className="stat-content">
                         <span className="stat-value">{stats.manufacturer_parts || 0}</span>
                         <span className="stat-label">Manufacturer</span>
                     </div>
                 </div>
                 <div className="stat-card stat-third-party">
-                    <div className="stat-icon">🏪</div>
+                    <div className="stat-icon">
+                        <Package size={24} style={{ color: '#8b5cf6' }} />
+                    </div>
                     <div className="stat-content">
                         <span className="stat-value">{stats.third_party_parts || 0}</span>
                         <span className="stat-label">3rd Party</span>
                     </div>
                 </div>
                 <div className="stat-card stat-low-stock">
-                    <div className="stat-icon">⚠️</div>
+                    <div className="stat-icon">
+                        <Package size={24} style={{ color: '#eab308' }} />
+                    </div>
                     <div className="stat-content">
                         <span className="stat-value">{stats.low_stock_count || 0}</span>
                         <span className="stat-label">Low Stock</span>
                     </div>
                 </div>
                 <div className="stat-card stat-value">
-                    <div className="stat-icon">💵</div>
+                    <div className="stat-icon">
+                        <Package size={24} style={{ color: '#059669' }} />
+                    </div>
                     <div className="stat-content">
                         <span className="stat-value">{formatCurrency(stats.total_inventory_value || 0)}</span>
                         <span className="stat-label">Inventory Value</span>
@@ -424,19 +590,22 @@ const PartsInventory = () => {
                     className={`tab-btn ${activeTab === 'manufacturer' ? 'active' : ''}`}
                     onClick={() => handleTabChange('manufacturer')}
                 >
-                    🏭 Manufacturer Parts
+                    Manufacturer Parts
                 </button>
                 <button
                     className={`tab-btn ${activeTab === 'third_party' ? 'active' : ''}`}
                     onClick={() => handleTabChange('third_party')}
                 >
-                    🏪 3rd Party Parts
+                    3rd Party Parts
                 </button>
             </div>
 
             {/* Filters */}
             <div className="filters-bar">
                 <div className="search-box">
+                    <span className="search-icon">
+                        <Search size={18} style={{ color: '#9ca3af' }} />
+                    </span>
                     <input
                         type="text"
                         placeholder="Search by part number, name, brand..."
@@ -444,7 +613,6 @@ const PartsInventory = () => {
                         onChange={(e) => setSearch(e.target.value)}
                         className="search-input"
                     />
-                    <span className="search-icon">🔍</span>
                 </div>
 
                 <SearchableSelect
@@ -469,146 +637,63 @@ const PartsInventory = () => {
                     <option value="normal">Normal</option>
                 </SearchableSelect>
 
+                {(search || categoryFilter || stockFilter) && (
+                    <button
+                        type="button"
+                        className="btn btn-sm btn-outline filter-reset-btn"
+                        onClick={() => { setSearch(''); setCategoryFilter(''); setStockFilter(''); setPage(1); }}
+                        title="Reset all filters"
+                    >
+                        Reset
+                    </button>
+                )}
+
                 <span className="results-count">{total} parts found</span>
             </div>
 
             {/* Parts Table */}
-            <div className="table-container">
-                {loading ? (
-                    <div className="loading-state">
-                        <div className="spinner"></div>
-                        <p>Loading parts...</p>
-                    </div>
-                ) : parts.length === 0 ? (
-                    <div className="empty-state">
-                        <div className="empty-icon">🔧</div>
-                        <h3>No Parts Found</h3>
-                        <p>No parts match your search criteria.</p>
-                    </div>
-                ) : (
-                    <table className="data-table">
-                        <thead>
-                            <tr>
-                                <th>Part #</th>
-                                <th>Name</th>
-                                <th>Source</th>
-                                <th>Category</th>
-                                <th>Stock</th>
-                                <th>Status</th>
-                                <th>Purchase Price</th>
-                                <th>Selling Price</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {parts.map(part => (
-                                <tr key={part.id} className={part.stock_status === 'out_of_stock' ? 'row-warning' : ''}>
-                                    <td>
-                                        <strong className="part-number">{part.part_number}</strong>
-                                    </td>
-                                    <td>
-                                        <div className="part-info">
-                                            <span className="part-name">{part.name}</span>
-                                            {part.brand && <span className="part-brand">{part.brand}</span>}
-                                        </div>
-                                    </td>
-                                    <td>
-                                        <span className={`badge ${getSourceTypeBadge(part.source_type).class}`}>
-                                            {getSourceTypeBadge(part.source_type).text}
-                                        </span>
-                                    </td>
-                                    <td>{part.category_name || '-'}</td>
-                                    <td>
-                                        <span className="stock-qty">{part.current_stock}</span>
-                                        <span className="stock-unit"> {part.unit}</span>
-                                    </td>
-                                    <td>
-                                        <span className={`badge ${getStockStatusBadge(part.stock_status).class}`}>
-                                            {getStockStatusBadge(part.stock_status).text}
-                                        </span>
-                                    </td>
-                                    <td className="price-cell">{formatCurrency(part.purchase_price)}</td>
-                                    <td className="price-cell">{formatCurrency(part.selling_price)}</td>
-                                    <td>
-                                        <div className="action-group">
-                                            <button
-                                                className="btn-icon btn-adjust"
-                                                onClick={() => openStockModal(part)}
-                                                title="Adjust Stock"
-                                            >
-                                                📦
-                                            </button>
-                                            <ActionButtons
-                                                onEdit={() => openModal('edit', part)}
-                                                onDelete={() => handleDeletePart(part.id, part.part_number)}
-                                                title={part.part_number}
-                                                showEdit
-                                                showDelete
-                                            />
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                )}
-            </div>
+            <DataTable
+                columns={partsColumns}
+                data={parts}
+                loading={loading}
+                pagination={{ page, totalPages }}
+                onPageChange={(p) => setPage(p)}
+                onRowClick={(row) => openModal('edit', row)}
+                rowClassName={(row) => row.stock_status === 'out_of_stock' ? 'row-warning' : ''}
+            />
 
-            {/* Pagination */}
-            {totalPages > 1 && (
-                <div className="pagination">
-                    <button
-                        className="btn-page"
-                        onClick={() => setPage(p => Math.max(1, p - 1))}
-                        disabled={page === 1}
-                    >
-                        ← Previous
-                    </button>
+            {/* Bulk Delete Bar */}
+            {selectedIds.size > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, marginBottom: 12 }}>
+                <span style={{ fontWeight: 600, color: '#991b1b' }}>{selectedIds.size} selected</span>
+                <button className="btn btn-danger btn-sm" onClick={() => setDeleteAllTarget(true)}>Delete All</button>
+                <button className="btn btn-secondary btn-sm" onClick={() => setSelectedIds(new Set())}>Deselect All</button>
+              </div>
+            )}
 
-                    <div className="page-numbers">
-                        {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                            let pageNum;
-                            if (totalPages <= 5) {
-                                pageNum = i + 1;
-                            } else if (page <= 3) {
-                                pageNum = i + 1;
-                            } else if (page >= totalPages - 2) {
-                                pageNum = totalPages - 4 + i;
-                            } else {
-                                pageNum = page - 2 + i;
-                            }
-                            return (
-                                <button
-                                    key={pageNum}
-                                    className={`btn-page ${page === pageNum ? 'active' : ''}`}
-                                    onClick={() => setPage(pageNum)}
-                                >
-                                    {pageNum}
-                                </button>
-                            );
-                        })}
-                    </div>
-
-                    <button
-                        className="btn-page"
-                        onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                        disabled={page === totalPages}
-                    >
-                        Next →
-                    </button>
-                </div>
+            {deleteAllTarget && (
+              <ConfirmModal
+                isOpen={true}
+                title="Delete Selected Parts"
+                message={`Are you sure you want to delete ${selectedIds.size} part(s)?`}
+                confirmText={deletingAll ? 'Deleting...' : 'Delete All'}
+                cancelText="Cancel"
+                type="danger"
+                onConfirm={handleBulkDelete}
+                onCancel={() => setDeleteAllTarget(null)}
+              />
             )}
 
             {/* Create/Edit Modal */}
             {showModal && (
-                <div className="modal-overlay">
+                <div className="modal-overlay" onClick={closeModal}>
                     <div className="modal-content modal-lg" onClick={e => e.stopPropagation()}>
                         <div className="modal-header">
                             <h2>{modalMode === 'create' ? 'Add New Part' : 'Edit Part'}</h2>
                             <button className="modal-close" onClick={closeModal}>×</button>
                         </div>
 
-                        <form onSubmit={modalMode === 'create' ? handleCreatePart : handleUpdatePart}>
+                        <form onSubmit={handlePartFormSubmit}>
                             <div className="modal-body">
                                 <div className="form-section">
                                     <h3>Part Information</h3>
@@ -623,6 +708,7 @@ const PartsInventory = () => {
                                             <input
                                                 type="text"
                                                 name="partNumber"
+                                                className="form-input"
                                                 value={formData.partNumber}
                                                 onChange={handleInputChange}
                                                 required
@@ -639,6 +725,7 @@ const PartsInventory = () => {
                                             <input
                                                 type="text"
                                                 name="name"
+                                                className="form-input"
                                                 value={formData.name}
                                                 onChange={handleInputChange}
                                                 required
@@ -665,11 +752,18 @@ const PartsInventory = () => {
                                             </SearchableSelect>
                                         </div>
                                         <div className="form-group">
-                                            <label>
+                                            <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                                 <InfoLabel
                                                     label="Category"
                                                     help="Optional grouping for reporting and filtering (e.g., Engine, Electrical)."
                                                 />
+                                                <button
+                                                    type="button"
+                                                    className="btn btn-sm btn-outline"
+                                                    onClick={() => setShowCategoryModal(true)}
+                                                >
+                                                    + Create Category
+                                                </button>
                                             </label>
                                             <SearchableSelect
                                                 name="categoryId"
@@ -693,17 +787,25 @@ const PartsInventory = () => {
                                             <input
                                                 type="text"
                                                 name="brand"
+                                                className="form-input"
                                                 value={formData.brand}
                                                 onChange={handleInputChange}
                                                 placeholder="Brand name"
                                             />
                                         </div>
                                         <div className="form-group">
-                                            <label>
+                                            <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                                 <InfoLabel
                                                     label="Supplier"
                                                     help="Supplier you purchase this part from (optional)."
                                                 />
+                                                <button
+                                                    type="button"
+                                                    className="btn btn-sm btn-outline"
+                                                    onClick={() => setShowSupplierModal(true)}
+                                                >
+                                                    + Create Supplier
+                                                </button>
                                             </label>
                                             <SearchableSelect
                                                 name="supplierId"
@@ -727,6 +829,7 @@ const PartsInventory = () => {
                                             </label>
                                             <textarea
                                                 name="description"
+                                                className="form-input"
                                                 value={formData.description}
                                                 onChange={handleInputChange}
                                                 placeholder="Part description..."
@@ -749,6 +852,7 @@ const PartsInventory = () => {
                                             <input
                                                 type="number"
                                                 name="purchasePrice"
+                                                className="form-input"
                                                 value={formData.purchasePrice}
                                                 onChange={handleInputChange}
                                                 required
@@ -765,6 +869,7 @@ const PartsInventory = () => {
                                             <input
                                                 type="number"
                                                 name="sellingPrice"
+                                                className="form-input"
                                                 value={formData.sellingPrice}
                                                 onChange={handleInputChange}
                                                 required
@@ -807,6 +912,7 @@ const PartsInventory = () => {
                                                 <input
                                                     type="number"
                                                     name="currentStock"
+                                                    className="form-input"
                                                     value={formData.currentStock}
                                                     onChange={handleInputChange}
                                                     min={0}
@@ -837,6 +943,7 @@ const PartsInventory = () => {
                                             <input
                                                 type="number"
                                                 name="minimumStock"
+                                                className="form-input"
                                                 value={formData.minimumStock}
                                                 onChange={handleInputChange}
                                                 min={0}
@@ -852,6 +959,7 @@ const PartsInventory = () => {
                                             <input
                                                 type="number"
                                                 name="maximumStock"
+                                                className="form-input"
                                                 value={formData.maximumStock}
                                                 onChange={handleInputChange}
                                                 min={0}
@@ -867,6 +975,7 @@ const PartsInventory = () => {
                                             <input
                                                 type="number"
                                                 name="reorderLevel"
+                                                className="form-input"
                                                 value={formData.reorderLevel}
                                                 onChange={handleInputChange}
                                                 min={0}
@@ -884,6 +993,7 @@ const PartsInventory = () => {
                                             <input
                                                 type="text"
                                                 name="binLocation"
+                                                className="form-input"
                                                 value={formData.binLocation}
                                                 onChange={handleInputChange}
                                                 placeholder="e.g., A1-S2-R3"
@@ -908,14 +1018,14 @@ const PartsInventory = () => {
 
             {/* Stock Adjustment Modal */}
             {showStockModal && selectedPart && (
-                <div className="modal-overlay">
+                <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) closeStockModal(); }}>
                     <div className="modal-content modal-sm" onClick={e => e.stopPropagation()}>
                         <div className="modal-header">
                             <h2>Adjust Stock</h2>
                             <button className="modal-close" onClick={closeStockModal}>×</button>
                         </div>
 
-                        <form onSubmit={handleAdjustStock}>
+                        <form ref={stockFormRef} onSubmit={handleAdjustStock}>
                             <div className="modal-body">
                                 <div className="stock-info">
                                     <p><strong>{selectedPart.name}</strong></p>
@@ -951,6 +1061,7 @@ const PartsInventory = () => {
                                     <input
                                         type="number"
                                         name="quantity"
+                                        className="form-input"
                                         value={stockForm.quantity}
                                         onChange={handleStockFormChange}
                                         required
@@ -1010,6 +1121,42 @@ const PartsInventory = () => {
                     </div>
                 </div>
             )}
+
+            {/* Category Quick-Create Modal */}
+            <CategoryFormModal
+                isOpen={showCategoryModal}
+                onClose={() => setShowCategoryModal(false)}
+                onCategoryCreated={handleCategoryCreated}
+            />
+
+            {/* Bulk Upload */}
+            <BulkUploadModal
+                isOpen={showBulkUpload}
+                onClose={() => setShowBulkUpload(false)}
+                title="Bulk upload parts"
+                description="Import parts from CSV or XLSX using the template. Required columns: part_number, name, purchase_price, selling_price."
+                templateType="parts"
+                onCompleted={() => fetchParts()}
+            />
+
+            {/* Supplier Quick-Create Modal */}
+            <SupplierFormModal
+                isOpen={showSupplierModal}
+                onClose={() => setShowSupplierModal(false)}
+                onSupplierCreated={handleSupplierCreated}
+            />
+
+            {/* Confirm Delete Modal */}
+            <ConfirmModal
+                isOpen={showConfirmDelete}
+                title="Delete Part"
+                message={`Are you sure you want to delete part "${deleteTarget?.part_number}"?`}
+                onConfirm={handleConfirmDelete}
+                onCancel={() => { setShowConfirmDelete(false); setDeleteTarget(null); }}
+                confirmText="Delete"
+                cancelText="Cancel"
+                type="danger"
+            />
         </div>
     );
 };

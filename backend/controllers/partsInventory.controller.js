@@ -1,21 +1,40 @@
-/**
- * Parts Inventory Controller
- * Full CRUD operations for vehicle parts inventory management
- * Refactored to use Stored Procedures
- * Created by LOGIXINVENTOR (PVT) Ltd.
- * info@logixinventor.com +92 333 3836851
- * www.logixinventor.com | AMS
- * Date: 2026-01-07
- */
-
-const { query } = require('../config/database');
+const Part = require('../models/Part.model');
+const Warehouse = require('../models/Warehouse.model');
+const { PartCategory, Supplier } = require('../models/VehicleMaster.model');
 const { AppError } = require('../middleware/errorHandler');
 const logger = require('../utils/logger');
 
-/**
- * Get all parts with pagination, filtering, and search
- * Uses SP_GetPartsBySourceType with fallback to direct query
- */
+const flattenPart = (p) => ({
+    id: p._id,
+    part_number: p.partCode,
+    name: p.name,
+    category_id: p.categoryId || null,
+    category_name: p.category?.name || '',
+    description: p.description,
+    brand: p.brand,
+    supplier_id: p.supplierId || null,
+    supplier_name: p.supplier?.name || '',
+    unit: p.unit,
+    purchase_price: p.costPrice,
+    selling_price: p.sellingPrice,
+    current_stock: p.currentStock,
+    minimum_stock: p.minStock,
+    maximum_stock: p.maxStock,
+    reorder_level: p.reorderLevel,
+    bin_location: p.binLocation || '',
+    warehouse_id: p.warehouseId || null,
+    warehouse_name: p.warehouse?.name || '',
+    source_type: p.sourceType || 'manufacturer',
+    stock_status: p.currentStock === 0
+        ? 'out_of_stock'
+        : p.currentStock <= (p.reorderLevel || p.minStock || 0)
+            ? 'low_stock'
+            : 'normal',
+    is_active: p.isActive,
+    created_at: p.createdAt,
+    updated_at: p.updatedAt
+});
+
 const getAllParts = async (req, res, next) => {
     try {
         const {
@@ -29,116 +48,94 @@ const getAllParts = async (req, res, next) => {
             stockStatus = ''
         } = req.query;
 
-        let parts = [];
-        const offset = (parseInt(page) - 1) * parseInt(limit);
+        const pageNum = parseInt(page);
+        const limitNum = parseInt(limit);
+        const skip = (pageNum - 1) * limitNum;
 
-        // Try stored procedure first, fallback to direct query if SP doesn't exist
-        try {
-            const results = await query(
-                'CALL SP_GetPartsBySourceType(?, ?, ?, ?, ?, ?, ?, ?)',
-                [
-                    sourceType || null,
-                    parseInt(page),
-                    parseInt(limit),
-                    search || null,
-                    categoryId ? parseInt(categoryId) : null,
-                    supplierId ? parseInt(supplierId) : null,
-                    warehouseId ? parseInt(warehouseId) : null,
-                    stockStatus || null
-                ]
-            );
-            parts = results[0];
-        } catch (spError) {
-            // Fallback to direct query if stored procedure doesn't exist
-            logger.warn('SP_GetPartsBySourceType not available, using fallback query:', spError.message);
-
-            let whereConditions = ['p.is_active = TRUE'];
-            let queryParams = [];
-
-            if (search) {
-                whereConditions.push('(p.part_code LIKE ? OR p.name LIKE ? OR p.brand LIKE ?)');
-                const s = `%${search}%`;
-                queryParams.push(s, s, s);
-            }
-            if (categoryId) { whereConditions.push('p.category_id = ?'); queryParams.push(parseInt(categoryId)); }
-            if (supplierId) { whereConditions.push('p.supplier_id = ?'); queryParams.push(parseInt(supplierId)); }
-            if (warehouseId) { whereConditions.push('p.warehouse_id = ?'); queryParams.push(parseInt(warehouseId)); }
-            if (stockStatus) {
-                if (stockStatus === 'low') whereConditions.push('p.current_stock <= COALESCE(p.reorder_level, p.min_stock, 0) AND p.current_stock > 0');
-                if (stockStatus === 'out') whereConditions.push('p.current_stock = 0');
-                if (stockStatus === 'normal') whereConditions.push('p.current_stock > COALESCE(p.reorder_level, p.min_stock, 0)');
-            }
-
-            const fallbackQuery = `
-                SELECT 
-                    p.id,
-                    p.part_code,
-                    p.name,
-                    p.category_id,
-                    pc.name AS category_name,
-                    p.description,
-                    p.brand,
-                    p.supplier_id,
-                    s.name AS supplier_name,
-                    p.unit,
-                    p.cost_price,
-                    p.selling_price,
-                    p.current_stock,
-                    COALESCE(p.reorder_level, p.min_stock, 0) AS minimum_stock,
-                    p.reorder_level,
-                    p.warehouse_id,
-                    w.name AS warehouse_name,
-                    p.is_active,
-                    p.created_at,
-                    p.updated_at,
-                    CASE 
-                        WHEN p.current_stock = 0 THEN 'out_of_stock'
-                        WHEN p.current_stock <= COALESCE(p.reorder_level, p.min_stock, 0) THEN 'low_stock'
-                        ELSE 'normal'
-                    END AS stock_status
-                FROM parts p
-                LEFT JOIN part_categories pc ON p.category_id = pc.id
-                LEFT JOIN suppliers s ON p.supplier_id = s.id
-                LEFT JOIN warehouses w ON p.warehouse_id = w.id
-                WHERE ${whereConditions.join(' AND ')}
-                ORDER BY p.created_at DESC
-                LIMIT ? OFFSET ?
-            `;
-            queryParams.push(parseInt(limit), offset);
-            parts = await query(fallbackQuery, queryParams);
-        }
-
-        // Get total count for pagination
-        let whereConditions = ['1=1'];
-        let params = [];
+        const filter = { isActive: true };
 
         if (search) {
-            whereConditions.push('(part_code LIKE ? OR name LIKE ? OR brand LIKE ?)');
-            const s = `%${search}%`;
-            params.push(s, s, s);
-        }
-        if (categoryId) { whereConditions.push('category_id = ?'); params.push(categoryId); }
-        if (supplierId) { whereConditions.push('supplier_id = ?'); params.push(supplierId); }
-        if (warehouseId) { whereConditions.push('warehouse_id = ?'); params.push(warehouseId); }
-        if (stockStatus) {
-            if (stockStatus === 'low') whereConditions.push('current_stock <= COALESCE(reorder_level, min_stock, 0) AND current_stock > 0');
-            if (stockStatus === 'out') whereConditions.push('current_stock = 0');
-            if (stockStatus === 'normal') whereConditions.push('current_stock > COALESCE(reorder_level, min_stock, 0)');
+            const regex = new RegExp(search, 'i');
+            filter.$or = [
+                { partCode: regex },
+                { name: regex },
+                { brand: regex }
+            ];
         }
 
-        const countQuery = `SELECT COUNT(*) as total FROM parts WHERE ${whereConditions.join(' AND ')}`;
-        const countResult = await query(countQuery, params);
-        const total = countResult[0].total;
+        if (sourceType) {
+            filter.sourceType = sourceType;
+        }
+
+        if (categoryId) {
+            filter['category.name'] = categoryId;
+        }
+
+        if (supplierId) {
+            filter['supplier.code'] = supplierId;
+        }
+
+        let parts = await Part.find(filter)
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limitNum)
+            .lean();
+
+        if (stockStatus) {
+            parts = parts.filter((p) => {
+                const threshold = p.reorderLevel || p.minStock || 0;
+                if (stockStatus === 'out_of_stock') return p.currentStock === 0;
+                if (stockStatus === 'low_stock') return p.currentStock > 0 && p.currentStock <= threshold;
+                if (stockStatus === 'normal') return p.currentStock > threshold;
+                return true;
+            });
+        }
+
+        const total = await Part.countDocuments(filter);
+
+        const mapped = parts.map((p) => {
+            const threshold = p.reorderLevel || p.minStock || 0;
+            let computedStatus = 'normal';
+            if (p.currentStock === 0) {
+                computedStatus = 'out_of_stock';
+            } else if (p.currentStock <= threshold) {
+                computedStatus = 'low_stock';
+            }
+            return {
+                id: p._id,
+                part_number: p.partCode,
+                name: p.name,
+                category_id: null,
+                category_name: p.category?.name || '',
+                description: p.description,
+                brand: p.brand,
+                supplier_id: null,
+                supplier_name: p.supplier?.name || '',
+                unit: p.unit,
+                purchase_price: p.costPrice,
+                selling_price: p.sellingPrice,
+                current_stock: p.currentStock,
+                minimum_stock: p.minStock,
+                reorder_level: p.reorderLevel,
+                warehouse_id: null,
+                warehouse_name: p.warehouse?.name || '',
+                source_type: p.sourceType || 'manufacturer',
+                stock_status: stockStatus ? computedStatus : undefined,
+                is_active: p.isActive,
+                created_at: p.createdAt,
+                updated_at: p.updatedAt
+            };
+        });
 
         res.json({
             success: true,
             data: {
-                parts: parts,
+                parts: mapped,
                 pagination: {
-                    page: parseInt(page),
-                    limit: parseInt(limit),
+                    page: pageNum,
+                    limit: limitNum,
                     total,
-                    totalPages: Math.ceil(total / parseInt(limit))
+                    totalPages: Math.ceil(total / limitNum)
                 }
             }
         });
@@ -148,24 +145,18 @@ const getAllParts = async (req, res, next) => {
     }
 };
 
-/**
- * Get single part by ID
- */
 const getPartById = async (req, res, next) => {
     try {
         const { id } = req.params;
-        const parts = await query('SELECT * FROM vw_partsinventoryfull WHERE id = ?', [id]);
+        const part = await Part.findById(id).lean();
 
-        if (parts.length === 0) {
+        if (!part) {
             throw new AppError('Part not found', 404);
         }
 
-        // Additional data (audit, movements) can be fetched here as before if needed
-        // Assuming the view VW_PartsInventoryFull covers most details
-
         res.json({
             success: true,
-            data: parts[0]
+            data: flattenPart(part)
         });
     } catch (error) {
         logger.error('Error fetching part:', error);
@@ -173,10 +164,6 @@ const getPartById = async (req, res, next) => {
     }
 };
 
-/**
- * Create new part
- * Uses SP_CreatePart
- */
 const createPart = async (req, res, next) => {
     try {
         const {
@@ -185,33 +172,64 @@ const createPart = async (req, res, next) => {
             minimumStock, maximumStock, reorderLevel, warehouseId, binLocation
         } = req.body;
 
-        const sanitizeId = (id) => (id === '' || id === undefined || id === null) ? null : id;
-
-        await query(
-            'CALL SP_CreatePart(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, @partId, @success, @message)',
-            [
-                partNumber, name, sanitizeId(categoryId), description, brand,
-                sourceType || 'manufacturer', sanitizeId(supplierId),
-                unit || 'piece', purchasePrice, sellingPrice,
-                currentStock || 0, minimumStock || 5, maximumStock || 100,
-                reorderLevel || 10, sanitizeId(warehouseId), binLocation,
-                req.user.id
-            ]
-        );
-
-        const result = await query('SELECT @partId as partId, @success as success, @message as message');
-        const { partId, success, message } = result[0];
-
-        if (!success) {
-            throw new AppError(message, 400);
+        let categoryData = {};
+        if (categoryId) {
+            const cat = await PartCategory.findById(categoryId).lean();
+            if (cat) {
+                categoryData = { name: cat.name, code: cat._id.toString() };
+            }
         }
 
-        logger.info(`Part created: ${partNumber} by ${req.user.email}`);
+        let supplierData = {};
+        if (supplierId) {
+            const sup = await Supplier.findById(supplierId).lean();
+            if (sup) {
+                supplierData = { name: sup.name, code: sup.supplier_code, phone: sup.phone, email: sup.email };
+            }
+        }
+
+        const partCode = partNumber || `PART-${Date.now()}`;
+
+        let warehouseData = {};
+        if (warehouseId) {
+            const wh = await Warehouse.findById(warehouseId).lean();
+            if (wh) {
+                warehouseData = { name: wh.warehouseName, code: wh.code };
+            }
+        }
+
+        const part = new Part({
+            partCode,
+            sku: partNumber || partCode,
+            name,
+            description: description || '',
+            category: categoryData,
+            supplier: supplierData,
+            warehouse: warehouseData,
+            brand: brand || '',
+            unit: unit || 'piece',
+            costPrice: purchasePrice || 0,
+            sellingPrice: sellingPrice || 0,
+            quantity: currentStock || 0,
+            currentStock: currentStock || 0,
+            minStock: minimumStock || 5,
+            maxStock: maximumStock || 100,
+            reorderLevel: reorderLevel || 10,
+            binLocation: binLocation || '',
+            isActive: true,
+            sourceType: sourceType || 'manufacturer',
+            createdBy: req.user?.id || null,
+            updatedBy: req.user?.id || null
+        });
+
+        await part.save();
+
+        logger.info(`Part created: ${partCode} by ${req.user?.email || 'system'}`);
 
         res.status(201).json({
             success: true,
-            message: message,
-            data: { id: partId, partNumber }
+            message: 'Part created successfully',
+            data: { id: part._id, partNumber: part.partCode }
         });
     } catch (error) {
         logger.error('Error creating part:', error);
@@ -219,10 +237,6 @@ const createPart = async (req, res, next) => {
     }
 };
 
-/**
- * Update part
- * Uses SP_UpdatePart
- */
 const updatePart = async (req, res, next) => {
     try {
         const { id } = req.params;
@@ -232,86 +246,122 @@ const updatePart = async (req, res, next) => {
             minimumStock, maximumStock, reorderLevel, warehouseId, binLocation
         } = req.body;
 
-        const sanitizeId = (id) => (id === '' || id === undefined || id === null) ? null : id;
-
-        // Current stock is not updated here, use AdjustStock for that
-
-        await query(
-            'CALL SP_UpdatePart(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, @success, @message)',
-            [
-                id, partNumber, name, sanitizeId(categoryId), description, brand,
-                sourceType, sanitizeId(supplierId), unit, purchasePrice, sellingPrice,
-                minimumStock, maximumStock, reorderLevel, sanitizeId(warehouseId),
-                binLocation, req.user.id
-            ]
-        );
-
-        const result = await query('SELECT @success as success, @message as message');
-        const { success, message } = result[0];
-
-        if (!success) {
-            throw new AppError(message, 400);
+        const part = await Part.findById(id);
+        if (!part) {
+            throw new AppError('Part not found', 404);
         }
 
-        logger.info(`Part updated: ID ${id} by ${req.user.email}`);
-        res.json({ success: true, message });
+        if (categoryId) {
+            const cat = await PartCategory.findById(categoryId).lean();
+            if (cat) {
+                part.category = { name: cat.name, code: cat._id.toString() };
+            }
+        }
+
+        if (supplierId) {
+            const sup = await Supplier.findById(supplierId).lean();
+            if (sup) {
+                part.supplier = { name: sup.name, code: sup.supplier_code, phone: sup.phone, email: sup.email };
+            }
+        }
+
+        if (warehouseId !== undefined) {
+            if (warehouseId === '' || warehouseId === null) {
+                part.warehouse = {};
+            } else {
+                const wh = await Warehouse.findById(warehouseId).lean();
+                if (wh) {
+                    part.warehouse = { name: wh.warehouseName, code: wh.code };
+                }
+            }
+        }
+
+        if (partNumber !== undefined) part.partCode = partNumber;
+        if (name !== undefined) part.name = name;
+        if (description !== undefined) part.description = description;
+        if (brand !== undefined) part.brand = brand;
+        if (sourceType !== undefined) part.sourceType = sourceType;
+        if (unit !== undefined) part.unit = unit;
+        if (purchasePrice !== undefined) part.costPrice = purchasePrice;
+        if (sellingPrice !== undefined) part.sellingPrice = sellingPrice;
+        if (minimumStock !== undefined) part.minStock = minimumStock;
+        if (maximumStock !== undefined) part.maxStock = maximumStock;
+        if (reorderLevel !== undefined) part.reorderLevel = reorderLevel;
+        if (binLocation !== undefined) part.binLocation = binLocation;
+
+        part.updatedBy = req.user?.id || null;
+
+        await part.save();
+
+        logger.info(`Part updated: ID ${id} by ${req.user?.email || 'system'}`);
+
+        res.json({ success: true, message: 'Part updated successfully' });
     } catch (error) {
         logger.error('Error updating part:', error);
         next(error);
     }
 };
 
-/**
- * Delete part (soft delete)
- * Uses SP_DeletePart
- */
 const deletePart = async (req, res, next) => {
     try {
         const { id } = req.params;
 
-        await query('CALL SP_DeletePart(?, ?, @success, @message)', [id, req.user.id]);
-
-        const result = await query('SELECT @success as success, @message as message');
-        const { success, message } = result[0];
-
-        if (!success) {
-            throw new AppError(message, 400);
+        const part = await Part.findById(id);
+        if (!part) {
+            throw new AppError('Part not found', 404);
         }
 
-        logger.info(`Part deleted: ID ${id} by ${req.user.email}`);
-        res.json({ success: true, message });
+        part.isActive = false;
+        part.updatedBy = req.user?.id || null;
+        await part.save();
+
+        logger.info(`Part deleted: ID ${id} by ${req.user?.email || 'system'}`);
+
+        res.json({ success: true, message: 'Part deleted successfully' });
     } catch (error) {
         logger.error('Error deleting part:', error);
         next(error);
     }
 };
 
-/**
- * Adjust part stock
- * Uses SP_AdjustPartStock
- */
 const adjustStock = async (req, res, next) => {
     try {
         const { id } = req.params;
         const { adjustmentType, quantity, reason } = req.body;
 
-        if (!adjustmentType || !quantity) {
+        if (!adjustmentType || quantity === undefined || quantity === null) {
             throw new AppError('Adjustment type and quantity are required', 400);
         }
 
-        await query(
-            'CALL SP_AdjustPartStock(?, ?, ?, ?, ?, @success, @message, @newStock)',
-            [id, adjustmentType, quantity, reason, req.user.id]
-        );
-
-        const result = await query('SELECT @success as success, @message as message, @newStock as newStock');
-        const { success, message, newStock } = result[0];
-
-        if (!success) {
-            throw new AppError(message, 400);
+        const part = await Part.findById(id);
+        if (!part) {
+            throw new AppError('Part not found', 404);
         }
 
+        const qty = Number(quantity);
+        let newStock;
+
+        if (adjustmentType === 'increase') {
+            newStock = part.currentStock + qty;
+        } else if (adjustmentType === 'decrease') {
+            newStock = part.currentStock - qty;
+            if (newStock < 0) {
+                throw new AppError('Stock cannot be negative', 400);
+            }
+        } else if (adjustmentType === 'set') {
+            newStock = qty;
+        } else {
+            throw new AppError('Invalid adjustment type. Use: increase, decrease, or set', 400);
+        }
+
+        part.currentStock = newStock;
+        part.quantity = newStock;
+        part.updatedBy = req.user?.id || null;
+        await part.save();
+
+        const message = `Stock ${adjustmentType}d by ${qty}. New stock: ${newStock}${reason ? ` Reason: ${reason}` : ''}`;
         logger.info(`Stock adjusted for part ID ${id}: ${message}`);
+
         res.json({
             success: true,
             message,
@@ -323,16 +373,53 @@ const adjustStock = async (req, res, next) => {
     }
 };
 
-/**
- * Get parts statistics
- * Uses SP_GetPartsInventoryStats
- */
 const getPartStats = async (req, res, next) => {
     try {
-        const result = await query('CALL SP_GetPartsInventoryStats()');
+        const results = await Part.aggregate([
+            { $match: { isActive: true } },
+            {
+                $group: {
+                    _id: null,
+                    total_parts: { $sum: 1 },
+                    manufacturer_parts: {
+                        $sum: { $cond: [{ $eq: ['$sourceType', 'manufacturer'] }, 1, 0] }
+                    },
+                    third_party_parts: {
+                        $sum: { $cond: [{ $eq: ['$sourceType', 'third_party'] }, 1, 0] }
+                    },
+                    low_stock_count: {
+                        $sum: {
+                            $cond: [
+                                {
+                                    $and: [
+                                        { $gt: ['$currentStock', 0] },
+                                        { $lte: ['$currentStock', { $ifNull: ['$reorderLevel', { $ifNull: ['$minStock', 0] }] }] }
+                                    ]
+                                },
+                                1,
+                                0
+                            ]
+                        }
+                    },
+                    total_inventory_value: {
+                        $sum: { $multiply: [{ $ifNull: ['$costPrice', 0] }, { $ifNull: ['$currentStock', 0] }] }
+                    }
+                }
+            }
+        ]);
+
+        const stats = results[0] || {
+            total_parts: 0,
+            manufacturer_parts: 0,
+            third_party_parts: 0,
+            low_stock_count: 0,
+            total_inventory_value: 0
+        };
+        delete stats._id;
+
         res.json({
             success: true,
-            data: result[0][0] || {}
+            data: stats
         });
     } catch (error) {
         logger.error('Error fetching part stats:', error);
@@ -340,28 +427,46 @@ const getPartStats = async (req, res, next) => {
     }
 };
 
-// ... Helper functions for categories and suppliers can remain as is or be refactored
-// Keeping them simple for now
-
 const getCategories = async (req, res, next) => {
     try {
-        const categories = await query('SELECT id, name FROM part_categories WHERE is_active = TRUE ORDER BY name');
-        res.json({ success: true, data: categories });
-    } catch (error) { next(error); }
+        const categories = await PartCategory.find({ is_active: true }).sort('name').lean();
+        const mapped = categories.map((c) => ({ id: c._id, name: c.name }));
+        res.json({ success: true, data: mapped });
+    } catch (error) {
+        logger.error('Error fetching categories:', error);
+        next(error);
+    }
 };
 
 const getSuppliers = async (req, res, next) => {
     try {
-        const suppliers = await query('SELECT id, name FROM suppliers WHERE is_active = TRUE ORDER BY name');
-        res.json({ success: true, data: suppliers });
-    } catch (error) { next(error); }
+        const suppliers = await Supplier.find({ is_active: true }).sort('name').lean();
+        const mapped = suppliers.map((s) => ({ id: s._id, name: s.name }));
+        res.json({ success: true, data: mapped });
+    } catch (error) {
+        logger.error('Error fetching suppliers:', error);
+        next(error);
+    }
 };
 
 const getLowStockParts = async (req, res, next) => {
     try {
-        const parts = await query('SELECT * FROM VW_LowStockAlerts LIMIT 20');
-        res.json({ success: true, data: parts });
-    } catch (error) { next(error); }
+        const parts = await Part.find({
+            isActive: true,
+            currentStock: { $gt: 0 }
+        }).lean();
+
+        const thresholdFiltered = parts.filter(
+            (p) => p.currentStock <= (p.reorderLevel || p.minStock || 0)
+        ).slice(0, 20);
+
+        const mapped = thresholdFiltered.map(flattenPart);
+
+        res.json({ success: true, data: mapped });
+    } catch (error) {
+        logger.error('Error fetching low stock parts:', error);
+        next(error);
+    }
 };
 
 module.exports = {

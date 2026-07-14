@@ -131,8 +131,6 @@ export const serverManagementAPI = {
     updateLeadAssignmentRoles: (roles) => api.put('/server-management/lead-assignment-roles', { roles }),
     getSetting: (key) => api.get(`/server-management/settings/${key}`),
     saveSetting: (key, value) => api.put('/server-management/settings', { key, value }),
-    getLeadTypeMapping: () => api.get('/server-management/settings/lead_type_mapping'),
-    updateLeadTypeMapping: (value) => api.put('/server-management/settings', { key: 'lead_type_mapping', value }),
 };
 
 // Dashboard
@@ -238,9 +236,7 @@ export const warehouseAPI = {
     update: (id, data) => api.put(`/warehouses/${id}`, data),
     delete: (id) => api.delete(`/warehouses/${id}`),
     getStats: () => api.get('/warehouses/stats'),
-    getInventory: (id, type) => api.get(`/warehouses/${id}/inventory`, { params: { type } }),
     getCities: () => api.get('/warehouses/cities/list'),
-    getManagers: () => api.get('/warehouses/managers/list')
 };
 
 // Sales
@@ -278,7 +274,7 @@ export const salesAPI = {
     getSalesStats: () => api.get('/sales/stats'),
     getOrderStats: () => api.get('/sales/order-stats'),
 
-    // Master Data Lookups
+    // Master Data Lookups (backward compat)
     getQuotationStatuses: (params) => api.get('/sales-master/quotation-statuses', { params }),
     getBookingStatuses: (params) => api.get('/sales-master/booking-statuses', { params }),
     getOrderStatuses: (params) => api.get('/sales-master/order-statuses', { params }),
@@ -286,6 +282,46 @@ export const salesAPI = {
     getPriorities: (params) => api.get('/sales-master/priorities', { params })
 };
 
+// Sales Master Data (MongoDB entities)
+export const salesMasterAPI = {
+    getStats: () => api.get('/sales-master/stats'),
+
+    // Payment Terms
+    getPaymentTerms: (params) => api.get('/sales-master/payment-terms', { params }),
+    createPaymentTerm: (data) => api.post('/sales-master/payment-terms', data),
+    updatePaymentTerm: (id, data) => api.put(`/sales-master/payment-terms/${id}`, data),
+    deletePaymentTerm: (id) => api.delete(`/sales-master/payment-terms/${id}`),
+
+    // Delivery Terms
+    getDeliveryTerms: (params) => api.get('/sales-master/delivery-terms', { params }),
+    createDeliveryTerm: (data) => api.post('/sales-master/delivery-terms', data),
+    updateDeliveryTerm: (id, data) => api.put(`/sales-master/delivery-terms/${id}`, data),
+    deleteDeliveryTerm: (id) => api.delete(`/sales-master/delivery-terms/${id}`),
+
+    // Quotation Validities
+    getQuotationValidities: (params) => api.get('/sales-master/quotation-validities', { params }),
+    createQuotationValidity: (data) => api.post('/sales-master/quotation-validities', data),
+    updateQuotationValidity: (id, data) => api.put(`/sales-master/quotation-validities/${id}`, data),
+    deleteQuotationValidity: (id) => api.delete(`/sales-master/quotation-validities/${id}`),
+
+    // Discount Types
+    getDiscountTypes: (params) => api.get('/sales-master/discount-types', { params }),
+    createDiscountType: (data) => api.post('/sales-master/discount-types', data),
+    updateDiscountType: (id, data) => api.put(`/sales-master/discount-types/${id}`, data),
+    deleteDiscountType: (id) => api.delete(`/sales-master/discount-types/${id}`),
+
+    // Sales Order Types
+    getSalesOrderTypes: (params) => api.get('/sales-master/sales-order-types', { params }),
+    createSalesOrderType: (data) => api.post('/sales-master/sales-order-types', data),
+    updateSalesOrderType: (id, data) => api.put(`/sales-master/sales-order-types/${id}`, data),
+    deleteSalesOrderType: (id) => api.delete(`/sales-master/sales-order-types/${id}`),
+
+    // Invoice Types
+    getInvoiceTypes: (params) => api.get('/sales-master/invoice-types', { params }),
+    createInvoiceType: (data) => api.post('/sales-master/invoice-types', data),
+    updateInvoiceType: (id, data) => api.put(`/sales-master/invoice-types/${id}`, data),
+    deleteInvoiceType: (id) => api.delete(`/sales-master/invoice-types/${id}`),
+};
 
 // Invoices
 export const invoiceAPI = {
@@ -533,7 +569,13 @@ export const vehicleMasterAPI = {
     getSuppliers: (params) => api.get('/vehicle-master/suppliers', { params }),
     createSupplier: (data) => api.post('/vehicle-master/suppliers', data),
     updateSupplier: (id, data) => api.put(`/vehicle-master/suppliers/${id}`, data),
-    deleteSupplier: (id) => api.delete(`/vehicle-master/suppliers/${id}`)
+    deleteSupplier: (id) => api.delete(`/vehicle-master/suppliers/${id}`),
+
+    // Conditions
+    getConditions: (params) => api.get('/vehicle-master/conditions', { params }),
+    createCondition: (data) => api.post('/vehicle-master/conditions', data),
+    updateCondition: (id, data) => api.put(`/vehicle-master/conditions/${id}`, data),
+    deleteCondition: (id) => api.delete(`/vehicle-master/conditions/${id}`)
 };
 
 // Service Master Data
@@ -567,8 +609,6 @@ export const serviceMasterAPI = {
     updateWarranty: (id, data) => api.put(`/service-master/warranties/${id}`, data),
     deleteWarranty: (id) => api.delete(`/service-master/warranties/${id}`),
 
-    // Lookups
-    getCategories: () => api.get('/service-master/categories')
 };
 
 // Payment Methods API
@@ -636,7 +676,9 @@ export const employeeAPI = {
     get: (id) => api.get(`/employees/${id}`),
     create: (data) => api.post('/employees', data),
     update: (id, data) => api.put(`/employees/${id}`, data),
-    remove: (id) => api.delete(`/employees/${id}`)
+    remove: (id) => api.delete(`/employees/${id}`),
+    toggleStatus: (id) => api.patch(`/employees/${id}/toggle`),
+    getStats: () => api.get('/employees/stats')
 };
 
 export const payrollAPI = {
@@ -650,26 +692,33 @@ export const payrollAPI = {
 };
 
 export const leavesAPI = {
-    listTypes: () => api.get('/leaves/types'),
-    listBalances: (params) => api.get('/leaves/balances', { params }),
-    listRequests: (params) => api.get('/leaves/requests', { params }),
-    submitRequest: (data) => api.post('/leaves/requests', data),
-    setRequestStatus: (id, data) => api.patch(`/leaves/requests/${id}/status`, data)
+    list: (params) => api.get('/leaves', { params }),
+    get: (id) => api.get(`/leaves/${id}`),
+    create: (data) => api.post('/leaves', data),
+    update: (id, data) => api.put(`/leaves/${id}`, data),
+    remove: (id) => api.delete(`/leaves/${id}`),
+    setStatus: (id, data) => api.patch(`/leaves/${id}/status`, data),
+    getStats: () => api.get('/leaves/stats')
 };
 
 export const expensesAPI = {
-    listAccounts: () => api.get('/expenses/accounts'),
     listCategories: () => api.get('/expenses/categories'),
     createCategory: (data) => api.post('/expenses/categories', data),
     updateCategory: (id, data) => api.patch(`/expenses/categories/${id}`, data),
-    listExpenses: (params) => api.get('/expenses/items', { params }),
-    createExpense: (data) => api.post('/expenses/items', data),
-    updateExpense: (id, data) => api.patch(`/expenses/items/${id}`, data),
-    postExpense: (id) => api.post(`/expenses/items/${id}/post`)
+    list: (params) => api.get('/expenses', { params }),
+    get: (id) => api.get(`/expenses/${id}`),
+    create: (data) => api.post('/expenses', data),
+    update: (id, data) => api.put(`/expenses/${id}`, data),
+    remove: (id) => api.delete(`/expenses/${id}`),
+    setStatus: (id, data) => api.patch(`/expenses/${id}/status`, data),
+    postExpense: (id) => api.post(`/expenses/${id}/post`),
+    getStats: () => api.get('/expenses/stats')
 };
 
 export const ledgerAPI = {
-    list: (params) => api.get('/ledger', { params })
+    list: (params) => api.get('/ledger', { params }),
+    get: (id) => api.get(`/ledger/${id}`),
+    getStats: () => api.get('/ledger/stats')
 };
 
 export const logsAPI = {

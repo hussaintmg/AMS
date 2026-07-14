@@ -1,136 +1,240 @@
-/**
- * Unified ledger (expenses + payroll postings)
- */
-
 import React, { useState, useEffect, useCallback } from 'react';
-import toast from 'react-hot-toast';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { ledgerAPI } from '../services/api';
+import { useLedger } from '../context/LedgerContext';
+import toast from 'react-hot-toast';
+import ErrorPopup from '../components/ErrorPopup';
+import LedgerDrawer from './LedgerDrawer';
 import { exportReportCsv, exportReportXlsx, exportReportPdf } from '../utils/reportsExport';
 import '../styles/userManagement.css';
 
 const Ledger = () => {
-    const { user } = useAuth();
-    const [rows, setRows] = useState([]);
-    const [summary, setSummary] = useState({});
-    const [total, setTotal] = useState(0);
-    const [loading, setLoading] = useState(true);
-    const [filters, setFilters] = useState({
-        from: '',
-        to: '',
-        reference_type: '',
-        search: ''
-    });
+  const { user: currentUser } = useAuth();
+  const {
+    entries, stats,
+    loading: ctxLoading,
+    loadEntries, loadStats,
+    setEntries,
+  } = useLedger();
+  const [loading, setLoading] = useState(true);
+  const [errorPopup, setErrorPopup] = useState(null);
 
-    const load = useCallback(async () => {
-        try {
-            setLoading(true);
-            const params = {
-                limit: 500,
-                from: filters.from || undefined,
-                to: filters.to || undefined,
-                reference_type: filters.reference_type || undefined,
-                search: filters.search || undefined
-            };
-            const res = await ledgerAPI.list(params);
-            const d = res.data.data;
-            setRows(d?.rows || []);
-            setSummary(d?.summary || {});
-            setTotal(d?.total || 0);
-        } catch (e) {
-            console.error(e);
-        } finally {
-            setLoading(false);
-        }
-    }, [filters.from, filters.to, filters.reference_type, filters.search]);
+  const [page, setPage] = useState(1);
+  const [limit] = useState(50);
+  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [searchParams] = useSearchParams();
+  const urlSearch = searchParams.get('search') || '';
 
-    useEffect(() => {
-        load();
-    }, [load]);
+  const [search, setSearch] = useState(urlSearch);
+  const [referenceType, setReferenceType] = useState('');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
 
-    const exportRows = rows.map((r) => ({
-        transaction_date: r.transaction_date,
-        account_code: r.account_code,
-        account_name: r.account_name,
-        debit: r.debit,
-        credit: r.credit,
-        reference_type: r.reference_type,
-        reference_id: r.reference_id,
-        description: r.line_description,
-        expense_ref: r.expense_ref,
-        payroll_period: r.payroll_period_label,
-        category_group: r.expense_category_group
-    }));
+  const [drawerEntry, setDrawerEntry] = useState(null);
 
-    const meta = { generatedBy: user ? `${user.first_name || ''} ${user.last_name || ''}`.trim() : 'User' };
+  const [committedFilters, setCommittedFilters] = useState({ search: '', referenceType: '', from: '', to: '' });
 
-    return (
-        <div className="user-management-page">
-            <div className="page-header">
-                <div>
-                    <h1>Ledger</h1>
-                    <p className="text-muted">Financial transactions including salary payroll and posted expenses</p>
-                </div>
-                <div className="header-actions" style={{ flexWrap: 'wrap', gap: '0.5rem' }}>
-                    <input type="date" className="form-control" value={filters.from} onChange={(ev) => setFilters({ ...filters, from: ev.target.value })} />
-                    <input type="date" className="form-control" value={filters.to} onChange={(ev) => setFilters({ ...filters, to: ev.target.value })} />
-                    <select className="form-control" value={filters.reference_type} onChange={(ev) => setFilters({ ...filters, reference_type: ev.target.value })}>
-                        <option value="">All sources</option>
-                        <option value="expense">expense</option>
-                        <option value="payroll_line">payroll_line</option>
-                    </select>
-                    <input className="form-control" placeholder="Search description" value={filters.search} onChange={(ev) => setFilters({ ...filters, search: ev.target.value })} style={{ minWidth: 180 }} />
-                    <button type="button" className="btn btn-secondary" onClick={load}>Apply</button>
-                    <button type="button" className="btn btn-secondary" onClick={() => { exportReportCsv({ rows: exportRows, reportName: 'Unified Ledger', meta }); toast.success('CSV downloaded'); }}>CSV</button>
-                    <button type="button" className="btn btn-secondary" onClick={() => { exportReportXlsx({ rows: exportRows, reportName: 'Unified Ledger', meta }); toast.success('XLSX downloaded'); }}>XLSX</button>
-                    <button type="button" className="btn btn-secondary" onClick={() => { exportReportPdf({ rows: exportRows, reportName: 'Unified Ledger', meta }); toast.success('PDF opened'); }}>PDF</button>
-                </div>
-            </div>
+  const fetchEntries = useCallback(async () => {
+    try {
+      setLoading(true);
+      const params = { page, limit, ...(committedFilters.search && { search: committedFilters.search }), ...(committedFilters.referenceType && { referenceType: committedFilters.referenceType }), ...(committedFilters.from && { from: committedFilters.from }), ...(committedFilters.to && { to: committedFilters.to }) };
+      const response = await loadEntries(params);
+      if (response) {
+        const list = response.entries || [];
+        setEntries(list);
+        setTotalPages(Math.ceil(response.pagination?.total / limit) || 1);
+        setTotal(response.pagination?.total || 0);
+      }
+    } catch (err) {
+      toast.error('Failed to load ledger');
+    } finally {
+      setLoading(false);
+    }
+  }, [page, limit, committedFilters, loadEntries, setEntries]);
 
-            <div className="card" style={{ marginBottom: '1rem', display: 'flex', gap: '2rem', flexWrap: 'wrap' }}>
-                <div><strong>Total debit</strong><div>{Number(summary.total_debit || 0).toLocaleString()}</div></div>
-                <div><strong>Total credit</strong><div>{Number(summary.total_credit || 0).toLocaleString()}</div></div>
-                <div><strong>Rows</strong><div>{total}</div></div>
-            </div>
+  useEffect(() => { if (currentUser) { fetchEntries(); loadStats(); } }, [currentUser, fetchEntries, loadStats]);
 
-            <div className="card">
-                {loading ? <div className="loading-inline">Loading…</div> : (
-                    <div className="table-responsive" style={{ overflowX: 'auto' }}>
-                        <table className="data-table">
-                            <thead>
-                                <tr>
-                                    <th>Date</th>
-                                    <th>Account</th>
-                                    <th>Debit</th>
-                                    <th>Credit</th>
-                                    <th>Ref</th>
-                                    <th>Description</th>
-                                    <th>Source</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {rows.map((r) => (
-                                    <tr key={r.ledger_row_id}>
-                                        <td>{r.transaction_date}</td>
-                                        <td><small>{r.account_code}</small><br />{r.account_name}</td>
-                                        <td>{Number(r.debit).toLocaleString()}</td>
-                                        <td>{Number(r.credit).toLocaleString()}</td>
-                                        <td>{r.reference_type} #{r.reference_id}</td>
-                                        <td>{r.line_description}</td>
-                                        <td>
-                                            {r.expense_ref && <div>Expense {r.expense_ref}</div>}
-                                            {r.payroll_period_label && <div>Payroll {r.payroll_period_label}</div>}
-                                            {!r.expense_ref && !r.payroll_period_label && '—'}
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                )}
-            </div>
+  useEffect(() => { if (urlSearch) setSearch(urlSearch); }, [urlSearch]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    const timer = setTimeout(() => { setPage(1); }, 300);
+    return () => clearTimeout(timer);
+  }, [currentUser, committedFilters]);
+
+  const applyFilters = () => {
+    setCommittedFilters({ search, referenceType, from, to });
+    setPage(1);
+  };
+
+  const exportRows = entries.map(r => ({
+    transaction_date: r.transactionDate,
+    account: r.account, debit: r.debit, credit: r.credit,
+    reference_type: r.referenceType, reference_id: r.referenceId,
+    description: r.description,
+  }));
+
+  const meta = { generatedBy: currentUser ? `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim() : 'User' };
+
+  return (
+    <div className="user-management-page">
+      <div className="page-header">
+        <div className="header-content">
+          <h1>Ledger</h1>
+          <p className="subtitle">Financial transactions summary</p>
         </div>
-    );
+        <div className="header-actions" style={{ flexWrap: 'wrap', gap: '0.5rem' }}>
+          <input type="date" className="form-control" value={from} onChange={(e) => setFrom(e.target.value)} style={{ width: 140 }} />
+          <input type="date" className="form-control" value={to} onChange={(e) => setTo(e.target.value)} style={{ width: 140 }} />
+          <select className="form-control" value={referenceType} onChange={(e) => setReferenceType(e.target.value)} style={{ width: 120 }}>
+            <option value="">All Types</option>
+            <option value="expense">Expense</option>
+            <option value="salary">Salary</option>
+            <option value="manual">Manual</option>
+          </select>
+          <input className="form-control" placeholder="Search..." value={search}
+            onChange={(e) => setSearch(e.target.value)} style={{ minWidth: 160 }} />
+          <button className="btn btn-primary" onClick={applyFilters}>Apply</button>
+          <button className="btn btn-secondary" onClick={() => { exportReportCsv({ rows: exportRows, reportName: 'Ledger', meta }); toast.success('CSV downloaded'); }}>CSV</button>
+          <button className="btn btn-secondary" onClick={() => { exportReportXlsx({ rows: exportRows, reportName: 'Ledger', meta }); toast.success('XLSX downloaded'); }}>XLSX</button>
+        </div>
+      </div>
+
+      <div className="stats-grid">
+        <div className="stat-card stat-total">
+          <div className="stat-icon">📊</div>
+          <div className="stat-content">
+            <span className="stat-value">{stats.total || 0}</span>
+            <span className="stat-label">Total Entries</span>
+          </div>
+        </div>
+        <div className="stat-card" style={{ borderLeft: '4px solid #ef4444' }}>
+          <div className="stat-icon">💳</div>
+          <div className="stat-content">
+            <span className="stat-value">{Number(stats.totalDebit || 0).toLocaleString()}</span>
+            <span className="stat-label">Total Debit</span>
+          </div>
+        </div>
+        <div className="stat-card" style={{ borderLeft: '4px solid #22c55e' }}>
+          <div className="stat-icon">🏦</div>
+          <div className="stat-content">
+            <span className="stat-value">{Number(stats.totalCredit || 0).toLocaleString()}</span>
+            <span className="stat-label">Total Credit</span>
+          </div>
+        </div>
+        <div className="stat-card" style={{ borderLeft: '4px solid #3b82f6' }}>
+          <div className="stat-icon">⚖️</div>
+          <div className="stat-content">
+            <span className="stat-value">{Number(stats.balance || 0).toLocaleString()}</span>
+            <span className="stat-label">Balance</span>
+          </div>
+        </div>
+      </div>
+
+      <ErrorPopup error={errorPopup} onClose={() => setErrorPopup(null)} />
+
+      <div className="table-container desktop-only">
+        {loading ? (
+          <div className="loading-state"><div className="spinner"></div><p>Loading ledger...</p></div>
+        ) : entries.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-icon">📒</div>
+            <h3>No Ledger Entries Found</h3>
+            <p>No entries match your filter criteria.</p>
+          </div>
+        ) : (
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Account</th>
+                <th>Debit</th>
+                <th>Credit</th>
+                <th>Reference</th>
+                <th>Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              {entries.map(entry => {
+                const id = entry._id || entry.id;
+                return (
+                  <tr key={id} onClick={() => setDrawerEntry(entry)} style={{ cursor: 'pointer' }}>
+                    <td>{entry.transactionDate ? new Date(entry.transactionDate).toLocaleDateString('en-GB') : '-'}</td>
+                    <td><code>{entry.account || '-'}</code></td>
+                    <td style={{ color: entry.debit ? '#dc2626' : 'inherit' }}>{entry.debit ? Number(entry.debit).toLocaleString() : '-'}</td>
+                    <td style={{ color: entry.credit ? '#16a34a' : 'inherit' }}>{entry.credit ? Number(entry.credit).toLocaleString() : '-'}</td>
+                    <td>{entry.referenceType ? `${entry.referenceType}#${entry.referenceId || ''}` : '-'}</td>
+                    <td>{entry.description || '-'}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <div className="mobile-cards-container mobile-only">
+        {loading ? (
+          <div className="loading-state"><div className="spinner"></div><p>Loading ledger...</p></div>
+        ) : entries.length === 0 ? (
+          <div className="empty-state"><div className="empty-icon">📒</div><h3>No Ledger Entries Found</h3></div>
+        ) : (
+          <div className="users-cards-grid">
+            {entries.map(entry => {
+              const id = entry._id || entry.id;
+              return (
+                <div key={id} className="user-card" onClick={() => setDrawerEntry(entry)}>
+                  <div className="user-card-header">
+                    <div className="user-card-title">
+                      <span className="user-card-name">{entry.account || '-'}</span>
+                      <span className="user-card-role">{entry.referenceType || '-'}</span>
+                    </div>
+                  </div>
+                  <div className="user-card-body">
+                    <div className="user-card-field">
+                      <span className="field-label">Date</span>
+                      <span className="field-value">{entry.transactionDate ? new Date(entry.transactionDate).toLocaleDateString('en-GB') : '-'}</span>
+                    </div>
+                    <div className="user-card-field">
+                      <span className="field-label">Debit</span>
+                      <span className="field-value">{entry.debit ? Number(entry.debit).toLocaleString() : '0'}</span>
+                    </div>
+                    <div className="user-card-field">
+                      <span className="field-label">Credit</span>
+                      <span className="field-value">{entry.credit ? Number(entry.credit).toLocaleString() : '0'}</span>
+                    </div>
+                    <div className="user-card-field">
+                      <span className="field-label">Description</span>
+                      <span className="field-value">{entry.description || '-'}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {totalPages > 1 && (
+        <div className="pagination">
+          <button className="btn-page" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>← Previous</button>
+          <div className="page-numbers">
+            {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+              let pn; if (totalPages <= 5) pn = i + 1;
+              else if (page <= 3) pn = i + 1;
+              else if (page >= totalPages - 2) pn = totalPages - 4 + i;
+              else pn = page - 2 + i;
+              return <button key={pn} className={`btn-page ${page === pn ? 'active' : ''}`} onClick={() => setPage(pn)}>{pn}</button>;
+            })}
+          </div>
+          <button className="btn-page" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>Next →</button>
+        </div>
+      )}
+
+      <LedgerDrawer isOpen={!!drawerEntry} onClose={() => setDrawerEntry(null)} entry={drawerEntry} />
+    </div>
+  );
 };
 
 export default Ledger;

@@ -74,7 +74,6 @@ const leadSchema = new mongoose.Schema({
   toObject: { virtuals: true },
 });
 
-leadSchema.index({ leadNo: 1 });
 leadSchema.index({ email: 1 });
 leadSchema.index({ phone: 1 });
 leadSchema.index({ status: 1 });

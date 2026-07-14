@@ -7,6 +7,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import useModalKeyboard from '../hooks/useModalKeyboard';
 import './VehicleBrandingForm.css';
 
 const VehicleBrandingForm = ({
@@ -138,6 +139,8 @@ const VehicleBrandingForm = ({
             }
         }
     };
+
+    useModalKeyboard(isOpen, onCancel, handleSubmit, isLoading);
 
     if (!isOpen) return null;
 

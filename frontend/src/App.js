@@ -25,7 +25,6 @@ import Sales from './pages/Sales';
 import Service from './pages/Service';
 import Reports from './pages/Reports';
 import Employees from './pages/Employees';
-import Payroll from './pages/Payroll';
 import Leaves from './pages/Leaves';
 import Expenses from './pages/Expenses';
 import Ledger from './pages/Ledger';
@@ -39,6 +38,7 @@ import ServiceMasterData from './pages/ServiceMasterData';
 import LeadMasterData from './pages/LeadMasterData';
 import SalesMasterData from './pages/SalesMasterData';
 import Settings from './pages/Settings';
+import PaymentMethods from './pages/PaymentMethods';
 import Profile from './pages/Profile';
 import OrderFormUpload from './pages/OrderFormUpload';
 import TableEnhancer from './components/TableEnhancer';
@@ -110,7 +110,6 @@ const AppLayout = () => {
                     <Route path="service-master" element={<ProtectedPage path="/service-master"><ServiceMasterData /></ProtectedPage>} />
                     <Route path="reports" element={<ProtectedPage path="/reports"><Reports /></ProtectedPage>} />
                     <Route path="hr/employees" element={<ProtectedPage path="/hr/employees"><Employees /></ProtectedPage>} />
-                    <Route path="hr/payroll" element={<ProtectedPage path="/hr/payroll"><Payroll /></ProtectedPage>} />
                     <Route path="hr/leaves" element={<ProtectedPage path="/hr/leaves"><Leaves /></ProtectedPage>} />
                     <Route path="hr/expenses" element={<ProtectedPage path="/hr/expenses"><Expenses /></ProtectedPage>} />
                     <Route path="hr/ledger" element={<ProtectedPage path="/hr/ledger"><Ledger /></ProtectedPage>} />
@@ -122,6 +121,7 @@ const AppLayout = () => {
                     <Route path="admin/roles" element={<ProtectedPage path="/admin/roles"><RoleManagement /></ProtectedPage>} />
                     <Route path="admin/departments" element={<ProtectedPage path="/admin/departments"><DepartmentManagement /></ProtectedPage>} />
                     <Route path="admin/statuses" element={<ProtectedPage path="/admin/statuses"><StatusManagement /></ProtectedPage>} />
+                    <Route path="payment-methods" element={<ProtectedPage path="/payment-methods"><PaymentMethods /></ProtectedPage>} />
                     <Route path="settings" element={<ProtectedPage path="/settings"><Settings /></ProtectedPage>} />
                     <Route path="email/*" element={<ProtectedPage path="/email"><EmailTemplates /></ProtectedPage>} />
                     <Route path="server-management" element={<ProtectedPage path="/server-management"><ServerManagement /></ProtectedPage>} />

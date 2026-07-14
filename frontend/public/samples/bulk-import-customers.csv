@@ -1,0 +1,4 @@
+# AMS Customer bulk import. REQUIRED: first_name, email, phone. customer_type = individual|corporate. city/source/type/status/department must match existing names (blank = skip). assigned_to = user email or full name (must be an allowed assignee).
+"first_name","last_name","email","phone","alternate_phone","customer_type","company_name","source","type","status","description","assigned_to","department","address","city","state","country","zip_code"
+"Jane","Smith","jane@example.com","+923001234568","","individual","","","","","Imported customer","","","","","Punjab","Pakistan","54000"
+"Ahmed","Raza","ahmed.raza@example.com","03021234567","","corporate","Raza Traders","","","","Corporate account","","","Suite 7, Blue Area","","","Pakistan","44000"

@@ -6,16 +6,14 @@ import defaultPages from "../constants/pages";
 import { useServerManagement } from "../context/ServerManagementContext";
 import { useBranding } from "../context/BrandingContext";
 import UserFormModal from "../components/users/UserFormModal";
-import LeadQuickCreateModal from "../components/leads/LeadQuickCreateModal";
 import RoleFormModal from "../components/roles/rolesFormModel";
 import useModalKeyboard from "../hooks/useModalKeyboard";
 import FilterBar, {
   SearchInput,
   ResetFiltersButton,
 } from "../components/filters/FilterBar";
-import { serverManagementAPI, leadMasterAPI, adminAPI, customerRoleConfigAPI } from "../services/api";
+import { serverManagementAPI, adminAPI, customerRoleConfigAPI } from "../services/api";
 import { showApiSuccess, showApiError } from "../utils/toastResponse";
-import StatusFormModal from "../components/statuses/StatusFormModal";
 import "../styles/serverManagement.css";
 import "../styles/filters.css";
 
@@ -26,11 +24,8 @@ const tabs = [
   "User Permissions",
   "Log Permissions",
   "Lead Assignment",
-  "Lead Status Configuration",
-  "Lead Type Mapping",
   "Customer Config",
 ];
-const PORTAL_MODULES = ["services", "vehicles", "parts"];
 const assetFields = [
   ["favicon", "Favicon"],
   ["sidebarLogo", "Sidebar Logo"],
@@ -371,24 +366,11 @@ function ServerManagement() {
   const [leadAssignmentSelectedRoles, setLeadAssignmentSelectedRoles] =
     useState([]);
   const [leadAssignmentSaving, setLeadAssignmentSaving] = useState(false);
-  const [leadTypeMapping, setLeadTypeMapping] = useState([]);
-  const [leadTypeMappingSaving, setLeadTypeMappingSaving] = useState(false);
-  const [leadStatusCollectionId, setLeadStatusCollectionId] = useState("");
-  const [leadStatusCollections, setLeadStatusCollections] = useState([]);
-  const [leadStatusConfigSaving, setLeadStatusConfigSaving] = useState(false);
   const [customerConfigActiveRoleId, setCustomerConfigActiveRoleId] = useState('');
   const [customerConfigAvailableRoleIds, setCustomerConfigAvailableRoleIds] = useState([]);
   const [customerConfigSaving, setCustomerConfigSaving] = useState(false);
-  const [showCreateTypeModal, setShowCreateTypeModal] = useState(false);
   const [showLeadAssignmentRoleModal, setShowLeadAssignmentRoleModal] = useState(false);
   const [leadAssignmentRoleModalLoading, setLeadAssignmentRoleModalLoading] = useState(false);
-  const [showStatusCollectionModal, setShowStatusCollectionModal] =
-    useState(false);
-  const [statusCollectionModalLoading, setStatusCollectionModalLoading] =
-    useState(false);
-  const [editLeadTypeTarget, setEditLeadTypeTarget] = useState(null);
-  const [editLeadTypeName, setEditLeadTypeName] = useState("");
-  const [deleteLeadTypeTarget, setDeleteLeadTypeTarget] = useState(null);
   const [logRoleSearch, setLogRoleSearch] = useState("");
   const [showLogUserPicker, setShowLogUserPicker] = useState(false);
   const [showLogRolePicker, setShowLogRolePicker] = useState(false);
@@ -512,36 +494,6 @@ function ServerManagement() {
       setUsers(userList);
       const { data: lar } = await serverManagementAPI.getLeadAssignmentRoles();
       if (lar?.data?.roles) setLeadAssignmentRoleIds(lar.data.roles);
-
-      const { data: lsc } = await serverManagementAPI.getSetting(
-        "lead_status_collection_id",
-      );
-      if (lsc?.data?.value) setLeadStatusCollectionId(String(lsc.data.value));
-
-      const { data: scRes } = await adminAPI.getStatusCollections();
-      if (Array.isArray(scRes?.data)) setLeadStatusCollections(scRes.data);
-
-      const { data: typesRes } = await leadMasterAPI.getAll("types");
-      const types = typesRes?.data?.data || typesRes?.data || [];
-      const { data: ltm } = await serverManagementAPI.getLeadTypeMapping();
-      const savedMapping =
-        ltm?.data?.value && Array.isArray(ltm.data.value) ? ltm.data.value : [];
-      const savedMap = {};
-      savedMapping.forEach((item) => {
-        savedMap[item.typeId] = item.portalModules || [];
-      });
-      if (Array.isArray(types) && types.length > 0) {
-        setLeadTypeMapping(
-          types.map((t) => ({
-            typeId: t._id,
-            name: t.name,
-            category: t.category || "",
-            portalModules: savedMap[t._id] || t.portalModules || [],
-          })),
-        );
-      } else if (savedMapping.length > 0) {
-        setLeadTypeMapping(savedMapping);
-      }
 
       const { data: crc } = await customerRoleConfigAPI.get();
       if (crc?.data) {
@@ -1672,7 +1624,7 @@ function ServerManagement() {
     )
       return;
     if (showUserModal) return;
-    if (showCreateTypeModal || showStatusCollectionModal || showLeadAssignmentRoleModal || editLeadTypeTarget || deleteLeadTypeTarget) return;
+    if (showLeadAssignmentRoleModal) return;
     if (isAnySectionSaving) return;
 
     if (assetDeleteTarget) {
@@ -1720,14 +1672,6 @@ function ServerManagement() {
     } else if (activeTab === "Lead Assignment") {
       event.preventDefault();
       saveLeadAssignment(event);
-      return;
-    } else if (activeTab === "Lead Status Configuration") {
-      event.preventDefault();
-      saveLeadStatusConfig(event);
-      return;
-    } else if (activeTab === "Lead Type Mapping") {
-      event.preventDefault();
-      saveLeadTypeMapping(event);
       return;
     } else if (activeTab === "Customer Config") {
       event.preventDefault();
@@ -2082,52 +2026,6 @@ function ServerManagement() {
     }
   };
 
-  const saveLeadStatusConfig = async (event) => {
-    if (savingRef.current.leadStatusConfig) return;
-    savingRef.current.leadStatusConfig = true;
-    setLeadStatusConfigSaving(true);
-    try {
-      const { data: res } = await serverManagementAPI.saveSetting(
-        "lead_status_collection_id",
-        leadStatusCollectionId || "",
-      );
-      if (res?.success) {
-        showApiSuccess(res, "Lead status configuration saved");
-      } else {
-        throw new Error(res?.message || "Failed to save");
-      }
-    } catch (err) {
-      showApiError(err, "Failed to save lead status configuration");
-    } finally {
-      savingRef.current.leadStatusConfig = false;
-      setLeadStatusConfigSaving(false);
-    }
-  };
-
-  const handleStatusCollectionCreated = async (formData) => {
-    setStatusCollectionModalLoading(true);
-    try {
-      const { data: res } = await adminAPI.createStatusCollection(formData);
-      if (res?.success) {
-        showApiSuccess(res, "Status collection created");
-        setShowStatusCollectionModal(false);
-        const { data: scRes } = await adminAPI.getStatusCollections();
-        if (Array.isArray(scRes?.data)) {
-          setLeadStatusCollections(scRes.data);
-          if (res.data?._id) {
-            setLeadStatusCollectionId(String(res.data._id));
-          }
-        }
-      } else {
-        throw new Error(res?.message || "Failed to create status collection");
-      }
-    } catch (err) {
-      showApiError(err, "Failed to create status collection");
-    } finally {
-      setStatusCollectionModalLoading(false);
-    }
-  };
-
   const handleCreateRoleFromModal = async (formData) => {
     setLeadAssignmentRoleModalLoading(true);
     try {
@@ -2144,26 +2042,6 @@ function ServerManagement() {
       showApiError(err, "Failed to create role");
     } finally {
       setLeadAssignmentRoleModalLoading(false);
-    }
-  };
-
-  const saveLeadTypeMapping = async (event) => {
-    if (savingRef.current.leadTypeMapping) return;
-    savingRef.current.leadTypeMapping = true;
-    setLeadTypeMappingSaving(true);
-    try {
-      const { data: res } =
-        await serverManagementAPI.updateLeadTypeMapping(leadTypeMapping);
-      if (res?.success) {
-        showApiSuccess(res, "Lead type mapping saved");
-      } else {
-        throw new Error(res?.message || "Failed to save");
-      }
-    } catch (err) {
-      showApiError(err, "Failed to save lead type mapping");
-    } finally {
-      savingRef.current.leadTypeMapping = false;
-      setLeadTypeMappingSaving(false);
     }
   };
 
@@ -2188,192 +2066,6 @@ function ServerManagement() {
       setCustomerConfigSaving(false);
     }
   };
-
-  const toggleTypeModule = (typeId, module) => {
-    setLeadTypeMapping((prev) =>
-      prev.map((item) => {
-        if (item.typeId !== typeId) return item;
-        const modules = item.portalModules || [];
-        return {
-          ...item,
-          portalModules: modules.includes(module)
-            ? modules.filter((m) => m !== module)
-            : [...modules, module],
-        };
-      }),
-    );
-  };
-
-  const handleEditLeadType = () => {
-    if (!editLeadTypeTarget || !editLeadTypeName.trim()) return;
-    setLeadTypeMapping((prev) =>
-      prev.map((item) =>
-        item.typeId === editLeadTypeTarget.typeId
-          ? { ...item, name: editLeadTypeName.trim() }
-          : item,
-      ),
-    );
-    setEditLeadTypeTarget(null);
-    setEditLeadTypeName("");
-  };
-
-  const confirmDeleteLeadType = () => {
-    if (!deleteLeadTypeTarget) return;
-    setLeadTypeMapping((prev) =>
-      prev.filter((item) => item.typeId !== deleteLeadTypeTarget.typeId),
-    );
-    setDeleteLeadTypeTarget(null);
-    saveLeadTypeMapping();
-  };
-
-  const renderLeadStatusConfig = () => (
-    <form
-      className="sm-panel"
-      onSubmit={(e) => {
-        e.preventDefault();
-        saveLeadStatusConfig(e);
-      }}
-    >
-      <div className="sm-panel-header">
-        <div>
-          <h2>Lead Status Configuration</h2>
-          <p>
-            Select which Status Collection is used for Leads. Status items from
-            this collection will appear in the Lead form.
-          </p>
-        </div>
-        <button
-          type="submit"
-          className="btn btn-primary"
-          disabled={leadStatusConfigSaving}
-        >
-          {leadStatusConfigSaving ? "Saving..." : "Save"}
-        </button>
-      </div>
-      <div className="sm-form-grid">
-        <label>Status Collection</label>
-        <select
-          className="form-input"
-          value={leadStatusCollectionId}
-          onChange={(e) => setLeadStatusCollectionId(e.target.value)}
-        >
-          <option value="">Select status collection...</option>
-          {leadStatusCollections.map((sc) => (
-            <option key={sc._id} value={String(sc._id)}>
-              {sc.name} ({sc.key})
-            </option>
-          ))}
-        </select>
-        <button
-          type="button"
-          className="btn btn-secondary"
-          style={{ marginTop: "8px" }}
-          onClick={() => setShowStatusCollectionModal(true)}
-        >
-          + Create Status Collection
-        </button>
-      </div>
-    </form>
-  );
-
-  const renderLeadTypeMapping = () => (
-    <div className="sm-panel">
-      <div className="sm-panel-header">
-        <div>
-          <h2>Lead Type Mapping</h2>
-          <p>
-            Configure which portal modules each lead type can access after
-            conversion.
-          </p>
-        </div>
-        <div style={{ display: "flex", gap: "8px" }}>
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={() => setShowCreateTypeModal(true)}
-          >
-            + Create Type
-          </button>
-          <button
-            className="btn btn-primary"
-            onClick={saveLeadTypeMapping}
-            disabled={leadTypeMappingSaving}
-          >
-            {leadTypeMappingSaving ? "Saving..." : "Save"}
-          </button>
-        </div>
-      </div>
-      {leadTypeMapping.length === 0 ? (
-        <p className="sm-empty">
-          No lead types found. Create lead types in the Leads module first.
-        </p>
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-          {leadTypeMapping.map((item) => (
-            <div
-              key={item.typeId}
-              className="sm-permission-row"
-              style={{
-                flexDirection: "column",
-                gap: "8px",
-                padding: "12px",
-                border: "1px solid var(--border-light)",
-                borderRadius: "8px",
-                marginBottom: "8px",
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", flexDirection:"row" ,padding:"0px 30px"}}>
-                <strong>{item.name || item.category || item.typeId}</strong>
-                <div style={{ display: "flex", gap: "6px" }}>
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    onClick={() => {
-                      setEditLeadTypeTarget(item);
-                      setEditLeadTypeName(item.name || item.category || "");
-                    }}
-                  >
-                    Edit
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-danger btn-sm"
-                    onClick={() => setDeleteLeadTypeTarget(item)}
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-                {PORTAL_MODULES.map((mod) => {
-                  const checked = (item.portalModules || []).includes(mod);
-                  return (
-                    <label
-                      key={mod}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "4px",
-                        fontSize: "13px",
-                        cursor: "pointer",
-                      }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() => toggleTypeModule(item.typeId, mod)}
-                      />
-                      {mod.charAt(0).toUpperCase() + mod.slice(1)}
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
 
   const renderCustomerConfig = () => (
     <form
@@ -2539,16 +2231,6 @@ function ServerManagement() {
     () => setShowLeadAssignmentRoleModal(false),
     null,
   );
-  useModalKeyboard(
-    Boolean(editLeadTypeTarget),
-    () => setEditLeadTypeTarget(null),
-    null,
-  );
-  useModalKeyboard(
-    Boolean(deleteLeadTypeTarget),
-    () => setDeleteLeadTypeTarget(null),
-    null,
-  );
 
   if (loading) {
     return (
@@ -2591,8 +2273,6 @@ function ServerManagement() {
       {activeTab === "User Permissions" && renderUserPermissions()}
       {activeTab === "Log Permissions" && renderLogPermissions()}
       {activeTab === "Lead Assignment" && renderLeadAssignment()}
-      {activeTab === "Lead Status Configuration" && renderLeadStatusConfig()}
-      {activeTab === "Lead Type Mapping" && renderLeadTypeMapping()}
       {activeTab === "Customer Config" && renderCustomerConfig()}
       {renderPageModal()}
       <UserFormModal
@@ -2651,119 +2331,6 @@ function ServerManagement() {
           </div>
         </div>
       )}
-      {editLeadTypeTarget && (
-        <div
-          className="sm-modal-backdrop"
-          onClick={() => setEditLeadTypeTarget(null)}
-        >
-          <div
-            className="sm-modal"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="sm-modal-header">
-              <h3>Edit Lead Type</h3>
-              <button
-                type="button"
-                className="sm-modal-close"
-                onClick={() => setEditLeadTypeTarget(null)}
-              >
-                &times;
-              </button>
-            </div>
-            <form onSubmit={(e) => { e.preventDefault(); handleEditLeadType(); }}>
-              <div className="sm-modal-body">
-                <label style={{ display: "grid", gap: "6px" }}>
-                  Type Name
-                  <input
-                    className="form-input"
-                    value={editLeadTypeName}
-                    onChange={(e) => setEditLeadTypeName(e.target.value)}
-                    autoFocus
-                  />
-                </label>
-              </div>
-              <div className="sm-modal-actions">
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => setEditLeadTypeTarget(null)}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="btn btn-primary"
-                  disabled={!editLeadTypeName.trim()}
-                >
-                  Save
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-      {deleteLeadTypeTarget && (
-        <div
-          className="sm-modal-backdrop"
-          onClick={() => setDeleteLeadTypeTarget(null)}
-        >
-          <div
-            className="sm-modal"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="sm-modal-header">
-              <h3>Delete Lead Type</h3>
-              <button
-                type="button"
-                className="sm-modal-close"
-                onClick={() => setDeleteLeadTypeTarget(null)}
-              >
-                &times;
-              </button>
-            </div>
-            <div className="sm-modal-body">
-              <p>
-                Delete "{deleteLeadTypeTarget.name || deleteLeadTypeTarget.category || deleteLeadTypeTarget.typeId}"? This will remove the type mapping.
-              </p>
-            </div>
-            <div className="sm-modal-actions">
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={() => setDeleteLeadTypeTarget(null)}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="btn btn-danger"
-                onClick={confirmDeleteLeadType}
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      {showCreateTypeModal && (
-        <LeadQuickCreateModal
-          type="types"
-          onClose={() => setShowCreateTypeModal(false)}
-          onCreated={() => {
-            setShowCreateTypeModal(false);
-            performLoadData();
-            toast.success("Lead type created");
-          }}
-        />
-      )}
-      <StatusFormModal
-        isOpen={showStatusCollectionModal}
-        onClose={() => setShowStatusCollectionModal(false)}
-        mode="create"
-        initialData={null}
-        onSubmit={handleStatusCollectionCreated}
-        loading={statusCollectionModalLoading}
-      />
       <RoleFormModal
         isOpen={showLeadAssignmentRoleModal}
         onClose={() => setShowLeadAssignmentRoleModal(false)}

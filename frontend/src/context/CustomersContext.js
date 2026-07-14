@@ -7,8 +7,8 @@ export function CustomersProvider({ children }) {
   const [customers, setCustomers] = useState([]);
   const [stats, setStats] = useState({ total: 0, active: 0, inactive: 0, individual: 0, corporate: 0, convertedFromLead: 0, newThisMonth: 0 });
   const [cities, setCities] = useState([]);
-  const [meta, setMeta] = useState({ sources: [], types: [], statuses: [], users: [], departments: [], statusCollectionId: null, statusCollectionName: null });
-  const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, pages: 0 });
+  const [meta, setMeta] = useState({ sources: [], types: [], cities: [], statuses: [], users: [], departments: [], statusCollectionId: null, statusCollectionName: null });
+  const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, pages: 0 });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [filters, setFilters] = useState({});
@@ -21,12 +21,12 @@ export function CustomersProvider({ children }) {
   const requestIdRef = useRef(0);
 
   const buildParams = useCallback((page = 1) => {
-    const params = { page, limit: 20, sortBy, sortOrder };
+    const params = { page, limit: pagination.limit, sortBy, sortOrder };
     if (search) params.search = search;
     Object.entries(filters).forEach(([k, v]) => { if (v || v === false || v === 0) params[k] = v; });
     Object.keys(params).forEach((k) => { if (!params[k] && params[k] !== false && params[k] !== 0) delete params[k]; });
     return params;
-  }, [filters, search, sortBy, sortOrder]);
+  }, [filters, search, sortBy, sortOrder, pagination.limit]);
 
   const loadCustomers = useCallback(async (page = 1) => {
     const reqId = ++requestIdRef.current;

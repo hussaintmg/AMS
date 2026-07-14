@@ -9,7 +9,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import SearchableSelect from '../components/SearchableSelect';
-import { Routes, Route, NavLink, useNavigate, useSearchParams } from 'react-router-dom';
+import { Routes, Route, useNavigate, useSearchParams } from 'react-router-dom';
 import { salesAPI, invoiceAPI, customerAPI, vehicleAPI, partsAPI, paymentMethodsAPI, erpSettingsAPI, reportsAPI, adminAPI } from '../services/api';
 import vehicleBrandingService from '../services/vehicleBrandingService';
 import toast from 'react-hot-toast';
@@ -40,6 +40,7 @@ import { renderSalesTemplate } from '../utils/documentTemplateRender';
 import { useSalesHtmlTemplate } from '../hooks/useSalesHtmlTemplate';
 import RenderedHtmlDocumentTemplate from '../components/sales/RenderedHtmlDocumentTemplate';
 import '../styles/sales-print.css';
+import '../styles/userManagement.css';
 
 // Debounce hook
 function useDebounce(value, delay) {
@@ -104,17 +105,6 @@ async function fetchAllCustomersForDropdown() {
 function Sales() {
     return (
         <div className="sales-page-root">
-            <div className="page-header">
-                <h1 className="page-title">Sales Management</h1>
-            </div>
-
-            <div className="sales-subnav" style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
-                <NavLink to="/sales/quotations" className={({ isActive }) => `btn ${isActive ? 'btn-primary' : 'btn-secondary'}`}>Quotations</NavLink>
-                <NavLink to="/sales/bookings" className={({ isActive }) => `btn ${isActive ? 'btn-primary' : 'btn-secondary'}`}>Bookings</NavLink>
-                <NavLink to="/sales/orders" className={({ isActive }) => `btn ${isActive ? 'btn-primary' : 'btn-secondary'}`}>Sales Orders</NavLink>
-                <NavLink to="/sales/invoices" className={({ isActive }) => `btn ${isActive ? 'btn-primary' : 'btn-secondary'}`}>Invoices</NavLink>
-            </div>
-
             <Routes>
                 <Route path="quotations" element={<Quotations />} />
                 <Route path="bookings" element={<Bookings />} />
@@ -378,7 +368,7 @@ function Quotations() {
     if (loading) return <div className="spinner"></div>;
 
     return (
-        <div className="card">
+        <div className="card sales-page">
             <ConfirmModal {...confirmModal} onCancel={() => setConfirmModal({ ...confirmModal, isOpen: false })} />
             <div className="card-header d-flex justify-content-between align-items-center">
                 <h3>Quotations</h3>
@@ -395,43 +385,79 @@ function Quotations() {
                 customers={customers}
             />
 
-            <table className="data-table">
-                <thead>
-                    <tr>
-                        <th>Quote #</th>
-                        <th>Date</th>
-                        <th>Customer</th>
-                        <th>Item</th>
-                        <th>Total</th>
-                        <th>Status</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {data.map(q => (
-                        <tr key={q.id}>
-                            <td><strong>{q.quotation_number}</strong></td>
-                            <td>{new Date(q.created_at).toLocaleDateString()}</td>
-                            <td>{q.customer_name}</td>
-                            <td>{q.item_name || q.vehicle_full_name || 'Parts/Services'}</td>
-                            <td>PKR {Number(q.total_amount).toLocaleString()}</td>
-                            <td>{getStatusBadge(q.status)}</td>
-                            <td>
-                                <ActionButtons
-                                    showView={true}
-                                    onView={() => openModal('view', q)}
-                                    onEdit={canEdit && q.status === 'draft' ? () => openModal('edit', q) : null}
-                                    onDelete={canEdit && q.status === 'draft' ? () => handleDeleteClick(q.id) : null}
-                                    extraActions={q.status === 'sent' || q.status === 'accepted' ? [
-                                        { icon: <span className="material-icons">shopping_cart</span>, title: 'Convert', onClick: () => handleConvertClick(q), className: 'btn-success' }
-                                    ] : []}
-                                />
-                            </td>
+            <div className="desktop-table">
+                <table className="data-table">
+                    <thead>
+                        <tr>
+                            <th>Quote #</th>
+                            <th>Date</th>
+                            <th>Customer</th>
+                            <th>Item</th>
+                            <th>Total</th>
+                            <th>Status</th>
+                            <th>Actions</th>
                         </tr>
-                    ))}
-                    {data.length === 0 && <tr><td colSpan="7" className="text-center p-4">No quotations found</td></tr>}
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody>
+                        {data.map(q => (
+                            <tr key={q.id}>
+                                <td><strong>{q.quotation_number}</strong></td>
+                                <td>{new Date(q.created_at).toLocaleDateString()}</td>
+                                <td>{q.customer_name}</td>
+                                <td>{q.item_name || q.vehicle_full_name || 'Parts/Services'}</td>
+                                <td>PKR {Number(q.total_amount).toLocaleString()}</td>
+                                <td>{getStatusBadge(q.status)}</td>
+                                <td>
+                                    <ActionButtons
+                                        showView={true}
+                                        onView={() => openModal('view', q)}
+                                        onEdit={canEdit && q.status === 'draft' ? () => openModal('edit', q) : null}
+                                        onDelete={canEdit && q.status === 'draft' ? () => handleDeleteClick(q.id) : null}
+                                        extraActions={q.status === 'sent' || q.status === 'accepted' ? [
+                                            { icon: <span className="material-icons">shopping_cart</span>, title: 'Convert', onClick: () => handleConvertClick(q), className: 'btn-success' }
+                                        ] : []}
+                                    />
+                                </td>
+                            </tr>
+                        ))}
+                        {data.length === 0 && <tr><td colSpan="7" className="text-center p-4">No quotations found</td></tr>}
+                    </tbody>
+                </table>
+            </div>
+            {data.length > 0 && (
+                <div className="mobile-cards-view">
+                    <div className="mobile-cards-container">
+                        {data.map(q => (
+                            <div key={q.id} className="data-card">
+                                <div className="data-card-top">
+                                    <div className="data-card-avatar avatar-amber">Q</div>
+                                    <div className="data-card-info">
+                                        <span className="data-card-title">{q.quotation_number}</span>
+                                        <span className="data-card-subtitle">{q.customer_name}</span>
+                                    </div>
+                                    {getStatusBadge(q.status)}
+                                </div>
+                                <div className="data-card-body">
+                                    <div className="data-card-row"><span className="row-icon">📦</span><span className="row-label">Item</span><span className="row-value">{q.item_name || q.vehicle_full_name || 'Parts/Services'}</span></div>
+                                    <div className="data-card-row"><span className="row-icon">💰</span><span className="row-label">Total</span><span className="row-value">PKR {Number(q.total_amount).toLocaleString()}</span></div>
+                                    <div className="data-card-row"><span className="row-icon">📅</span><span className="row-label">Date</span><span className="row-value">{new Date(q.created_at).toLocaleDateString()}</span></div>
+                                </div>
+                                <div className="data-card-footer">
+                                    <ActionButtons
+                                        showView={true}
+                                        onView={() => openModal('view', q)}
+                                        onEdit={canEdit && q.status === 'draft' ? () => openModal('edit', q) : null}
+                                        onDelete={canEdit && q.status === 'draft' ? () => handleDeleteClick(q.id) : null}
+                                        extraActions={q.status === 'sent' || q.status === 'accepted' ? [
+                                            { icon: <span className="material-icons">shopping_cart</span>, title: 'Convert', onClick: () => handleConvertClick(q), className: 'btn-success' }
+                                        ] : []}
+                                    />
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
 
             {/* Pagination */}
             <div className="pagination-controls" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', borderTop: '1px solid var(--gray-100)' }}>
@@ -772,7 +798,7 @@ function Bookings() {
     if (loading) return <div className="spinner"></div>;
 
     return (
-        <div className="card">
+        <div className="card sales-page">
             <div className="card-header d-flex justify-content-between align-items-center">
                 <h3>Bookings</h3>
                 {canAction && <button className="btn btn-primary" onClick={() => openModal('create')}>+ New Booking</button>}
@@ -803,39 +829,71 @@ function Bookings() {
                 }
             />
 
-            <table className="data-table">
-                <thead>
-                    <tr>
-                        <th>Booking #</th>
-                        <th>Customer</th>
-                        <th>Vehicle</th>
-                        <th>Amount Paid</th>
-                        <th>Expected Date</th>
-                        <th>Status</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {data.map(b => (
-                        <tr key={b.id}>
-                            <td><strong>{b.booking_number}</strong></td>
-                            <td>{b.customer_name}</td>
-                            <td>{b.item_name || b.vehicle_full_name || 'Parts/Services'}</td>
-                            <td>PKR {Number(b.booking_amount).toLocaleString()}</td>
-                            <td>{b.expected_delivery_date ? new Date(b.expected_delivery_date).toLocaleDateString() : '-'}</td>
-                            <td>{getStatusBadge(b.status)}</td>
-                            <td>
-                                <ActionButtons
-                                    showView={true}
-                                    onView={() => openModal('view', b)}
-                                    onEdit={canAction && !['cancelled', 'completed'].includes(b.status) ? () => openModal('edit', b) : null}
-                                />
-                            </td>
+            <div className="desktop-table">
+                <table className="data-table">
+                    <thead>
+                        <tr>
+                            <th>Booking #</th>
+                            <th>Customer</th>
+                            <th>Vehicle</th>
+                            <th>Amount Paid</th>
+                            <th>Expected Date</th>
+                            <th>Status</th>
+                            <th>Actions</th>
                         </tr>
-                    ))}
-                    {data.length === 0 && <tr><td colSpan="7" className="text-center p-4">No bookings found</td></tr>}
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody>
+                        {data.map(b => (
+                            <tr key={b.id}>
+                                <td><strong>{b.booking_number}</strong></td>
+                                <td>{b.customer_name}</td>
+                                <td>{b.item_name || b.vehicle_full_name || 'Parts/Services'}</td>
+                                <td>PKR {Number(b.booking_amount).toLocaleString()}</td>
+                                <td>{b.expected_delivery_date ? new Date(b.expected_delivery_date).toLocaleDateString() : '-'}</td>
+                                <td>{getStatusBadge(b.status)}</td>
+                                <td>
+                                    <ActionButtons
+                                        showView={true}
+                                        onView={() => openModal('view', b)}
+                                        onEdit={canAction && !['cancelled', 'completed'].includes(b.status) ? () => openModal('edit', b) : null}
+                                    />
+                                </td>
+                            </tr>
+                        ))}
+                        {data.length === 0 && <tr><td colSpan="7" className="text-center p-4">No bookings found</td></tr>}
+                    </tbody>
+                </table>
+            </div>
+            {data.length > 0 && (
+                <div className="mobile-cards-view">
+                    <div className="mobile-cards-container">
+                        {data.map(b => (
+                            <div key={b.id} className="data-card">
+                                <div className="data-card-top">
+                                    <div className="data-card-avatar avatar-purple">B</div>
+                                    <div className="data-card-info">
+                                        <span className="data-card-title">{b.booking_number}</span>
+                                        <span className="data-card-subtitle">{b.customer_name}</span>
+                                    </div>
+                                    {getStatusBadge(b.status)}
+                                </div>
+                                <div className="data-card-body">
+                                    <div className="data-card-row"><span className="row-icon">🚗</span><span className="row-label">Vehicle</span><span className="row-value">{b.item_name || b.vehicle_full_name || 'Parts/Services'}</span></div>
+                                    <div className="data-card-row"><span className="row-icon">💰</span><span className="row-label">Paid</span><span className="row-value">PKR {Number(b.booking_amount).toLocaleString()}</span></div>
+                                    <div className="data-card-row"><span className="row-icon">📅</span><span className="row-label">Expected</span><span className="row-value">{b.expected_delivery_date ? new Date(b.expected_delivery_date).toLocaleDateString() : '-'}</span></div>
+                                </div>
+                                <div className="data-card-footer">
+                                    <ActionButtons
+                                        showView={true}
+                                        onView={() => openModal('view', b)}
+                                        onEdit={canAction && !['cancelled', 'completed'].includes(b.status) ? () => openModal('edit', b) : null}
+                                    />
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
 
             {/* Pagination Controls */}
             <div className="pagination-controls" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', borderTop: '1px solid var(--gray-100)' }}>
@@ -1286,7 +1344,7 @@ function SalesOrders() {
     if (loading) return <div className="spinner"></div>;
 
     return (
-        <div className="card">
+        <div className="card sales-page">
             <div className="card-header d-flex justify-content-between align-items-center">
                 <h3>Sales Orders</h3>
                 {canCreate && (
@@ -1318,88 +1376,159 @@ function SalesOrders() {
                 customers={customers}
             />
 
-            <table className="data-table">
-                <thead>
-                    <tr>
-                        <th>Order #</th>
-                        <th>Date</th>
-                        <th>Customer</th>
-                        <th>Type</th>
-                        <th>Item</th>
-                        <th>Total</th>
-                        <th>Paid</th>
-                        <th>Invoice</th>
-                        <th>Status</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {data.map(o => (
-                        <tr key={o.id}>
-                            <td><strong>{o.order_number}</strong></td>
-                            <td>{new Date(o.created_at).toLocaleDateString()}</td>
-                            <td>{o.customer_name}</td>
-                            <td><span className={`badge badge-${o.sale_type === 'parts' ? 'secondary' : 'primary'}`} style={{ fontSize: '0.8em' }}>{(o.sale_type || 'vehicle').toUpperCase()}</span></td>
-                            <td>{o.item_name || `${o.make_name || ''} ${o.model_name || ''} ${o.variant_name || ''}`.trim() || 'Parts/Services'}</td>
-                            <td>PKR {Number(o.grand_total).toLocaleString()}</td>
-                            <td>PKR {Number(o.paid_amount).toLocaleString()}</td>
-                            <td>
-                                {o.invoice_number ? (
-                                    <span className="badge badge-success" title={`Status: ${o.invoice_status}`}>{o.invoice_number}</span>
-                                ) : (
-                                    <span className="badge badge-secondary">Not Generated</span>
-                                )}
-                            </td>
-                            <td>{getStatusBadge(o.status)}</td>
-                            <td>
-                                <ActionButtons
-                                    showView={true}
-                                    showEdit={canEdit && o.status !== 'delivered' && o.status !== 'cancelled' && !o.invoice_number}
-                                    showDelete={canDelete && o.status !== 'delivered' && o.status !== 'cancelled' && !o.invoice_number}
-                                    onView={() => openModal('view', o)}
-                                    onEdit={() => openModal('edit', o)}
-                                    onDelete={() => handleCancelClick(o)}
-                                    customActions={[
-                                        ...(canDeliverOrInvoice && !o.invoice_number && o.status === 'confirmed' ? [{
-                                            icon: <FileText size={18} className="action-icon" />,
-                                            title: 'Generate Invoice',
-                                            onClick: () => handleGenerateInvoice(o),
-                                            className: 'btn-info'
-                                        }] : []),
-                                        ...(canDeliverOrInvoice && o.status === 'invoiced' ? [{
-                                            icon: <Truck size={18} className="action-icon" />,
-                                            title: 'Mark Delivered',
-                                            onClick: () => handleDeliverClick(o),
-                                            className: 'btn-success'
-                                        }] : []),
-                                        ...(o.invoice_number ? [
-                                            {
-                                                icon: <FileText size={18} className="action-icon" />,
-                                                title: 'View Invoice',
-                                                onClick: () => handleViewInvoice(o),
-                                                className: 'btn-outline-primary'
-                                            },
-                                            ...(o.invoice_status === 'draft' ? [{
-                                                icon: <Pencil size={18} className="action-icon" />,
-                                                title: 'Edit Invoice',
-                                                onClick: () => handleEditInvoice(o),
-                                                className: 'btn-outline-secondary'
-                                            }] : []),
-                                            ...(o.invoice_status !== 'paid' && o.invoice_status !== 'void' && o.invoice_status !== 'cancelled' ? [{
-                                                icon: <Trash2 size={18} className="action-icon" />,
-                                                title: 'Delete Invoice',
-                                                onClick: () => handleDeleteInvoice(o),
-                                                className: 'btn-outline-danger'
-                                            }] : [])
-                                        ] : [])
-                                    ]}
-                                />
-                            </td>
+            <div className="desktop-table">
+                <table className="data-table">
+                    <thead>
+                        <tr>
+                            <th>Order #</th>
+                            <th>Date</th>
+                            <th>Customer</th>
+                            <th>Type</th>
+                            <th>Item</th>
+                            <th>Total</th>
+                            <th>Paid</th>
+                            <th>Invoice</th>
+                            <th>Status</th>
+                            <th>Actions</th>
                         </tr>
-                    ))}
-                    {data.length === 0 && <tr><td colSpan="10" className="text-center p-4">No sales orders found</td></tr>}
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody>
+                        {data.map(o => (
+                            <tr key={o.id}>
+                                <td><strong>{o.order_number}</strong></td>
+                                <td>{new Date(o.created_at).toLocaleDateString()}</td>
+                                <td>{o.customer_name}</td>
+                                <td><span className={`badge badge-${o.sale_type === 'parts' ? 'secondary' : 'primary'}`} style={{ fontSize: '0.8em' }}>{(o.sale_type || 'vehicle').toUpperCase()}</span></td>
+                                <td>{o.item_name || `${o.make_name || ''} ${o.model_name || ''} ${o.variant_name || ''}`.trim() || 'Parts/Services'}</td>
+                                <td>PKR {Number(o.grand_total).toLocaleString()}</td>
+                                <td>PKR {Number(o.paid_amount).toLocaleString()}</td>
+                                <td>
+                                    {o.invoice_number ? (
+                                        <span className="badge badge-success" title={`Status: ${o.invoice_status}`}>{o.invoice_number}</span>
+                                    ) : (
+                                        <span className="badge badge-secondary">Not Generated</span>
+                                    )}
+                                </td>
+                                <td>{getStatusBadge(o.status)}</td>
+                                <td>
+                                    <ActionButtons
+                                        showView={true}
+                                        showEdit={canEdit && o.status !== 'delivered' && o.status !== 'cancelled' && !o.invoice_number}
+                                        showDelete={canDelete && o.status !== 'delivered' && o.status !== 'cancelled' && !o.invoice_number}
+                                        onView={() => openModal('view', o)}
+                                        onEdit={() => openModal('edit', o)}
+                                        onDelete={() => handleCancelClick(o)}
+                                        customActions={[
+                                            ...(canDeliverOrInvoice && !o.invoice_number && o.status === 'confirmed' ? [{
+                                                icon: <FileText size={18} className="action-icon" />,
+                                                title: 'Generate Invoice',
+                                                onClick: () => handleGenerateInvoice(o),
+                                                className: 'btn-info'
+                                            }] : []),
+                                            ...(canDeliverOrInvoice && o.status === 'invoiced' ? [{
+                                                icon: <Truck size={18} className="action-icon" />,
+                                                title: 'Mark Delivered',
+                                                onClick: () => handleDeliverClick(o),
+                                                className: 'btn-success'
+                                            }] : []),
+                                            ...(o.invoice_number ? [
+                                                {
+                                                    icon: <FileText size={18} className="action-icon" />,
+                                                    title: 'View Invoice',
+                                                    onClick: () => handleViewInvoice(o),
+                                                    className: 'btn-outline-primary'
+                                                },
+                                                ...(o.invoice_status === 'draft' ? [{
+                                                    icon: <Pencil size={18} className="action-icon" />,
+                                                    title: 'Edit Invoice',
+                                                    onClick: () => handleEditInvoice(o),
+                                                    className: 'btn-outline-secondary'
+                                                }] : []),
+                                                ...(o.invoice_status !== 'paid' && o.invoice_status !== 'void' && o.invoice_status !== 'cancelled' ? [{
+                                                    icon: <Trash2 size={18} className="action-icon" />,
+                                                    title: 'Delete Invoice',
+                                                    onClick: () => handleDeleteInvoice(o),
+                                                    className: 'btn-outline-danger'
+                                                }] : [])
+                                            ] : [])
+                                        ]}
+                                    />
+                                </td>
+                            </tr>
+                        ))}
+                        {data.length === 0 && <tr><td colSpan="10" className="text-center p-4">No sales orders found</td></tr>}
+                    </tbody>
+                </table>
+            </div>
+            {data.length > 0 && (
+                <div className="mobile-cards-view">
+                    <div className="mobile-cards-container">
+                        {data.map(o => (
+                            <div key={o.id} className="data-card">
+                                <div className="data-card-top">
+                                    <div className="data-card-avatar avatar-green">{o.sale_type === 'parts' ? 'P' : 'V'}</div>
+                                    <div className="data-card-info">
+                                        <span className="data-card-title">{o.order_number}</span>
+                                        <span className="data-card-subtitle">{o.customer_name}</span>
+                                    </div>
+                                    <span className={`badge-pill ${o.sale_type === 'parts' ? 'status-inactive' : 'status-active'}`}>{(o.sale_type || 'vehicle').toUpperCase()}</span>
+                                    {getStatusBadge(o.status)}
+                                </div>
+                                <div className="data-card-body">
+                                    <div className="data-card-row"><span className="row-icon">📦</span><span className="row-label">Item</span><span className="row-value">{o.item_name || `${o.make_name || ''} ${o.model_name || ''} ${o.variant_name || ''}`.trim() || 'Parts/Services'}</span></div>
+                                    <div className="data-card-row"><span className="row-icon">💰</span><span className="row-label">Total</span><span className="row-value">PKR {Number(o.grand_total).toLocaleString()}</span></div>
+                                    <div className="data-card-row"><span className="row-icon">✅</span><span className="row-label">Paid</span><span className="row-value">PKR {Number(o.paid_amount).toLocaleString()}</span></div>
+                                    <div className="data-card-row"><span className="row-icon">📄</span><span className="row-label">Invoice</span><span className="row-value">{o.invoice_number ? <span className="badge-pill status-active">{o.invoice_number}</span> : <span style={{ color: '#94a3b8' }}>Not Generated</span>}</span></div>
+                                </div>
+                                <div className="data-card-footer">
+                                    <ActionButtons
+                                        showView={true}
+                                        showEdit={canEdit && o.status !== 'delivered' && o.status !== 'cancelled' && !o.invoice_number}
+                                        showDelete={canDelete && o.status !== 'delivered' && o.status !== 'cancelled' && !o.invoice_number}
+                                        onView={() => openModal('view', o)}
+                                        onEdit={() => openModal('edit', o)}
+                                        onDelete={() => handleCancelClick(o)}
+                                        customActions={[
+                                            ...(canDeliverOrInvoice && !o.invoice_number && o.status === 'confirmed' ? [{
+                                                icon: <FileText size={18} className="action-icon" />,
+                                                title: 'Generate Invoice',
+                                                onClick: () => handleGenerateInvoice(o),
+                                                className: 'btn-info'
+                                            }] : []),
+                                            ...(canDeliverOrInvoice && o.status === 'invoiced' ? [{
+                                                icon: <Truck size={18} className="action-icon" />,
+                                                title: 'Mark Delivered',
+                                                onClick: () => handleDeliverClick(o),
+                                                className: 'btn-success'
+                                            }] : []),
+                                            ...(o.invoice_number ? [
+                                                {
+                                                    icon: <FileText size={18} className="action-icon" />,
+                                                    title: 'View Invoice',
+                                                    onClick: () => handleViewInvoice(o),
+                                                    className: 'btn-outline-primary'
+                                                },
+                                                ...(o.invoice_status === 'draft' ? [{
+                                                    icon: <Pencil size={18} className="action-icon" />,
+                                                    title: 'Edit Invoice',
+                                                    onClick: () => handleEditInvoice(o),
+                                                    className: 'btn-outline-secondary'
+                                                }] : []),
+                                                ...(o.invoice_status !== 'paid' && o.invoice_status !== 'void' && o.invoice_status !== 'cancelled' ? [{
+                                                    icon: <Trash2 size={18} className="action-icon" />,
+                                                    title: 'Delete Invoice',
+                                                    onClick: () => handleDeleteInvoice(o),
+                                                    className: 'btn-outline-danger'
+                                                }] : [])
+                                            ] : [])
+                                        ]}
+                                    />
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
 
             {/* Pagination Controls */}
             <div className="pagination-controls" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', borderTop: '1px solid var(--gray-100)' }}>
@@ -2095,7 +2224,7 @@ function Invoices() {
     if (loading) return <div className="spinner"></div>;
 
     return (
-        <div className="card">
+        <div className="card sales-page">
             <div className="card-header d-flex justify-content-between align-items-center">
                 <h3>Invoices</h3>
                 {canCreate && (
@@ -2116,64 +2245,117 @@ function Invoices() {
                 customers={customers}
             />
 
-            <table className="data-table">
-                <thead>
-                    <tr>
-                        <th>Invoice #</th>
-                        <th>Date</th>
-                        <th>Due Date</th>
-                        <th>Customer</th>
-                        <th>Type</th>
-                        <th>Total</th>
-                        <th>Paid</th>
-                        <th>Balance</th>
-                        <th>Status</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {data.map(inv => (
-                        <tr key={inv.id}>
-                            <td><strong>{inv.invoice_number}</strong></td>
-                            <td>{new Date(inv.invoice_date).toLocaleDateString()}</td>
-                            <td>{new Date(inv.due_date).toLocaleDateString()}</td>
-                            <td>{inv.customer_name}</td>
-                            <td><span className="badge badge-info">{inv.invoice_type?.toUpperCase()}</span></td>
-                            <td>PKR {Number(inv.total_amount).toLocaleString()}</td>
-                            <td>PKR {Number(inv.paid_amount || 0).toLocaleString()}</td>
-                            <td style={{ color: inv.balance_amount > 0 ? '#dc2626' : '#16a34a' }}>
-                                PKR {Number(inv.balance_amount).toLocaleString()}
-                            </td>
-                            <td>{getStatusBadge(inv.status)}</td>
-                            <td>
-                                <ActionButtons
-                                    showView={true}
-                                    showEdit={canEdit && inv.status === 'draft'}
-                                    showDelete={canDelete && inv.status !== 'paid' && inv.status !== 'cancelled'}
-                                    onView={() => openModal('view', inv)}
-                                    onEdit={() => openModal('edit', inv)}
-                                    onDelete={() => handleVoidClick(inv)}
-                                    customActions={[
-                                        ...(canSend && inv.status === 'draft' ? [{
-                                            icon: <Send size={18} className="action-icon" />,
-                                            title: 'Send Invoice',
-                                            onClick: () => handleSendClick(inv),
-                                            className: 'btn-info'
-                                        }] : []),
-                                        ...(canRecordPayment && inv.status !== 'paid' && inv.status !== 'cancelled' && inv.balance_amount > 0 ? [{
-                                            icon: <DollarSign size={18} className="action-icon" />,
-                                            title: 'Record Payment',
-                                            onClick: () => openPaymentModal(inv),
-                                            className: 'btn-success'
-                                        }] : [])
-                                    ]}
-                                />
-                            </td>
+            <div className="desktop-table">
+                <table className="data-table">
+                    <thead>
+                        <tr>
+                            <th>Invoice #</th>
+                            <th>Date</th>
+                            <th>Due Date</th>
+                            <th>Customer</th>
+                            <th>Type</th>
+                            <th>Total</th>
+                            <th>Paid</th>
+                            <th>Balance</th>
+                            <th>Status</th>
+                            <th>Actions</th>
                         </tr>
-                    ))}
-                    {data.length === 0 && <tr><td colSpan="10" className="text-center p-4">No invoices found</td></tr>}
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody>
+                        {data.map(inv => (
+                            <tr key={inv.id}>
+                                <td><strong>{inv.invoice_number}</strong></td>
+                                <td>{new Date(inv.invoice_date).toLocaleDateString()}</td>
+                                <td>{new Date(inv.due_date).toLocaleDateString()}</td>
+                                <td>{inv.customer_name}</td>
+                                <td><span className="badge badge-info">{inv.invoice_type?.toUpperCase()}</span></td>
+                                <td>PKR {Number(inv.total_amount).toLocaleString()}</td>
+                                <td>PKR {Number(inv.paid_amount || 0).toLocaleString()}</td>
+                                <td style={{ color: inv.balance_amount > 0 ? '#dc2626' : '#16a34a' }}>
+                                    PKR {Number(inv.balance_amount).toLocaleString()}
+                                </td>
+                                <td>{getStatusBadge(inv.status)}</td>
+                                <td>
+                                    <ActionButtons
+                                        showView={true}
+                                        showEdit={canEdit && inv.status === 'draft'}
+                                        showDelete={canDelete && inv.status !== 'paid' && inv.status !== 'cancelled'}
+                                        onView={() => openModal('view', inv)}
+                                        onEdit={() => openModal('edit', inv)}
+                                        onDelete={() => handleVoidClick(inv)}
+                                        customActions={[
+                                            ...(canSend && inv.status === 'draft' ? [{
+                                                icon: <Send size={18} className="action-icon" />,
+                                                title: 'Send Invoice',
+                                                onClick: () => handleSendClick(inv),
+                                                className: 'btn-info'
+                                            }] : []),
+                                            ...(canRecordPayment && inv.status !== 'paid' && inv.status !== 'cancelled' && inv.balance_amount > 0 ? [{
+                                                icon: <DollarSign size={18} className="action-icon" />,
+                                                title: 'Record Payment',
+                                                onClick: () => openPaymentModal(inv),
+                                                className: 'btn-success'
+                                            }] : [])
+                                        ]}
+                                    />
+                                </td>
+                            </tr>
+                        ))}
+                        {data.length === 0 && <tr><td colSpan="10" className="text-center p-4">No invoices found</td></tr>}
+                    </tbody>
+                </table>
+            </div>
+            {data.length > 0 && (
+                <div className="mobile-cards-view">
+                    <div className="mobile-cards-container">
+                        {data.map(inv => (
+                            <div key={inv.id} className="data-card">
+                                <div className="data-card-top">
+                                    <div className="data-card-avatar avatar-rose">I</div>
+                                    <div className="data-card-info">
+                                        <span className="data-card-title">{inv.invoice_number}</span>
+                                        <span className="data-card-subtitle">{inv.customer_name}</span>
+                                    </div>
+                                    <span className="badge-pill status-pending">{inv.invoice_type?.toUpperCase()}</span>
+                                    {getStatusBadge(inv.status)}
+                                </div>
+                                <div className="data-card-body">
+                                    <div className="data-card-row"><span className="row-icon">💰</span><span className="row-label">Total</span><span className="row-value">PKR {Number(inv.total_amount).toLocaleString()}</span></div>
+                                    <div className="data-card-row"><span className="row-icon">✅</span><span className="row-label">Paid</span><span className="row-value">PKR {Number(inv.paid_amount || 0).toLocaleString()}</span></div>
+                                    <div className="data-card-row">
+                                        <span className="row-icon">⚖️</span><span className="row-label">Balance</span>
+                                        <span className="row-value" style={{ color: inv.balance_amount > 0 ? '#dc2626' : '#16a34a' }}>PKR {Number(inv.balance_amount).toLocaleString()}</span>
+                                    </div>
+                                </div>
+                                <div className="data-card-footer">
+                                    <ActionButtons
+                                        showView={true}
+                                        showEdit={canEdit && inv.status === 'draft'}
+                                        showDelete={canDelete && inv.status !== 'paid' && inv.status !== 'cancelled'}
+                                        onView={() => openModal('view', inv)}
+                                        onEdit={() => openModal('edit', inv)}
+                                        onDelete={() => handleVoidClick(inv)}
+                                        customActions={[
+                                            ...(canSend && inv.status === 'draft' ? [{
+                                                icon: <Send size={18} className="action-icon" />,
+                                                title: 'Send Invoice',
+                                                onClick: () => handleSendClick(inv),
+                                                className: 'btn-info'
+                                            }] : []),
+                                            ...(canRecordPayment && inv.status !== 'paid' && inv.status !== 'cancelled' && inv.balance_amount > 0 ? [{
+                                                icon: <DollarSign size={18} className="action-icon" />,
+                                                title: 'Record Payment',
+                                                onClick: () => openPaymentModal(inv),
+                                                className: 'btn-success'
+                                            }] : [])
+                                        ]}
+                                    />
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
 
             {/* Pagination Controls */}
             <div className="pagination-controls" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', borderTop: '1px solid var(--gray-100)' }}>

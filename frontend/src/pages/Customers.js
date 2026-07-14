@@ -1,15 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
-import { Plus, ChevronLeft, ChevronRight, User, CalendarDays, ChartBar, ArrowRightLeft, X, Building2, Users, Filter } from 'lucide-react';
+import { Plus, ChevronLeft, ChevronRight, User, CalendarDays, ChartBar, ArrowRightLeft, X, Building2, Users, Filter, Upload } from 'lucide-react';
 import { CustomersProvider, useCustomers } from '../context/CustomersContext';
 import CustomerFormModal from '../components/customers/CustomerFormModal';
 import CustomerDrawer from '../components/customers/CustomerDrawer';
 import ActionButtons from '../components/ActionButtons';
 import ConfirmModal from '../components/ConfirmModal';
+import BulkUploadModal from '../components/BulkUploadModal';
 import '../styles/leadManagement.css';
 import '../styles/filters.css';
-
-function XIcon({ className }) { return <X className={className} />; }
 
 const statsIcons = {
   total: { icon: Users, color: '#3b82f6', bg: '#dbeafe' },
@@ -30,6 +29,41 @@ function CustomersPage() {
   const [searchInput, setSearchInput] = useState(search);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [showFilters, setShowFilters] = useState(false);
+  const [showBulkUpload, setShowBulkUpload] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [deleteAllTarget, setDeleteAllTarget] = useState(null);
+  const [deletingAll, setDeletingAll] = useState(false);
+
+  const toggleSelect = (id) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    setSelectedIds(prev => prev.size === customers.length ? new Set() : new Set(customers.map(c => c._id)));
+  };
+
+  const handleBulkDelete = async () => {
+    setDeletingAll(true);
+    try {
+      const ids = Array.from(selectedIds);
+      for (const id of ids) {
+        const res = await deleteCustomer(id);
+        if (!res?.success) toast.error(res?.message || `Failed to delete ${id}`);
+      }
+      toast.success(`${ids.length} customer(s) deactivated`);
+      setSelectedIds(new Set());
+      setDeleteAllTarget(null);
+      refresh();
+    } catch (err) {
+      toast.error('Bulk delete failed');
+    } finally {
+      setDeletingAll(false);
+    }
+  };
 
   useEffect(() => {
     const handler = () => setIsMobile(window.innerWidth < 768);
@@ -120,6 +154,7 @@ function CustomersPage() {
         <table className="data-table">
           <thead>
             <tr>
+              <th style={{ width: 40 }}><input type="checkbox" checked={selectedIds.size === customers.length && customers.length > 0} onChange={toggleSelectAll} /></th>
               <th>Customer</th>
               <th>Email</th>
               <th>Phone</th>
@@ -136,6 +171,7 @@ function CustomersPage() {
           <tbody>
             {customers.map((c) => (
               <tr key={c._id} className={!c.isActive ? 'row-inactive' : ''} onClick={() => openDrawer(c._id)} style={{ cursor: 'pointer' }}>
+                <td style={{ width: 40 }} onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selectedIds.has(c._id)} onChange={() => toggleSelect(c._id)} /></td>
                 <td>
                   <div className="user-cell">
                     <div className="user-info">
@@ -250,6 +286,13 @@ function CustomersPage() {
             </select>
           </div>
           <div className="filter-group">
+            <label>CITY</label>
+            <select className="form-control" value={filters.city || ''} onChange={(e) => handleFilterChange('city', e.target.value)}>
+              <option value="">All Cities</option>
+              {(meta.cities || []).map((city) => <option key={city._id} value={city.name}>{city.name}</option>)}
+            </select>
+          </div>
+          <div className="filter-group">
             <label>STATUS</label>
             <select className="form-control" value={filters.status || ''} onChange={(e) => handleFilterChange('status', e.target.value)}>
               <option value="">All Statuses</option>
@@ -305,9 +348,20 @@ function CustomersPage() {
           <h1>Customers Management</h1>
           <p className="subtitle">Manage customer records</p>
         </div>
-        <button className="btn btn-primary btn-create" onClick={() => { setEditCustomer(null); setShowForm(true); }}>
-          <Plus size={20} /> Add New Customer
-        </button>
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+          <button
+            type="button"
+            className="btn btn-secondary btn-create"
+            onClick={() => setShowBulkUpload(true)}
+            title="Bulk upload customers (CSV / XLSX)"
+          >
+            <Upload size={18} style={{ marginRight: 6 }} />
+            Upload
+          </button>
+          <button className="btn btn-primary btn-create" onClick={() => { setEditCustomer(null); setShowForm(true); }}>
+            <Plus size={20} /> Add New Customer
+          </button>
+        </div>
       </div>
 
       {renderStats()}
@@ -315,7 +369,27 @@ function CustomersPage() {
       {renderFilters()}
 
       {isMobile ? renderCards() : renderTable()}
+      {selectedIds.size > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, marginTop: 8 }}>
+          <span style={{ fontWeight: 600, color: '#991b1b' }}>{selectedIds.size} selected</span>
+          <button className="btn btn-danger btn-sm" onClick={() => setDeleteAllTarget(true)}>Delete All</button>
+          <button className="btn btn-secondary btn-sm" onClick={() => setSelectedIds(new Set())}>Deselect All</button>
+        </div>
+      )}
       {renderPagination()}
+
+      {deleteAllTarget && (
+        <ConfirmModal
+          isOpen={true}
+          title="Delete Selected Customers"
+          message={`Are you sure you want to deactivate ${selectedIds.size} customer(s)?`}
+          confirmText={deletingAll ? 'Deleting...' : 'Delete All'}
+          cancelText="Cancel"
+          type="danger"
+          onConfirm={handleBulkDelete}
+          onCancel={() => setDeleteAllTarget(null)}
+        />
+      )}
 
       {showForm && (
         <CustomerFormModal
@@ -332,6 +406,15 @@ function CustomersPage() {
           onUpdated={refresh}
         />
       )}
+
+      <BulkUploadModal
+        isOpen={showBulkUpload}
+        onClose={() => setShowBulkUpload(false)}
+        title="Bulk upload customers"
+        description="Import customers from CSV or XLSX. Required columns: first_name, last_name."
+        templateType="customers"
+        onCompleted={() => { refresh(); }}
+      />
 
       {deleteTarget && (
         <ConfirmModal

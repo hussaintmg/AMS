@@ -7,9 +7,14 @@
  * Date: 2026-01-06
  */
 
+const mongoose = require('mongoose');
 const { query, pool } = require('../config/database');
 const { AppError } = require('../middleware/errorHandler');
 const logger = require('../utils/logger');
+const SalesOrder = require('../models/SalesOrder.model');
+const Vehicle = require('../models/Vehicle.model');
+const Part = require('../models/Part.model');
+const Customer = require('../models/Customer.model');
 
 // ═══════════════════════════════════════════════════════════════════════════
 // QUOTATIONS CONTROLLER
@@ -632,174 +637,114 @@ const createDirectSalesOrder = async (req, res, next) => {
             exchangeVehicleDetails, exchangeValue, expectedDeliveryDate, notes
         } = req.body;
 
-        // Validate required fields
         if (!customerId) throw new AppError('Customer is required', 400);
 
         if (saleType === 'vehicle') {
             if (!vehicleId) throw new AppError('Vehicle is required for vehicle sales', 400);
             if (!vehiclePrice || vehiclePrice <= 0) throw new AppError('Valid vehicle price is required', 400);
 
-            // Check if vehicle is available for direct sale
-            const vehicles = await query('SELECT id, status FROM vehicles WHERE id = ?', [vehicleId]);
-            if (vehicles.length === 0) throw new AppError('Vehicle not found', 404);
-            if (!['at_yard', 'in_transit'].includes(vehicles[0].status)) {
-                throw new AppError(`Vehicle is not available (current status: ${vehicles[0].status})`, 400);
+            const vehicle = await Vehicle.findById(vehicleId);
+            if (!vehicle) throw new AppError('Vehicle not found', 404);
+            if (!['at_yard', 'in_transit'].includes(vehicle.status)) {
+                throw new AppError(`Vehicle is not available (current status: ${vehicle.status})`, 400);
             }
         } else if (saleType === 'parts') {
             if (!partId) throw new AppError('Part is required for parts sales', 400);
             if (!partQuantity || partQuantity <= 0) throw new AppError('Valid quantity is required', 400);
 
-            // Check stock
-            const parts = await query('SELECT id, current_stock, selling_price FROM parts WHERE id = ?', [partId]);
-            if (parts.length === 0) throw new AppError('Part not found', 404);
-            if (parts[0].current_stock < partQuantity) {
-                throw new AppError(`Insufficient stock. Available: ${parts[0].current_stock}`, 400);
+            const part = await Part.findById(partId);
+            if (!part) throw new AppError('Part not found', 404);
+            if (part.currentStock < partQuantity) {
+                throw new AppError(`Insufficient stock. Available: ${part.currentStock}`, 400);
             }
         } else {
             throw new AppError('Invalid sale type', 400);
         }
 
-        // Production may still run the legacy procedure signature (without sale_type/part fields).
-        // Try new signature first, then safely fall back for vehicle sales only.
-        const procedureParams = [
-            customerId, saleType, vehicleId || null, partId || null, partQuantity || 1,
-            vehiclePrice || 0, accessoriesTotal || 0,
-            discountAmount || 0, taxAmount || 0, registrationCharges || 0, insuranceCharges || 0,
-            otherCharges || 0, paidAmount || 0, paymentMode || 'cash', financeCompany || null,
-            financeAmount || 0, exchangeVehicleDetails || null, exchangeValue || 0,
-            expectedDeliveryDate || null, notes || null, req.user.id
-        ];
+        const qty = Number(partQuantity) || 1;
 
-        let orderId;
-        let orderNumber;
-
-        try {
-            await query(
-                'CALL sp_create_direct_sales_order(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, @id, @num)',
-                procedureParams
-            );
-        } catch (spError) {
-            const isWrongArgCount = spError?.code === 'ER_SP_WRONG_NO_OF_ARGS' || spError?.errno === 1318;
-            if (!isWrongArgCount) throw spError;
-
-            if (saleType === 'parts') {
-                const connection = await pool.getConnection();
-                try {
-                    await connection.beginTransaction();
-
-                    const [parts] = await connection.query(
-                        'SELECT id, current_stock, selling_price FROM parts WHERE id = ? FOR UPDATE',
-                        [partId]
-                    );
-                    if (!parts.length) {
-                        throw new AppError('Part not found', 404);
-                    }
-
-                    const qty = Number(partQuantity) || 1;
-                    const partStock = Number(parts[0].current_stock || 0);
-                    if (partStock < qty) {
-                        throw new AppError(`Insufficient stock. Available: ${partStock}`, 400);
-                    }
-
-                    const basePrice = Number(vehiclePrice) > 0
-                        ? Number(vehiclePrice)
-                        : (Number(parts[0].selling_price || 0) * qty);
-                    const accessories = Number(accessoriesTotal || 0);
-                    const discount = Number(discountAmount || 0);
-                    const tax = Number(taxAmount || 0);
-                    const registration = Number(registrationCharges || 0);
-                    const insurance = Number(insuranceCharges || 0);
-                    const other = Number(otherCharges || 0);
-                    const paid = Number(paidAmount || 0);
-                    const exchange = Number(exchangeValue || 0);
-                    const grandTotal = basePrice + accessories - discount + tax + registration + insurance + other - exchange;
-                    const balanceAmount = grandTotal - paid;
-
-                    const [sequenceRows] = await connection.query(
-                        `SELECT COALESCE(MAX(CAST(SUBSTRING(order_number, 9) AS UNSIGNED)), 0) + 1 AS seq
-                         FROM sales_orders
-                         WHERE order_number LIKE CONCAT('SO-', YEAR(CURDATE()), '-%')`
-                    );
-                    const sequence = Number(sequenceRows[0]?.seq || 1);
-                    const year = new Date().getFullYear();
-                    orderNumber = `SO-${year}-${String(sequence).padStart(6, '0')}`;
-
-                    const [insertResult] = await connection.query(
-                        `INSERT INTO sales_orders (
-                            order_number, booking_id, customer_id, sale_type, vehicle_id, part_id, part_quantity,
-                            vehicle_price, accessories_total, discount_amount, tax_amount,
-                            registration_charges, insurance_charges, other_charges,
-                            total_amount, paid_amount, balance_amount, payment_mode,
-                            finance_company, finance_amount, exchange_vehicle_details,
-                            exchange_value, status, order_date, expected_delivery_date,
-                            notes, created_by, created_at, updated_at
-                        ) VALUES (?, NULL, ?, 'parts', NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', CURDATE(), ?, ?, ?, NOW(), NOW())`,
-                        [
-                            orderNumber, customerId, partId, qty, basePrice, accessories, discount, tax,
-                            registration, insurance, other, grandTotal, paid, balanceAmount,
-                            paymentMode || 'cash', financeCompany || null, Number(financeAmount || 0),
-                            exchangeVehicleDetails || null, exchange, expectedDeliveryDate || null,
-                            notes || null, req.user.id
-                        ]
-                    );
-
-                    orderId = insertResult.insertId;
-
-                    await connection.query(
-                        'UPDATE parts SET current_stock = current_stock - ?, updated_at = NOW() WHERE id = ?',
-                        [qty, partId]
-                    );
-
-                    await connection.query(
-                        `INSERT INTO sales_order_audit (sales_order_id, action, new_values, changed_by, notes)
-                         VALUES (?, 'CREATE', JSON_OBJECT('order_number', ?, 'sale_type', 'parts', 'grand_total', ?), ?, 'Direct sales order created')`,
-                        [orderId, orderNumber, grandTotal, req.user.id]
-                    );
-
-                    await connection.commit();
-                } catch (partsFallbackError) {
-                    await connection.rollback();
-                    throw partsFallbackError;
-                } finally {
-                    connection.release();
-                }
-            } else {
-                await query(
-                    'CALL sp_create_direct_sales_order(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, @id, @num)',
-                    [
-                        customerId,
-                        vehicleId || null,
-                        vehiclePrice || 0,
-                        accessoriesTotal || 0,
-                        discountAmount || 0,
-                        taxAmount || 0,
-                        registrationCharges || 0,
-                        insuranceCharges || 0,
-                        otherCharges || 0,
-                        paidAmount || 0,
-                        paymentMode || 'cash',
-                        financeCompany || null,
-                        financeAmount || 0,
-                        exchangeVehicleDetails || null,
-                        exchangeValue || 0,
-                        expectedDeliveryDate || null,
-                        notes || null,
-                        req.user.id
-                    ]
-                );
-            }
+        let basePrice;
+        if (saleType === 'vehicle') {
+            basePrice = Number(vehiclePrice);
+        } else {
+            const part = await Part.findById(partId);
+            basePrice = Number(vehiclePrice) > 0
+                ? Number(vehiclePrice)
+                : (Number(part.sellingPrice || 0) * qty);
         }
 
-        if (!orderId || !orderNumber) {
-            const [spOrderResult] = await query('SELECT @id as orderId, @num as orderNumber');
-            orderId = spOrderResult.orderId;
-            orderNumber = spOrderResult.orderNumber;
+        const accessories = Number(accessoriesTotal || 0);
+        const discount = Number(discountAmount || 0);
+        const tax = Number(taxAmount || 0);
+        const registration = Number(registrationCharges || 0);
+        const insurance = Number(insuranceCharges || 0);
+        const other = Number(otherCharges || 0);
+        const paid = Number(paidAmount || 0);
+        const exchange = Number(exchangeValue || 0);
+        const grandTotal = basePrice + accessories - discount + tax + registration + insurance + other - exchange;
+        const balanceAmount = grandTotal - paid;
+
+        const now = new Date();
+        const year = now.getFullYear();
+        const yearPrefix = `SO-${year}-`;
+        const lastOrder = await SalesOrder.findOne({ orderNumber: { $regex: `^${yearPrefix}` } }).sort({ createdAt: -1 }).lean();
+        let sequence = 1;
+        if (lastOrder?.orderNumber) {
+            const match = lastOrder.orderNumber.match(/SO-\d{4}-(\d+)/);
+            if (match) sequence = parseInt(match[1], 10) + 1;
+        }
+        const orderNumber = `${yearPrefix}${String(sequence).padStart(6, '0')}`;
+
+        const items = [];
+        if (saleType === 'vehicle') {
+            const vehicle = await Vehicle.findById(vehicleId);
+            items.push({
+                description: `${vehicle.make || ''} ${vehicle.model || ''} ${vehicle.year || ''}`.trim() || 'Vehicle',
+                quantity: 1,
+                unitPrice: basePrice,
+                totalPrice: basePrice,
+                type: 'vehicle'
+            });
+        } else {
+            const part = await Part.findById(partId);
+            items.push({
+                description: part.partName || part.name || 'Part',
+                quantity: qty,
+                unitPrice: basePrice / qty,
+                totalPrice: basePrice,
+                type: 'parts'
+            });
+        }
+
+        const salesOrder = await SalesOrder.create({
+            orderNumber,
+            customer: customerId,
+            vehicle: saleType === 'vehicle' ? vehicleId : undefined,
+            status: 'confirmed',
+            subtotal: basePrice,
+            taxAmount: tax,
+            discountAmount: discount,
+            totalAmount: grandTotal,
+            paidAmount: paid,
+            balanceAmount,
+            orderDate: now,
+            deliveryDate: expectedDeliveryDate || undefined,
+            items,
+            createdBy: req.user.id
+        });
+
+        if (saleType === 'parts') {
+            await Part.findByIdAndUpdate(partId, { $inc: { currentStock: -qty } });
+        }
+
+        if (saleType === 'vehicle') {
+            await Vehicle.findByIdAndUpdate(vehicleId, { status: 'sold' });
         }
 
         logger.info(`Direct sales order ${orderNumber} created by user ${req.user.id}`);
         res.status(201).json({
             success: true,
-            data: { id: orderId, orderNumber },
+            data: { id: salesOrder._id, orderNumber },
             message: 'Sales order created successfully'
         });
     } catch (error) {

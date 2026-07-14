@@ -10,10 +10,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
 import SearchableSelect from '../components/SearchableSelect';
-import DocumentTemplatesTab from '../components/DocumentTemplatesTab';
-import { erpSettingsAPI, paymentMethodsAPI } from '../services/api';
+import { erpSettingsAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
+import '../styles/userManagement.css';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // REUSABLE COMPONENTS
@@ -162,38 +162,66 @@ function CompanyTab() {
                 </button>
             </div>
 
-            <table className="data-table">
-                <thead>
-                    <tr>
-                        <th>Code</th>
-                        <th>Company Name</th>
-                        <th>Email</th>
-                        <th>Phone</th>
-                        <th>City</th>
-                        <th>Branches</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
+            <div className="desktop-only">
+                <table className="data-table">
+                    <thead>
+                        <tr>
+                            <th>Code</th>
+                            <th>Company Name</th>
+                            <th>Email</th>
+                            <th>Phone</th>
+                            <th>City</th>
+                            <th>Branches</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {companies.length === 0 ? (
+                            <tr><td colSpan="7" style={{ textAlign: 'center' }}>No companies found</td></tr>
+                        ) : (
+                            companies.map(c => (
+                                <tr key={c.id}>
+                                    <td><strong>{c.company_code}</strong></td>
+                                    <td>{c.company_name}</td>
+                                    <td>{c.email}</td>
+                                    <td>{c.phone}</td>
+                                    <td>{c.city}</td>
+                                    <td><span className="badge badge-info">{c.branch_count || 0}</span></td>
+                                    <td>
+                                        <ActionButtons onEdit={() => openModal('edit', c)} onDelete={() => handleDelete(c.id)} />
+                                    </td>
+                                </tr>
+                            ))
+                        )}
+                    </tbody>
+                </table>
+            </div>
+            <div className="mobile-only">
+                <div className="mobile-cards-container">
                     {companies.length === 0 ? (
-                        <tr><td colSpan="7" style={{ textAlign: 'center' }}>No companies found</td></tr>
-                    ) : (
-                        companies.map(c => (
-                            <tr key={c.id}>
-                                <td><strong>{c.company_code}</strong></td>
-                                <td>{c.company_name}</td>
-                                <td>{c.email}</td>
-                                <td>{c.phone}</td>
-                                <td>{c.city}</td>
-                                <td><span className="badge badge-info">{c.branch_count || 0}</span></td>
-                                <td>
-                                    <ActionButtons onEdit={() => openModal('edit', c)} onDelete={() => handleDelete(c.id)} />
-                                </td>
-                            </tr>
-                        ))
-                    )}
-                </tbody>
-            </table>
+                        <div style={{ textAlign: 'center', color: '#999', padding: 20 }}>No companies found</div>
+                    ) : companies.map(c => (
+                        <div key={c.id} className="data-card">
+                            <div className="data-card-top">
+                                <div className="data-card-avatar avatar-purple">{c.company_name?.[0] || 'C'}</div>
+                                <div className="data-card-info">
+                                    <span className="data-card-title">{c.company_name}</span>
+                                    <span className="data-card-subtitle">{c.company_code}</span>
+                                </div>
+                            </div>
+                            <div className="data-card-body">
+                                <div className="data-card-row"><span className="row-icon">📧</span><span className="row-label">Email</span><span className="row-value">{c.email || '-'}</span></div>
+                                <div className="data-card-row"><span className="row-icon">📞</span><span className="row-label">Phone</span><span className="row-value">{c.phone || '-'}</span></div>
+                                <div className="data-card-row"><span className="row-icon">📍</span><span className="row-label">City</span><span className="row-value">{c.city || '-'}</span></div>
+                                <div className="data-card-row"><span className="row-icon">🏢</span><span className="row-label">Branches</span><span className="row-value">{c.branch_count || 0}</span></div>
+                            </div>
+                            <div className="data-card-footer">
+                                <ActionButtons onEdit={() => openModal('edit', c)} onDelete={() => handleDelete(c.id)} />
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
 
             {showModal && (
                 <Modal title={`${modalMode === 'create' ? 'Create' : 'Edit'} Company`} onClose={() => setShowModal(false)} maxWidth="700px">
@@ -389,43 +417,74 @@ function BranchesTab() {
                 </div>
             </div>
 
-            <table className="data-table">
-                <thead>
-                    <tr>
-                        <th>Code</th>
-                        <th>Branch Name</th>
-                        <th>Company</th>
-                        <th>Type</th>
-                        <th>Manager</th>
-                        <th>City</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
+            <div className="desktop-only">
+                <table className="data-table">
+                    <thead>
+                        <tr>
+                            <th>Code</th>
+                            <th>Branch Name</th>
+                            <th>Company</th>
+                            <th>Type</th>
+                            <th>Manager</th>
+                            <th>City</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {branches.length === 0 ? (
+                            <tr><td colSpan="7" style={{ textAlign: 'center' }}>No branches found</td></tr>
+                        ) : (
+                            branches.map(b => (
+                                <tr key={b.id}>
+                                    <td><strong>{b.branch_code}</strong></td>
+                                    <td>{b.branch_name}</td>
+                                    <td>{b.company_name}</td>
+                                    <td><span className={`badge badge-${b.branch_type === 'head_office' ? 'primary' : 'secondary'}`}>
+                                        {branchTypeLabels[b.branch_type] || b.branch_type}
+                                    </span></td>
+                                    <td>{b.manager_name || '-'}</td>
+                                    <td>{b.city}</td>
+                                    <td>
+                                        <ActionButtons
+                                            onEdit={() => openModal('edit', b)}
+                                            onDelete={b.branch_type !== 'head_office' ? () => handleDelete(b.id) : null}
+                                        />
+                                    </td>
+                                </tr>
+                            ))
+                        )}
+                    </tbody>
+                </table>
+            </div>
+            <div className="mobile-only">
+                <div className="mobile-cards-container">
                     {branches.length === 0 ? (
-                        <tr><td colSpan="7" style={{ textAlign: 'center' }}>No branches found</td></tr>
-                    ) : (
-                        branches.map(b => (
-                            <tr key={b.id}>
-                                <td><strong>{b.branch_code}</strong></td>
-                                <td>{b.branch_name}</td>
-                                <td>{b.company_name}</td>
-                                <td><span className={`badge badge-${b.branch_type === 'head_office' ? 'primary' : 'secondary'}`}>
-                                    {branchTypeLabels[b.branch_type] || b.branch_type}
-                                </span></td>
-                                <td>{b.manager_name || '-'}</td>
-                                <td>{b.city}</td>
-                                <td>
-                                    <ActionButtons
-                                        onEdit={() => openModal('edit', b)}
-                                        onDelete={b.branch_type !== 'head_office' ? () => handleDelete(b.id) : null}
-                                    />
-                                </td>
-                            </tr>
-                        ))
-                    )}
-                </tbody>
-            </table>
+                        <div style={{ textAlign: 'center', color: '#999', padding: 20 }}>No branches found</div>
+                    ) : branches.map(b => (
+                        <div key={b.id} className="data-card">
+                            <div className="data-card-top">
+                                <div className="data-card-avatar avatar-cyan">{b.branch_name?.[0] || 'B'}</div>
+                                <div className="data-card-info">
+                                    <span className="data-card-title">{b.branch_name}</span>
+                                    <span className="data-card-subtitle">{b.branch_code}</span>
+                                </div>
+                                <span className={`badge-pill ${b.branch_type === 'head_office' ? 'status-active' : 'status-pending'}`}>{branchTypeLabels[b.branch_type] || b.branch_type}</span>
+                            </div>
+                            <div className="data-card-body">
+                                <div className="data-card-row"><span className="row-icon">🏢</span><span className="row-label">Company</span><span className="row-value">{b.company_name}</span></div>
+                                <div className="data-card-row"><span className="row-icon">👤</span><span className="row-label">Manager</span><span className="row-value">{b.manager_name || '-'}</span></div>
+                                <div className="data-card-row"><span className="row-icon">📍</span><span className="row-label">City</span><span className="row-value">{b.city}</span></div>
+                            </div>
+                            <div className="data-card-footer">
+                                <ActionButtons
+                                    onEdit={() => openModal('edit', b)}
+                                    onDelete={b.branch_type !== 'head_office' ? () => handleDelete(b.id) : null}
+                                />
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
 
             {showModal && (
                 <Modal title={`${modalMode === 'create' ? 'Create' : 'Edit'} Branch`} onClose={() => setShowModal(false)}>
@@ -489,109 +548,6 @@ function BranchesTab() {
                     </form>
                 </Modal>
             )}
-        </div>
-    );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// SYSTEM SETTINGS TAB COMPONENT
-// ═══════════════════════════════════════════════════════════════════════════
-
-function SystemSettingsTab() {
-    const [settings, setSettings] = useState({});
-    const [grouped, setGrouped] = useState({});
-    const [loading, setLoading] = useState(true);
-    const [saving, setSaving] = useState(false);
-    const [changes, setChanges] = useState({});
-
-    const fetchData = useCallback(async () => {
-        try {
-            setLoading(true);
-            const res = await erpSettingsAPI.getSettings();
-            setSettings(res.data.data || []);
-            setGrouped(res.data.grouped || {});
-        } catch (error) {
-            console.error('Error fetching settings:', error);
-        } finally {
-            setLoading(false);
-        }
-    }, []);
-
-    useEffect(() => { fetchData(); }, [fetchData]);
-
-    const handleChange = (key, value) => {
-        setChanges(prev => ({ ...prev, [key]: value }));
-    };
-
-    const handleSave = async () => {
-        try {
-            setSaving(true);
-            const settingsArray = Object.entries(changes).map(([key, value]) => ({ key, value }));
-            await erpSettingsAPI.updateSettings(settingsArray);
-            toast.success('Settings saved successfully');
-            setChanges({});
-            fetchData();
-        } catch (error) {
-            toast.error('Failed to save settings');
-        } finally {
-            setSaving(false);
-        }
-    };
-
-    const categoryLabels = {
-        general: 'General Settings',
-        company: 'Company Information',
-        invoice: 'Invoice Settings',
-        quotation: 'Quotation Settings',
-        booking: 'Booking Settings',
-        sales: 'Sales Settings',
-        notification: 'Notification Settings'
-    };
-
-    if (loading) return <div className="spinner"></div>;
-
-    return (
-        <div className="card">
-            <div className="card-header">
-                <h3>System Settings</h3>
-                <button className="btn btn-primary" onClick={handleSave} disabled={saving || Object.keys(changes).length === 0}>
-                    {saving ? 'Saving...' : 'Save Changes'} ({Object.keys(changes).length})
-                </button>
-            </div>
-
-            <div style={{ padding: '20px' }}>
-                {Object.entries(grouped).map(([category, settingsList]) => (
-                    <div key={category} style={{ marginBottom: '30px' }}>
-                        <h4 style={{ borderBottom: '2px solid var(--primary)', paddingBottom: '10px', marginBottom: '15px' }}>
-                            {categoryLabels[category] || category}
-                        </h4>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '15px' }}>
-                            {settingsList.map(s => {
-                                const currentValue = changes[s.setting_key] !== undefined ? changes[s.setting_key] : s.setting_value;
-                                return (
-                                    <div key={s.setting_key} className="form-group" style={{ marginBottom: 0 }}>
-                                        <label style={{ fontWeight: 500 }}>{s.display_name || s.setting_key}</label>
-                                        {s.description && <small style={{ display: 'block', opacity: 0.7, marginBottom: '5px' }}>{s.description}</small>}
-                                        {s.setting_type === 'boolean' ? (
-                                            <SearchableSelect className="form-control" value={currentValue}
-                                                onChange={e => handleChange(s.setting_key, e.target.value)}>
-                                                <option value="true">Enabled</option>
-                                                <option value="false">Disabled</option>
-                                            </SearchableSelect>
-                                        ) : s.setting_type === 'number' ? (
-                                            <input type="number" className="form-control" value={currentValue}
-                                                onChange={e => handleChange(s.setting_key, e.target.value)} />
-                                        ) : (
-                                            <input type="text" className="form-control" value={currentValue}
-                                                onChange={e => handleChange(s.setting_key, e.target.value)} />
-                                        )}
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    </div>
-                ))}
-            </div>
         </div>
     );
 }
@@ -673,37 +629,68 @@ function CurrenciesTab() {
                 <button className="btn btn-primary" onClick={() => openModal('create')}>+ New Currency</button>
             </div>
 
-            <table className="data-table">
-                <thead>
-                    <tr>
-                        <th>Code</th>
-                        <th>Name</th>
-                        <th>Symbol</th>
-                        <th>Exchange Rate</th>
-                        <th>Default</th>
-                        <th>Status</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {currencies.map(c => (
-                        <tr key={c.id}>
-                            <td><strong>{c.code}</strong></td>
-                            <td>{c.name}</td>
-                            <td>{c.symbol}</td>
-                            <td>{parseFloat(c.exchange_rate).toFixed(4)}</td>
-                            <td>{c.is_default ? <span className="badge badge-success">Default</span> : '-'}</td>
-                            <td><span className={`badge badge-${c.is_active ? 'success' : 'secondary'}`}>{c.is_active ? 'Active' : 'Inactive'}</span></td>
-                            <td>
+            <div className="desktop-only">
+                <table className="data-table">
+                    <thead>
+                        <tr>
+                            <th>Code</th>
+                            <th>Name</th>
+                            <th>Symbol</th>
+                            <th>Exchange Rate</th>
+                            <th>Default</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {currencies.map(c => (
+                            <tr key={c.id}>
+                                <td><strong>{c.code}</strong></td>
+                                <td>{c.name}</td>
+                                <td>{c.symbol}</td>
+                                <td>{parseFloat(c.exchange_rate).toFixed(4)}</td>
+                                <td>{c.is_default ? <span className="badge badge-success">Default</span> : '-'}</td>
+                                <td><span className={`badge badge-${c.is_active ? 'success' : 'secondary'}`}>{c.is_active ? 'Active' : 'Inactive'}</span></td>
+                                <td>
+                                    <ActionButtons
+                                        onEdit={() => openModal('edit', c)}
+                                        onDelete={!c.is_default ? () => handleDelete(c.id) : null}
+                                    />
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+            <div className="mobile-only">
+                <div className="mobile-cards-container">
+                    {currencies.length === 0 ? (
+                        <div style={{ textAlign: 'center', color: '#999', padding: 20 }}>No currencies found</div>
+                    ) : currencies.map(c => (
+                        <div key={c.id} className={`data-card ${!c.is_active ? 'card-inactive' : ''}`}>
+                            <div className="data-card-top">
+                                <div className="data-card-avatar avatar-green">{c.symbol || c.code?.[0] || '$'}</div>
+                                <div className="data-card-info">
+                                    <span className="data-card-title">{c.name}</span>
+                                    <span className="data-card-subtitle">{c.code}</span>
+                                </div>
+                                {c.is_default && <span className="badge-pill status-active">Default</span>}
+                                <span className={`badge-pill ${c.is_active ? 'status-active' : 'status-inactive'}`}>{c.is_active ? 'Active' : 'Inactive'}</span>
+                            </div>
+                            <div className="data-card-body">
+                                <div className="data-card-row"><span className="row-icon">💱</span><span className="row-label">Symbol</span><span className="row-value">{c.symbol}</span></div>
+                                <div className="data-card-row"><span className="row-icon">📊</span><span className="row-label">Rate</span><span className="row-value">{parseFloat(c.exchange_rate).toFixed(4)}</span></div>
+                            </div>
+                            <div className="data-card-footer">
                                 <ActionButtons
                                     onEdit={() => openModal('edit', c)}
                                     onDelete={!c.is_default ? () => handleDelete(c.id) : null}
                                 />
-                            </td>
-                        </tr>
+                            </div>
+                        </div>
                     ))}
-                </tbody>
-            </table>
+                </div>
+            </div>
 
             {showModal && (
                 <Modal title={`${modalMode === 'create' ? 'Create' : 'Edit'} Currency`} onClose={() => setShowModal(false)}>
@@ -823,32 +810,60 @@ function TaxesTab() {
                 <button className="btn btn-primary" onClick={() => openModal('create')}>+ New Tax</button>
             </div>
 
-            <table className="data-table">
-                <thead>
-                    <tr>
-                        <th>Code</th>
-                        <th>Tax Name</th>
-                        <th>Type</th>
-                        <th>Rate</th>
-                        <th>Compound</th>
-                        <th>Status</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {taxes.map(t => (
-                        <tr key={t.id}>
-                            <td><strong>{t.tax_code}</strong></td>
-                            <td>{t.tax_name}</td>
-                            <td><span className="badge badge-info">{taxTypeLabels[t.tax_type] || t.tax_type}</span></td>
-                            <td>{parseFloat(t.tax_rate).toFixed(2)}%</td>
-                            <td>{t.is_compound ? 'Yes' : 'No'}</td>
-                            <td><span className={`badge badge-${t.is_active ? 'success' : 'secondary'}`}>{t.is_active ? 'Active' : 'Inactive'}</span></td>
-                            <td><ActionButtons onEdit={() => openModal('edit', t)} onDelete={() => handleDelete(t.id)} /></td>
+            <div className="desktop-only">
+                <table className="data-table">
+                    <thead>
+                        <tr>
+                            <th>Code</th>
+                            <th>Tax Name</th>
+                            <th>Type</th>
+                            <th>Rate</th>
+                            <th>Compound</th>
+                            <th>Status</th>
+                            <th>Actions</th>
                         </tr>
+                    </thead>
+                    <tbody>
+                        {taxes.map(t => (
+                            <tr key={t.id}>
+                                <td><strong>{t.tax_code}</strong></td>
+                                <td>{t.tax_name}</td>
+                                <td><span className="badge badge-info">{taxTypeLabels[t.tax_type] || t.tax_type}</span></td>
+                                <td>{parseFloat(t.tax_rate).toFixed(2)}%</td>
+                                <td>{t.is_compound ? 'Yes' : 'No'}</td>
+                                <td><span className={`badge badge-${t.is_active ? 'success' : 'secondary'}`}>{t.is_active ? 'Active' : 'Inactive'}</span></td>
+                                <td><ActionButtons onEdit={() => openModal('edit', t)} onDelete={() => handleDelete(t.id)} /></td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+            <div className="mobile-only">
+                <div className="mobile-cards-container">
+                    {taxes.length === 0 ? (
+                        <div style={{ textAlign: 'center', color: '#999', padding: 20 }}>No taxes found</div>
+                    ) : taxes.map(t => (
+                        <div key={t.id} className={`data-card ${!t.is_active ? 'card-inactive' : ''}`}>
+                            <div className="data-card-top">
+                                <div className="data-card-avatar avatar-rose">%</div>
+                                <div className="data-card-info">
+                                    <span className="data-card-title">{t.tax_name}</span>
+                                    <span className="data-card-subtitle">{t.tax_code}</span>
+                                </div>
+                                <span className={`badge-pill ${t.is_active ? 'status-active' : 'status-inactive'}`}>{t.is_active ? 'Active' : 'Inactive'}</span>
+                            </div>
+                            <div className="data-card-body">
+                                <div className="data-card-row"><span className="row-icon">🏷️</span><span className="row-label">Type</span><span className="row-value">{taxTypeLabels[t.tax_type] || t.tax_type}</span></div>
+                                <div className="data-card-row"><span className="row-icon">📊</span><span className="row-label">Rate</span><span className="row-value">{parseFloat(t.tax_rate).toFixed(2)}%</span></div>
+                                <div className="data-card-row"><span className="row-icon">🔄</span><span className="row-label">Compound</span><span className="row-value">{t.is_compound ? 'Yes' : 'No'}</span></div>
+                            </div>
+                            <div className="data-card-footer">
+                                <ActionButtons onEdit={() => openModal('edit', t)} onDelete={() => handleDelete(t.id)} />
+                            </div>
+                        </div>
                     ))}
-                </tbody>
-            </table>
+                </div>
+            </div>
 
             {showModal && (
                 <Modal title={`${modalMode === 'create' ? 'Create' : 'Edit'} Tax Configuration`} onClose={() => setShowModal(false)}>
@@ -905,215 +920,12 @@ function TaxesTab() {
 // PAYMENT METHODS TAB COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════
 
-function PaymentMethodsTab() {
-    const [paymentMethods, setPaymentMethods] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [showModal, setShowModal] = useState(false);
-    const [modalMode, setModalMode] = useState('create');
-    const [selectedItem, setSelectedItem] = useState(null);
-    const [formData, setFormData] = useState({ name: '', type: 'cash' });
-
-    const typeLabels = {
-        cash: '💵 Cash',
-        bank: '🏦 Bank Transfer',
-        card: '💳 Card',
-        cheque: '📄 Cheque',
-        online: '🌐 Online'
-    };
-
-    const fetchData = useCallback(async () => {
-        try {
-            setLoading(true);
-            const res = await paymentMethodsAPI.getAll();
-            setPaymentMethods(res.data.data || []);
-        } catch (error) {
-            console.error('Error fetching payment methods:', error);
-            toast.error('Failed to load payment methods');
-        } finally {
-            setLoading(false);
-        }
-    }, []);
-
-    useEffect(() => { fetchData(); }, [fetchData]);
-
-    const openModal = (mode, item = null) => {
-        setModalMode(mode);
-        setSelectedItem(item);
-        if (item && mode === 'edit') {
-            setFormData({ name: item.name, type: item.type });
-        } else {
-            setFormData({ name: '', type: 'cash' });
-        }
-        setShowModal(true);
-    };
-
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        try {
-            if (modalMode === 'edit') {
-                await paymentMethodsAPI.update(selectedItem.id, formData);
-                toast.success('Payment method updated');
-            } else {
-                await paymentMethodsAPI.create(formData);
-                toast.success('Payment method created');
-            }
-            setShowModal(false);
-            fetchData();
-        } catch (error) {
-            toast.error(error.response?.data?.message || 'Failed to save payment method');
-        }
-    };
-
-    const handleToggleStatus = async (item) => {
-        try {
-            await paymentMethodsAPI.toggleStatus(item.id);
-            toast.success(`Payment method ${item.is_active ? 'deactivated' : 'activated'}`);
-            fetchData();
-        } catch (error) {
-            toast.error('Failed to toggle status');
-        }
-    };
-
-    const handleDelete = async (id) => {
-        if (!window.confirm('Are you sure you want to delete this payment method?')) return;
-        try {
-            await paymentMethodsAPI.delete(id);
-            toast.success('Payment method deleted');
-            fetchData();
-        } catch (error) {
-            toast.error(error.response?.data?.message || 'Failed to delete payment method');
-        }
-    };
-
-    if (loading) return <div className="spinner"></div>;
-
-    return (
-        <div className="card">
-            <div className="card-header">
-                <h3>Payment Methods</h3>
-                <button className="btn btn-primary" onClick={() => openModal('create')}>
-                    <span className="material-icons" style={{ fontSize: '16px', marginRight: '5px', verticalAlign: 'middle' }}>add</span>
-                    New Payment Method
-                </button>
-            </div>
-
-            <div style={{ padding: '15px' }}>
-                <p style={{ color: '#6c757d', marginBottom: '15px' }}>
-                    <span className="material-icons" style={{ fontSize: '16px', verticalAlign: 'middle', marginRight: '5px' }}>info</span>
-                    Payment methods configured here appear in invoice payment dropdowns. Toggle status to show/hide in invoices.
-                </p>
-            </div>
-
-            <table className="data-table">
-                <thead>
-                    <tr>
-                        <th>Name</th>
-                        <th>Type</th>
-                        <th>Status</th>
-                        <th>Usage Count</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {paymentMethods.length === 0 ? (
-                        <tr><td colSpan="5" style={{ textAlign: 'center' }}>No payment methods found</td></tr>
-                    ) : (
-                        paymentMethods.map(pm => (
-                            <tr key={pm.id}>
-                                <td><strong>{pm.name}</strong></td>
-                                <td>
-                                    <span style={{
-                                        padding: '4px 12px',
-                                        borderRadius: '4px',
-                                        fontSize: '0.85rem',
-                                        backgroundColor: pm.type === 'cash' ? '#e8f5e9' :
-                                            pm.type === 'bank' ? '#e3f2fd' :
-                                                pm.type === 'card' ? '#fff3e0' :
-                                                    pm.type === 'cheque' ? '#f3e5f5' : '#e0f7fa'
-                                    }}>
-                                        {typeLabels[pm.type] || pm.type}
-                                    </span>
-                                </td>
-                                <td>
-                                    <button
-                                        className={`badge ${pm.is_active ? 'badge-success' : 'badge-secondary'}`}
-                                        onClick={() => handleToggleStatus(pm)}
-                                        style={{ cursor: 'pointer', border: 'none', padding: '6px 12px' }}
-                                        title={`Click to ${pm.is_active ? 'deactivate' : 'activate'}`}
-                                    >
-                                        <span className="material-icons" style={{ fontSize: '14px', marginRight: '4px', verticalAlign: 'middle' }}>
-                                            {pm.is_active ? 'check_circle' : 'cancel'}
-                                        </span>
-                                        {pm.is_active ? 'Active' : 'Inactive'}
-                                    </button>
-                                </td>
-                                <td>
-                                    <span className="badge badge-info">{pm.usage_count || 0} payments</span>
-                                </td>
-                                <td>
-                                    <div className="action-buttons" style={{ display: 'flex', gap: '8px' }}>
-                                        <button className="btn btn-sm btn-warning" onClick={() => openModal('edit', pm)} title="Edit">
-                                            <span className="material-icons" style={{ fontSize: '16px' }}>edit</span>
-                                        </button>
-                                        {(pm.usage_count || 0) === 0 && (
-                                            <button className="btn btn-sm btn-danger" onClick={() => handleDelete(pm.id)} title="Delete">
-                                                <span className="material-icons" style={{ fontSize: '16px' }}>delete</span>
-                                            </button>
-                                        )}
-                                    </div>
-                                </td>
-                            </tr>
-                        ))
-                    )}
-                </tbody>
-            </table>
-
-            {showModal && (
-                <Modal title={`${modalMode === 'create' ? 'Create' : 'Edit'} Payment Method`} onClose={() => setShowModal(false)}>
-                    <form onSubmit={handleSubmit}>
-                        <div className="form-group">
-                            <label>Method Name *</label>
-                            <input
-                                type="text"
-                                className="form-control"
-                                value={formData.name}
-                                onChange={e => setFormData({ ...formData, name: e.target.value })}
-                                required
-                                placeholder="e.g., Cash, Bank Transfer, Credit Card"
-                            />
-                        </div>
-                        <div className="form-group">
-                            <label>Type *</label>
-                            <SearchableSelect
-                                className="form-control"
-                                value={formData.type}
-                                onChange={e => setFormData({ ...formData, type: e.target.value })}
-                            >
-                                <option value="cash">💵 Cash</option>
-                                <option value="bank">🏦 Bank Transfer</option>
-                                <option value="card">💳 Card (Credit/Debit)</option>
-                                <option value="cheque">📄 Cheque</option>
-                                <option value="online">🌐 Online Payment</option>
-                            </SearchableSelect>
-                        </div>
-                        <div className="form-actions" style={{ marginTop: '20px', display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-                            <button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)}>Cancel</button>
-                            <button type="submit" className="btn btn-primary">
-                                {modalMode === 'create' ? 'Create' : 'Update'}
-                            </button>
-                        </div>
-                    </form>
-                </Modal>
-            )}
-        </div>
-    );
-}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // MAIN SETTINGS COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════
 
-const SETTINGS_HASH_TABS = ['company', 'branches', 'settings', 'currencies', 'taxes', 'doc-templates', 'payment-methods'];
+const SETTINGS_HASH_TABS = ['company', 'branches', 'currencies', 'taxes'];
 
 function Settings() {
     const { user } = useAuth();
@@ -1143,11 +955,8 @@ function Settings() {
     const tabs = [
         { id: 'company', label: 'Companies', icon: 'business' },
         { id: 'branches', label: 'Branches', icon: 'store' },
-        { id: 'settings', label: 'System Settings', icon: 'settings' },
         { id: 'currencies', label: 'Currencies', icon: 'attach_money' },
         { id: 'taxes', label: 'Tax Config', icon: 'receipt' },
-        { id: 'doc-templates', label: 'Print Templates', icon: 'description' },
-        { id: 'payment-methods', label: 'Payment Methods', icon: 'payments' }
     ];
 
     return (
@@ -1155,7 +964,7 @@ function Settings() {
             <div className="page-header">
                 <div>
                     <h1>ERP Settings</h1>
-                    <p>Manage companies, branches, system settings, currencies, and tax configurations</p>
+                    <p>Manage companies, branches, currencies, and tax configurations</p>
                 </div>
             </div>
 
@@ -1189,11 +998,9 @@ function Settings() {
             {/* Tab Content */}
             {activeTab === 'company' && <CompanyTab />}
             {activeTab === 'branches' && <BranchesTab />}
-            {activeTab === 'settings' && <SystemSettingsTab />}
             {activeTab === 'currencies' && <CurrenciesTab />}
             {activeTab === 'taxes' && <TaxesTab />}
-            {activeTab === 'doc-templates' && <DocumentTemplatesTab />}
-            {activeTab === 'payment-methods' && <PaymentMethodsTab />}
+
         </div>
     );
 }

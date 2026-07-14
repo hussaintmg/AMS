@@ -6,6 +6,8 @@ import ActionButtons from '../components/ActionButtons';
 import ConfirmModal from '../components/ConfirmModal';
 import StatusFormModal from '../components/statuses/StatusFormModal';
 import StatusDrawer from '../components/statuses/StatusDrawer';
+import { serverManagementAPI, adminAPI } from '../services/api';
+import toast from 'react-hot-toast';
 import '../styles/userManagement.css';
 
 const StatusManagement = () => {
@@ -32,10 +34,36 @@ const StatusManagement = () => {
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [deleteSaving, setDeleteSaving] = useState(false);
 
+  // Lead status config
+  const [leadCollectionId, setLeadCollectionId] = useState('');
+  const [leadCollections, setLeadCollections] = useState([]);
+  const [leadSaving, setLeadSaving] = useState(false);
+
   // Load data on mount
   useEffect(() => {
     loadCollections();
     loadStats();
+  }, []);
+
+  // Load lead status config
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const [settingRes, collectionsRes] = await Promise.all([
+          serverManagementAPI.getSetting('lead_status_collection_id'),
+          adminAPI.getStatusCollections(),
+        ]);
+        if (settingRes?.data?.data?.value) {
+          setLeadCollectionId(String(settingRes.data.data.value));
+        }
+        if (Array.isArray(collectionsRes?.data?.data)) {
+          setLeadCollections(collectionsRes.data.data);
+        }
+      } catch {
+        // silently fail
+      }
+    };
+    load();
   }, []);
 
   // Refresh when search changes
@@ -68,6 +96,22 @@ const StatusManagement = () => {
     };
     const result = await updateCollection(id, payload);
     return result;
+  };
+
+  const handleLeadSave = async () => {
+    setLeadSaving(true);
+    try {
+      const { data: res } = await serverManagementAPI.saveSetting('lead_status_collection_id', leadCollectionId || '');
+      if (res?.success) {
+        toast.success(res.message || 'Lead status configuration saved');
+      } else {
+        throw new Error(res?.message || 'Failed to save');
+      }
+    } catch (err) {
+      toast.error(err?.response?.data?.message || err.message || 'Failed to save lead status configuration');
+    } finally {
+      setLeadSaving(false);
+    }
   };
 
   const handleDelete = async (id) => {
@@ -111,11 +155,11 @@ const StatusManagement = () => {
     <div className="user-management-page">
       <div className="page-header">
         <div>
-          <h1>Status Collections</h1>
-          <p className="subtitle">Manage status collections and their items</p>
+          <h1>Option Collections</h1>
+          <p className="subtitle">Manage option collections and their items</p>
         </div>
         <button className="btn btn-primary" onClick={() => setShowCreateModal(true)}>
-          + Create Status Collection
+          + Create Option Collection
         </button>
       </div>
 
@@ -149,11 +193,47 @@ const StatusManagement = () => {
             <div className="stat-icon">&#x1F4A0;</div>
             <div className="stat-content">
               <span className="stat-value">{stats.totalItems || 0}</span>
-              <span className="stat-label">Total Status Items</span>
+              <span className="stat-label">Total Option Items</span>
             </div>
           </div>
         </div>
       )}
+
+      {/* Lead Option Configuration */}
+      <div className="stat-card" style={{ marginBottom: '20px', padding: '16px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+        <div style={{ flex: '1', minWidth: '200px' }}>
+          <div style={{ fontWeight: 600, fontSize: '14px', marginBottom: '4px' }}>Lead Option Configuration</div>
+          <div style={{ fontSize: '13px', color: '#64748b' }}>
+            Select which option collection is used for Leads.
+            {leadCollectionId && leadCollections.length > 0 && (
+              <span style={{ marginLeft: '8px' }}>
+                Current: <strong>{leadCollections.find((c) => String(c._id) === leadCollectionId)?.name || 'Unknown'}</strong>
+              </span>
+            )}
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <select
+            className="form-control"
+            style={{ minWidth: '200px' }}
+            value={leadCollectionId}
+            onChange={(e) => setLeadCollectionId(e.target.value)}
+          >
+            <option value="">Select option collection...</option>
+            {leadCollections.map((sc) => (
+              <option key={sc._id} value={String(sc._id)}>{sc.name} ({sc.key})</option>
+            ))}
+          </select>
+          <button
+            className="btn btn-primary"
+            onClick={handleLeadSave}
+            disabled={leadSaving}
+            style={{ whiteSpace: 'nowrap' }}
+          >
+            {leadSaving ? 'Saving...' : 'Save'}
+          </button>
+        </div>
+      </div>
 
       {/* Search & Filter */}
       <div style={{ display: 'flex', gap: '12px', marginBottom: '20px', flexWrap: 'wrap' }}>
@@ -192,7 +272,7 @@ const StatusManagement = () => {
               <tr>
                 <th>Name</th>
                 <th>Key</th>
-                <th>Status Count</th>
+                <th>Option Count</th>
                 <th>Active Items</th>
                 <th>Usage Count</th>
                 <th>Status</th>
@@ -204,7 +284,7 @@ const StatusManagement = () => {
               {displayedCollections.length === 0 ? (
                 <tr>
                   <td colSpan="8" style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>
-                    No status collections found
+                    No option collections found
                   </td>
                 </tr>
               ) : (
@@ -227,18 +307,13 @@ const StatusManagement = () => {
                     </td>
                     <td>{formatDate(col.createdAt)}</td>
                     <td onClick={(e) => e.stopPropagation()}>
-                      <div className="action-buttons">
-                        <button
-                          className="btn-action btn-edit"
-                          onClick={() => openDrawer(col._id || col.id)}
-                          title="View Details"
-                        >&#128065;</button>
-                        <button
-                          className="btn-action btn-delete"
-                          onClick={() => setDeleteConfirm(col)}
-                          title="Delete"
-                        >&#128465;</button>
-                      </div>
+                      <ActionButtons
+                        showView
+                        showEdit={false}
+                        onView={() => openDrawer(col._id || col.id)}
+                        onDelete={() => setDeleteConfirm(col)}
+                        title={col.name}
+                      />
                     </td>
                   </tr>
                 ))
@@ -253,7 +328,7 @@ const StatusManagement = () => {
         <div className="mobile-cards-container mobile-only">
           {displayedCollections.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>
-              No status collections found
+              No option collections found
             </div>
           ) : (
             displayedCollections.map((col) => (
@@ -275,7 +350,7 @@ const StatusManagement = () => {
                     <span>{col.key}</span>
                   </div>
                   <div className="user-card-field">
-                    <span className="field-label">Statuses</span>
+                    <span className="field-label">Options</span>
                     <span>{col.statusCount ?? 0} total, {col.activeStatusCount ?? 0} active</span>
                   </div>
                   <div className="user-card-field">
@@ -283,15 +358,14 @@ const StatusManagement = () => {
                     <span>{formatDate(col.createdAt)}</span>
                   </div>
                 </div>
-                <div className="user-card-actions">
-                  <button
-                    className="btn btn-sm btn-secondary"
-                    onClick={(e) => { e.stopPropagation(); openDrawer(col._id || col.id); }}
-                  >View</button>
-                  <button
-                    className="btn btn-sm btn-delete"
-                    onClick={(e) => { e.stopPropagation(); setDeleteConfirm(col); }}
-                  >Delete</button>
+                <div className="user-card-actions" onClick={(e) => e.stopPropagation()}>
+                  <ActionButtons
+                    showView
+                    showEdit={false}
+                    onView={() => openDrawer(col._id || col.id)}
+                    onDelete={() => setDeleteConfirm(col)}
+                    title={col.name}
+                  />
                 </div>
               </div>
             ))
@@ -327,8 +401,8 @@ const StatusManagement = () => {
       {/* Delete Collection Confirm */}
       <ConfirmModal
         isOpen={!!deleteConfirm}
-        title="Delete Status Collection"
-        message={`Are you sure you want to delete "${deleteConfirm?.name}"? Its statuses will be deactivated.`}
+        title="Delete Option Collection"
+        message={`Are you sure you want to delete "${deleteConfirm?.name}"? Its options will be deactivated.`}
         onConfirm={() => handleDelete(deleteConfirm?._id || deleteConfirm?.id)}
         onCancel={() => setDeleteConfirm(null)}
         confirmText="Delete"

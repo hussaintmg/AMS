@@ -1,0 +1,6 @@
+# AMS Lead Master bulk import. _masterType = source | type | priority | city. Per type: source(description, color) | type(description, color, category vehicle|service|parts|general|corporate|other, lead_type_mapping "parts,vehicles,services") | priority(description, color, level 0-10) | city(name only). sort_order optional for all.
+"_masterType","name","description","color","sort_order","is_active","category","lead_type_mapping","level"
+"source","Website","Online website inquiry","#3b82f6","1","true","","",""
+"type","Vehicle Purchase","New vehicle purchase lead","#06b6d4","1","true","vehicle","vehicles",""
+"priority","High","Follow up urgently","#ef4444","1","true","","","8"
+"city","Karachi","","","1","true","","",""

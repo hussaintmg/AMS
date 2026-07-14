@@ -1,10 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import { X } from 'lucide-react';
 import { useLeads } from '../../context/LeadsContext';
-import { leadMasterAPI } from '../../services/api';
 import SearchableSelect from '../SearchableSelect';
-import LeadQuickCreateModal from './LeadQuickCreateModal';
+import LeadMasterModal from './LeadMasterModal';
 import LeadStatusItemModal from './LeadStatusItemModal';
 import useModalKeyboard from '../../hooks/useModalKeyboard';
 
@@ -142,13 +141,6 @@ export default function LeadFormModal({ lead, onClose, onSaved }) {
 
   useModalKeyboard(true, onClose, handleSubmit, saving);
 
-  const handleQuickCreated = (type, newItem) => {
-    loadMeta();
-    if (newItem?._id) {
-      set(type, newItem._id);
-    }
-  };
-
   const getAssignedOptions = () => {
     if (!meta.leadAssignmentRolesConfigured && meta.users.length === 0) {
       return { users: [], empty: true };
@@ -225,8 +217,15 @@ export default function LeadFormModal({ lead, onClose, onSaved }) {
             </div>
             <div className="form-row">
               <div className="form-group">
-                <label>City</label>
-                <input type="text" className={`form-input ${errors.city ? 'input-error' : ''}`} value={form.city} onChange={(e) => set('city', e.target.value)} placeholder="City" />
+                {renderLabel('City', 'city', () => setQuickCreate({ show: true, type: 'cities' }))}
+                <SearchableSelect
+                  options={(meta.cities || []).map((city) => ({ _id: city.name, name: city.name }))}
+                  value={form.city}
+                  onChange={(val) => set('city', val.target.value)}
+                  placeholder="Select city"
+                  valueField="_id"
+                  labelField="name"
+                />
                 {errors.city && <small className="field-error">{errors.city}</small>}
               </div>
               <div className="form-group">
@@ -411,10 +410,21 @@ export default function LeadFormModal({ lead, onClose, onSaved }) {
       </div>
 
       {quickCreate.show && (
-        <LeadQuickCreateModal
+        <LeadMasterModal
           type={quickCreate.type}
           onClose={() => setQuickCreate({ show: false, type: null })}
-          onCreated={(item) => handleQuickCreated(quickCreate.type === 'sources' ? 'source' : (quickCreate.type === 'types' ? 'type' : 'priority'), item)}
+          onSaved={(item) => {
+            const field = quickCreate.type === 'sources' ? 'source'
+              : quickCreate.type === 'types' ? 'type'
+                : quickCreate.type === 'cities' ? 'city'
+                  : 'priority';
+            loadMeta();
+            if (field === 'city' && item?.name) {
+              set('city', item.name);
+            } else if (item?._id) {
+              set(field, item._id);
+            }
+          }}
         />
       )}
 

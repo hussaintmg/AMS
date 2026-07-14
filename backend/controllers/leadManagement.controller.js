@@ -4,6 +4,7 @@ const Lead = require('../models/Lead.model');
 const LeadSource = require('../models/LeadSource.model');
 const LeadType = require('../models/LeadType.model');
 const LeadPriority = require('../models/LeadPriority.model');
+const LeadCity = require('../models/LeadCity.model');
 
 const StatusCollection = require('../models/StatusCollection.model');
 const StatusItem = require('../models/StatusItem.model');
@@ -568,10 +569,11 @@ exports.getLeadMeta = async (req, res) => {
       statuses = await StatusItem.find({ collection: statusCollection._id, isActive: true }).sort({ order: 1 }).lean();
     }
 
-    const [sources, types, priorities, departments] = await Promise.all([
+    const [sources, types, priorities, cities, departments] = await Promise.all([
       LeadSource.find({ isActive: true }).sort({ sortOrder: 1 }).lean(),
       LeadType.find({ isActive: true }).sort({ name: 1 }).lean(),
       LeadPriority.find({ isActive: true }).sort({ sortOrder: 1 }).lean(),
+      LeadCity.find({ isActive: true }).sort({ sortOrder: 1, name: 1 }).lean(),
       Department.find({ isActive: true }).select('name').sort({ name: 1 }).lean(),
     ]);
 
@@ -598,6 +600,7 @@ exports.getLeadMeta = async (req, res) => {
         sources,
         types,
         priorities,
+        cities,
         users,
         departments,
         inactiveItems: inactiveWithLeads,

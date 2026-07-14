@@ -660,4 +660,13 @@ router.put('/suppliers/:id', authenticate, vehicleMasterController.updateSupplie
  */
 router.delete('/suppliers/:id', authenticate, vehicleMasterController.deleteSupplier);
 
+// ═══════════════════════════════════════════════════════════════════════════
+// VEHICLE CONDITIONS
+// ═══════════════════════════════════════════════════════════════════════════
+
+router.get('/conditions', authenticate, vehicleMasterController.getConditions);
+router.post('/conditions', authenticate, vehicleMasterController.createCondition);
+router.put('/conditions/:id', authenticate, vehicleMasterController.updateCondition);
+router.delete('/conditions/:id', authenticate, vehicleMasterController.deleteCondition);
+
 module.exports = router;

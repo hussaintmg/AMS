@@ -12,7 +12,6 @@ const leadTypeSchema = new mongoose.Schema({
   updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
 }, { timestamps: true });
 
-leadTypeSchema.index({ code: 1 });
 leadTypeSchema.index({ isActive: 1 });
 leadTypeSchema.index({ category: 1 });
 

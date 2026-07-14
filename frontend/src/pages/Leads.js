@@ -1,16 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
-import { Plus, ChevronLeft, ChevronRight, User, CalendarDays, ChartBar, ArrowRightLeft, X, Filter } from 'lucide-react';
+import { Plus, ChevronLeft, ChevronRight, User, CalendarDays, ChartBar, ArrowRightLeft, X, Filter, Upload } from 'lucide-react';
 import { LeadsProvider, useLeads } from '../context/LeadsContext';
 import LeadFormModal from '../components/leads/LeadFormModal';
 import LeadDrawer from '../components/leads/LeadDrawer';
 import ActionButtons from '../components/ActionButtons';
 import ConfirmModal from '../components/ConfirmModal';
+import BulkUploadModal from '../components/BulkUploadModal';
 import '../styles/leadManagement.css';
 import '../styles/filters.css';
-
-function XIcon({ className }) { return <X className={className} />; }
 
 const statsIcons = {
   total: { icon: User, color: '#3b82f6', bg: '#dbeafe' },
@@ -24,7 +23,7 @@ const statsIcons = {
 
 function LeadsPage() {
   const navigate = useNavigate();
-  const { leads, meta, stats, pagination, search, filters, loading, handleSearch, handleFilter, clearFilters, applyFilters, goToPage, refreshLeads, deleteLead, loadLeads, convertLead } = useLeads();
+  const { leads, meta, stats, pagination, search, filters, loading, handleSearch, handleFilter, clearFilters, goToPage, refreshLeads, deleteLead, loadLeads, convertLead } = useLeads();
   const [showForm, setShowForm] = useState(false);
   const [editLead, setEditLead] = useState(null);
   const [drawerId, setDrawerId] = useState(null);
@@ -34,6 +33,41 @@ function LeadsPage() {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [showFilters, setShowFilters] = useState(false);
   const [converting, setConverting] = useState(null);
+  const [showBulkUpload, setShowBulkUpload] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [deleteAllTarget, setDeleteAllTarget] = useState(null);
+  const [deletingAll, setDeletingAll] = useState(false);
+
+  const toggleSelect = (id) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    setSelectedIds(prev => prev.size === leads.length ? new Set() : new Set(leads.map(l => l._id)));
+  };
+
+  const handleBulkDelete = async () => {
+    setDeletingAll(true);
+    try {
+      const ids = Array.from(selectedIds);
+      for (const id of ids) {
+        const res = await deleteLead(id);
+        if (!res?.success) toast.error(res?.message || `Failed to delete ${id}`);
+      }
+      toast.success(`${ids.length} lead(s) deactivated`);
+      setSelectedIds(new Set());
+      setDeleteAllTarget(null);
+      refreshLeads();
+    } catch (err) {
+      toast.error('Bulk delete failed');
+    } finally {
+      setDeletingAll(false);
+    }
+  };
 
   useEffect(() => {
     const handler = () => setIsMobile(window.innerWidth < 768);
@@ -145,6 +179,7 @@ function LeadsPage() {
         <table className="data-table">
           <thead>
             <tr>
+              <th style={{ width: 40 }}><input type="checkbox" checked={selectedIds.size === leads.length && leads.length > 0} onChange={toggleSelectAll} /></th>
               <th>Lead No</th>
               <th>Customer</th>
               <th>Contact</th>
@@ -160,6 +195,7 @@ function LeadsPage() {
           <tbody>
             {leads.map((lead) => (
               <tr key={lead._id} className={lead.convertedToCustomer ? 'row-converted' : ''} onClick={() => setDrawerId(lead._id)} style={{ cursor: 'pointer' }}>
+                <td style={{ width: 40 }} onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selectedIds.has(lead._id)} onChange={() => toggleSelect(lead._id)} /></td>
                 <td><span className="lead-no-badge">{lead.leadNo}</span></td>
                 <td>
                   <div className="user-cell">
@@ -312,6 +348,13 @@ function LeadsPage() {
             </select>
           </div>
           <div className="filter-group">
+            <label>CITY</label>
+            <select className="form-control" value={filters.city || ''} onChange={(e) => handleFilterChange('city', e.target.value)}>
+              <option value="">All Cities</option>
+              {(meta.cities || []).map((city) => <option key={city._id} value={city.name}>{city.name}</option>)}
+            </select>
+          </div>
+          <div className="filter-group">
             <label>PRIORITY</label>
             <select className="form-control" value={filters.priority || ''} onChange={(e) => handleFilterChange('priority', e.target.value)}>
               <option value="">All Priorities</option>
@@ -374,9 +417,20 @@ function LeadsPage() {
           <h1>Leads Management</h1>
           <p className="subtitle">Manage and track sales leads</p>
         </div>
-        <button className="btn btn-primary btn-create" onClick={() => { setEditLead(null); setShowForm(true); }}>
-          <Plus size={20} /> Add New Lead
-        </button>
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+          <button
+            type="button"
+            className="btn btn-secondary btn-create"
+            onClick={() => setShowBulkUpload(true)}
+            title="Bulk upload leads (CSV / XLSX)"
+          >
+            <Upload size={18} style={{ marginRight: 6 }} />
+            Upload
+          </button>
+          <button className="btn btn-primary btn-create" onClick={() => { setEditLead(null); setShowForm(true); }}>
+            <Plus size={20} /> Add New Lead
+          </button>
+        </div>
       </div>
 
       {renderStats()}
@@ -384,7 +438,27 @@ function LeadsPage() {
       {renderFilters()}
 
       {isMobile ? renderCards() : renderTable()}
+      {selectedIds.size > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, marginTop: 8 }}>
+          <span style={{ fontWeight: 600, color: '#991b1b' }}>{selectedIds.size} selected</span>
+          <button className="btn btn-danger btn-sm" onClick={() => setDeleteAllTarget(true)}>Delete All</button>
+          <button className="btn btn-secondary btn-sm" onClick={() => setSelectedIds(new Set())}>Deselect All</button>
+        </div>
+      )}
       {renderPagination()}
+
+      {deleteAllTarget && (
+        <ConfirmModal
+          isOpen={true}
+          title="Delete Selected Leads"
+          message={`Are you sure you want to deactivate ${selectedIds.size} lead(s)?`}
+          confirmText={deletingAll ? 'Deleting...' : 'Delete All'}
+          cancelText="Cancel"
+          type="danger"
+          onConfirm={handleBulkDelete}
+          onCancel={() => setDeleteAllTarget(null)}
+        />
+      )}
 
       {showForm && (
         <LeadFormModal
@@ -401,6 +475,15 @@ function LeadsPage() {
           onUpdated={refreshLeads}
         />
       )}
+
+      <BulkUploadModal
+        isOpen={showBulkUpload}
+        onClose={() => setShowBulkUpload(false)}
+        title="Bulk upload leads"
+        description="Import leads from CSV or XLSX. Required columns: customer_name, email, phone."
+        templateType="leads"
+        onCompleted={() => { refreshLeads(); }}
+      />
 
       {deleteTarget && (
         <ConfirmModal

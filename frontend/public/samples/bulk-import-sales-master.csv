@@ -1,0 +1,8 @@
+# AMS Sales Master bulk import. _masterType = payment-term | delivery-term | quotation-validity | discount-type | sales-order-type | invoice-type. days = due/validity days (payment terms & quotation validities). discount_type = percentage|fixed with discount_value (discount types).
+"_masterType","name","code","description","is_active","days","discount_type","discount_value"
+"payment-term","Net 30","NET30","Payment due within 30 days","true","30","",""
+"delivery-term","Ex Works","EXW","Buyer collects from premises","true","","",""
+"quotation-validity","30 Days","VAL30","Quotation valid for 30 days","true","30","",""
+"discount-type","Bulk Discount","BULK-10","10 percent bulk order discount","true","","percentage","10"
+"sales-order-type","Standard Order","SO-STD","Standard sales order","true","","",""
+"invoice-type","Standard Invoice","INV-STD","Standard tax invoice","true","","",""

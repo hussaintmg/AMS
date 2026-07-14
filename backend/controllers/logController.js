@@ -2,10 +2,7 @@ const logService = require('../services/log.service');
 
 const queryLogs = async (req, res, next) => {
   try {
-    console.log('queryLogs called with query:', req.query);
-    console.log("=".repeat(80));
     const result = await logService.queryLogs(req.query, req.user);
-    console.log('result:', result);
     res.json({
       success: true,
       message: 'Logs fetched successfully',

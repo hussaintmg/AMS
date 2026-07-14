@@ -3,7 +3,7 @@ import toast from 'react-hot-toast';
 import { X } from 'lucide-react';
 import { leadMasterAPI } from '../../services/api';
 
-const LABEL_MAP = { sources: 'Source', types: 'Type', priorities: 'Priority' };
+const LABEL_MAP = { sources: 'Source', types: 'Type', priorities: 'Priority', cities: 'City' };
 
 export default function LeadQuickCreateModal({ type, onClose, onCreated }) {
   const [name, setName] = useState('');

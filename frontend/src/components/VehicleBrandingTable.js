@@ -7,6 +7,7 @@
  */
 
 import React, { useState } from 'react';
+import { SquarePen, Trash2 } from 'lucide-react';
 import './VehicleBrandingTable.css';
 
 const VehicleBrandingTable = ({
@@ -14,11 +15,22 @@ const VehicleBrandingTable = ({
     onEdit,
     onDelete,
     onStatusChange,
+    onBulkDelete,
+    selectedBrandIds: externalSelected,
+    onSelectedBrandIdsChange,
     loading = false,
     error = null,
     pagination = {}
+    ,
+    // optional filter props (controlled by parent)
+    searchTerm = '',
+    onSearchTermChange = null,
+    filterActive = null,
+    onFilterActiveChange = null,
 }) => {
-    const [selectedBrands, setSelectedBrands] = useState(new Set());
+    const [internalSelected, setInternalSelected] = useState(new Set());
+    const selectedBrands = externalSelected ?? internalSelected;
+    const setSelectedBrands = onSelectedBrandIdsChange ?? setInternalSelected;
 
     const handleSelectAll = (e) => {
         if (e.target.checked) {
@@ -85,10 +97,20 @@ const VehicleBrandingTable = ({
                     >
                         ✕ Deactivate
                     </button>
+                    {onBulkDelete && (
+                        <button
+                            className="btn btn-danger"
+                            style={{ background: '#dc2626' }}
+                            onClick={() => onBulkDelete(Array.from(selectedBrands))}
+                        >
+                            🗑 Delete
+                        </button>
+                    )}
                 </div>
             )}
 
             <div className="table-responsive">
+                <div className="desktop-only">
                 <table className="vehicle-branding-table">
                     <thead>
                         <tr>
@@ -108,6 +130,40 @@ const VehicleBrandingTable = ({
                             <th>Status</th>
                             <th>Created</th>
                             <th>Actions</th>
+                        </tr>
+                        {/* Filter row - mirrors other table UIs (desktop only) */}
+                        <tr className="filter-row desktop-only">
+                            <th></th>
+                            <th></th>
+                            <th>
+                                <input
+                                    type="text"
+                                    className="form-input filter-input"
+                                    placeholder="Filter brand..."
+                                    value={searchTerm}
+                                    onChange={(e) => onSearchTermChange?.(e.target.value)}
+                                />
+                            </th>
+                            <th>
+                                <input
+                                    type="text"
+                                    className="form-input filter-input"
+                                    placeholder="Filter country..."
+                                    value={''}
+                                    onChange={() => {}}
+                                />
+                            </th>
+                            <th></th>
+                            <th></th>
+                            <th>
+                                <select className="form-input filter-input" value={filterActive === null ? '' : filterActive} onChange={(e) => onFilterActiveChange?.(e.target.value === '' ? null : (e.target.value === 'true'))}>
+                                    <option value="">All</option>
+                                    <option value="true">Active</option>
+                                    <option value="false">Inactive</option>
+                                </select>
+                            </th>
+                            <th></th>
+                            <th></th>
                         </tr>
                     </thead>
                     <tbody>
@@ -177,32 +233,77 @@ const VehicleBrandingTable = ({
                                         {brand.created_at ? new Date(brand.created_at).toLocaleDateString() : 'N/A'}
                                     </td>
                                     <td className="actions-col">
-                                        <button
-                                            className="btn btn-primary"
-                                            onClick={() => onEdit(brand)}
-                                            title="Edit brand"
-                                            aria-label={`Edit ${brand.name}`}
-                                        >
-                                            ✎ Edit
-                                        </button>
-                                        <button
-                                            className="btn btn-danger"
-                                            onClick={() => {
-                                                if (window.confirm(`Are you sure you want to delete ${brand.name}?`)) {
-                                                    onDelete(brand.id);
-                                                }
-                                            }}
-                                            title="Delete brand"
-                                            aria-label={`Delete ${brand.name}`}
-                                        >
-                                            🗑 Delete
-                                        </button>
+                                        <div className="action-buttons">
+                                            <button
+                                                className="btn-action btn-edit"
+                                                onClick={() => onEdit(brand)}
+                                                title="Edit brand"
+                                                aria-label={`Edit ${brand.name}`}
+                                            >
+                                                <SquarePen size={17} className="action-icon" />
+                                            </button>
+                                            <button
+                                                className="btn-action btn-delete"
+                                                onClick={() => {
+                                                    if (window.confirm(`Are you sure you want to delete ${brand.name}?`)) {
+                                                        onDelete(brand.id);
+                                                    }
+                                                }}
+                                                title="Delete brand"
+                                                aria-label={`Delete ${brand.name}`}
+                                            >
+                                                <Trash2 size={17} className="action-icon" />
+                                            </button>
+                                        </div>
                                     </td>
                                 </tr>
                             ))
                         )}
                     </tbody>
                 </table>
+                </div>
+            </div>
+
+            {/* Mobile card view */}
+            <div className="mobile-cards-container mobile-only">
+                {brands.length === 0 ? (
+                    <div className="empty-state">
+                        <div className="empty-icon">🏷️</div>
+                        <h3>No Brands Found</h3>
+                        <p>No brands match your search criteria.</p>
+                    </div>
+                ) : (
+                    <div className="brands-cards-grid">
+                        {brands.map(brand => (
+                            <div key={brand.id} className={`brand-card ${brand.is_active ? '' : 'card-inactive'}`}>
+                                <div className="brand-card-header">
+                                    <div className="brand-card-logo">
+                                        {brand.logo_url ? (
+                                            <img src={brand.logo_url} alt={brand.name} />
+                                        ) : (
+                                            <div className="logo-placeholder-small">{brand.name?.charAt(0)?.toUpperCase() || '?'}</div>
+                                        )}
+                                    </div>
+                                    <div className="brand-card-title">
+                                        <strong>{brand.name}</strong>
+                                        <div className="brand-card-sub">{brand.country_of_origin || 'N/A'}</div>
+                                    </div>
+                                    <div className={`status-badge ${brand.is_active ? 'status-active' : 'status-inactive'}`}>
+                                        {brand.is_active ? 'Active' : 'Inactive'}
+                                    </div>
+                                </div>
+                                <div className="brand-card-body">
+                                    <div className="brand-stat"><span className="stat-label">Makes</span><span className="stat-value">{brand.total_makes || 0}</span></div>
+                                    <div className="brand-stat"><span className="stat-label">Vehicles</span><span className="stat-value">{brand.total_vehicles || 0}</span></div>
+                                </div>
+                                <div className="brand-card-actions">
+                                    <button className="btn btn-sm" onClick={() => onEdit(brand)}>Edit</button>
+                                    <button className="btn btn-sm btn-danger" onClick={() => onDelete(brand.id)}>Delete</button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
             </div>
 
             {pagination && pagination.totalPages > 1 && (

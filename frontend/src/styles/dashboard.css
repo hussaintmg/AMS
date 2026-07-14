@@ -904,6 +904,30 @@
     text-decoration: underline;
 }
 
+@media (max-width: 768px) {
+    .recent-table thead { display: none; }
+    .recent-table tr {
+        display: block;
+        border: 1px solid var(--gray-200);
+        border-radius: var(--radius-md);
+        padding: var(--spacing-2);
+        margin-bottom: var(--spacing-2);
+    }
+    .recent-table td {
+        display: flex;
+        justify-content: space-between;
+        padding: 4px 0;
+        border: none;
+    }
+    .recent-table td::before {
+        content: attr(data-label);
+        font-weight: 600;
+        color: var(--gray-500);
+        margin-right: var(--spacing-2);
+        flex-shrink: 0;
+    }
+}
+
 .dashboard-title-mi {
     font-size: 28px;
     margin-right: var(--spacing-2);

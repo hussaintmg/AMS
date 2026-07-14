@@ -13,6 +13,7 @@
 
 const { query } = require('../config/database');
 const { AppError } = require('../middleware/errorHandler');
+const logger = require('../utils/logger');
 
 // ═══════════════════════════════════════════════════════════════════════════
 // APPOINTMENTS CONTROLLER
@@ -89,6 +90,7 @@ const getAllAppointments = async (req, res, next) => {
             }
         });
     } catch (error) {
+        logger.error('ServiceManagement error:', error);
         next(error);
     }
 };
@@ -107,6 +109,7 @@ const getAppointmentById = async (req, res, next) => {
 
         res.json({ success: true, data: appointments[0] });
     } catch (error) {
+        logger.error('ServiceManagement error:', error);
         next(error);
     }
 };
@@ -154,6 +157,7 @@ const createAppointment = async (req, res, next) => {
             data: newAppointment
         });
     } catch (error) {
+        logger.error('ServiceManagement error:', error);
         next(error);
     }
 };
@@ -208,6 +212,7 @@ const updateAppointment = async (req, res, next) => {
             data: updatedAppointment
         });
     } catch (error) {
+        logger.error('ServiceManagement error:', error);
         next(error);
     }
 };
@@ -235,6 +240,7 @@ const updateAppointmentStatus = async (req, res, next) => {
             data: updatedAppointment
         });
     } catch (error) {
+        logger.error('ServiceManagement error:', error);
         next(error);
     }
 };
@@ -257,6 +263,7 @@ const deleteAppointment = async (req, res, next) => {
 
         res.json({ success: true, message: 'Appointment cancelled successfully' });
     } catch (error) {
+        logger.error('ServiceManagement error:', error);
         next(error);
     }
 };
@@ -282,6 +289,7 @@ const getAppointmentStats = async (req, res, next) => {
 
         res.json({ success: true, data: stats });
     } catch (error) {
+        logger.error('ServiceManagement error:', error);
         next(error);
     }
 };
@@ -361,6 +369,7 @@ const getAllJobCards = async (req, res, next) => {
             }
         });
     } catch (error) {
+        logger.error('ServiceManagement error:', error);
         next(error);
     }
 };
@@ -404,6 +413,7 @@ const getJobCardById = async (req, res, next) => {
             }
         });
     } catch (error) {
+        logger.error('ServiceManagement error:', error);
         next(error);
     }
 };
@@ -416,7 +426,7 @@ const createJobCard = async (req, res, next) => {
         const {
             appointmentId, customerId, vehicleId, vehicleNumber, vehicleMake,
             vehicleModel, vehicleVin, odometerReading, fuelLevel, promisedDate,
-            customerRemarks, serviceAdvisorId, technicianId
+            customerRemarks, discount, taxAmount
         } = req.body;
 
         // Validation
@@ -433,13 +443,14 @@ const createJobCard = async (req, res, next) => {
                 job_card_number, appointment_id, customer_id, vehicle_id,
                 customer_vehicle_number, customer_vehicle_make, customer_vehicle_model,
                 customer_vehicle_vin, odometer_reading, fuel_level, received_date,
-                promised_date, customer_remarks, created_by
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?)
+                promised_date, customer_remarks, discount, tax_amount, created_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?)
         `, [
             jobCardNumber, appointmentId || null, customerId, vehicleId || null,
             vehicleNumber, vehicleMake, vehicleModel, vehicleVin || null,
             odometerReading || null, fuelLevel || null,
             promisedDate || null, customerRemarks || null,
+            discount || 0, taxAmount || 0,
             req.user.id
         ]);
 
@@ -459,6 +470,7 @@ const createJobCard = async (req, res, next) => {
             data: newJobCard
         });
     } catch (error) {
+        logger.error('ServiceManagement error:', error);
         next(error);
     }
 };
@@ -516,6 +528,7 @@ const updateJobCard = async (req, res, next) => {
             data: updatedJobCard
         });
     } catch (error) {
+        logger.error('ServiceManagement error:', error);
         next(error);
     }
 };
@@ -547,6 +560,7 @@ const updateJobCardStatus = async (req, res, next) => {
             data: updatedJobCard
         });
     } catch (error) {
+        logger.error('ServiceManagement error:', error);
         next(error);
     }
 };
@@ -588,6 +602,7 @@ const completeJobCard = async (req, res, next) => {
             data: completedJobCard
         });
     } catch (error) {
+        logger.error('ServiceManagement error:', error);
         next(error);
     }
 };
@@ -610,6 +625,7 @@ const deleteJobCard = async (req, res, next) => {
 
         res.json({ success: true, message: 'Job card cancelled successfully' });
     } catch (error) {
+        logger.error('ServiceManagement error:', error);
         next(error);
     }
 };
@@ -636,6 +652,7 @@ const getJobCardStats = async (req, res, next) => {
 
         res.json({ success: true, data: stats });
     } catch (error) {
+        logger.error('ServiceManagement error:', error);
         next(error);
     }
 };
@@ -679,6 +696,7 @@ const addJobCardService = async (req, res, next) => {
             data: newService
         });
     } catch (error) {
+        logger.error('ServiceManagement error:', error);
         next(error);
     }
 };
@@ -720,6 +738,7 @@ const updateJobCardService = async (req, res, next) => {
             data: updatedService
         });
     } catch (error) {
+        logger.error('ServiceManagement error:', error);
         next(error);
     }
 };
@@ -738,6 +757,7 @@ const deleteJobCardService = async (req, res, next) => {
 
         res.json({ success: true, message: 'Service removed from job card' });
     } catch (error) {
+        logger.error('ServiceManagement error:', error);
         next(error);
     }
 };
@@ -793,6 +813,7 @@ const addJobCardPart = async (req, res, next) => {
             data: newPart
         });
     } catch (error) {
+        logger.error('ServiceManagement error:', error);
         next(error);
     }
 };
@@ -845,6 +866,7 @@ const updateJobCardPart = async (req, res, next) => {
             data: updatedPart
         });
     } catch (error) {
+        logger.error('ServiceManagement error:', error);
         next(error);
     }
 };
@@ -875,6 +897,7 @@ const deleteJobCardPart = async (req, res, next) => {
 
         res.json({ success: true, message: 'Part removed from job card' });
     } catch (error) {
+        logger.error('ServiceManagement error:', error);
         next(error);
     }
 };
@@ -891,6 +914,7 @@ const getServiceTypes = async (req, res, next) => {
         const types = await query('SELECT * FROM service_types WHERE is_active = TRUE ORDER BY name');
         res.json({ success: true, data: types });
     } catch (error) {
+        logger.error('ServiceManagement error:', error);
         next(error);
     }
 };
@@ -910,6 +934,7 @@ const getTechnicians = async (req, res, next) => {
         `);
         res.json({ success: true, data: technicians });
     } catch (error) {
+        logger.error('ServiceManagement error:', error);
         next(error);
     }
 };
@@ -929,6 +954,7 @@ const getAdvisors = async (req, res, next) => {
         `);
         res.json({ success: true, data: advisors });
     } catch (error) {
+        logger.error('ServiceManagement error:', error);
         next(error);
     }
 };

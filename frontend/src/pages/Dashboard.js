@@ -555,12 +555,12 @@ function Dashboard() {
                                 <tbody>
                                     {recentLeads.slice(0, 6).map((row) => (
                                         <tr key={row.id}>
-                                            <td>
+                                            <td data-label="Lead">
                                                 <span className="recent-name">{row.name || row.lead_number}</span>
                                                 <span className="recent-sub">{row.phone || '—'}</span>
                                             </td>
-                                            <td><span className="recent-pill">{row.status}</span></td>
-                                            <td className="recent-date">
+                                            <td data-label="Status"><span className="recent-pill">{row.status}</span></td>
+                                            <td data-label="Date" className="recent-date">
                                                 {row.created_at ? new Date(row.created_at).toLocaleDateString() : '—'}
                                             </td>
                                         </tr>
@@ -596,9 +596,9 @@ function Dashboard() {
                                 <tbody>
                                     {recentSales.slice(0, 6).map((row) => (
                                         <tr key={row.id}>
-                                            <td><span className="recent-name">{row.order_number}</span></td>
-                                            <td>{row.customer || '—'}</td>
-                                            <td className="recent-amount">
+                                            <td data-label="Order"><span className="recent-name">{row.order_number}</span></td>
+                                            <td data-label="Customer">{row.customer || '—'}</td>
+                                            <td data-label="Amount" className="recent-amount">
                                                 PKR {Number(row.grand_total || 0).toLocaleString()}
                                             </td>
                                         </tr>

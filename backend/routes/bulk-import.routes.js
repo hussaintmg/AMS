@@ -1,5 +1,6 @@
 /**
  * Bulk import routes — CSV / XLSX templates and uploads.
+ * One POST route per page; all imports run server-side with insertMany.
  */
 
 const express = require('express');
@@ -48,20 +49,21 @@ router.use(authenticate);
 /** Any authenticated user may download templates (instructions + column layout). */
 router.get('/template/:type', bulkImportController.downloadTemplate);
 
-router.post(
-    '/leads',
-    authorize(
-        'super_admin',
-        'admin',
-        'manager',
-        'sales_manager',
-        'sales_executive',
-        'service_manager',
-        'service_advisor'
-    ),
-    uploadSingle('file'),
-    bulkImportController.importLeads
-);
+const CRM_ROLES = [
+    'super_admin',
+    'admin',
+    'manager',
+    'sales_manager',
+    'sales_executive',
+    'service_manager',
+    'service_advisor'
+];
+
+const INVENTORY_ROLES = ['super_admin', 'admin', 'inventory_manager', 'manager', 'sales_manager'];
+
+router.post('/leads', authorize(...CRM_ROLES), uploadSingle('file'), bulkImportController.importLeads);
+
+router.post('/customers', authorize(...CRM_ROLES), uploadSingle('file'), bulkImportController.importCustomers);
 
 router.post(
     '/vehicle-brands',
@@ -70,18 +72,22 @@ router.post(
     bulkImportController.importVehicleBrands
 );
 
-router.post(
-    '/vehicles',
-    authorize('super_admin', 'admin', 'inventory_manager', 'manager', 'sales_manager'),
-    uploadSingle('file'),
-    bulkImportController.importVehicles
-);
+router.post('/vehicles', authorize(...INVENTORY_ROLES), uploadSingle('file'), bulkImportController.importVehicles);
+
+router.post('/parts', authorize(...INVENTORY_ROLES), uploadSingle('file'), bulkImportController.importParts);
 
 router.post(
     '/sales-orders',
     authorize('super_admin', 'admin', 'sales_manager'),
     uploadSingle('file'),
     bulkImportController.importSalesOrders
+);
+
+router.post(
+    '/employees',
+    authorize('super_admin', 'admin', 'hr_admin'),
+    uploadSingle('file'),
+    bulkImportController.importEmployees
 );
 
 module.exports = router;

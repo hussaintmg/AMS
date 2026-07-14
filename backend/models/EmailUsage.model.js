@@ -18,6 +18,5 @@ const emailUsageSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 emailUsageSchema.index({ isDeleted: 1 });
-emailUsageSchema.index({ key: 1 });
 
 module.exports = mongoose.model('EmailUsage', emailUsageSchema);

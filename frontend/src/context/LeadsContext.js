@@ -8,7 +8,7 @@ export function LeadsProvider({ children }) {
   const [leads, setLeads] = useState([]);
   const [meta, setMeta] = useState({ statuses: [], sources: [], types: [], priorities: [], cities: [], users: [], departments: [] });
   const [stats, setStats] = useState(null);
-  const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, pages: 0 });
+  const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, pages: 0 });
   const [filters, setFilters] = useState({});
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState('createdAt');

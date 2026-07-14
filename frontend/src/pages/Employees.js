@@ -1,310 +1,349 @@
-/**
- * Employees (HR directory)
- */
-
 import React, { useState, useEffect, useCallback } from 'react';
-import toast from 'react-hot-toast';
-import SearchableSelect from '../components/SearchableSelect';
-import ActionButtons from '../components/ActionButtons';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { adminAPI, employeeAPI } from '../services/api';
+import { useEmployees } from '../context/EmployeesContext';
+import toast from 'react-hot-toast';
+import ErrorPopup from '../components/ErrorPopup';
+import ConfirmModal from '../components/ConfirmModal';
+import ActionButtons from '../components/ActionButtons';
+import EmployeeFormModal from './EmployeeFormModal';
+import EmployeeDrawer from './EmployeeDrawer';
+import BulkUploadModal from '../components/BulkUploadModal';
+import { Upload } from 'lucide-react';
 import '../styles/userManagement.css';
 
-const emptyForm = {
-    employee_code: '',
-    user_id: '',
-    department_id: '',
-    first_name: '',
-    last_name: '',
-    email: '',
-    phone: '',
-    national_id: '',
-    date_of_birth: '',
-    gender: 'unspecified',
-    address: '',
-    city: '',
-    country: 'Pakistan',
-    hire_date: '',
-    termination_date: '',
-    employment_status: 'active',
-    job_title: '',
-    base_salary: '',
-    bank_name: '',
-    bank_account: '',
-    emergency_contact_name: '',
-    emergency_contact_phone: '',
-    notes: '',
-    is_active: true
-};
-
 const Employees = () => {
-    const { hasRole } = useAuth();
-    const canWrite = hasRole(['super_admin', 'admin', 'hr_admin']);
+  const { user: currentUser } = useAuth();
+  const canBulkUpload = ['super_admin', 'admin', 'hr_admin'].includes(currentUser?.role);
+  const {
+    employees: ctxEmployees, departments, roles, stats,
+    loading: ctxLoading, saving,
+    loadEmployees, loadReferenceData,
+    createEmployee, updateEmployee, deleteEmployee, toggleEmployeeStatus,
+    setEmployees,
+  } = useEmployees();
+  const [loading, setLoading] = useState(true);
+  const [errorPopup, setErrorPopup] = useState(null);
 
-    const [rows, setRows] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [total, setTotal] = useState(0);
-    const [search, setSearch] = useState('');
-    const [departments, setDepartments] = useState([]);
-    const [users, setUsers] = useState([]);
-    const [modalOpen, setModalOpen] = useState(false);
-    const [editingId, setEditingId] = useState(null);
-    const [form, setForm] = useState(emptyForm);
+  const [page, setPage] = useState(1);
+  const [limit] = useState(15);
+  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [searchParams] = useSearchParams();
+  const urlSearch = searchParams.get('search') || '';
 
-    const load = useCallback(async () => {
-        try {
-            setLoading(true);
-            const [empRes, deptRes, usersRes] = await Promise.all([
-                employeeAPI.list({ search: search || undefined, limit: 100 }),
-                adminAPI.getDepartments(),
-                adminAPI.getUsers({ limit: 200 })
-            ]);
-            setRows(empRes.data.data?.employees || []);
-            setTotal(empRes.data.data?.total || 0);
-            const flat = deptRes.data.data?.flat || [];
-            setDepartments(flat);
-            setUsers(usersRes.data.data?.users || []);
-        } catch (e) {
-            console.error(e);
-        } finally {
-            setLoading(false);
-        }
-    }, [search]);
+  const [search, setSearch] = useState(urlSearch);
+  const [statusFilter, setStatusFilter] = useState('');
 
-    useEffect(() => {
-        load();
-    }, [load]);
+  const [showModal, setShowModal] = useState(false);
+  const [modalMode, setModalMode] = useState('create');
+  const [selectedEmployee, setSelectedEmployee] = useState(null);
 
-    const openCreate = () => {
-        setEditingId(null);
-        setForm(emptyForm);
-        setModalOpen(true);
-    };
+  const [drawerEmployee, setDrawerEmployee] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(null);
+  const [showBulkUpload, setShowBulkUpload] = useState(false);
 
-    const openEdit = async (r) => {
-        try {
-            const res = await employeeAPI.get(r.id);
-            const e = res.data.data;
-            setEditingId(e.id);
-            setForm({
-                ...emptyForm,
-                employee_code: e.employee_code || '',
-                user_id: e.user_id ? String(e.user_id) : '',
-                department_id: e.department_id ? String(e.department_id) : '',
-                first_name: e.first_name || '',
-                last_name: e.last_name || '',
-                email: e.email || '',
-                phone: e.phone || '',
-                job_title: e.job_title || '',
-                hire_date: e.hire_date ? e.hire_date.slice(0, 10) : '',
-                employment_status: e.employment_status || 'active',
-                base_salary: e.base_salary != null ? String(e.base_salary) : '',
-                is_active: !!e.is_active
-            });
-            setModalOpen(true);
-        } catch (err) {
-            toast.error('Could not load employee');
-        }
-    };
+  const fetchEmployees = useCallback(async () => {
+    try {
+      setLoading(true);
+      const params = { page, limit, ...(search && { search }), ...(statusFilter && { status: statusFilter }) };
+      const response = await loadEmployees(params);
+      if (response) {
+        const list = response.employees || [];
+        setEmployees(list);
+        setTotalPages(Math.ceil(response.pagination?.total / limit) || 1);
+        setTotal(response.pagination?.total || 0);
+      }
+    } catch (err) {
+      toast.error('Failed to load employees');
+    } finally {
+      setLoading(false);
+    }
+  }, [page, limit, search, statusFilter, loadEmployees, setEmployees]);
 
-    const save = async (e) => {
-        e.preventDefault();
-        if (!form.first_name || !form.last_name || !form.department_id || !form.hire_date) {
-            toast.error('First name, last name, department, and hire date are required');
-            return;
-        }
-        const payload = {
-            ...form,
-            department_id: parseInt(form.department_id, 10),
-            user_id: form.user_id ? parseInt(form.user_id, 10) : null,
-            base_salary: form.base_salary === '' ? 0 : parseFloat(form.base_salary)
-        };
-        try {
-            if (editingId) await employeeAPI.update(editingId, payload);
-            else await employeeAPI.create(payload);
-            toast.success('Employee saved');
-            setModalOpen(false);
-            load();
-        } catch (err) {
-            /* toast via interceptor */
-        }
-    };
+  useEffect(() => { if (currentUser) fetchEmployees(); }, [currentUser, fetchEmployees]);
 
-    const deactivate = async (r) => {
-        if (!window.confirm(`Deactivate ${r.full_name}?`)) return;
-        try {
-            await employeeAPI.remove(r.id);
-            toast.success('Employee deactivated');
-            load();
-        } catch (err) { /* */ }
-    };
+  useEffect(() => { if (currentUser) loadReferenceData().catch(() => {}); }, [currentUser, loadReferenceData]);
 
-    const deptOptions = departments.map((d) => ({ id: String(d.id), name: `${d.name} (${d.code})` }));
-    const userOptions = users.map((u) => ({
-        id: String(u.id),
-        name: `${u.first_name} ${u.last_name} (${u.email})`
-    }));
+  useEffect(() => { if (urlSearch) setSearch(urlSearch); }, [urlSearch]);
 
-    return (
-        <div className="user-management-page">
-            <div className="page-header">
-                <div>
-                    <h1>Employees</h1>
-                    <p className="text-muted">HR directory, departments, and compensation summary</p>
-                </div>
-                <div className="header-actions">
-                    <input
-                        type="search"
-                        className="form-control"
-                        placeholder="Search name, code, email…"
-                        value={search}
-                        onChange={(ev) => setSearch(ev.target.value)}
-                        style={{ minWidth: '220px' }}
-                    />
-                    {canWrite && (
-                        <button type="button" className="btn btn-primary" onClick={openCreate}>
-                            Add employee
-                        </button>
-                    )}
-                </div>
-            </div>
+  useEffect(() => {
+    if (!currentUser) return;
+    const timer = setTimeout(() => { setPage(1); fetchEmployees(); }, 300);
+    return () => clearTimeout(timer);
+  }, [currentUser, search, statusFilter, fetchEmployees]);
 
-            <div className="card">
-                {loading ? (
-                    <div className="loading-inline">Loading…</div>
-                ) : (
-                    <div className="table-responsive">
-                        <table className="data-table">
-                            <thead>
-                                <tr>
-                                    <th>Code</th>
-                                    <th>Name</th>
-                                    <th>Department</th>
-                                    <th>Job title</th>
-                                    <th>Status</th>
-                                    <th>Base salary</th>
-                                    {canWrite && <th style={{ width: 100 }}>Actions</th>}
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {rows.map((r) => (
-                                    <tr key={r.id}>
-                                        <td>{r.employee_code}</td>
-                                        <td>{r.full_name}</td>
-                                        <td>{r.department_name || '—'}</td>
-                                        <td>{r.job_title}</td>
-                                        <td>
-                                            <span className={`badge ${r.is_active ? 'badge-success' : 'badge-secondary'}`}>
-                                                {r.employment_status}
-                                            </span>
-                                        </td>
-                                        <td>{Number(r.base_salary).toLocaleString()}</td>
-                                        {canWrite && (
-                                            <td>
-                                                <ActionButtons onEdit={() => openEdit(r)} onDelete={() => deactivate(r)} showEdit showDelete title={r.full_name} />
-                                            </td>
-                                        )}
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                        {!rows.length && <p className="empty-hint">No employees yet.</p>}
-                        <div className="table-footer">Showing {rows.length} of {total}</div>
-                    </div>
-                )}
-            </div>
+  const openModal = (mode, emp = null) => {
+    setModalMode(mode);
+    setSelectedEmployee(emp);
+    setShowModal(true);
+  };
 
-            {modalOpen && (
-                <div className="modal-overlay" onClick={() => setModalOpen(false)}>
-                    <div
-                        className="modal-content modal-lg"
-                        role="dialog"
-                        aria-modal="true"
-                        aria-labelledby="hr-employee-modal-title"
-                        onClick={(ev) => ev.stopPropagation()}
-                    >
-                        <div className="modal-header">
-                            <h2 id="hr-employee-modal-title">{editingId ? 'Edit employee' : 'New employee'}</h2>
-                            <button type="button" className="modal-close" onClick={() => setModalOpen(false)} aria-label="Close">×</button>
-                        </div>
-                        <form onSubmit={save}>
-                            <div className="modal-body">
-                                <div className="form-row">
-                                    <div className="form-group">
-                                        <label>Department *</label>
-                                        <SearchableSelect
-                                            value={form.department_id}
-                                            onChange={(ev) => setForm((f) => ({ ...f, department_id: ev.target.value || '' }))}
-                                            options={deptOptions}
-                                            placeholder="Select department"
-                                        />
-                                    </div>
-                                    <div className="form-group">
-                                        <label>Link user (optional)</label>
-                                        <SearchableSelect
-                                            value={form.user_id}
-                                            onChange={(ev) => setForm((f) => ({ ...f, user_id: ev.target.value || '' }))}
-                                            options={userOptions}
-                                            placeholder="None"
-                                        />
-                                    </div>
-                                </div>
-                                <div className="form-row">
-                                    <div className="form-group">
-                                        <label>First name *</label>
-                                        <input className="form-control" value={form.first_name} onChange={(ev) => setForm({ ...form, first_name: ev.target.value })} required />
-                                    </div>
-                                    <div className="form-group">
-                                        <label>Last name *</label>
-                                        <input className="form-control" value={form.last_name} onChange={(ev) => setForm({ ...form, last_name: ev.target.value })} required />
-                                    </div>
-                                </div>
-                                <div className="form-row">
-                                    <div className="form-group">
-                                        <label>Hire date *</label>
-                                        <input type="date" className="form-control" value={form.hire_date} onChange={(ev) => setForm({ ...form, hire_date: ev.target.value })} required />
-                                    </div>
-                                    <div className="form-group">
-                                        <label>Job title</label>
-                                        <input className="form-control" value={form.job_title} onChange={(ev) => setForm({ ...form, job_title: ev.target.value })} />
-                                    </div>
-                                </div>
-                                <div className="form-row">
-                                    <div className="form-group">
-                                        <label>Base salary</label>
-                                        <input type="number" step="0.01" className="form-control" value={form.base_salary} onChange={(ev) => setForm({ ...form, base_salary: ev.target.value })} />
-                                    </div>
-                                    <div className="form-group">
-                                        <label>Employment status</label>
-                                        <select className="form-control" value={form.employment_status} onChange={(ev) => setForm({ ...form, employment_status: ev.target.value })}>
-                                            <option value="active">active</option>
-                                            <option value="probation">probation</option>
-                                            <option value="on_leave">on_leave</option>
-                                            <option value="terminated">terminated</option>
-                                        </select>
-                                    </div>
-                                </div>
-                                <div className="form-row">
-                                    <div className="form-group">
-                                        <label>Email</label>
-                                        <input type="email" className="form-control" value={form.email} onChange={(ev) => setForm({ ...form, email: ev.target.value })} />
-                                    </div>
-                                    <div className="form-group">
-                                        <label>Phone</label>
-                                        <input className="form-control" value={form.phone} onChange={(ev) => setForm({ ...form, phone: ev.target.value })} />
-                                    </div>
-                                </div>
-                            </div>
-                            <div className="modal-footer">
-                                <button type="button" className="btn btn-secondary" onClick={() => setModalOpen(false)}>Cancel</button>
-                                <button type="submit" className="btn btn-primary">Save</button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
+  const closeModal = () => { setShowModal(false); setSelectedEmployee(null); };
+
+  const handleCreate = async (formData) => {
+    const result = await createEmployee(formData);
+    if (result.success) { closeModal(); fetchEmployees(); }
+    else if (result.error) setErrorPopup(result.error);
+  };
+
+  const handleUpdate = async (formData) => {
+    const id = selectedEmployee?._id || selectedEmployee?.id;
+    const result = await updateEmployee(id, formData);
+    if (result.success) { closeModal(); fetchEmployees(); }
+    else if (result.error) setErrorPopup(result.error);
+  };
+
+  const handleToggleStatus = async (id) => {
+    const result = await toggleEmployeeStatus(id);
+    if (!result.success && result.error) setErrorPopup(result.error);
+    if (result.success) fetchEmployees();
+  };
+
+  const handleDelete = async () => {
+    if (!confirmDelete) return;
+    const id = confirmDelete._id || confirmDelete.id;
+    const result = await deleteEmployee(id);
+    if (result.success) { setConfirmDelete(null); fetchEmployees(); }
+    else if (result.error) setErrorPopup(result.error);
+  };
+
+  const fullName = (emp) => `${emp.firstName || ''} ${emp.lastName || ''}`.trim() || emp.email || '-';
+
+  return (
+    <div className="user-management-page">
+      <div className="page-header">
+        <div className="header-content">
+          <h1>Employees</h1>
+          <p className="subtitle">Manage employee records, departments, and assignments</p>
         </div>
-    );
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+          {canBulkUpload && (
+            <button type="button" className="btn btn-secondary" onClick={() => setShowBulkUpload(true)} title="Bulk upload employees (CSV / XLSX)">
+              <Upload size={18} style={{ marginRight: 6 }} /> Upload
+            </button>
+          )}
+          <button className="btn btn-primary btn-create" onClick={() => openModal('create')}>
+            <span className="icon">+</span> Add New Employee
+          </button>
+        </div>
+      </div>
+
+      <div className="stats-grid">
+        <div className="stat-card stat-total">
+          <div className="stat-icon">👥</div>
+          <div className="stat-content">
+            <span className="stat-value">{stats.total || 0}</span>
+            <span className="stat-label">Total Employees</span>
+          </div>
+        </div>
+        <div className="stat-card stat-active">
+          <div className="stat-icon">✓</div>
+          <div className="stat-content">
+            <span className="stat-value">{stats.active || 0}</span>
+            <span className="stat-label">Active</span>
+          </div>
+        </div>
+        <div className="stat-card stat-inactive">
+          <div className="stat-icon">⊘</div>
+          <div className="stat-content">
+            <span className="stat-value">{stats.inactive || 0}</span>
+            <span className="stat-label">Inactive</span>
+          </div>
+        </div>
+        <div className="stat-card stat-today">
+          <div className="stat-icon">🏢</div>
+          <div className="stat-content">
+            <span className="stat-value">{stats.departments || 0}</span>
+            <span className="stat-label">Departments</span>
+          </div>
+        </div>
+      </div>
+
+      <ErrorPopup error={errorPopup} onClose={() => setErrorPopup(null)} />
+
+      <div className="filters-bar">
+        <div className="search-box">
+          <input type="text" placeholder="Search by name, email, phone, or code..."
+            value={search} onChange={(e) => setSearch(e.target.value)} className="search-input" />
+          <span className="search-icon">🔍</span>
+        </div>
+        <select className="form-control" style={{ width: 140 }} value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}>
+          <option value="">All Status</option>
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
+        </select>
+        <span className="results-count">{total} employees found</span>
+      </div>
+
+      <div className="table-container desktop-only">
+        {loading ? (
+          <div className="loading-state"><div className="spinner"></div><p>Loading employees...</p></div>
+        ) : ctxEmployees.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-icon">👤</div>
+            <h3>No Employees Found</h3>
+            <p>No employees match your search criteria.</p>
+          </div>
+        ) : (
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Employee</th>
+                <th>Email</th>
+                <th>Department</th>
+                <th>Designation</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ctxEmployees.map(emp => {
+                const id = emp._id || emp.id;
+                const statusText = emp.status || (emp.isActive ? 'active' : 'inactive');
+                const deptName = emp.department?.name || '-';
+                return (
+                  <tr key={id} className={!emp.isActive ? 'row-inactive' : ''}
+                    onClick={() => setDrawerEmployee(emp)} style={{ cursor: 'pointer' }}>
+                    <td>
+                      <div className="user-cell">
+                        <div className="user-avatar">
+                          <span>{(emp.firstName || '?')[0]}{(emp.lastName || '')[0] || ''}</span>
+                        </div>
+                        <div className="user-info">
+                          <span className="user-name">{fullName(emp)}</span>
+                        </div>
+                      </div>
+                    </td>
+                    <td>{emp.email || '-'}</td>
+                    <td>{deptName}</td>
+                    <td>{emp.designation || '-'}</td>
+                    <td>
+                      <span className={`status-badge ${statusText === 'active' ? 'status-active' : 'status-inactive'}`}>
+                        {statusText.charAt(0).toUpperCase() + statusText.slice(1)}
+                      </span>
+                    </td>
+                    <td onClick={e => e.stopPropagation()}>
+                      <ActionButtons
+                        onEdit={() => openModal('edit', emp)}
+                        onToggle={() => handleToggleStatus(id)}
+                        onDelete={() => setConfirmDelete(emp)}
+                        status={emp.isActive}
+                        title={emp.email || fullName(emp)}
+                        showEdit showToggle showDelete
+                      />
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <div className="mobile-only">
+        {loading ? (
+          <div className="loading-state"><div className="spinner"></div><p>Loading employees...</p></div>
+        ) : ctxEmployees.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-icon">👤</div>
+            <h3>No Employees Found</h3>
+          </div>
+        ) : (
+          <div className="cards-grid">
+            {ctxEmployees.map(emp => {
+              const id = emp._id || emp.id;
+              const statusText = emp.status || (emp.isActive ? 'active' : 'inactive');
+              return (
+                <div key={id} className={`data-card ${!emp.isActive ? 'card-inactive' : ''}`}
+                  onClick={() => setDrawerEmployee(emp)}>
+                  <div className="data-card-top">
+                    <div className="data-card-avatar">
+                      {(emp.firstName || '?')[0]}{(emp.lastName || '')[0] || ''}
+                    </div>
+                    <div className="data-card-info">
+                      <span className="data-card-title">{fullName(emp)}</span>
+                      <span className="data-card-subtitle">{emp.designation || '-'}</span>
+                    </div>
+                    <span className={`badge-pill status-${statusText}`}>
+                      {statusText.charAt(0).toUpperCase() + statusText.slice(1)}
+                    </span>
+                  </div>
+                  <div className="data-card-body">
+                    <div className="data-card-row">
+                      <span className="row-icon">✉</span>
+                      <span className="row-label">Email</span>
+                      <span className="row-value">{emp.email || '-'}</span>
+                    </div>
+                    <div className="data-card-row">
+                      <span className="row-icon">🏢</span>
+                      <span className="row-label">Dept</span>
+                      <span className="row-value">{emp.department?.name || '-'}</span>
+                    </div>
+                  </div>
+                  <div className="data-card-footer" onClick={e => e.stopPropagation()}>
+                    <ActionButtons
+                      onEdit={() => openModal('edit', emp)}
+                      onToggle={() => handleToggleStatus(id)}
+                      onDelete={() => setConfirmDelete(emp)}
+                      status={emp.isActive}
+                      title={emp.email || fullName(emp)}
+                      showEdit showToggle showDelete
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {totalPages > 1 && (
+        <div className="pagination">
+          <button className="btn-page" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>← Previous</button>
+          <div className="page-numbers">
+            {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+              let pn; if (totalPages <= 5) pn = i + 1;
+              else if (page <= 3) pn = i + 1;
+              else if (page >= totalPages - 2) pn = totalPages - 4 + i;
+              else pn = page - 2 + i;
+              return <button key={pn} className={`btn-page ${page === pn ? 'active' : ''}`} onClick={() => setPage(pn)}>{pn}</button>;
+            })}
+          </div>
+          <button className="btn-page" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>Next →</button>
+        </div>
+      )}
+
+      <ConfirmModal
+        isOpen={!!confirmDelete}
+        title="Deactivate Employee"
+        message={`Deactivate employee "${confirmDelete ? fullName(confirmDelete) : ''}"?`}
+        confirmText="Deactivate"
+        onConfirm={handleDelete}
+        onCancel={() => setConfirmDelete(null)}
+      />
+
+      <EmployeeFormModal
+        isOpen={showModal} mode={modalMode} initialData={selectedEmployee}
+        departments={departments} roles={roles}
+        onClose={closeModal}
+        onSubmit={modalMode === 'create' ? handleCreate : handleUpdate}
+        loading={saving}
+      />
+
+      <EmployeeDrawer isOpen={!!drawerEmployee} onClose={() => setDrawerEmployee(null)} employee={drawerEmployee} />
+
+      <BulkUploadModal
+        isOpen={showBulkUpload}
+        onClose={() => setShowBulkUpload(false)}
+        title="Bulk upload employees"
+        description="Import employees from CSV or XLSX. Required: first_name, last_name, email, phone."
+        templateType="employees"
+        onCompleted={fetchEmployees}
+      />
+    </div>
+  );
 };
 
 export default Employees;

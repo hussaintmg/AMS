@@ -32,7 +32,10 @@ const partSchema = new mongoose.Schema({
   quantity: { type: Number, default: 0 },
   currentStock: { type: Number, default: 0 },
   minStock: { type: Number, default: 0 },
+  maxStock: { type: Number, default: 0 },
   reorderLevel: { type: Number, default: 0 },
+  binLocation: { type: String, trim: true, default: '' },
+  sourceType: { type: String, trim: true, default: 'manufacturer' },
   isActive: { type: Boolean, default: true },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }

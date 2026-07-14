@@ -29,7 +29,5 @@ const statusCollectionSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 statusCollectionSchema.index({ isActive: 1 });
-statusCollectionSchema.index({ name: 1 });
-statusCollectionSchema.index({ key: 1 });
 
 module.exports = mongoose.model('StatusCollection', statusCollectionSchema);

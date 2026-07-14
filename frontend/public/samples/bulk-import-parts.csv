@@ -1,0 +1,3 @@
+# AMS Parts bulk import. REQUIRED: part_number, name, purchase_price, selling_price. category_name / supplier_name / warehouse_name must match existing records (blank = skip). source_type = manufacturer|supplier.
+"part_number","name","purchase_price","selling_price","category_name","description","brand","source_type","supplier_name","unit","current_stock","minimum_stock","maximum_stock","reorder_level","warehouse_name","bin_location"
+"OIL-001","Engine Oil 5W30","1200","1800","","Synthetic engine oil","Shell","manufacturer","","liter","50","10","200","20","","A1-B2"

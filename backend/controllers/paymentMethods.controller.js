@@ -17,11 +17,11 @@ const { AppError } = require('../middleware/errorHandler');
  */
 const getAll = async (req, res, next) => {
     try {
-        const { status, type } = req.query;
+        const { status, type, search } = req.query;
 
         let sql = `
             SELECT 
-                id, name, type, is_active, account_id,
+                id, name, code, type, description, sort_order, is_active, account_id,
                 created_at,
                 (SELECT COUNT(*) FROM payments WHERE payment_method_id = payment_methods.id) as usage_count
             FROM payment_methods
@@ -40,7 +40,13 @@ const getAll = async (req, res, next) => {
             params.push(type);
         }
 
-        sql += ` ORDER BY name ASC`;
+        if (search) {
+            sql += ` AND (name LIKE ? OR code LIKE ? OR description LIKE ?)`;
+            const s = `%${search}%`;
+            params.push(s, s, s);
+        }
+
+        sql += ` ORDER BY sort_order ASC, name ASC`;
 
         const methods = await query(sql, params);
 
@@ -89,7 +95,7 @@ const getById = async (req, res, next) => {
  */
 const create = async (req, res, next) => {
     try {
-        const { name, type, account_id } = req.body;
+        const { name, code, type, description, sortOrder, account_id } = req.body;
 
         // Validate required fields
         if (!name || !type) {
@@ -109,9 +115,9 @@ const create = async (req, res, next) => {
         }
 
         const result = await query(`
-            INSERT INTO payment_methods (name, type, account_id, is_active)
-            VALUES (?, ?, ?, TRUE)
-        `, [name, type, account_id || null]);
+            INSERT INTO payment_methods (name, code, type, description, sort_order, account_id, is_active)
+            VALUES (?, ?, ?, ?, ?, ?, TRUE)
+        `, [name, code || null, type, description || null, sortOrder || 0, account_id || null]);
 
         const [newMethod] = await query(`SELECT * FROM payment_methods WHERE id = ?`, [result.insertId]);
 
@@ -132,7 +138,7 @@ const create = async (req, res, next) => {
 const update = async (req, res, next) => {
     try {
         const { id } = req.params;
-        const { name, type, account_id } = req.body;
+        const { name, code, type, description, sortOrder, account_id } = req.body;
 
         // Check method exists
         const [method] = await query(`SELECT * FROM payment_methods WHERE id = ?`, [id]);
@@ -159,10 +165,13 @@ const update = async (req, res, next) => {
         await query(`
             UPDATE payment_methods
             SET name = COALESCE(?, name),
+                code = COALESCE(?, code),
                 type = COALESCE(?, type),
+                description = COALESCE(?, description),
+                sort_order = COALESCE(?, sort_order),
                 account_id = ?
             WHERE id = ?
-        `, [name, type, account_id ?? method.account_id, id]);
+        `, [name, code, type, description, sortOrder, account_id ?? method.account_id, id]);
 
         const [updated] = await query(`SELECT * FROM payment_methods WHERE id = ?`, [id]);
 

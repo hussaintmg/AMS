@@ -24,9 +24,15 @@ const { authenticate, authorize } = require('../middleware/auth');
  *           type: integer
  *         name:
  *           type: string
+ *         code:
+ *           type: string
  *         type:
  *           type: string
  *           enum: [cash, bank, card, cheque, online]
+ *         description:
+ *           type: string
+ *         sort_order:
+ *           type: integer
  *         is_active:
  *           type: boolean
  *         account_id:
@@ -131,9 +137,15 @@ router.get('/:id', authenticate, paymentMethodsController.getById);
  *             properties:
  *               name:
  *                 type: string
+ *               code:
+ *                 type: string
  *               type:
  *                 type: string
  *                 enum: [cash, bank, card, cheque, online]
+ *               description:
+ *                 type: string
+ *               sortOrder:
+ *                 type: integer
  *               account_id:
  *                 type: integer
  *     responses:
@@ -166,8 +178,14 @@ router.post('/', authenticate, authorize('super_admin', 'accountant'), paymentMe
  *             properties:
  *               name:
  *                 type: string
+ *               code:
+ *                 type: string
  *               type:
  *                 type: string
+ *               description:
+ *                 type: string
+ *               sortOrder:
+ *                 type: integer
  *               account_id:
  *                 type: integer
  *     responses:

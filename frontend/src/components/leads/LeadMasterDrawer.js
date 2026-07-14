@@ -4,12 +4,19 @@ import { X, Pencil, Trash2, User, CalendarDays } from 'lucide-react';
 import { leadMasterAPI } from '../../services/api';
 import ConfirmModal from '../ConfirmModal';
 
+const LEAD_TYPE_MAPPING_OPTIONS = [
+  { value: 'parts', label: 'Parts' },
+  { value: 'vehicles', label: 'Vehicles' },
+  { value: 'services', label: 'Services' },
+];
+
 export default function LeadMasterDrawer({ type, item, onClose, onUpdated }) {
   const [editMode, setEditMode] = useState(false);
-  const [form, setForm] = useState({ name: '', description: '', color: '#6b7280', sortOrder: 0, category: 'general', level: 0 });
+  const [form, setForm] = useState({ name: '', description: '', color: '#6b7280', sortOrder: 0, category: 'general', level: 0, portalModules: [] });
   const [saving, setSaving] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [localActive, setLocalActive] = useState(item?.isActive);
 
   const label = { sources: 'Source', types: 'Type', priorities: 'Priority', cities: 'City' }[type] || 'Item';
   const colorVal = item?.color || '#6b7280';
@@ -23,7 +30,9 @@ export default function LeadMasterDrawer({ type, item, onClose, onUpdated }) {
         sortOrder: item.sortOrder || 0,
         category: item.category || 'general',
         level: item.level ?? 0,
+        portalModules: item.portalModules || [],
       });
+      setLocalActive(item.isActive);
     }
   }, [item]);
 
@@ -34,6 +43,14 @@ export default function LeadMasterDrawer({ type, item, onClose, onUpdated }) {
   }, [onClose, editMode]);
 
   const set = (field, value) => setForm((prev) => ({ ...prev, [field]: value }));
+  const togglePortalModule = (value) => {
+    setForm((prev) => ({
+      ...prev,
+      portalModules: prev.portalModules.includes(value)
+        ? prev.portalModules.filter((m) => m !== value)
+        : [...prev.portalModules, value],
+    }));
+  };
 
   const handleSave = async () => {
     if (!form.name.trim()) { toast.error('Name is required'); return; }
@@ -51,6 +68,23 @@ export default function LeadMasterDrawer({ type, item, onClose, onUpdated }) {
       toast.error(err.response?.data?.message || 'Something went wrong');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleToggleActive = async () => {
+    const next = !localActive;
+    setLocalActive(next);
+    try {
+      const res = await leadMasterAPI.update(type, item._id, { isActive: next });
+      if (res.data?.success) {
+        toast.success(res.data.message);
+        if (onUpdated) onUpdated();
+      } else {
+        setLocalActive(!next);
+      }
+    } catch (err) {
+      setLocalActive(!next);
+      toast.error(err.response?.data?.message || 'Failed to toggle status');
     }
   };
 
@@ -127,17 +161,34 @@ export default function LeadMasterDrawer({ type, item, onClose, onUpdated }) {
                 )}
               </div>
               {type === 'types' && (
-                <div className="form-group">
-                  <label>Category</label>
-                  <select className="form-input" value={form.category} onChange={(e) => set('category', e.target.value)}>
-                    <option value="vehicle">Vehicle</option>
-                    <option value="service">Service</option>
-                    <option value="parts">Parts</option>
-                    <option value="general">General</option>
-                    <option value="corporate">Corporate</option>
-                    <option value="other">Other</option>
-                  </select>
-                </div>
+                <>
+                  <div className="form-group">
+                    <label>Category</label>
+                    <select className="form-input" value={form.category} onChange={(e) => set('category', e.target.value)}>
+                      <option value="vehicle">Vehicle</option>
+                      <option value="service">Service</option>
+                      <option value="parts">Parts</option>
+                      <option value="general">General</option>
+                      <option value="corporate">Corporate</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>Lead Type Mapping</label>
+                    <div className="mapping-checkbox-grid">
+                      {LEAD_TYPE_MAPPING_OPTIONS.map((option) => (
+                        <label key={option.value} className="mapping-checkbox">
+                          <input
+                            type="checkbox"
+                            checked={form.portalModules.includes(option.value)}
+                            onChange={() => togglePortalModule(option.value)}
+                          />
+                          <span>{option.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </>
               )}
               {type === 'priorities' && (
                 <div className="form-group">
@@ -157,12 +208,18 @@ export default function LeadMasterDrawer({ type, item, onClose, onUpdated }) {
               {type !== 'cities' && (
                 <DetailRow label="Sort Order" value={item.sortOrder} />
               )}
-              <DetailRow label="Status" value={item.isActive ? 'Active' : 'Inactive'} />
+              <DetailRow label="Status" value={<span className={`status-capsule ${localActive ? 'active' : ''}`} onClick={(e) => { e.stopPropagation(); handleToggleActive(); }}><span className="capsule-circle" /></span>} />
               <DetailRow label="Code" value={item.code} />
               {(type === 'sources' || type === 'priorities' || type === 'types') && (
                 <DetailRow label="Color" value={<span style={{ display: 'inline-block', width: 24, height: 24, borderRadius: 4, background: colorVal, verticalAlign: 'middle' }} />} />
               )}
               {type === 'types' && <DetailRow label="Category" value={item.category} />}
+              {type === 'types' && (
+                <DetailRow
+                  label="Lead Type Mapping"
+                  value={(item.portalModules || []).length ? item.portalModules.join(', ') : 'Not mapped'}
+                />
+              )}
               {type === 'priorities' && <DetailRow label="Level" value={item.level} />}
               {item.lead_count !== undefined && <DetailRow label="Active Leads" value={item.lead_count} />}
 

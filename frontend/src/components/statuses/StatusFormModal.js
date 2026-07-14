@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import useModalKeyboard from '../../hooks/useModalKeyboard';
+import ToggleSwitch from '../../components/ToggleSwitch';
 
 const toSlug = (str) =>
   String(str || '').trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').replace(/-+/g, '-').replace(/^-|-$/g, '');
@@ -88,7 +89,7 @@ function StatusFormModal({
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '560px' }}>
         <div className="modal-header">
-          <h2>{mode === 'create' ? 'New Status Collection' : 'Edit Status Collection'}</h2>
+          <h2>{mode === 'create' ? 'New Option Collection' : 'Edit Option Collection'}</h2>
           <button className="modal-close" onClick={onClose} type="button">&times;</button>
         </div>
 
@@ -128,7 +129,7 @@ function StatusFormModal({
 
             <div className="form-group checkbox-group">
               <label style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <input type="checkbox" name="isActive" checked={formData.isActive} onChange={handleChange} />
+                <ToggleSwitch checked={formData.isActive} onChange={(v) => setFormData((prev) => ({ ...prev, isActive: v }))} />
                 Active
               </label>
             </div>
@@ -136,7 +137,7 @@ function StatusFormModal({
             <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px solid #e2e8f0' }}>
               <h4 style={{ margin: '0 0 12px', fontSize: '14px', color: '#475569' }}>Usage Metadata (optional)</h4>
               <small style={{ display: 'block', marginBottom: '12px', color: '#94a3b8' }}>
-                Define where this status collection is intended to be used.
+                Define where this option collection is intended to be used.
               </small>
               <div className="form-row">
                 <div className="form-group">

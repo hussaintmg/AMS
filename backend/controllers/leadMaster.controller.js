@@ -76,11 +76,12 @@ exports.getAll = async (req, res) => {
     const Model = getModel(type);
     if (!Model) return res.status(400).json({ success: false, message: 'Invalid master data type' });
 
-    const { active, search } = req.query;
+    const { active, search, category } = req.query;
     const filter = {};
     if (active === 'true') filter.isActive = true;
     if (active === 'false') filter.isActive = false;
     if (search) filter.name = { $regex: search, $options: 'i' };
+    if (category) filter.category = category;
 
     const items = await Model.find(filter).sort({ sortOrder: 1, name: 1 }).lean();
 
@@ -107,7 +108,7 @@ exports.create = async (req, res) => {
     const Model = getModel(type);
     if (!Model) return res.status(400).json({ success: false, message: 'Invalid master data type' });
 
-    const { name, description, color, sortOrder, category, level } = req.body;
+    const { name, description, color, sortOrder, category, level, portalModules } = req.body;
     if (!name || !name.trim()) {
       return res.status(400).json({ success: false, message: 'Name is required' });
     }
@@ -128,6 +129,9 @@ exports.create = async (req, res) => {
 
     if (color) data.color = color;
     if (type === 'types' && category) data.category = category;
+    if (type === 'types' && Array.isArray(portalModules)) {
+      data.portalModules = portalModules.filter((m) => ['services', 'vehicles', 'parts'].includes(m));
+    }
     if (type === 'priorities' && level !== undefined) data.level = level;
 
     const item = await Model.create(data);
@@ -151,7 +155,7 @@ exports.update = async (req, res) => {
     const item = await Model.findById(req.params.id);
     if (!item) return res.status(404).json({ success: false, message: `${getLabel(type)} not found` });
 
-    const { name, description, color, sortOrder, isActive, category, level } = req.body;
+    const { name, description, color, sortOrder, isActive, category, level, portalModules } = req.body;
 
     if (name && name.trim() !== item.name) {
       const code = slugify(name);
@@ -168,6 +172,9 @@ exports.update = async (req, res) => {
     if (sortOrder !== undefined) item.sortOrder = sortOrder;
     if (isActive !== undefined) item.isActive = isActive;
     if (type === 'types' && category !== undefined) item.category = category;
+    if (type === 'types' && Array.isArray(portalModules)) {
+      item.portalModules = portalModules.filter((m) => ['services', 'vehicles', 'parts'].includes(m));
+    }
     if (type === 'priorities' && level !== undefined) item.level = level;
     item.updatedBy = userId;
     await item.save();

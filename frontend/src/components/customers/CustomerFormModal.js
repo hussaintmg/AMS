@@ -3,7 +3,7 @@ import toast from 'react-hot-toast';
 import { X } from 'lucide-react';
 import { useCustomers } from '../../context/CustomersContext';
 import SearchableSelect from '../SearchableSelect';
-import LeadQuickCreateModal from '../leads/LeadQuickCreateModal';
+import LeadMasterModal from '../leads/LeadMasterModal';
 import LeadStatusItemModal from '../leads/LeadStatusItemModal';
 import useModalKeyboard from '../../hooks/useModalKeyboard';
 
@@ -95,11 +95,6 @@ export default function CustomerFormModal({ customer, onClose, onSaved }) {
   };
 
   useModalKeyboard(true, onClose, handleSubmit, saving);
-
-  const handleQuickCreated = (type, field, newItem) => {
-    loadMeta();
-    if (newItem?._id) set(field, newItem._id);
-  };
 
   const renderLabel = (text, field, quickType) => (
     <label style={LABEL_STYLE}>
@@ -197,8 +192,15 @@ export default function CustomerFormModal({ customer, onClose, onSaved }) {
             </div>
             <div className="form-row">
               <div className="form-group">
-                <label>City</label>
-                <input type="text" className="form-input" value={form.city} onChange={(e) => set('city', e.target.value)} placeholder="City" />
+                {renderLabel('City', 'city', 'cities')}
+                <SearchableSelect
+                  options={(meta.cities || []).map((city) => ({ _id: city.name, name: city.name }))}
+                  value={form.city}
+                  onChange={(val) => set('city', val.target.value)}
+                  placeholder="Select city"
+                  valueField="_id"
+                  labelField="name"
+                />
               </div>
               <div className="form-group">
                 <label>State</label>
@@ -286,13 +288,16 @@ export default function CustomerFormModal({ customer, onClose, onSaved }) {
       </div>
 
       {quickCreate === 'source' && (
-        <LeadQuickCreateModal type="sources" onClose={() => setQuickCreate(null)} onCreated={(item) => handleQuickCreated('sources', 'source', item)} />
+        <LeadMasterModal type="sources" onClose={() => setQuickCreate(null)} onSaved={(item) => { loadMeta(); if (item?._id) set('source', item._id); }} />
       )}
       {quickCreate === 'type' && (
-        <LeadQuickCreateModal type="types" onClose={() => setQuickCreate(null)} onCreated={(item) => handleQuickCreated('types', 'type', item)} />
+        <LeadMasterModal type="types" onClose={() => setQuickCreate(null)} onSaved={(item) => { loadMeta(); if (item?._id) set('type', item._id); }} />
       )}
       {quickCreate === 'status' && meta.statusCollectionId && (
-        <LeadStatusItemModal collectionId={meta.statusCollectionId} collectionName={meta.statusCollectionName} onClose={() => setQuickCreate(null)} onCreated={(item) => handleQuickCreated('statuses', 'status', item)} />
+        <LeadStatusItemModal collectionId={meta.statusCollectionId} collectionName={meta.statusCollectionName} onClose={() => setQuickCreate(null)} onCreated={(item) => { loadMeta(); if (item?.value || item?.label) set('status', item.value || item.label); }} />
+      )}
+      {quickCreate === 'cities' && (
+        <LeadMasterModal type="cities" onClose={() => setQuickCreate(null)} onSaved={(item) => { loadMeta(); if (item?.name) set('city', item.name); }} />
       )}
     </>
   );

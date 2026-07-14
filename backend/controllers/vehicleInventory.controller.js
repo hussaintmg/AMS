@@ -1,20 +1,81 @@
-/**
- * Vehicle Inventory Controller
- * Full CRUD operations for vehicle inventory management
- * Refactored to use Stored Procedures
- * Created by LOGIXINVENTOR (PVT) Ltd.
- * info@logixinventor.com +92 333 3836851
- * www.logixinventor.com | AMS
- * Date: 2026-01-07
- */
-
-const { query } = require('../config/database');
+const Vehicle = require('../models/Vehicle.model');
+const { VehicleMake, VehicleModel, VehicleVariant, VehicleColor } = require('../models/VehicleMaster.model');
+const Warehouse = require('../models/Warehouse.model');
+const SalesOrder = require('../models/SalesOrder.model');
 const { AppError } = require('../middleware/errorHandler');
 const logger = require('../utils/logger');
 
-/**
- * Get all vehicles with pagination, filtering, and search
- */
+const VALID_SORT_COLUMNS = {
+    created_at: 'createdAt',
+    vin: 'vin',
+    year: 'year',
+    selling_price: 'salePrice',
+    purchase_price: 'purchasePrice',
+    status: 'status',
+    arrival_date: 'arrivalDate'
+};
+
+const resolveIdToField = async (Model, id, fieldName) => {
+    if (!id) return null;
+    try {
+        const doc = await Model.findById(id).select(fieldName).lean();
+        return doc ? doc[fieldName] : null;
+    } catch {
+        return null;
+    }
+};
+
+const batchResolveIds = async (vehicles) => {
+    const makeNames = [...new Set(vehicles.map(v => v.make?.name).filter(Boolean))];
+    const modelNames = [...new Set(vehicles.map(v => v.model?.name).filter(Boolean))];
+    const variantNames = [...new Set(vehicles.map(v => v.variant?.name).filter(Boolean))];
+    const colorNames = [...new Set(vehicles.map(v => v.color?.name).filter(Boolean))];
+    const warehouseNames = [...new Set(vehicles.map(v => v.warehouse?.name).filter(Boolean))];
+
+    const [makes, models, variants, colors, warehouses] = await Promise.all([
+        makeNames.length ? VehicleMake.find({ name: { $in: makeNames }, is_active: true }).select('name').lean() : [],
+        modelNames.length ? VehicleModel.find({ name: { $in: modelNames }, is_active: true }).select('name').lean() : [],
+        variantNames.length ? VehicleVariant.find({ name: { $in: variantNames }, is_active: true }).select('name').lean() : [],
+        colorNames.length ? VehicleColor.find({ name: { $in: colorNames }, is_active: true }).select('name').lean() : [],
+        warehouseNames.length ? Warehouse.find({ warehouseName: { $in: warehouseNames }, isActive: true }).select('warehouseName').lean() : []
+    ]);
+
+    return {
+        makeMap: Object.fromEntries(makes.map(m => [m.name, m._id])),
+        modelMap: Object.fromEntries(models.map(m => [m.name, m._id])),
+        variantMap: Object.fromEntries(variants.map(v => [v.name, v._id])),
+        colorMap: Object.fromEntries(colors.map(c => [c.name, c._id])),
+        warehouseMap: Object.fromEntries(warehouses.map(w => [w.warehouseName, w._id]))
+    };
+};
+
+const mapVehicleFlat = (v, idMaps) => ({
+    id: v._id,
+    vin: v.vin,
+    engine_number: v.engineNumber,
+    year: v.year,
+    status: v.status,
+    condition_type: v.conditionType,
+    mileage: v.mileage,
+    purchase_price: v.purchasePrice,
+    selling_price: v.salePrice,
+    make_name: v.make?.name || '',
+    model_name: v.model?.name || '',
+    variant_name: v.variant?.name || '',
+    color_name: v.color?.name || '',
+    color_hex: v.color?.hexCode || '',
+    warehouse_name: v.warehouse?.name || '',
+    location: v.location,
+    arrival_date: v.arrivalDate,
+    notes: v.notes,
+    created_at: v.createdAt,
+    make_id: idMaps.makeMap[v.make?.name] || null,
+    model_id: idMaps.modelMap[v.model?.name] || null,
+    variant_id: idMaps.variantMap[v.variant?.name] || null,
+    color_id: idMaps.colorMap[v.color?.name] || null,
+    warehouse_id: idMaps.warehouseMap[v.warehouse?.name] || null
+});
+
 const getAllVehicles = async (req, res, next) => {
     try {
         const {
@@ -31,100 +92,79 @@ const getAllVehicles = async (req, res, next) => {
             sortOrder = 'DESC'
         } = req.query;
 
-        const offset = (parseInt(page) - 1) * parseInt(limit);
+        const pageNum = parseInt(page);
+        const limitNum = parseInt(limit);
+        const offset = (pageNum - 1) * limitNum;
 
-        // Build dynamic WHERE clause
-        let whereConditions = ['v.is_active = TRUE'];
-        let queryParams = [];
+        const matchFilter = { isActive: true };
 
-        if (search) {
-            whereConditions.push(`(v.vin LIKE ? OR v.engine_number LIKE ? OR vmk.name LIKE ? OR vm.name LIKE ?)`);
-            const searchTerm = `%${search}%`;
-            queryParams.push(searchTerm, searchTerm, searchTerm, searchTerm);
+        if (makeId) {
+            const make = await VehicleMake.findById(makeId).select('name').lean();
+            if (make) {
+                matchFilter['make.name'] = make.name;
+            }
         }
 
-        if (status) { whereConditions.push('v.status = ?'); queryParams.push(status); }
-        if (makeId) { whereConditions.push('vmk.id = ?'); queryParams.push(parseInt(makeId)); }
-        if (modelId) { whereConditions.push('vm.id = ?'); queryParams.push(parseInt(modelId)); }
-        if (year) { whereConditions.push('v.year = ?'); queryParams.push(parseInt(year)); }
-        if (warehouseId) { whereConditions.push('v.warehouse_id = ?'); queryParams.push(parseInt(warehouseId)); }
-        if (conditionType) { whereConditions.push('v.condition_type = ?'); queryParams.push(conditionType); }
+        if (modelId) {
+            const model = await VehicleModel.findById(modelId).select('name').lean();
+            if (model) {
+                matchFilter['model.name'] = model.name;
+            }
+        }
 
-        const whereClause = whereConditions.join(' AND ');
+        if (warehouseId) {
+            const wh = await Warehouse.findById(warehouseId).select('warehouseName').lean();
+            if (wh) {
+                matchFilter['warehouse.name'] = wh.warehouseName;
+            }
+        }
 
-        // Validate sort
-        const validSortColumns = ['created_at', 'vin', 'year', 'selling_price', 'purchase_price', 'status', 'arrival_date'];
-        const sanitizedSortBy = validSortColumns.includes(sortBy) ? sortBy : 'created_at';
-        const sanitizedSortOrder = sortOrder.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+        if (status) {
+            matchFilter.status = status;
+        }
 
-        // Count query
-        const countQuery = `
-            SELECT COUNT(*) as total
-            FROM vehicles v
-            JOIN vehicle_variants vv ON v.variant_id = vv.id
-            JOIN vehicle_models vm ON vv.model_id = vm.id
-            JOIN vehicle_makes vmk ON vm.make_id = vmk.id
-            WHERE ${whereClause}
-        `;
-        const countResult = await query(countQuery, queryParams);
-        const total = countResult[0].total;
+        if (year) {
+            matchFilter.year = parseInt(year);
+        }
 
-        // Data query
-        const vehiclesQuery = `
-            SELECT 
-                v.id,
-                v.vin,
-                v.engine_number,
-                v.year,
-                v.status,
-                v.condition_type,
-                v.mileage,
-                v.purchase_price,
-                v.selling_price,
-                (v.selling_price - v.purchase_price) AS profit_margin,
-                v.location,
-                v.arrival_date,
-                v.notes,
-                v.created_at,
-                vv.id AS variant_id,
-                vv.name AS variant_name,
-                vv.base_price AS variant_base_price,
-                vm.id AS model_id,
-                vm.name AS model_name,
-                vm.body_type,
-                vm.fuel_type,
-                vm.transmission,
-                vmk.id AS make_id,
-                vmk.name AS make_name,
-                vc.id AS color_id,
-                vc.name AS color_name,
-                vc.hex_code AS color_hex,
-                w.id AS warehouse_id,
-                w.name AS warehouse_name,
-                CONCAT(u.first_name, ' ', u.last_name) AS created_by_name
-            FROM vehicles v
-            JOIN vehicle_variants vv ON v.variant_id = vv.id
-            JOIN vehicle_models vm ON vv.model_id = vm.id
-            JOIN vehicle_makes vmk ON vm.make_id = vmk.id
-            JOIN vehicle_colors vc ON v.color_id = vc.id
-            LEFT JOIN warehouses w ON v.warehouse_id = w.id
-            LEFT JOIN users u ON v.created_by = u.id
-            WHERE ${whereClause}
-            ORDER BY v.${sanitizedSortBy} ${sanitizedSortOrder}
-            LIMIT ? OFFSET ?
-        `;
+        if (conditionType) {
+            matchFilter.conditionType = conditionType;
+        }
 
-        const vehicles = await query(vehiclesQuery, [...queryParams, parseInt(limit), offset]);
+        if (search) {
+            const regex = new RegExp(search, 'i');
+            matchFilter.$or = [
+                { vin: regex },
+                { engineNumber: regex },
+                { 'make.name': regex },
+                { 'model.name': regex }
+            ];
+        }
+
+        const total = await Vehicle.countDocuments(matchFilter);
+
+        const sortField = VALID_SORT_COLUMNS[sortBy] || 'createdAt';
+        const sortDir = sortOrder.toUpperCase() === 'ASC' ? 1 : -1;
+
+        const vehicles = await Vehicle.find(matchFilter)
+            .sort({ [sortField]: sortDir })
+            .skip(offset)
+            .limit(limitNum)
+            .lean();
+
+        const idMaps = await batchResolveIds(vehicles);
+
+        const result = vehicles.map(v => mapVehicleFlat(v, idMaps));
 
         res.json({
             success: true,
             data: {
-                vehicles,
+                vehicles: result,
                 pagination: {
-                    page: parseInt(page),
-                    limit: parseInt(limit),
+                    page: pageNum,
+                    limit: limitNum,
                     total,
-                    totalPages: Math.ceil(total / parseInt(limit))
+                    totalPages: Math.ceil(total / limitNum)
                 }
             }
         });
@@ -134,77 +174,39 @@ const getAllVehicles = async (req, res, next) => {
     }
 };
 
-/**
- * Get single vehicle by ID
- */
 const getVehicleById = async (req, res, next) => {
     try {
         const { id } = req.params;
 
-        // Using the same query structure as before, which is efficient for single record with joins
-        const vehicleQuery = `
-            SELECT 
-                v.*,
-                vv.name AS variant_name,
-                vv.base_price AS variant_base_price,
-                vv.features AS variant_features,
-                vm.name AS model_name,
-                vm.body_type,
-                vm.fuel_type,
-                vm.transmission,
-                vm.engine_capacity,
-                vm.seating_capacity,
-                vmk.name AS make_name,
-                vmk.country AS make_country,
-                vc.name AS color_name,
-                vc.hex_code AS color_hex,
-                vc.is_metallic,
-                vc.additional_cost AS color_additional_cost,
-                w.name AS warehouse_name,
-                w.code AS warehouse_code,
-                w.address AS warehouse_address,
-                CONCAT(u.first_name, ' ', u.last_name) AS created_by_name
-            FROM vehicles v
-            JOIN vehicle_variants vv ON v.variant_id = vv.id
-            JOIN vehicle_models vm ON vv.model_id = vm.id
-            JOIN vehicle_makes vmk ON vm.make_id = vmk.id
-            JOIN vehicle_colors vc ON v.color_id = vc.id
-            LEFT JOIN warehouses w ON v.warehouse_id = w.id
-            LEFT JOIN users u ON v.created_by = u.id
-            WHERE v.id = ? AND v.is_active = TRUE
-        `;
+        const vehicle = await Vehicle.findOne({ _id: id, isActive: true }).lean();
 
-        const vehicles = await query(vehicleQuery, [id]);
-
-        if (vehicles.length === 0) {
+        if (!vehicle) {
             throw new AppError('Vehicle not found', 404);
         }
 
-        // Additional data
-        const salesOrders = await query(`
-            SELECT id, order_number, status, total_amount AS grand_total, order_date
-            FROM sales_orders
-            WHERE vehicle_id = ?
-            ORDER BY created_at DESC
-            LIMIT 5
-        `, [id]);
+        const idMaps = await batchResolveIds([vehicle]);
+        const flat = mapVehicleFlat(vehicle, idMaps);
 
-        const auditHistory = await query(`
-            SELECT action, old_data, new_data, changed_at,
-                CONCAT(u.first_name, ' ', u.last_name) AS changed_by_name
-            FROM vehicle_audit_log val
-            LEFT JOIN users u ON val.changed_by = u.id
-            WHERE val.vehicle_id = ?
-            ORDER BY val.changed_at DESC
-            LIMIT 10
-        `, [id]);
+        const salesOrders = await SalesOrder.find({ vehicle: id })
+            .select('orderNumber status totalAmount orderDate')
+            .sort({ createdAt: -1 })
+            .limit(5)
+            .lean();
+
+        const mappedOrders = salesOrders.map(so => ({
+            id: so._id,
+            order_number: so.orderNumber,
+            status: so.status,
+            grand_total: so.totalAmount,
+            order_date: so.orderDate
+        }));
 
         res.json({
             success: true,
             data: {
-                ...vehicles[0],
-                salesOrders,
-                auditHistory
+                ...flat,
+                salesOrders: mappedOrders,
+                auditHistory: []
             }
         });
     } catch (error) {
@@ -213,14 +215,6 @@ const getVehicleById = async (req, res, next) => {
     }
 };
 
-/**
- * Create new vehicle
- * Uses sp_create_vehicle
- */
-/**
- * Create new vehicle
- * Uses sp_create_vehicle
- */
 const createVehicle = async (req, res, next) => {
     try {
         const {
@@ -229,90 +223,121 @@ const createVehicle = async (req, res, next) => {
             location, warehouseId, arrivalDate, notes
         } = req.body;
 
-        // Validation
-        if (!vin) throw new Error('VIN is required');
-        if (!engineNumber) throw new Error('Engine Number is required');
-        if (!variantId) throw new Error('Variant is required');
-        if (!colorId) throw new Error('Color is required');
-        if (!year) throw new Error('Year is required');
-        if (!purchasePrice) throw new Error('Purchase Price is required');
-        if (!sellingPrice) throw new Error('Selling Price is required');
+        if (!vin) throw new AppError('VIN is required', 400);
+        if (!engineNumber) throw new AppError('Engine Number is required', 400);
+        if (!variantId) throw new AppError('Variant is required', 400);
+        if (!colorId) throw new AppError('Color is required', 400);
+        if (!year) throw new AppError('Year is required', 400);
+        if (!purchasePrice) throw new AppError('Purchase Price is required', 400);
+        if (!sellingPrice) throw new AppError('Selling Price is required', 400);
 
-        const sanitizeId = (id) => (id === '' || id === undefined || id === null) ? null : parseInt(id);
-        const sanitizeDate = (date) => (date === '' || date === undefined || date === null) ? null : date;
-        const sanitizeInt = (val) => (val === '' || val === undefined || val === null) ? 0 : parseInt(val);
-        const sanitizeFloat = (val) => (val === '' || val === undefined || val === null) ? 0 : parseFloat(val);
-
-        await query(
-            'CALL sp_create_vehicle(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, @id)',
-            [
-                vin,
-                engineNumber,
-                parseInt(variantId),
-                parseInt(colorId),
-                parseInt(year),
-                status || 'at_yard',
-                conditionType || 'new',
-                sanitizeInt(mileage),
-                sanitizeFloat(purchasePrice),
-                sanitizeFloat(sellingPrice),
-                location || 'Main Yard',
-                sanitizeId(warehouseId),
-                sanitizeDate(arrivalDate),
-                notes || '',
-                req.user.id
-            ]
-        );
-
-        const result = await query('SELECT @id as vehicleId');
-        const vehicleId = result[0].vehicleId;
-
-        if (!vehicleId) {
-            throw new Error('Failed to create vehicle: No ID returned');
+        const existingVin = await Vehicle.findOne({ vin: vin.toUpperCase().trim() }).lean();
+        if (existingVin) {
+            throw new AppError('VIN already exists', 400);
         }
 
-        const vehicle = {
-            id: vehicleId,
-            vin,
-            make: null, // Frontend can refresh list
-            model: null
+        const existingEngine = await Vehicle.findOne({ engineNumber: engineNumber.trim() }).lean();
+        if (existingEngine) {
+            throw new AppError('Engine Number already exists', 400);
+        }
+
+        const variant = await VehicleVariant.findById(variantId).lean();
+        if (!variant) {
+            throw new AppError('Invalid variant selection', 400);
+        }
+
+        const vehicleModel = await VehicleModel.findById(variant.model_id).lean();
+        if (!vehicleModel) {
+            throw new AppError('Invalid model selection', 400);
+        }
+
+        const vehicleMake = await VehicleMake.findById(vehicleModel.make_id).lean();
+        if (!vehicleMake) {
+            throw new AppError('Invalid make selection', 400);
+        }
+
+        const color = await VehicleColor.findById(colorId).lean();
+        if (!color) {
+            throw new AppError('Invalid color selection', 400);
+        }
+
+        let warehouseData = {};
+        if (warehouseId) {
+            const warehouse = await Warehouse.findById(warehouseId).lean();
+            if (warehouse) {
+                warehouseData = {
+                    name: warehouse.warehouseName,
+                    code: warehouse.code
+                };
+            }
+        }
+
+        const vehicleData = {
+            vin: vin.toUpperCase().trim(),
+            engineNumber: engineNumber.trim(),
+            year: parseInt(year),
+            status: status || 'at_yard',
+            conditionType: conditionType || 'new',
+            mileage: parseInt(mileage) || 0,
+            purchasePrice: parseFloat(purchasePrice),
+            salePrice: parseFloat(sellingPrice),
+            location: location || 'Main Yard',
+            arrivalDate: arrivalDate || null,
+            notes: notes || '',
+            isActive: true,
+            createdBy: req.user?.id || null,
+            make: {
+                name: vehicleMake.name,
+                code: vehicleMake.name.substring(0, 3).toUpperCase(),
+                country: vehicleMake.country || ''
+            },
+            model: {
+                name: vehicleModel.name,
+                code: vehicleModel.name.substring(0, 3).toUpperCase(),
+                yearFrom: vehicleModel.year,
+                yearTo: vehicleModel.year
+            },
+            variant: {
+                name: variant.name,
+                code: variant.name.substring(0, 3).toUpperCase(),
+                engineType: variant.specifications?.engineType || '',
+                transmission: vehicleModel.transmission || '',
+                fuelType: vehicleModel.fuel_type || '',
+                price: variant.base_price
+            },
+            color: {
+                name: color.name,
+                code: color.name.substring(0, 3).toUpperCase(),
+                hexCode: color.hex_code
+            },
+            warehouse: warehouseData
         };
 
-        logger.info(`Vehicle created: ${vin} by ${req.user.email}`);
+        const newVehicle = await Vehicle.create(vehicleData);
+
+        logger.info(`Vehicle created: ${vin} by ${req.user?.email || 'system'}`);
 
         res.status(201).json({
             success: true,
             message: 'Vehicle created successfully',
-            data: vehicle
+            data: {
+                id: newVehicle._id,
+                vin: newVehicle.vin
+            }
         });
     } catch (error) {
         logger.error('Error creating vehicle:', error);
-
-        // Handle common SQL errors
-        if (error.sqlMessage) {
-            if (error.sqlMessage.includes('VIN already exists')) {
-                return res.status(400).json({ success: false, message: 'VIN already exists' });
-            }
-            if (error.sqlMessage.includes('Engine number already exists')) {
-                return res.status(400).json({ success: false, message: 'Engine Number already exists' });
-            }
-            // Handle Generic SQL Signal
-            if (error.code === 'ER_SIGNAL_EXCEPTION' && error.sqlMessage) {
-                return res.status(400).json({ success: false, message: error.sqlMessage });
-            }
-            if (error.errno === 1452) {
-                return res.status(400).json({ success: false, message: 'Invalid data selection: Make, Model, Variant, or Color does not exist.' });
-            }
+        if (error instanceof AppError) {
+            return res.status(error.statusCode).json({ success: false, message: error.message });
         }
-
+        if (error.code === 11000) {
+            const field = Object.keys(error.keyPattern || {})[0] || 'field';
+            return res.status(400).json({ success: false, message: `Duplicate value for ${field}` });
+        }
         next(error);
     }
 };
 
-/**
- * Update vehicle
- * Uses sp_update_vehicle
- */
 const updateVehicle = async (req, res, next) => {
     try {
         const { id } = req.params;
@@ -322,49 +347,138 @@ const updateVehicle = async (req, res, next) => {
             warehouseId, arrivalDate, notes
         } = req.body;
 
-        const sanitizeId = (id) => (id === '' || id === undefined || id === null) ? null : id;
-        const sanitizeDate = (date) => (date === '' || date === undefined || date === null) ? null : date;
+        const vehicle = await Vehicle.findById(id);
+        if (!vehicle || !vehicle.isActive) {
+            throw new AppError('Vehicle not found', 404);
+        }
 
-        await query(
-            'CALL sp_update_vehicle(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [
-                id, vin, engineNumber, variantId, colorId, year, conditionType,
-                mileage, purchasePrice, sellingPrice, location,
-                sanitizeId(warehouseId), sanitizeDate(arrivalDate),
-                notes, req.user.id
-            ]
-        );
+        if (vin && vin.toUpperCase().trim() !== vehicle.vin) {
+            const existingVin = await Vehicle.findOne({ vin: vin.toUpperCase().trim(), _id: { $ne: id } }).lean();
+            if (existingVin) {
+                throw new AppError('VIN already exists', 400);
+            }
+        }
 
-        logger.info(`Vehicle updated: ID ${id} by ${req.user.email}`);
+        if (engineNumber && engineNumber.trim() !== vehicle.engineNumber) {
+            const existingEngine = await Vehicle.findOne({ engineNumber: engineNumber.trim(), _id: { $ne: id } }).lean();
+            if (existingEngine) {
+                throw new AppError('Engine Number already exists', 400);
+            }
+        }
+
+        if (vin) vehicle.vin = vin.toUpperCase().trim();
+        if (engineNumber) vehicle.engineNumber = engineNumber.trim();
+        if (year) vehicle.year = parseInt(year);
+        if (conditionType) vehicle.conditionType = conditionType;
+        if (mileage !== undefined && mileage !== '') vehicle.mileage = parseInt(mileage) || 0;
+        if (purchasePrice !== undefined && purchasePrice !== '') vehicle.purchasePrice = parseFloat(purchasePrice);
+        if (sellingPrice !== undefined && sellingPrice !== '') vehicle.salePrice = parseFloat(sellingPrice);
+        if (location) vehicle.location = location;
+        if (notes !== undefined) vehicle.notes = notes;
+        if (arrivalDate !== undefined) vehicle.arrivalDate = arrivalDate || null;
+
+        if (variantId) {
+            const variant = await VehicleVariant.findById(variantId).lean();
+            if (!variant) {
+                throw new AppError('Invalid variant selection', 400);
+            }
+            const vehicleModel = await VehicleModel.findById(variant.model_id).lean();
+            if (!vehicleModel) {
+                throw new AppError('Invalid model selection', 400);
+            }
+            const vehicleMake = await VehicleMake.findById(vehicleModel.make_id).lean();
+            if (!vehicleMake) {
+                throw new AppError('Invalid make selection', 400);
+            }
+            vehicle.make = {
+                name: vehicleMake.name,
+                code: vehicleMake.name.substring(0, 3).toUpperCase(),
+                country: vehicleMake.country || ''
+            };
+            vehicle.model = {
+                name: vehicleModel.name,
+                code: vehicleModel.name.substring(0, 3).toUpperCase(),
+                yearFrom: vehicleModel.year,
+                yearTo: vehicleModel.year
+            };
+            vehicle.variant = {
+                name: variant.name,
+                code: variant.name.substring(0, 3).toUpperCase(),
+                engineType: variant.specifications?.engineType || '',
+                transmission: vehicleModel.transmission || '',
+                fuelType: vehicleModel.fuel_type || '',
+                price: variant.base_price
+            };
+        }
+
+        if (colorId) {
+            const color = await VehicleColor.findById(colorId).lean();
+            if (!color) {
+                throw new AppError('Invalid color selection', 400);
+            }
+            vehicle.color = {
+                name: color.name,
+                code: color.name.substring(0, 3).toUpperCase(),
+                hexCode: color.hex_code
+            };
+        }
+
+        if (warehouseId !== undefined) {
+            if (warehouseId === '' || warehouseId === null) {
+                vehicle.warehouse = {};
+            } else {
+                const warehouse = await Warehouse.findById(warehouseId).lean();
+                if (warehouse) {
+                    vehicle.warehouse = {
+                        name: warehouse.warehouseName,
+                        code: warehouse.code
+                    };
+                }
+            }
+        }
+
+        vehicle.updatedBy = req.user?.id || null;
+        await vehicle.save();
+
+        logger.info(`Vehicle updated: ID ${id} by ${req.user?.email || 'system'}`);
         res.json({ success: true, message: 'Vehicle updated successfully' });
     } catch (error) {
         logger.error('Error updating vehicle:', error);
+        if (error instanceof AppError) {
+            return res.status(error.statusCode).json({ success: false, message: error.message });
+        }
+        if (error.code === 11000) {
+            const field = Object.keys(error.keyPattern || {})[0] || 'field';
+            return res.status(400).json({ success: false, message: `Duplicate value for ${field}` });
+        }
         next(error);
     }
 };
 
-/**
- * Delete vehicle
- * Uses sp_delete_vehicle
- */
 const deleteVehicle = async (req, res, next) => {
     try {
         const { id } = req.params;
 
-        await query('CALL sp_delete_vehicle(?, ?)', [id, req.user.id]);
+        const vehicle = await Vehicle.findById(id);
+        if (!vehicle || !vehicle.isActive) {
+            throw new AppError('Vehicle not found', 404);
+        }
 
-        logger.info(`Vehicle deleted: ID ${id} by ${req.user.email}`);
+        vehicle.isActive = false;
+        vehicle.updatedBy = req.user?.id || null;
+        await vehicle.save();
+
+        logger.info(`Vehicle deleted: ID ${id} by ${req.user?.email || 'system'}`);
         res.json({ success: true, message: 'Vehicle deleted successfully' });
     } catch (error) {
         logger.error('Error deleting vehicle:', error);
+        if (error instanceof AppError) {
+            return res.status(error.statusCode).json({ success: false, message: error.message });
+        }
         next(error);
     }
 };
 
-/**
- * Update vehicle status
- * Uses sp_update_vehicle_status
- */
 const updateVehicleStatus = async (req, res, next) => {
     try {
         const { id } = req.params;
@@ -372,56 +486,98 @@ const updateVehicleStatus = async (req, res, next) => {
 
         if (!status) throw new AppError('Status is required', 400);
 
-        await query('CALL sp_update_vehicle_status(?, ?, ?)', [id, status, req.user.id]);
+        const vehicle = await Vehicle.findById(id);
+        if (!vehicle || !vehicle.isActive) {
+            throw new AppError('Vehicle not found', 404);
+        }
+
+        vehicle.status = status;
+        vehicle.updatedBy = req.user?.id || null;
+        await vehicle.save();
 
         logger.info(`Vehicle ID ${id} status updated to ${status}`);
         res.json({ success: true, message: 'Vehicle status updated successfully' });
     } catch (error) {
         logger.error('Error updating vehicle status:', error);
+        if (error instanceof AppError) {
+            return res.status(error.statusCode).json({ success: false, message: error.message });
+        }
         next(error);
     }
 };
 
-/**
- * Get vehicle statistics
- */
 const getVehicleStats = async (req, res, next) => {
     try {
-        // Keeping as raw SQL queries for reporting dashboard - can be moved to SP_GetVehicleStats later
-        const overallStats = await query(`
-            SELECT 
-                COUNT(*) AS total_vehicles,
-                SUM(CASE WHEN status = 'in_transit' THEN 1 ELSE 0 END) AS in_transit,
-                SUM(CASE WHEN status = 'at_yard' THEN 1 ELSE 0 END) AS at_yard,
-                SUM(CASE WHEN status = 'allocated' THEN 1 ELSE 0 END) AS allocated,
-                SUM(CASE WHEN status = 'sold' THEN 1 ELSE 0 END) AS sold,
-                SUM(CASE WHEN status = 'delivered' THEN 1 ELSE 0 END) AS delivered,
-                SUM(purchase_price) AS total_purchase_value,
-                SUM(selling_price) AS total_selling_value,
-                SUM(selling_price - purchase_price) AS total_profit_margin
-            FROM vehicles
-            WHERE is_active = TRUE
-        `);
+        const overallResult = await Vehicle.aggregate([
+            { $match: { isActive: true } },
+            {
+                $group: {
+                    _id: null,
+                    total_vehicles: { $sum: 1 },
+                    in_transit: {
+                        $sum: { $cond: [{ $eq: ['$status', 'in_transit'] }, 1, 0] }
+                    },
+                    at_yard: {
+                        $sum: { $cond: [{ $eq: ['$status', 'at_yard'] }, 1, 0] }
+                    },
+                    allocated: {
+                        $sum: { $cond: [{ $eq: ['$status', 'allocated'] }, 1, 0] }
+                    },
+                    sold: {
+                        $sum: { $cond: [{ $eq: ['$status', 'sold'] }, 1, 0] }
+                    },
+                    delivered: {
+                        $sum: { $cond: [{ $eq: ['$status', 'delivered'] }, 1, 0] }
+                    },
+                    total_purchase_value: { $sum: '$purchasePrice' },
+                    total_selling_value: { $sum: '$salePrice' },
+                    total_profit_margin: {
+                        $sum: { $subtract: [{ $ifNull: ['$salePrice', 0] }, { $ifNull: ['$purchasePrice', 0] }] }
+                    }
+                }
+            }
+        ]);
 
-        // ... Keeping other stats queries for now ...
-        // For brevity in this refactor, just returning overall for validation
-        // In a full implementation, we'd include the other breakdown queries too.
+        const overall = overallResult[0] || {
+            total_vehicles: 0,
+            in_transit: 0,
+            at_yard: 0,
+            allocated: 0,
+            sold: 0,
+            delivered: 0,
+            total_purchase_value: 0,
+            total_selling_value: 0,
+            total_profit_margin: 0
+        };
+        delete overall._id;
 
-        const byMake = await query(`
-           SELECT vmk.name AS make_name, COUNT(*) AS count
-           FROM vehicles v
-           JOIN vehicle_variants vv ON v.variant_id = vv.id
-           JOIN vehicle_models vm ON vv.model_id = vm.id
-           JOIN vehicle_makes vmk ON vm.make_id = vmk.id
-            WHERE v.is_active = TRUE AND v.status NOT IN ('sold', 'delivered')
-           GROUP BY vmk.id, vmk.name
-           ORDER BY count DESC
-        `);
+        const byMake = await Vehicle.aggregate([
+            {
+                $match: {
+                    isActive: true,
+                    status: { $nin: ['sold', 'delivered'] }
+                }
+            },
+            {
+                $group: {
+                    _id: '$make.name',
+                    count: { $sum: 1 }
+                }
+            },
+            { $sort: { count: -1 } },
+            {
+                $project: {
+                    _id: 0,
+                    make_name: '$_id',
+                    count: 1
+                }
+            }
+        ]);
 
         res.json({
             success: true,
             data: {
-                ...overallStats[0],
+                ...overall,
                 byMake
             }
         });
@@ -433,57 +589,121 @@ const getVehicleStats = async (req, res, next) => {
 
 const getWarehouses = async (req, res, next) => {
     try {
-        const warehouses = await query('SELECT id, name, code FROM warehouses WHERE is_active = TRUE ORDER BY name');
-        res.json({ success: true, data: warehouses });
-    } catch (error) { next(error); }
+        const warehouses = await Warehouse.find({ isActive: true })
+            .select('warehouseName code')
+            .sort({ warehouseName: 1 })
+            .lean();
+
+        const result = warehouses.map(w => ({
+            id: w._id,
+            name: w.warehouseName,
+            code: w.code
+        }));
+
+        res.json({ success: true, data: result });
+    } catch (error) {
+        logger.error('Error fetching warehouses:', error);
+        next(error);
+    }
 };
 
-/**
- * Get Makes List (for dropdowns)
- */
 const getMakesList = async (req, res, next) => {
     try {
-        // Use sp_get_makes with is_active=true and high limit
-        const makes = await query('CALL sp_get_makes(?, ?, ?, ?)', [null, true, 1000, 0]);
-        res.json({ success: true, data: makes[0] || [] });
-    } catch (error) { next(error); }
+        const makes = await VehicleMake.find({ is_active: true })
+            .sort({ name: 1 })
+            .lean();
+
+        const result = makes.map(m => ({
+            id: m._id,
+            name: m.name,
+            country: m.country,
+            logo: m.logo
+        }));
+
+        res.json({ success: true, data: result });
+    } catch (error) {
+        logger.error('Error fetching makes:', error);
+        next(error);
+    }
 };
 
-/**
- * Get Models List (for dropdowns)
- */
 const getModelsList = async (req, res, next) => {
     try {
         const { makeId } = req.query;
-        // sp_get_models(make_id, search, is_active, limit, offset)
-        const models = await query('CALL sp_get_models(?, ?, ?, ?, ?)',
-            [makeId ? parseInt(makeId) : null, null, true, 1000, 0]);
-        res.json({ success: true, data: models[0] || [] });
-    } catch (error) { next(error); }
+
+        const filter = { is_active: true };
+        if (makeId) {
+            filter.make_id = makeId;
+        }
+
+        const models = await VehicleModel.find(filter)
+            .sort({ name: 1 })
+            .lean();
+
+        const result = models.map(m => ({
+            id: m._id,
+            name: m.name,
+            year: m.year,
+            body_type: m.body_type,
+            fuel_type: m.fuel_type,
+            transmission: m.transmission,
+            make_id: m.make_id
+        }));
+
+        res.json({ success: true, data: result });
+    } catch (error) {
+        logger.error('Error fetching models:', error);
+        next(error);
+    }
 };
 
-/**
- * Get Variants List (for dropdowns)
- */
 const getVariantsList = async (req, res, next) => {
     try {
         const { modelId } = req.query;
-        // sp_get_variants(model_id, make_id, search, is_active, limit, offset)
-        const variants = await query('CALL sp_get_variants(?, ?, ?, ?, ?, ?)',
-            [modelId ? parseInt(modelId) : null, null, null, true, 1000, 0]);
-        res.json({ success: true, data: variants[0] || [] });
-    } catch (error) { next(error); }
+
+        const filter = { is_active: true };
+        if (modelId) {
+            filter.model_id = modelId;
+        }
+
+        const variants = await VehicleVariant.find(filter)
+            .sort({ name: 1 })
+            .lean();
+
+        const result = variants.map(v => ({
+            id: v._id,
+            name: v.name,
+            base_price: v.base_price,
+            features: v.features,
+            model_id: v.model_id
+        }));
+
+        res.json({ success: true, data: result });
+    } catch (error) {
+        logger.error('Error fetching variants:', error);
+        next(error);
+    }
 };
 
-/**
- * Get Colors List (for dropdowns)
- */
 const getColorsList = async (req, res, next) => {
     try {
-        // sp_get_colors(search, is_active, limit, offset)
-        const colors = await query('CALL sp_get_colors(?, ?, ?, ?)', [null, true, 1000, 0]);
-        res.json({ success: true, data: colors[0] || [] });
-    } catch (error) { next(error); }
+        const colors = await VehicleColor.find({ is_active: true })
+            .sort({ name: 1 })
+            .lean();
+
+        const result = colors.map(c => ({
+            id: c._id,
+            name: c.name,
+            hex_code: c.hex_code,
+            is_metallic: c.is_metallic,
+            additional_cost: c.additional_cost
+        }));
+
+        res.json({ success: true, data: result });
+    } catch (error) {
+        logger.error('Error fetching colors:', error);
+        next(error);
+    }
 };
 
 module.exports = {

@@ -2,6 +2,41 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import '../styles/searchableSelect.css';
 
+function calcDropdownPosition(triggerEl, optionCount) {
+    if (!triggerEl) return {};
+    const rect = triggerEl.getBoundingClientRect();
+    const dropdownHeight = Math.min(260, optionCount * 44 + 52);
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const spaceAbove = rect.top;
+    let top;
+    let opensUp = false;
+    if (spaceBelow >= dropdownHeight + 6) {
+        top = rect.bottom + 6;
+    } else if (spaceAbove >= dropdownHeight + 6) {
+        top = rect.top - dropdownHeight - 6;
+        opensUp = true;
+    } else if (spaceBelow >= spaceAbove) {
+        top = rect.bottom + 6;
+    } else {
+        top = rect.top - dropdownHeight - 6;
+        opensUp = true;
+    }
+    return {
+        position: 'fixed',
+        left: rect.left + 'px',
+        top: top + 'px',
+        width: Math.max(rect.width, 180) + 'px',
+        zIndex: 9999,
+        maxHeight: '260px',
+        overflowY: 'auto',
+        background: '#fff',
+        border: '1.5px solid #3b82f6',
+        borderRadius: '8px',
+        boxShadow: '0 10px 25px rgba(0, 0, 0, 0.12)',
+        ...(opensUp ? { borderBottom: 'none', borderBottomLeftRadius: 0, borderBottomRightRadius: 0 } : { borderTop: 'none', borderTopLeftRadius: 0, borderTopRightRadius: 0 }),
+    };
+}
+
 const SearchableSelect = ({
     options = [],
     value = '',
@@ -62,6 +97,10 @@ const SearchableSelect = ({
         setHighlightedIndex(-1);
     }, []);
 
+    const handleScrollClose = useCallback(() => {
+        if (isOpen) closeMenu();
+    }, [isOpen, closeMenu]);
+
     const handleClickOutside = useCallback((event) => {
         if (
             menuRef.current && !menuRef.current.contains(event.target) &&
@@ -79,11 +118,15 @@ const SearchableSelect = ({
         if (!isOpen) return;
         document.addEventListener('mousedown', handleClickOutside);
         document.addEventListener('keydown', handleKeyDownGlobal);
+        window.addEventListener('scroll', handleScrollClose, true);
+        window.addEventListener('resize', handleScrollClose);
         return () => {
             document.removeEventListener('mousedown', handleClickOutside);
             document.removeEventListener('keydown', handleKeyDownGlobal);
+            window.removeEventListener('scroll', handleScrollClose, true);
+            window.removeEventListener('resize', handleScrollClose);
         };
-    }, [isOpen, handleClickOutside, handleKeyDownGlobal]);
+    }, [isOpen, handleClickOutside, handleKeyDownGlobal, handleScrollClose]);
 
     useEffect(() => {
         if (highlightedIndex >= 0 && listRef.current) {
@@ -97,34 +140,7 @@ const SearchableSelect = ({
     const handleOpen = useCallback(() => {
         if (disabled) return;
         if (!triggerRef.current) return;
-        const rect = triggerRef.current.getBoundingClientRect();
-        const dropdownHeight = Math.min(260, filteredOptions.length * 44 + 52);
-        const spaceBelow = window.innerHeight - rect.bottom;
-        const spaceAbove = rect.top;
-        let top;
-        if (spaceBelow >= dropdownHeight + 6) {
-            top = rect.bottom + 6;
-        } else if (spaceAbove >= dropdownHeight + 6) {
-            top = rect.top - dropdownHeight - 6;
-        } else if (spaceBelow >= spaceAbove) {
-            top = rect.bottom + 6;
-        } else {
-            top = 6;
-        }
-
-        setMenuStyle({
-            position: 'fixed',
-            left: rect.left + 'px',
-            top: top + 'px',
-            width: Math.max(rect.width, 180) + 'px',
-            zIndex: 9999,
-            maxHeight: '260px',
-            overflowY: 'auto',
-            background: '#fff',
-            border: '1.5px solid #3b82f6',
-            borderRadius: '8px',
-            boxShadow: '0 10px 25px rgba(0, 0, 0, 0.12)',
-        });
+        setMenuStyle(calcDropdownPosition(triggerRef.current, filteredOptions.length));
         setIsOpen(true);
         setSearchTerm('');
         setHighlightedIndex(-1);

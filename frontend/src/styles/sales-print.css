@@ -346,3 +346,23 @@
         border: 0.5pt solid #e5e7eb !important;
     }
 }
+
+/* Mobile card views for Sales tables */
+.sales-page .desktop-table { display: block; }
+.sales-page .mobile-cards-view { display: none; }
+
+@media (max-width: 768px) {
+    .sales-page .desktop-table { display: none; }
+    .sales-page .mobile-cards-view { display: block; }
+}
+
+@media (min-width: 769px) {
+    .sales-page .desktop-table { display: block; }
+    .sales-page .mobile-cards-view { display: none; }
+}
+
+.sales-page .mobile-cards-container {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}

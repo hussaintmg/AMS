@@ -1,0 +1,6 @@
+# AMS Service Master bulk import. _masterType = type | rate | package | warranty. Per type: type(code, base_price, estimated_hours, category) | rate(code, rate REQUIRED, duration_minutes) | package(price, duration_minutes, warranty, services "Name:qty:price; Name:qty:price") | warranty(code, duration_months, duration_km, terms).
+"_masterType","name","code","description","is_active","base_price","estimated_hours","category","rate","duration_minutes","price","warranty","services","duration_months","duration_km","terms"
+"type","Oil Change","OIL-CHG","Standard engine oil change","true","2500","1","Maintenance","","","","","","","",""
+"rate","Standard Labor","STD-LABOR","Standard hourly labor rate","true","","","","1500","60","","","","","",""
+"package","Basic Service Package","","Oil change plus inspection","true","","","","","90","4500","6 months","Oil Change:1:2500; Air Filter:1:800","","",""
+"warranty","Standard Warranty","STD-WTY","Standard parts warranty","true","","","","","","","","","12","20000","Covers manufacturing defects only"

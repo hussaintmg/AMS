@@ -1,0 +1,77 @@
+/* Shared DataTable component styles — mobile card fallback */
+
+/* Responsive toggle (self-contained so any page using DataTable works,
+   even if it doesn't import userManagement.css) */
+.data-table-wrapper .desktop-only { display: block; }
+.data-table-wrapper .mobile-only { display: none; }
+
+@media (max-width: 768px) {
+  .data-table-wrapper .desktop-only { display: none; }
+  .data-table-wrapper .mobile-only { display: block; }
+}
+
+.mobile-cards-container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.user-card {
+  background: #fff;
+  border-radius: 14px;
+  border: 1px solid #edf2f7;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  padding: 14px;
+  transition: all 0.2s ease;
+}
+
+.user-card:hover {
+  border-color: #dbeafe;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08);
+  transform: translateY(-2px);
+}
+
+.user-card:active {
+  transform: scale(0.98);
+}
+
+.user-card-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.user-card-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid #f8fafc;
+  font-size: 13px;
+}
+
+.user-card-field:last-child {
+  border-bottom: none;
+}
+
+.user-card-field .field-label {
+  color: #94a3b8;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.user-card-field span:last-child {
+  color: #334155;
+  font-weight: 600;
+  text-align: right;
+}
+
+.data-table-wrapper .user-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #eef2f7;
+}

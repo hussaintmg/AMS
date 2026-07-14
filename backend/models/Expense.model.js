@@ -8,8 +8,11 @@ const expenseSchema = new mongoose.Schema({
   amount: { type: Number, default: 0 },
   expenseDate: { type: Date },
   description: { type: String },
-  status: { type: String, trim: true },
-  createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
+  vendor: { type: String, trim: true },
+  status: { type: String, enum: ['draft', 'submitted', 'approved', 'posted'], default: 'draft', trim: true },
+  isDeleted: { type: Boolean, default: false },
+  createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
 }, {
   timestamps: true
 });
@@ -17,6 +20,7 @@ const expenseSchema = new mongoose.Schema({
 expenseSchema.index({ expenseNumber: 1 });
 expenseSchema.index({ category: 1 });
 expenseSchema.index({ status: 1 });
+expenseSchema.index({ isDeleted: 1 });
 
 const Expense = mongoose.model('Expense', expenseSchema);
 
