@@ -208,6 +208,7 @@ img {
   background: linear-gradient(135deg, var(--accent-400), var(--accent-500));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
+  color: var(--sidebar-heading-color, white);
 }
 
 .sidebar-nav {
@@ -222,7 +223,8 @@ img {
   font-size: var(--font-size-xs);
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--gray-400);
+  color: var(--sidebar-text-color, var(--gray-400));
+  opacity: 0.75;
   padding: var(--spacing-2) var(--spacing-3);
   margin-bottom: var(--spacing-1);
 }
@@ -233,7 +235,7 @@ img {
   gap: var(--spacing-3);
   padding: var(--spacing-3);
   border-radius: var(--radius-lg);
-  color: var(--gray-300);
+  color: var(--sidebar-text-color, var(--gray-300));
   transition: all var(--transition-fast);
   cursor: pointer;
   margin-bottom: var(--spacing-1);
@@ -245,7 +247,7 @@ img {
 }
 
 .nav-item.active {
-  background: linear-gradient(135deg, var(--primary-500), var(--primary-600));
+  background: var(--sidebar-active-color, var(--primary-500));
   color: white;
   box-shadow: var(--shadow-md);
 }

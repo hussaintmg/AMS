@@ -39,7 +39,7 @@ async function run() {
   const uri = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017';
   const dbName = process.env.MONGO_DB_NAME || 'amserp';
   await mongoose.connect(uri, { dbName });
-  const { Page, Role, User, SystemSetting } = require('../models');
+  const { Page, Role, User, SystemSetting, BrandingSetting } = require('../models');
   const admin = await User.findOne({ email: String(process.env.SUPER_ADMIN_EMAIL || '').toLowerCase() }).populate('role');
   if (!admin) throw new Error('Super admin user not found; run create_super_admin.js first');
   const role = await Role.findOne({ name: 'super_admin' });
@@ -62,6 +62,11 @@ async function run() {
   }
   await SystemSetting.findOneAndUpdate({ key: 'permissionMode' }, { $set: { key: 'permissionMode', value: 'role', category: 'permissions', description: 'Page permissions are read from roles.' } }, { upsert: true, setDefaultsOnInsert: true });
   await SystemSetting.findOneAndUpdate({ key: 'logPermissionMode' }, { $set: { key: 'logPermissionMode', value: 'role', category: 'permissions', description: 'Log permissions are read from roles.' } }, { upsert: true, setDefaultsOnInsert: true });
+  let branding = await BrandingSetting.findOne().sort({ createdAt: 1 });
+  if (!branding) branding = new BrandingSetting();
+  if (!branding.sidebarBackgroundColor) branding.sidebarBackgroundColor = '#1e3a5f';
+  if (!branding.sidebarBackgroundType) branding.sidebarBackgroundType = 'gradient';
+  await branding.save();
   console.log(`Seeded ${pages.length} pages, ${permissions.length} super-admin permissions, and ${jobs.length} full-access jobs.`);
   await mongoose.disconnect();
 }

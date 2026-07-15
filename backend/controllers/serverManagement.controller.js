@@ -19,7 +19,7 @@ const { syncFromUser } = require('../utils/relationshipSync');
 
 const uploadRoot = path.join(__dirname, '..', 'uploads', 'branding');
 const DEFAULT_PAGE_ICON = 'FileText';
-const brandingAssetFields = ['favicon', 'sidebarLogo', 'loginLogo', 'loadingLogo'];
+const brandingAssetFields = ['favicon', 'sidebarLogo', 'loginLogo', 'loadingLogo', 'sidebarBackgroundImage'];
 
 const getUserId = (req) => req.user?.id || req.user?._id;
 
@@ -90,6 +90,7 @@ const populateBranding = (query) => query.populate([
   'sidebarLogo',
   'loginLogo',
   'loadingLogo'
+  ,'sidebarBackgroundImage'
 ]);
 
 const unlinkAssetFile = (filePath) => {
@@ -117,7 +118,7 @@ const getBrandingDoc = async () => {
 
 const serializeBranding = (setting) => {
   const obj = typeof setting.toObject === 'function' ? setting.toObject() : setting;
-  const assetFields = ['favicon', 'sidebarLogo', 'loginLogo', 'loadingLogo'];
+  const assetFields = brandingAssetFields;
   const serialized = { ...obj };
 
   assetFields.forEach((field) => {
@@ -351,9 +352,14 @@ exports.getBranding = async (_req, res, next) => {
 exports.updateBranding = async (req, res, next) => {
   try {
     const setting = await getBrandingDoc();
-    const assetFields = ['favicon', 'sidebarLogo', 'loginLogo', 'loadingLogo'];
+    const assetFields = brandingAssetFields;
 
     ['applicationName', 'browserTitle', 'activeTheme'].forEach((field) => {
+      if (req.body[field] !== undefined) setting[field] = req.body[field];
+    });
+
+    const sidebarFields = ['sidebarBackgroundType', 'sidebarBackgroundColor', 'sidebarGradientFrom', 'sidebarGradientTo', 'sidebarGradientAngle', 'sidebarBackgroundSize', 'sidebarBackgroundPosition', 'sidebarBackgroundRepeat', 'sidebarOverlayColor', 'sidebarOverlayOpacity', 'sidebarTextColor', 'sidebarHeadingColor', 'sidebarActiveColor'];
+    sidebarFields.forEach((field) => {
       if (req.body[field] !== undefined) setting[field] = req.body[field];
     });
 

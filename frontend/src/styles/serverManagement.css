@@ -769,3 +769,13 @@
   }
 }
 .sm-role-job-list{display:grid;gap:12px;margin-top:18px}.sm-role-job-card{border:1px solid var(--border-light,#e2e8f0);border-radius:8px;padding:16px;background:#fff}.sm-role-job-card:focus-within{border-color:#3b82f6;box-shadow:0 0 0 2px #3b82f61a}.sm-role-job-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}.sm-role-job-heading>div{display:flex;flex-direction:column}.sm-role-job-heading span{font-size:12px;color:#64748b}.sm-own-data{background:#ecfdf5;color:#047857!important;padding:4px 7px;border-radius:4px}.sm-role-job-actions{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}.sm-role-job-actions label,.sm-scope-options label{display:flex;align-items:center;gap:6px;border:1px solid #dbe2ea;border-radius:5px;padding:7px 9px;font-size:12px}.sm-role-job-scope>label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5px}.sm-role-job-scope>select{width:min(360px,100%);padding:8px;border:1px solid #cbd5e1;border-radius:5px}.sm-scope-options{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:6px;margin-top:9px;max-height:210px;overflow-y:auto}
+.sm-sidebar-appearance { margin-top: 24px; padding-top: 24px; border-top: 1px solid #e2e8f0; }
+.sm-section-heading { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+.sm-section-heading h3 { margin: 0 0 4px; color: #0f172a; }
+.sm-section-heading p { margin: 0; color: #64748b; font-size: 13px; }
+.sm-color-input { min-height: 44px; padding: 5px !important; cursor: pointer; }
+.sm-gradient-presets { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+.sm-gradient-presets button { min-width: 112px; padding: 12px; border: 2px solid #fff; border-radius: 9px; box-shadow: 0 0 0 1px #cbd5e1; color: #fff; font-weight: 700; text-shadow: 0 1px 3px #0009; cursor: pointer; }
+.sm-gradient-presets button:hover { transform: translateY(-1px); box-shadow: 0 4px 12px #0f172a2e; }
+.sm-sidebar-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+@media (max-width: 640px) { .sm-sidebar-actions > * { width: 100%; justify-content: center; } }

@@ -9,6 +9,20 @@ const defaultBranding = {
     activeTheme: 'default',
     favicon: null,
     sidebarLogo: null,
+    sidebarBackgroundImage: null,
+    sidebarBackgroundType: 'gradient',
+    sidebarBackgroundColor: '#1e3a5f',
+    sidebarGradientFrom: '#1e3a5f',
+    sidebarGradientTo: '#0f172a',
+    sidebarGradientAngle: 180,
+    sidebarBackgroundSize: 'cover',
+    sidebarBackgroundPosition: 'center center',
+    sidebarBackgroundRepeat: 'no-repeat',
+    sidebarOverlayColor: '#0f172a',
+    sidebarOverlayOpacity: 0.2,
+    sidebarTextColor: '#e2e8f0',
+    sidebarHeadingColor: '#ffffff',
+    sidebarActiveColor: '#2563eb',
     loginLogo: null,
     loadingLogo: null
 };
@@ -86,7 +100,21 @@ export const BrandingProvider = ({ children }) => {
                 favicon: brandingDraft.favicon?._id || brandingDraft.favicon || null,
                 sidebarLogo: brandingDraft.sidebarLogo?._id || brandingDraft.sidebarLogo || null,
                 loginLogo: brandingDraft.loginLogo?._id || brandingDraft.loginLogo || null,
-                loadingLogo: brandingDraft.loadingLogo?._id || brandingDraft.loadingLogo || null
+                loadingLogo: brandingDraft.loadingLogo?._id || brandingDraft.loadingLogo || null,
+                sidebarBackgroundImage: brandingDraft.sidebarBackgroundImage?._id || brandingDraft.sidebarBackgroundImage || null,
+                sidebarBackgroundType: brandingDraft.sidebarBackgroundType,
+                sidebarBackgroundColor: brandingDraft.sidebarBackgroundColor,
+                sidebarGradientFrom: brandingDraft.sidebarGradientFrom,
+                sidebarGradientTo: brandingDraft.sidebarGradientTo,
+                sidebarGradientAngle: Number(brandingDraft.sidebarGradientAngle ?? 180),
+                sidebarBackgroundSize: brandingDraft.sidebarBackgroundSize,
+                sidebarBackgroundPosition: brandingDraft.sidebarBackgroundPosition,
+                sidebarBackgroundRepeat: brandingDraft.sidebarBackgroundRepeat,
+                sidebarOverlayColor: brandingDraft.sidebarOverlayColor,
+                sidebarOverlayOpacity: Number(brandingDraft.sidebarOverlayOpacity ?? 0.2),
+                sidebarTextColor: brandingDraft.sidebarTextColor,
+                sidebarHeadingColor: brandingDraft.sidebarHeadingColor,
+                sidebarActiveColor: brandingDraft.sidebarActiveColor
             };
             const response = await serverManagementAPI.updateBranding(payload);
             if (!(response?.status >= 200 && response?.status < 300 && response?.data?.success === true)) {

@@ -13,6 +13,14 @@ import logo from '../assets/white_logo.png';
 
 const DEFAULT_ICON = 'FileText';
 
+const hexToRgba = (hex = '#0f172a', opacity = 0) => {
+    const value = String(hex).replace('#', '');
+    const normalized = value.length === 3 ? value.split('').map((c) => c + c).join('') : value;
+    const number = Number.parseInt(normalized, 16);
+    if (!Number.isFinite(number)) return `rgba(15, 23, 42, ${opacity})`;
+    return `rgba(${(number >> 16) & 255}, ${(number >> 8) & 255}, ${number & 255}, ${opacity})`;
+};
+
 const Icon = ({ name }) => {
     const Comp = name && Icons[name] && typeof Icons[name]?.render === 'function' ? Icons[name] : Icons[DEFAULT_ICON];
     return <Comp size={18} strokeWidth={2} />;
@@ -56,9 +64,25 @@ function Sidebar({ isOpen, onClose }) {
 
     const sidebarLogo = branding?.sidebarLogo?.publicUrl || branding?.sidebarLogo?.url || logo;
     const applicationName = branding?.applicationName || 'OMODA | JAECOO';
+    const backgroundImage = branding?.sidebarBackgroundImage?.publicUrl || branding?.sidebarBackgroundImage?.url;
+    const overlay = hexToRgba(branding?.sidebarOverlayColor, Number(branding?.sidebarOverlayOpacity ?? 0.2));
+    const background = branding?.sidebarBackgroundType === 'solid'
+        ? branding?.sidebarBackgroundColor
+        : branding?.sidebarBackgroundType === 'image' && backgroundImage
+            ? `linear-gradient(${overlay}, ${overlay}), url("${backgroundImage}")`
+            : `linear-gradient(${Number(branding?.sidebarGradientAngle ?? 180)}deg, ${branding?.sidebarGradientFrom || '#1e3a5f'}, ${branding?.sidebarGradientTo || '#0f172a'})`;
+    const sidebarStyle = {
+        background,
+        backgroundSize: branding?.sidebarBackgroundType === 'image' ? branding?.sidebarBackgroundSize || 'cover' : undefined,
+        backgroundPosition: branding?.sidebarBackgroundType === 'image' ? branding?.sidebarBackgroundPosition || 'center center' : undefined,
+        backgroundRepeat: branding?.sidebarBackgroundType === 'image' ? branding?.sidebarBackgroundRepeat || 'no-repeat' : undefined,
+        '--sidebar-text-color': branding?.sidebarTextColor || '#e2e8f0',
+        '--sidebar-heading-color': branding?.sidebarHeadingColor || '#ffffff',
+        '--sidebar-active-color': branding?.sidebarActiveColor || '#2563eb',
+    };
 
     return (
-        <aside className={`sidebar ${isOpen ? 'sidebar-open' : ''}`}>
+        <aside className={`sidebar ${isOpen ? 'sidebar-open' : ''}`} style={sidebarStyle}>
             <div className="sidebar-logo">
                 <img src={sidebarLogo} alt={applicationName} style={{ height: '40px', width: 'auto', marginRight: '10px' }} />
                 <h1 style={{ fontSize: '0.9rem' }}>{applicationName}</h1>

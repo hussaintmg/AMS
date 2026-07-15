@@ -41,6 +41,14 @@ const iconNames = Object.keys(Icons)
   )
   .sort();
 const DEFAULT_ICON = "FileText";
+const sidebarGradientPresets = [
+  ["Midnight", "#1e3a5f", "#0f172a"],
+  ["Ocean", "#075985", "#1d4ed8"],
+  ["Emerald", "#064e3b", "#047857"],
+  ["Purple", "#3b0764", "#6d28d9"],
+  ["Graphite", "#111827", "#374151"],
+];
+const sidebarPositions = ["left top", "center top", "right top", "left center", "center center", "right center", "left bottom", "center bottom", "right bottom"];
 
 const blankRole = {
   name: "",
@@ -600,6 +608,17 @@ function ServerManagement() {
     event.target.value = "";
   };
 
+  const handleUploadSidebarBackground = async (event) => {
+    const files = Array.from(event.target.files || []);
+    event.target.value = "";
+    if (!files.length) return;
+    const result = await uploadAssets(files.slice(0, 1));
+    if (result.success && result.assets?.[0]) {
+      setAssets((prev) => [...result.assets, ...prev]);
+      setBrandingDraft((current) => ({ ...current, sidebarBackgroundImage: result.assets[0], sidebarBackgroundType: "image" }));
+    }
+  };
+
   const handleSaveBranding = async (event) => {
     event?.preventDefault?.();
     if (savingRef.current.branding) return;
@@ -617,6 +636,12 @@ function ServerManagement() {
       savingRef.current.branding = false;
       setSavingBranding(false);
     }
+  };
+
+  const saveFrontendManagement = async (event) => {
+    event?.preventDefault?.();
+    await saveSidebar(event);
+    await handleSaveBranding(event);
   };
 
   const confirmDeleteAsset = async () => {
@@ -807,7 +832,7 @@ function ServerManagement() {
     );
 
   const renderPages = () => (
-    <form className="sm-panel" onSubmit={saveSidebar}>
+    <form className="sm-panel" onSubmit={saveFrontendManagement}>
       <div className="sm-panel-header">
         <div>
           <h2>Frontend Management</h2>
@@ -826,7 +851,7 @@ function ServerManagement() {
             className="btn btn-primary"
             disabled={savingSidebar}
           >
-            Save Sidebar
+            Save Frontend
           </button>
         </div>
       </div>
@@ -958,6 +983,36 @@ function ServerManagement() {
           </div>
         ))}
       </div>
+      <section className="sm-sidebar-appearance">
+        <div className="sm-section-heading">
+          <div><h3>Sidebar Appearance</h3><p>Choose a solid colour, gradient, or uploaded image. Changes apply live after saving.</p></div>
+        </div>
+        <div className="sm-form-grid">
+          <label>Background Type
+            <select className="form-input" value={brandingDraft?.sidebarBackgroundType || "gradient"} onChange={(e) => setBrandingDraft((v) => ({ ...v, sidebarBackgroundType: e.target.value }))}>
+              <option value="solid">Solid Colour</option><option value="gradient">Linear Gradient</option><option value="image">Background Image</option>
+            </select>
+          </label>
+          {brandingDraft?.sidebarBackgroundType === "solid" && <label>Sidebar Colour<input type="color" className="form-input sm-color-input" value={brandingDraft?.sidebarBackgroundColor || "#1e3a5f"} onChange={(e) => setBrandingDraft((v) => ({ ...v, sidebarBackgroundColor: e.target.value }))} /></label>}
+          {brandingDraft?.sidebarBackgroundType === "gradient" && <>
+            <label>Gradient From<input type="color" className="form-input sm-color-input" value={brandingDraft?.sidebarGradientFrom || "#1e3a5f"} onChange={(e) => setBrandingDraft((v) => ({ ...v, sidebarGradientFrom: e.target.value }))} /></label>
+            <label>Gradient To<input type="color" className="form-input sm-color-input" value={brandingDraft?.sidebarGradientTo || "#0f172a"} onChange={(e) => setBrandingDraft((v) => ({ ...v, sidebarGradientTo: e.target.value }))} /></label>
+            <label>Angle ({brandingDraft?.sidebarGradientAngle ?? 180}°)<input type="range" min="0" max="360" value={brandingDraft?.sidebarGradientAngle ?? 180} onChange={(e) => setBrandingDraft((v) => ({ ...v, sidebarGradientAngle: Number(e.target.value) }))} /></label>
+          </>}
+          {brandingDraft?.sidebarBackgroundType === "image" && <>
+            <label>Background Image<select className="form-input" value={brandingDraft?.sidebarBackgroundImage?._id || brandingDraft?.sidebarBackgroundImage || ""} onChange={(e) => chooseAsset("sidebarBackgroundImage", e.target.value)}><option value="">Select image</option>{assetArr.map((asset) => <option key={asset._id} value={asset._id}>{asset.originalName || asset.fileName}</option>)}</select></label>
+            <label>Object Fit<select className="form-input" value={brandingDraft?.sidebarBackgroundSize || "cover"} onChange={(e) => setBrandingDraft((v) => ({ ...v, sidebarBackgroundSize: e.target.value }))}><option value="cover">Cover</option><option value="contain">Contain</option><option value="auto">Original / Auto</option></select></label>
+            <label>Position<select className="form-input" value={brandingDraft?.sidebarBackgroundPosition || "center center"} onChange={(e) => setBrandingDraft((v) => ({ ...v, sidebarBackgroundPosition: e.target.value }))}>{sidebarPositions.map((position) => <option key={position} value={position}>{position.replace(/\b\w/g, (c) => c.toUpperCase())}</option>)}</select></label>
+            <label>Repeat<select className="form-input" value={brandingDraft?.sidebarBackgroundRepeat || "no-repeat"} onChange={(e) => setBrandingDraft((v) => ({ ...v, sidebarBackgroundRepeat: e.target.value }))}><option value="no-repeat">No Repeat</option><option value="repeat">Repeat</option><option value="repeat-x">Repeat Horizontally</option><option value="repeat-y">Repeat Vertically</option></select></label>
+          </>}
+          <label>Text Colour<input type="color" className="form-input sm-color-input" value={brandingDraft?.sidebarTextColor || "#e2e8f0"} onChange={(e) => setBrandingDraft((v) => ({ ...v, sidebarTextColor: e.target.value }))} /></label>
+          <label>Heading Colour<input type="color" className="form-input sm-color-input" value={brandingDraft?.sidebarHeadingColor || "#ffffff"} onChange={(e) => setBrandingDraft((v) => ({ ...v, sidebarHeadingColor: e.target.value }))} /></label>
+          <label>Active Item Colour<input type="color" className="form-input sm-color-input" value={brandingDraft?.sidebarActiveColor || "#2563eb"} onChange={(e) => setBrandingDraft((v) => ({ ...v, sidebarActiveColor: e.target.value }))} /></label>
+          {brandingDraft?.sidebarBackgroundType === "image" && <><label>Overlay Colour<input type="color" className="form-input sm-color-input" value={brandingDraft?.sidebarOverlayColor || "#0f172a"} onChange={(e) => setBrandingDraft((v) => ({ ...v, sidebarOverlayColor: e.target.value }))} /></label><label>Overlay ({Math.round(Number(brandingDraft?.sidebarOverlayOpacity ?? .2) * 100)}%)<input type="range" min="0" max="1" step="0.05" value={brandingDraft?.sidebarOverlayOpacity ?? .2} onChange={(e) => setBrandingDraft((v) => ({ ...v, sidebarOverlayOpacity: Number(e.target.value) }))} /></label></>}
+        </div>
+        {brandingDraft?.sidebarBackgroundType === "gradient" && <div className="sm-gradient-presets">{sidebarGradientPresets.map(([name, from, to]) => <button type="button" key={name} onClick={() => setBrandingDraft((v) => ({ ...v, sidebarGradientFrom: from, sidebarGradientTo: to }))} style={{ background: `linear-gradient(135deg, ${from}, ${to})` }}>{name}</button>)}</div>}
+        <div className="sm-sidebar-actions"><label className="btn btn-secondary sm-upload-btn">Upload Sidebar Image<input type="file" accept="image/*" onChange={handleUploadSidebarBackground} hidden /></label><button type="submit" className="btn btn-primary" disabled={savingSidebar || savingBranding}>Save Sidebar Appearance</button></div>
+      </section>
     </form>
   );
 
@@ -1652,7 +1707,7 @@ function ServerManagement() {
     // Check active tab before ignored-target filter so checkbox/label focus doesn't block Enter
     if (activeTab === "Frontend Management") {
       event.preventDefault();
-      saveSidebar(event);
+      saveFrontendManagement(event);
       return;
     } else if (activeTab === "Branding") {
       event.preventDefault();
