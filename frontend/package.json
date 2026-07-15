@@ -2,7 +2,7 @@
     "name": "ams-frontend",
     "version": "1.0.0",
     "private": true,
-    "homepage": "https://hussainsportfolio.vercel.app/",
+    "homepage": ".",
     "proxy": "http://localhost:3002",
     "description": "Auto Management System - Admin Panel",
     "author": "Hussain Developer <hussaintmerng@gmail.com>",

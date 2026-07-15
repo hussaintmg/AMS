@@ -5,7 +5,13 @@
  * AMS ERP
  */
 
-require("dotenv").config({ path: "../.env" });
+const path = require("path");
+// Resolve the project env from this file's location rather than PM2's cwd.
+// This is important on aaPanel/PM2, where cwd can differ between restarts.
+require("dotenv").config({
+  path: path.resolve(__dirname, "..", ".env"),
+  override: true,
+});
 
 const express = require("express");
 const http = require("http");
@@ -13,7 +19,6 @@ const cors = require("cors");
 const helmet = require("helmet");
 const swaggerJsdoc = require("swagger-jsdoc");
 const swaggerUi = require("swagger-ui-express");
-const path = require("path");
 
 const logger = require("./utils/logger");
 const errorHandler = require("./middleware/errorHandler");
