@@ -115,7 +115,6 @@ const AppLayout = () => {
                     <Route path="sales/quotations" element={<Navigate to="/quotations" replace />} />
                     <Route path="sales/invoices" element={<Navigate to="/invoices" replace />} />
                     <Route path="sales/bookings" element={<Navigate to="/booking" replace />} />
-                    <Route path="sales/*" element={<Navigate to="/quotations" replace />} />
                     <Route path="service/*" element={<ProtectedPage path="/service"><Service /></ProtectedPage>} />
                     <Route path="service-master" element={<ProtectedPage path="/service-master"><ServiceMasterData /></ProtectedPage>} />
                     <Route path="reports" element={<ProtectedPage path="/reports"><Reports /></ProtectedPage>} />

@@ -1,0 +1,20 @@
+{
+  "variables": [
+    {"name":"Customer full name","key":"customer_full_name","reference":"customer.fullName","category":"Customer"},
+    {"name":"Customer email","key":"customer_email","reference":"customer.email","category":"Customer"},
+    {"name":"Company name","key":"company_name","reference":"company.name","category":"Company"},
+    {"name":"Company phone","key":"company_phone","reference":"company.phone","category":"Company"},
+    {"name":"Document number","key":"document_number","reference":"document.number","category":"Document"},
+    {"name":"Document date","key":"document_date","reference":"document.date","category":"Document"},
+    {"name":"Document total","key":"document_total","reference":"document.totalAmount","category":"Document"},
+    {"name":"Payment due","key":"payment_due","reference":"document.balanceAmount","category":"Document"},
+    {"name":"Reset code","key":"reset_code","reference":"auth.resetCode","category":"Authentication"},
+    {"name":"Reset link","key":"reset_link","reference":"auth.resetPasswordLink","category":"Authentication"}
+  ],
+  "pdfTemplates": [
+    {"name":"Professional Quotation","documentType":"quotation","description":"A4 customer quotation with commercial summary."},
+    {"name":"Professional Booking Confirmation","documentType":"booking","description":"A4 vehicle booking confirmation."},
+    {"name":"Professional Sales Order","documentType":"order","description":"A4 sales order with payment summary."},
+    {"name":"Professional Tax Invoice","documentType":"invoice","description":"A4 invoice with balance due and payment rows."}
+  ]
+}

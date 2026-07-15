@@ -8,7 +8,8 @@
     "dev": "nodemon server.js",
     "test": "node --test",
     "create:super-admin": "node scripts/create_super_admin.js",
-    "seed:access": "node scripts/seed_pages_and_permissions.js"
+    "seed:access": "node scripts/seed_pages_and_permissions.js",
+    "seed:templates": "node scripts/seed_default_templates.js"
   },
   "keywords": [
     "ams",
