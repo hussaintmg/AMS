@@ -5,10 +5,10 @@ import { erpSettingsAPI } from '../services/api';
 import { mapCompanyForTemplate, interpolateDocumentTemplate } from '../utils/documentTemplateRender';
 
 const DOC_TYPES = [
-    { id: 'quotation', label: 'Quotations (/sales/quotations)' },
-    { id: 'booking', label: 'Bookings (/sales/bookings)' },
-    { id: 'order', label: 'Sales orders (/sales/orders)' },
-    { id: 'invoice', label: 'Invoices (/sales/invoices)' }
+    { id: 'quotation', label: 'Quotations (/quotations)' },
+    { id: 'booking', label: 'Bookings (/booking)' },
+    { id: 'order', label: 'Sales orders (/orders)' },
+    { id: 'invoice', label: 'Invoices (/invoices)' }
 ];
 
 const SAMPLE_COMPANY = mapCompanyForTemplate({

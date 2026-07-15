@@ -3,9 +3,16 @@
 */
 
 .uploader-card {
-    max-width: 800px;
+    max-width: 920px;
     margin: 0 auto;
 }
+
+.uploader-hero { max-width: 920px; margin: 0 auto 1rem; padding: 1.5rem; border-radius: 18px; color: white; background: linear-gradient(135deg, #0f3d67, #2563eb); display: flex; align-items: center; justify-content: space-between; gap: 1rem; box-shadow: 0 16px 40px rgba(15,61,103,.18); }
+.uploader-hero h3 { margin: .25rem 0; font-size: clamp(1.2rem, 2vw, 1.65rem); }
+.uploader-hero p { margin: 0; opacity: .85; }
+.uploader-kicker { font-size: .72rem; text-transform: uppercase; letter-spacing: .12em; opacity: .75; font-weight: 700; }
+.uploader-format-badge { flex: 0 0 auto; padding: .8rem 1rem; border: 1px solid rgba(255,255,255,.3); border-radius: 12px; text-align: center; font-weight: 700; background: rgba(255,255,255,.1); }
+.uploader-format-badge small { font-weight: 400; opacity: .8; }
 
 .upload-instruction {
     color: var(--text-secondary);
@@ -147,4 +154,9 @@
     border-radius: 50%;
     border-top-color: white;
     animation: spin 1s linear infinite;
+}
+
+@media (max-width: 700px) {
+    .uploader-hero { align-items: flex-start; }
+    .dropzone-container { padding: 2rem 1rem; min-height: 250px; }
 }

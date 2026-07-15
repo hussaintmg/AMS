@@ -131,16 +131,22 @@ async function fetchAllCustomersForDropdown() {
 // MAIN SALES COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════
 
-function Sales() {
+function Sales({ section }) {
+    const sections = {
+        quotations: <Quotations />,
+        booking: <Bookings />,
+        orders: <SalesOrders />,
+        invoices: <Invoices />
+    };
     return (
         <div className="sales-page-root">
-            <Routes>
+            {section ? sections[section] : <Routes>
                 <Route path="quotations" element={<Quotations />} />
                 <Route path="bookings" element={<Bookings />} />
                 <Route path="orders" element={<SalesOrders />} />
                 <Route path="invoices" element={<Invoices />} />
                 <Route path="*" element={<Quotations />} />
-            </Routes>
+            </Routes>}
         </div>
     );
 }
@@ -1378,7 +1384,7 @@ function SalesOrders() {
                     setConfirmModal({ isOpen: false });
                     fetchData();
                     // Navigate to invoices tab
-                    navigate('/sales/invoices');
+                    navigate('/invoices');
                 } catch (error) {
                     toast.error(error.response?.data?.message || 'Failed to generate invoice');
                 }
@@ -1387,11 +1393,11 @@ function SalesOrders() {
     };
 
     const handleViewInvoice = (item) => {
-        navigate(`/sales/invoices?search=${encodeURIComponent(item.invoice_number || '')}`);
+        navigate(`/invoices?search=${encodeURIComponent(item.invoice_number || '')}`);
     };
 
     const handleEditInvoice = (item) => {
-        navigate(`/sales/invoices?search=${encodeURIComponent(item.invoice_number || '')}`);
+        navigate(`/invoices?search=${encodeURIComponent(item.invoice_number || '')}`);
     };
 
     const handleDeleteInvoice = (item) => {

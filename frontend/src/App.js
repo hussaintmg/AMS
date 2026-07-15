@@ -97,7 +97,8 @@ const AppLayout = () => {
                     <Route index element={<RootRedirect />} />
                     <Route path="dashboard" element={<DashboardRoute />} />
                     <Route path="no-access" element={<NoAccess />} />
-                    <Route path="master-data" element={<ProtectedPage path="/master-data"><MasterDataHub /></ProtectedPage>} />
+                    <Route path="masterdata" element={<ProtectedPage path="/masterdata"><MasterDataHub /></ProtectedPage>} />
+                    <Route path="master-data" element={<Navigate to="/masterdata" replace />} />
                     <Route path="leads" element={<ProtectedPage path="/leads"><Leads /></ProtectedPage>} />
                     <Route path="lead-master" element={<ProtectedPage path="/lead-master"><LeadMasterData /></ProtectedPage>} />
                     <Route path="sales-master" element={<ProtectedPage path="/sales-master"><SalesMasterData /></ProtectedPage>} />
@@ -106,7 +107,15 @@ const AppLayout = () => {
                     <Route path="vehicle-master" element={<ProtectedPage path="/vehicle-master"><VehicleMasterData /></ProtectedPage>} />
                     <Route path="warehouses" element={<ProtectedPage path="/warehouses"><WarehouseManagement /></ProtectedPage>} />
                     <Route path="parts" element={<ProtectedPage path="/parts"><PartsInventory /></ProtectedPage>} />
-                    <Route path="sales/*" element={<ProtectedPage path="/sales"><Sales /></ProtectedPage>} />
+                    <Route path="orders" element={<ProtectedPage path="/orders"><Sales section="orders" /></ProtectedPage>} />
+                    <Route path="quotations" element={<ProtectedPage path="/quotations"><Sales section="quotations" /></ProtectedPage>} />
+                    <Route path="invoices" element={<ProtectedPage path="/invoices"><Sales section="invoices" /></ProtectedPage>} />
+                    <Route path="booking" element={<ProtectedPage path="/booking"><Sales section="booking" /></ProtectedPage>} />
+                    <Route path="sales/orders" element={<Navigate to="/orders" replace />} />
+                    <Route path="sales/quotations" element={<Navigate to="/quotations" replace />} />
+                    <Route path="sales/invoices" element={<Navigate to="/invoices" replace />} />
+                    <Route path="sales/bookings" element={<Navigate to="/booking" replace />} />
+                    <Route path="sales/*" element={<Navigate to="/quotations" replace />} />
                     <Route path="service/*" element={<ProtectedPage path="/service"><Service /></ProtectedPage>} />
                     <Route path="service-master" element={<ProtectedPage path="/service-master"><ServiceMasterData /></ProtectedPage>} />
                     <Route path="reports" element={<ProtectedPage path="/reports"><Reports /></ProtectedPage>} />

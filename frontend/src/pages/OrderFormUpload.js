@@ -118,6 +118,11 @@ const OrderFormUpload = () => {
                 <button className="btn-secondary" onClick={() => navigate(-1)}>Back</button>
             </div>
 
+            <div className="uploader-hero">
+                <div><span className="uploader-kicker">Data import</span><h3>Turn dealership order sheets into ERP records</h3><p>Customers, leads, vehicles and sales orders are matched safely. Existing order numbers are skipped.</p></div>
+                <div className="uploader-format-badge">XLSX / CSV<br/><small>Up to 10 MB</small></div>
+            </div>
+
             <div className="card uploader-card">
                 <div className="card-body">
                     <p className="upload-instruction">
@@ -203,7 +208,7 @@ const OrderFormUpload = () => {
                         <div style={{ display: 'flex', gap: '0.75rem' }}>
                             <Link to="/leads" className="btn-secondary" style={{ textDecoration: 'none' }}>View Leads</Link>
                             <Link to="/vehicles" className="btn-secondary" style={{ textDecoration: 'none' }}>View Vehicles</Link>
-                            <Link to="/sales/orders" className="btn-primary" style={{ textDecoration: 'none' }}>View Sales Orders</Link>
+                            <Link to="/orders" className="btn-primary" style={{ textDecoration: 'none' }}>View Sales Orders</Link>
                         </div>
                     </div>
                 </div>

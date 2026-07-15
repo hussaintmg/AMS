@@ -8,13 +8,13 @@ require('dotenv').config({ path: path.resolve(__dirname, '..', '..', '.env'), ov
 
 const pages = [
   ['dashboard','Dashboard','/dashboard','dashboard','LayoutDashboard','Main',true],
-  ['master_data','Master Data','/master-data','master-data','Database','Master Data'],
+  ['master_data','Master Data','/masterdata','master-data','Database','Master Data'],
   ['leads','Leads','/leads','crm','Users','CRM'], ['customers','Customers','/customers','crm','Contact','CRM'],
   ['vehicles','Vehicles','/vehicles','inventory','Car','Inventory'], ['vehicle_master','Vehicle Master Data','/vehicle-master','vehicle-master','CarFront','Master Data'],
   ['parts','Parts Inventory','/parts','parts','Cog','Inventory'], ['warehouses','Warehouse Management','/warehouses','warehouses','Warehouse','Master Data'],
-  ['sales','Sales','/sales','sales','ClipboardList','Sales'], ['sales_orders','Sales Orders','/sales/orders','sales','ShoppingCart','Sales'],
-  ['quotations','Quotations','/sales/quotations','sales','FileText','Sales'],
-  ['invoices','Invoices','/sales/invoices','sales','ReceiptText','Sales'], ['bookings','Bookings','/sales/bookings','sales','CalendarCheck','Sales'],
+  ['sales_orders','Sales Orders','/orders','sales','ShoppingCart','Sales'],
+  ['quotations','Quotations','/quotations','sales','FileText','Sales'],
+  ['invoices','Invoices','/invoices','sales','ReceiptText','Sales'], ['bookings','Bookings','/booking','sales','CalendarCheck','Sales'],
   ['services','Services','/service','service','Wrench','Service'], ['service_appointments','Service Appointments','/service/appointments','service','CalendarDays','Service'],
   ['service_master','Service Master Data','/service-master','service-master','Settings','Master Data'], ['reports','Reports','/reports','reports','BarChart3','Reports'],
   ['employees','Employees','/hr/employees','hr','UserRound','HR & Finance'], ['leaves','Leaves','/hr/leaves','leaves','CalendarDays','HR & Finance'],
@@ -45,8 +45,10 @@ async function run() {
   const role = await Role.findOne({ name: 'super_admin' });
   if (!role) throw new Error('super_admin role not found; run create_super_admin.js first');
 
+  const legacyPaths = ['/master-data', '/sales', '/sales/orders', '/sales/quotations', '/sales/invoices', '/sales/bookings'];
+  await Page.deleteMany({ path: { $in: legacyPaths } });
   for (const page of pages) {
-    await Page.findOneAndUpdate({ path: page.path }, { $set: { ...page, updatedBy: admin._id }, $setOnInsert: { createdBy: admin._id } }, { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true });
+    await Page.findOneAndUpdate({ name: page.name }, { $set: { ...page, updatedBy: admin._id }, $setOnInsert: { createdBy: admin._id } }, { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true });
   }
   const permissions = pages.map((p) => ({ pageKey: p.name, path: p.path, module: p.module, canView: true, isActive: true }));
   const jobs = pages.map((p) => ({ pageKey: p.name, module: p.module, actions: allActions, dataScope: { mode: 'all', roles: [], users: [] } }));

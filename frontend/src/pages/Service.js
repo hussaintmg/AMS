@@ -748,7 +748,7 @@ function JobCards() {
             { header: 'Labor', render: (r) => `PKR ${Number(r.labor_total || 0).toLocaleString()}` },
             { header: 'Parts', render: (r) => `PKR ${Number(r.parts_total || 0).toLocaleString()}` },
             { header: 'Total', render: (r) => <strong>PKR {Number(r.grand_total || 0).toLocaleString()}</strong> },
-            { header: 'Invoice', render: (r) => r.invoice_number ? <button type="button" className="link-button" onClick={() => navigate(`/sales/invoices?search=${encodeURIComponent(r.invoice_number)}`)}>{r.invoice_number}</button> : <span className="text-muted">Pending</span> },
+            { header: 'Invoice', render: (r) => r.invoice_number ? <button type="button" className="link-button" onClick={() => navigate(`/invoices?search=${encodeURIComponent(r.invoice_number)}`)}>{r.invoice_number}</button> : <span className="text-muted">Pending</span> },
             { header: 'Status', render: (r) => (
               <select className={`badge badge-${JC_STATUS_CLASS[r.status] || 'info'}`}
                 value={r.status} onChange={(e) => handleStatusChange(r.id, e.target.value)}
@@ -802,7 +802,7 @@ function JobCards() {
             <div className="user-card-field"><span className="field-label">Customer</span><span>{jc.customer_name}</span></div>
             <div className="user-card-field"><span className="field-label">Vehicle</span><span>{jc.customer_vehicle_make} {jc.customer_vehicle_model} - {jc.customer_vehicle_number}</span></div>
             <div className="user-card-field"><span className="field-label">Total</span><span><strong>PKR {Number(jc.grand_total || 0).toLocaleString()}</strong></span></div>
-            <div className="user-card-field"><span className="field-label">Invoice</span><span>{jc.invoice_number ? <button type="button" className="link-button" onClick={() => navigate(`/sales/invoices?search=${encodeURIComponent(jc.invoice_number)}`)}>{jc.invoice_number}</button> : 'Pending'}</span></div>
+            <div className="user-card-field"><span className="field-label">Invoice</span><span>{jc.invoice_number ? <button type="button" className="link-button" onClick={() => navigate(`/invoices?search=${encodeURIComponent(jc.invoice_number)}`)}>{jc.invoice_number}</button> : 'Pending'}</span></div>
             <div className="user-card-field"><span className="field-label">Status</span>
               <span className={`badge badge-${JC_STATUS_CLASS[jc.status] || 'info'}`}>{jc.status}</span>
             </div>

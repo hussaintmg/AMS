@@ -631,7 +631,7 @@ function Dashboard() {
                             <span className="material-icons chart-title-mi" aria-hidden>shopping_cart</span>
                             Recent sales orders
                         </h3>
-                        <Link to="/sales/orders" className="card-link">View all</Link>
+                        <Link to="/orders" className="card-link">View all</Link>
                     </div>
                     <div className="recent-table-wrap">
                         {recentSales.length > 0 ? (
@@ -839,11 +839,11 @@ function Dashboard() {
                         <span className="material-icons quick-mi">directions_car</span>
                         <span>Vehicles</span>
                     </Link>
-                    <Link to="/sales/quotations" className="quick-action-btn">
+                    <Link to="/quotations" className="quick-action-btn">
                         <span className="material-icons quick-mi">description</span>
                         <span>Quotations</span>
                     </Link>
-                    <Link to="/sales/bookings" className="quick-action-btn">
+                    <Link to="/booking" className="quick-action-btn">
                         <span className="material-icons quick-mi">event_note</span>
                         <span>Bookings</span>
                     </Link>
@@ -855,7 +855,7 @@ function Dashboard() {
                         <span className="material-icons quick-mi">analytics</span>
                         <span>Reports</span>
                     </Link>
-                    <Link to="/master-data" className="quick-action-btn">
+                    <Link to="/masterdata" className="quick-action-btn">
                         <span className="material-icons quick-mi">dataset</span>
                         <span>Master data</span>
                     </Link>

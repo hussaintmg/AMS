@@ -30,6 +30,13 @@
     width: 100%;
 }
 
+/* Vibe annotation: the clickable SearchableSelect control itself owns this minimum. */
+.filter-bar.card > .advanced-filters-panel.sales-filter-options > .form-group > .searchable-select.form-select {
+    width: 100%;
+    min-width: 213.8px;
+    box-sizing: border-box;
+}
+
 .sales-filter-bar .sales-filter-options .searchable-select,
 .sales-filter-bar .sales-filter-options .searchable-select .ss-trigger,
 .sales-filter-bar .sales-filter-options .form-select,
