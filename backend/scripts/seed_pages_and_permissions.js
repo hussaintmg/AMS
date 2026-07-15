@@ -59,9 +59,14 @@ async function run() {
   role.editable = false;
   role.isActive = true;
   await role.save();
-  if (!admin.role || String(admin.role._id || admin.role) !== String(role._id)) {
-    await User.updateOne({ _id: admin._id }, { $set: { role: role._id, isActive: true } });
-  }
+  // Keep an explicit user-level all-logs fallback as well as role-level access.
+  // The resolver always grants super_admin mode=all, but this also keeps admin UI state unambiguous.
+  await User.updateOne({ _id: admin._id }, { $set: {
+    role: role._id,
+    isActive: true,
+    logPermissionSource: 'role',
+    logsPermissions: { mode: 'all', users: [], roles: [], updatedAt: new Date(), updatedBy: admin._id }
+  } });
   await SystemSetting.findOneAndUpdate({ key: 'permissionMode' }, { $set: { key: 'permissionMode', value: 'role', category: 'permissions', description: 'Page permissions are read from roles.' } }, { upsert: true, setDefaultsOnInsert: true });
   await SystemSetting.findOneAndUpdate({ key: 'logPermissionMode' }, { $set: { key: 'logPermissionMode', value: 'role', category: 'permissions', description: 'Log permissions are read from roles.' } }, { upsert: true, setDefaultsOnInsert: true });
   let branding = await BrandingSetting.findOne().sort({ createdAt: 1 });
