@@ -9,16 +9,22 @@ const BACKEND_BASE = API_URL.replace(/\/api\/?$/, '') || 'http://localhost:3002'
 
 export const getAssetUrl = (url) => {
     if (!url) return '';
-    if (/^https?:\/\//i.test(url)) return url;
+    if (/^data:|^blob:/i.test(url)) return url;
+    if (/^https?:\/\//i.test(url)) {
+        try {
+            const parsed = new URL(url);
+            if (parsed.pathname.startsWith('/uploads/') || parsed.pathname.startsWith('/api/uploads/')) {
+                return `${parsed.pathname}${parsed.search}`;
+            }
+        } catch (_) { /* retain the original URL */ }
+        return url;
+    }
     const clean = url.startsWith('/') ? url : `/${url}`;
     return `${BACKEND_BASE}${clean}`;
 };
 
 export const getAvatarUrl = (avatar) => {
-    if (!avatar) return '';
-    if (/^https?:\/\//i.test(avatar)) return avatar;
-    const clean = avatar.startsWith('/') ? avatar : `/${avatar}`;
-    return `${BACKEND_BASE}${clean}`;
+    return getAssetUrl(avatar);
 };
 
 export default getAssetUrl;

@@ -3,17 +3,11 @@ import { profileAPI } from '../services/api';
 import toast from 'react-hot-toast';
 import { showApiSuccess, showApiError, getErrorMessage } from '../utils/toastResponse';
 import eventBus from '../utils/eventBus';
+import { getAvatarUrl } from '../utils/assetUrl';
 
 const ProfileContext = createContext(null);
 
-const API_BASE = process.env.REACT_APP_API_URL ? process.env.REACT_APP_API_URL.replace('/api', '') : '';
-
-const normalizeAvatarUrl = (url) => {
-    if (!url) return '';
-    if (url.startsWith('http://') || url.startsWith('https://')) return url;
-    if (url.startsWith('/')) return API_BASE + url;
-    return url;
-};
+const normalizeAvatarUrl = getAvatarUrl;
 
 export function ProfileProvider({ children }) {
     const [profile, setProfile] = useState(null);
