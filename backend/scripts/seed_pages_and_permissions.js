@@ -8,10 +8,14 @@ require('dotenv').config({ path: path.resolve(__dirname, '..', '..', '.env'), ov
 
 const pages = [
   ['dashboard','Dashboard','/dashboard','dashboard','LayoutDashboard','Main',true],
+  ['master_data','Master Data','/master-data','master-data','Database','Master Data'],
   ['leads','Leads','/leads','crm','Users','CRM'], ['customers','Customers','/customers','crm','Contact','CRM'],
   ['vehicles','Vehicles','/vehicles','inventory','Car','Inventory'], ['vehicle_master','Vehicle Master Data','/vehicle-master','vehicle-master','CarFront','Master Data'],
   ['parts','Parts Inventory','/parts','parts','Cog','Inventory'], ['warehouses','Warehouse Management','/warehouses','warehouses','Warehouse','Master Data'],
-  ['sales','Sales','/sales/orders','sales','ClipboardList','Sales'], ['services','Services','/service/appointments','service','Wrench','Service'],
+  ['sales','Sales','/sales','sales','ClipboardList','Sales'], ['sales_orders','Sales Orders','/sales/orders','sales','ShoppingCart','Sales'],
+  ['quotations','Quotations','/sales/quotations','sales','FileText','Sales'],
+  ['invoices','Invoices','/sales/invoices','sales','ReceiptText','Sales'], ['bookings','Bookings','/sales/bookings','sales','CalendarCheck','Sales'],
+  ['services','Services','/service','service','Wrench','Service'], ['service_appointments','Service Appointments','/service/appointments','service','CalendarDays','Service'],
   ['service_master','Service Master Data','/service-master','service-master','Settings','Master Data'], ['reports','Reports','/reports','reports','BarChart3','Reports'],
   ['employees','Employees','/hr/employees','hr','UserRound','HR & Finance'], ['leaves','Leaves','/hr/leaves','leaves','CalendarDays','HR & Finance'],
   ['expenses','Expenses','/hr/expenses','expenses','WalletCards','HR & Finance'], ['ledger','Ledger','/hr/ledger','ledger','BookOpen','HR & Finance'],
@@ -19,7 +23,8 @@ const pages = [
   ['erp_settings','ERP Settings','/settings','erp-settings','SlidersHorizontal','ERP Settings'], ['user_management','User Management','/admin/users','users','UsersRound','Master Data'],
   ['department_management','Department Management','/admin/departments','departments','Building2','Master Data'], ['status_management','Option Management','/admin/statuses','statuses','ListChecks','Master Data'],
   ['lead_master','Lead Master Data','/lead-master','lead-master','ListTree','Master Data'], ['sales_master','Sales Master Data','/sales-master','sales-master','PanelTop','Master Data'],
-  ['profile','Profile','/profile','profile','UserCircle','Account'], ['order_form_upload','Order Form Upload','/uploader/order-form','uploader','UploadCloud','Uploader'],
+  ['profile','Profile','/profile','profile','UserCircle','Account'], ['notification_settings','Notification Settings','/notification-settings','notifications','Bell','Account'],
+  ['search','Search','/search','search','Search','Account'], ['order_form_upload','Order Form Upload','/uploader/order-form','uploader','UploadCloud','Uploader'],
   ['server_management','Server Management','/server-management','server-management','ServerCog','System',true], ['email_templates','Email Templates','/email','email','Mail','Communication'],
   ['pdf_management','PDF Management','/pdf-management','pdf','FileDown','Communication']
 ].map((p, index) => ({

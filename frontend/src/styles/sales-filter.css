@@ -18,7 +18,8 @@
 
 .sales-filter-bar .sales-filter-options .form-group {
     flex: 1 1 180px;
-    min-width: 165px;
+    /* Keep filter controls readable across quotations, invoices and bookings. */
+    min-width: 213.8px;
     margin: 0 !important;
 }
 
@@ -27,6 +28,23 @@
 .sales-filter-bar .sales-filter-options .form-group > .searchable-select,
 .sales-filter-bar .sales-filter-options .form-group > div {
     width: 100%;
+}
+
+.sales-filter-bar .sales-filter-options .searchable-select,
+.sales-filter-bar .sales-filter-options .searchable-select .ss-trigger,
+.sales-filter-bar .sales-filter-options .form-select,
+.sales-filter-bar .sales-filter-options .form-input {
+    width: 100%;
+    min-width: 213.8px;
+    box-sizing: border-box;
+}
+
+.sales-filter-bar .sales-filter-options .form-group > label {
+    display: block;
+    margin-bottom: 6px;
+    color: var(--gray-600, #475569);
+    font-size: .78rem;
+    font-weight: 600;
 }
 
 .sales-filter-bar .sales-filter-toolbar > .btn {
@@ -45,6 +63,12 @@
     .sales-filter-bar .sales-filter-options .form-group {
         flex: 1 1 100% !important;
         min-width: 100% !important;
+    }
+    .sales-filter-bar .sales-filter-options .searchable-select,
+    .sales-filter-bar .sales-filter-options .searchable-select .ss-trigger,
+    .sales-filter-bar .sales-filter-options .form-select,
+    .sales-filter-bar .sales-filter-options .form-input {
+        min-width: 100%;
     }
     .sales-filter-bar .sales-filter-toolbar > .btn { flex: 1 1 auto; }
 }
