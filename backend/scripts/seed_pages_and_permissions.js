@@ -19,8 +19,8 @@ const pages = [
   ['service_master','Service Master Data','/service-master','service-master','Settings','Master Data'], ['reports','Reports','/reports','reports','BarChart3','Reports'],
   ['employees','Employees','/hr/employees','hr','UserRound','HR & Finance'], ['leaves','Leaves','/hr/leaves','leaves','CalendarDays','HR & Finance'],
   ['expenses','Expenses','/hr/expenses','expenses','WalletCards','HR & Finance'], ['ledger','Ledger','/hr/ledger','ledger','BookOpen','HR & Finance'],
-  ['payment_methods','Payment Methods','/payment-methods','payment-methods','CreditCard','ERP Settings'], ['settings','Settings','/settings','settings','Settings','ERP Settings'],
-  ['erp_settings','ERP Settings','/settings','erp-settings','SlidersHorizontal','ERP Settings'], ['user_management','User Management','/admin/users','users','UsersRound','Master Data'],
+  ['payment_methods','Payment Methods','/payment-methods','payment-methods','CreditCard','ERP Settings'], ['settings','ERP Settings','/settings','settings','SlidersHorizontal','ERP Settings'],
+  ['user_management','User Management','/admin/users','users','UsersRound','Master Data'],
   ['department_management','Department Management','/admin/departments','departments','Building2','Master Data'], ['status_management','Option Management','/admin/statuses','statuses','ListChecks','Master Data'],
   ['lead_master','Lead Master Data','/lead-master','lead-master','ListTree','Master Data'], ['sales_master','Sales Master Data','/sales-master','sales-master','PanelTop','Master Data'],
   ['profile','Profile','/profile','profile','UserCircle','Account'], ['notification_settings','Notification Settings','/notification-settings','notifications','Bell','Account'],
@@ -45,7 +45,7 @@ async function run() {
   const role = await Role.findOne({ name: 'super_admin' });
   if (!role) throw new Error('super_admin role not found; run create_super_admin.js first');
 
-  const legacyPaths = ['/master-data', '/sales', '/sales/orders', '/sales/quotations', '/sales/invoices', '/sales/bookings'];
+  const legacyPaths = ['/master-data', '/sales', '/sales/orders', '/sales/quotations', '/sales/invoices', '/sales/bookings', '/settings'];
   await Page.deleteMany({ path: { $in: legacyPaths } });
   for (const page of pages) {
     await Page.findOneAndUpdate({ name: page.name }, { $set: { ...page, updatedBy: admin._id }, $setOnInsert: { createdBy: admin._id } }, { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true });
