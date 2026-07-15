@@ -65,7 +65,9 @@ const getUserName = (log) => {
   if (log.serverError === true || log.userName === "Server Errors") {
     return "Server";
   }
-  return log.logFilePath.split("\\log\\")[1].split("\\")[0]==="Server-Errors" ? "Server" : "-";
+  const logFilePath = String(log.logFilePath || '');
+  const logParts = logFilePath.split('\\log\\')[1]?.split('\\') || [];
+  return logParts[0] === "Server-Errors" ? "Server" : "-";
 };
 
 export default function LogTable({ logs = [], onView, onDelete, loading }) {

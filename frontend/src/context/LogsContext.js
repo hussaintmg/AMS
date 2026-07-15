@@ -20,10 +20,10 @@ function getSocketUrl() {
     }
 
     if (apiUrl === '/api' || apiUrl.startsWith('/api')) {
-        return 'http://localhost:3002';
+        return typeof window !== 'undefined' ? window.location.origin : '';
     }
 
-    return 'http://localhost:3002';
+    return typeof window !== 'undefined' ? window.location.origin : '';
 }
 
 export function LogsProvider({ children }) {
