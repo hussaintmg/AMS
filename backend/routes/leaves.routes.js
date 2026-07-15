@@ -8,6 +8,8 @@ const write = ['super_admin', 'admin', 'hr_admin'];
 
 router.get('/stats', authenticate, authorize(...read), leaves.getStats);
 router.get('/', authenticate, authorize(...read), leaves.listLeaves);
+router.patch('/bulk/deactivate', authenticate, authorize(...write), leaves.bulkDeactivateLeaves);
+router.delete('/bulk', authenticate, authorize(...write), leaves.bulkDeleteLeaves);
 router.get('/:id', authenticate, authorize(...read), leaves.getLeave);
 router.post('/', authenticate, authorize(...write), leaves.createLeave);
 router.put('/:id', authenticate, authorize(...write), leaves.updateLeave);

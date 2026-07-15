@@ -1,15 +1,54 @@
 /**
- * Payment Methods Controller
+ * Payment Methods Controller (MongoDB)
  * ============================
  * Full CRUD operations for payment methods management
- * 
- * Created by LOGIXINVENTOR (PVT) Ltd.
- * info@logixinventor.com +92 333 3836851
- * www.logixinventor.com | AMS
+ *
+ * Maintained by Hussain Developer
+ * hussaintmerng@gmail.com | +92 319 1634446
+ * AMS ERP
  */
 
-const { query } = require('../config/database');
+const mongoose = require('mongoose');
 const { AppError } = require('../middleware/errorHandler');
+const PaymentMethod = require('../models/PaymentMethod.model');
+const Payment = require('../models/Payment.model');
+
+const VALID_TYPES = ['cash', 'bank', 'card', 'cheque', 'online'];
+
+const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const mapMethod = (m, usageCount = 0) => ({
+    id: m._id,
+    name: m.name,
+    code: m.code || '',
+    type: m.type || '',
+    description: m.description || '',
+    sort_order: m.sortOrder || 0,
+    is_active: !!m.isActive,
+    account_id: m.accountId || null,
+    usage_count: usageCount,
+    created_at: m.createdAt,
+});
+
+async function findMethodOr404(id) {
+    if (!mongoose.Types.ObjectId.isValid(id)) throw new AppError('Payment method not found', 404);
+    const method = await PaymentMethod.findById(id);
+    if (!method) throw new AppError('Payment method not found', 404);
+    return method;
+}
+
+/** Seed sensible defaults on a fresh database so payment dropdowns work out of the box. */
+async function ensureDefaultMethods() {
+    const count = await PaymentMethod.estimatedDocumentCount();
+    if (count > 0) return;
+    await PaymentMethod.insertMany([
+        { name: 'Cash', code: 'CASH', type: 'cash', sortOrder: 1, isActive: true },
+        { name: 'Bank Transfer', code: 'BANK', type: 'bank', sortOrder: 2, isActive: true },
+        { name: 'Card', code: 'CARD', type: 'card', sortOrder: 3, isActive: true },
+        { name: 'Cheque', code: 'CHEQUE', type: 'cheque', sortOrder: 4, isActive: true },
+        { name: 'Online Payment', code: 'ONLINE', type: 'online', sortOrder: 5, isActive: true },
+    ]);
+}
 
 /**
  * Get all payment methods
@@ -17,43 +56,30 @@ const { AppError } = require('../middleware/errorHandler');
  */
 const getAll = async (req, res, next) => {
     try {
+        await ensureDefaultMethods();
         const { status, type, search } = req.query;
 
-        let sql = `
-            SELECT 
-                id, name, code, type, description, sort_order, is_active, account_id,
-                created_at,
-                (SELECT COUNT(*) FROM payments WHERE payment_method_id = payment_methods.id) as usage_count
-            FROM payment_methods
-            WHERE 1=1
-        `;
-        const params = [];
-
-        if (status === 'active') {
-            sql += ` AND is_active = TRUE`;
-        } else if (status === 'inactive') {
-            sql += ` AND is_active = FALSE`;
-        }
-
-        if (type) {
-            sql += ` AND type = ?`;
-            params.push(type);
-        }
-
+        const filter = {};
+        if (status === 'active') filter.isActive = true;
+        else if (status === 'inactive') filter.isActive = false;
+        if (type) filter.type = type;
         if (search) {
-            sql += ` AND (name LIKE ? OR code LIKE ? OR description LIKE ?)`;
-            const s = `%${search}%`;
-            params.push(s, s, s);
+            const regex = new RegExp(escapeRegex(search), 'i');
+            filter.$or = [{ name: regex }, { code: regex }, { description: regex }];
         }
 
-        sql += ` ORDER BY sort_order ASC, name ASC`;
+        const methods = await PaymentMethod.find(filter).sort({ sortOrder: 1, name: 1 }).lean();
 
-        const methods = await query(sql, params);
+        const usage = await Payment.aggregate([
+            { $match: { methodRef: { $ne: null } } },
+            { $group: { _id: '$methodRef', count: { $sum: 1 } } },
+        ]);
+        const usageMap = Object.fromEntries(usage.map((u) => [String(u._id), u.count]));
 
         res.json({
             success: true,
-            data: methods,
-            count: methods.length
+            data: methods.map((m) => mapMethod(m, usageMap[String(m._id)] || 0)),
+            count: methods.length,
         });
     } catch (error) {
         next(error);
@@ -61,70 +87,50 @@ const getAll = async (req, res, next) => {
 };
 
 /**
- * Get single payment method by ID
+ * Get payment method by ID
  * @route GET /api/payment-methods/:id
  */
 const getById = async (req, res, next) => {
     try {
-        const { id } = req.params;
-
-        const [method] = await query(`
-            SELECT 
-                id, name, type, is_active, account_id, created_at,
-                (SELECT COUNT(*) FROM payments WHERE payment_method_id = payment_methods.id) as usage_count
-            FROM payment_methods
-            WHERE id = ?
-        `, [id]);
-
-        if (!method) {
-            throw new AppError('Payment method not found', 404);
-        }
-
-        res.json({
-            success: true,
-            data: method
-        });
+        const method = await findMethodOr404(req.params.id);
+        const usageCount = await Payment.countDocuments({ methodRef: method._id });
+        res.json({ success: true, data: mapMethod(method, usageCount) });
     } catch (error) {
         next(error);
     }
 };
 
 /**
- * Create new payment method
+ * Create payment method
  * @route POST /api/payment-methods
  */
 const create = async (req, res, next) => {
     try {
         const { name, code, type, description, sortOrder, account_id } = req.body;
 
-        // Validate required fields
-        if (!name || !type) {
-            throw new AppError('Name and type are required', 400);
+        if (!name || !type) throw new AppError('Name and type are required', 400);
+        if (!VALID_TYPES.includes(type)) {
+            throw new AppError(`Invalid type. Must be one of: ${VALID_TYPES.join(', ')}`, 400);
         }
 
-        // Validate type
-        const validTypes = ['cash', 'bank', 'card', 'cheque', 'online'];
-        if (!validTypes.includes(type)) {
-            throw new AppError(`Invalid type. Must be one of: ${validTypes.join(', ')}`, 400);
-        }
+        const existing = await PaymentMethod.findOne({ name: new RegExp(`^${escapeRegex(name)}$`, 'i') });
+        if (existing) throw new AppError('Payment method with this name already exists', 400);
 
-        // Check for duplicate name
-        const [existing] = await query(`SELECT id FROM payment_methods WHERE name = ?`, [name]);
-        if (existing) {
-            throw new AppError('Payment method with this name already exists', 400);
-        }
-
-        const result = await query(`
-            INSERT INTO payment_methods (name, code, type, description, sort_order, account_id, is_active)
-            VALUES (?, ?, ?, ?, ?, ?, TRUE)
-        `, [name, code || null, type, description || null, sortOrder || 0, account_id || null]);
-
-        const [newMethod] = await query(`SELECT * FROM payment_methods WHERE id = ?`, [result.insertId]);
+        const method = await PaymentMethod.create({
+            name,
+            code: code || '',
+            type,
+            description: description || '',
+            sortOrder: Number(sortOrder) || 0,
+            accountId: mongoose.Types.ObjectId.isValid(account_id) ? account_id : null,
+            isActive: true,
+            createdBy: req.user?.id || null,
+        });
 
         res.status(201).json({
             success: true,
             message: 'Payment method created successfully',
-            data: newMethod
+            data: mapMethod(method),
         });
     } catch (error) {
         next(error);
@@ -137,48 +143,35 @@ const create = async (req, res, next) => {
  */
 const update = async (req, res, next) => {
     try {
-        const { id } = req.params;
         const { name, code, type, description, sortOrder, account_id } = req.body;
+        const method = await findMethodOr404(req.params.id);
 
-        // Check method exists
-        const [method] = await query(`SELECT * FROM payment_methods WHERE id = ?`, [id]);
-        if (!method) {
-            throw new AppError('Payment method not found', 404);
+        if (type && !VALID_TYPES.includes(type)) {
+            throw new AppError(`Invalid type. Must be one of: ${VALID_TYPES.join(', ')}`, 400);
         }
-
-        // Validate type if provided
-        if (type) {
-            const validTypes = ['cash', 'bank', 'card', 'cheque', 'online'];
-            if (!validTypes.includes(type)) {
-                throw new AppError(`Invalid type. Must be one of: ${validTypes.join(', ')}`, 400);
-            }
-        }
-
-        // Check for duplicate name (excluding current)
         if (name && name !== method.name) {
-            const [existing] = await query(`SELECT id FROM payment_methods WHERE name = ? AND id != ?`, [name, id]);
-            if (existing) {
-                throw new AppError('Payment method with this name already exists', 400);
-            }
+            const existing = await PaymentMethod.findOne({
+                name: new RegExp(`^${escapeRegex(name)}$`, 'i'),
+                _id: { $ne: method._id },
+            });
+            if (existing) throw new AppError('Payment method with this name already exists', 400);
         }
 
-        await query(`
-            UPDATE payment_methods
-            SET name = COALESCE(?, name),
-                code = COALESCE(?, code),
-                type = COALESCE(?, type),
-                description = COALESCE(?, description),
-                sort_order = COALESCE(?, sort_order),
-                account_id = ?
-            WHERE id = ?
-        `, [name, code, type, description, sortOrder, account_id ?? method.account_id, id]);
-
-        const [updated] = await query(`SELECT * FROM payment_methods WHERE id = ?`, [id]);
+        if (name !== undefined && name !== null) method.name = name;
+        if (code !== undefined && code !== null) method.code = code;
+        if (type) method.type = type;
+        if (description !== undefined && description !== null) method.description = description;
+        if (sortOrder !== undefined && sortOrder !== null) method.sortOrder = Number(sortOrder) || 0;
+        if (account_id !== undefined) {
+            method.accountId = mongoose.Types.ObjectId.isValid(account_id) ? account_id : null;
+        }
+        method.updatedBy = req.user?.id || null;
+        await method.save();
 
         res.json({
             success: true,
             message: 'Payment method updated successfully',
-            data: updated
+            data: mapMethod(method),
         });
     } catch (error) {
         next(error);
@@ -191,23 +184,15 @@ const update = async (req, res, next) => {
  */
 const toggleStatus = async (req, res, next) => {
     try {
-        const { id } = req.params;
-
-        const [method] = await query(`SELECT * FROM payment_methods WHERE id = ?`, [id]);
-        if (!method) {
-            throw new AppError('Payment method not found', 404);
-        }
-
-        const newStatus = !method.is_active;
-
-        await query(`UPDATE payment_methods SET is_active = ? WHERE id = ?`, [newStatus, id]);
-
-        const [updated] = await query(`SELECT * FROM payment_methods WHERE id = ?`, [id]);
+        const method = await findMethodOr404(req.params.id);
+        method.isActive = !method.isActive;
+        method.updatedBy = req.user?.id || null;
+        await method.save();
 
         res.json({
             success: true,
-            message: `Payment method ${newStatus ? 'activated' : 'deactivated'} successfully`,
-            data: updated
+            message: `Payment method ${method.isActive ? 'activated' : 'deactivated'} successfully`,
+            data: mapMethod(method),
         });
     } catch (error) {
         next(error);
@@ -220,25 +205,16 @@ const toggleStatus = async (req, res, next) => {
  */
 const remove = async (req, res, next) => {
     try {
-        const { id } = req.params;
+        const method = await findMethodOr404(req.params.id);
 
-        const [method] = await query(`SELECT * FROM payment_methods WHERE id = ?`, [id]);
-        if (!method) {
-            throw new AppError('Payment method not found', 404);
+        const usageCount = await Payment.countDocuments({ methodRef: method._id });
+        if (usageCount > 0) {
+            throw new AppError(`Cannot delete: This payment method is used in ${usageCount} payment(s). Consider deactivating instead.`, 400);
         }
 
-        // Check if method is being used
-        const [usage] = await query(`SELECT COUNT(*) as count FROM payments WHERE payment_method_id = ?`, [id]);
-        if (usage.count > 0) {
-            throw new AppError(`Cannot delete: This payment method is used in ${usage.count} payment(s). Consider deactivating instead.`, 400);
-        }
+        await method.deleteOne();
 
-        await query(`DELETE FROM payment_methods WHERE id = ?`, [id]);
-
-        res.json({
-            success: true,
-            message: 'Payment method deleted successfully'
-        });
+        res.json({ success: true, message: 'Payment method deleted successfully' });
     } catch (error) {
         next(error);
     }
@@ -255,13 +231,10 @@ const getTypes = async (req, res, next) => {
             { value: 'bank', label: 'Bank Transfer' },
             { value: 'card', label: 'Card (Credit/Debit)' },
             { value: 'cheque', label: 'Cheque' },
-            { value: 'online', label: 'Online Payment' }
+            { value: 'online', label: 'Online Payment' },
         ];
 
-        res.json({
-            success: true,
-            data: types
-        });
+        res.json({ success: true, data: types });
     } catch (error) {
         next(error);
     }
@@ -274,5 +247,5 @@ module.exports = {
     update,
     toggleStatus,
     remove,
-    getTypes
+    getTypes,
 };

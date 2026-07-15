@@ -1,14 +1,17 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import SearchableSelect from '../components/SearchableSelect';
 import DataTable from '../components/DataTable';
-import { Routes, Route, NavLink, useSearchParams } from 'react-router-dom';
+import { Routes, Route, NavLink, useSearchParams, useNavigate } from 'react-router-dom';
 import { serviceAPI, customerAPI, partsAPI, serviceMasterAPI } from '../services/api';
 import toast from 'react-hot-toast';
 import ConfirmModal from '../components/ConfirmModal';
+import CustomerQuickCreate from '../components/customers/CustomerQuickCreate';
 import useModalKeyboard from '../hooks/useModalKeyboard';
 import { useAuth } from '../context/AuthContext';
 import vehicleBrandingService from '../services/vehicleBrandingService';
+import useErpDocumentSettings from '../hooks/useErpDocumentSettings';
 import '../styles/userManagement.css';
+import '../styles/service.css';
 
 function Service() {
   return (
@@ -46,6 +49,26 @@ async function fetchAllCustomersForDropdown() {
 
 const APPT_STATUS_CLASS = { scheduled: 'info', confirmed: 'primary', in_progress: 'warning', completed: 'success', cancelled: 'danger', no_show: 'secondary' };
 
+function ServicePagination({ pagination, setPagination }) {
+  const total = Number(pagination.total || 0);
+  const page = Number(pagination.page || 1);
+  const limit = Number(pagination.limit || 20);
+  const totalPages = Number(pagination.totalPages || Math.ceil(total / limit) || 1);
+  return (
+    <div className="pagination-controls service-pagination">
+      <span>Showing {total ? ((page - 1) * limit) + 1 : 0} to {Math.min(page * limit, total)} of {total}</span>
+      <div className="service-pagination-actions">
+        <select className="form-control" value={limit} onChange={(e) => setPagination((prev) => ({ ...prev, limit: Number(e.target.value), page: 1 }))}>
+          <option value="10">10 / page</option><option value="20">20 / page</option><option value="50">50 / page</option>
+        </select>
+        <button type="button" className="btn btn-secondary" disabled={page <= 1} onClick={() => setPagination((prev) => ({ ...prev, page: page - 1 }))}>‹</button>
+        <span>Page {page} of {totalPages}</span>
+        <button type="button" className="btn btn-secondary" disabled={page >= totalPages} onClick={() => setPagination((prev) => ({ ...prev, page: page + 1 }))}>›</button>
+      </div>
+    </div>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // APPOINTMENTS
 // ═══════════════════════════════════════════════════════════════════════════
@@ -66,6 +89,9 @@ function Appointments() {
   const [serviceTypes, setServiceTypes] = useState([]);
   const [advisors, setAdvisors] = useState([]);
   const [vehicleBrands, setVehicleBrands] = useState([]);
+  const [stats, setStats] = useState({ total: 0, scheduled: 0, confirmed: 0, in_progress: 0, completed: 0, today: 0 });
+  const [filters, setFilters] = useState({ search: urlSearch, status: '', customerId: '', dateFrom: '', dateTo: '' });
+  const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 0 });
 
   const [formData, setFormData] = useState({
     customerId: '', vehicleId: '', vehicleNumber: '', vehicleMake: '', vehicleModel: '',
@@ -79,9 +105,17 @@ function Appointments() {
   const canDelete = ['super_admin', 'service_manager'].includes(user?.role);
 
   const fetchData = useCallback(async () => {
-    try { setLoading(true); const res = await serviceAPI.getAppointments({ search: urlSearch }); setData(res.data?.data || []); }
-    catch (_) { setData([]); } finally { setLoading(false); }
-  }, [urlSearch]);
+      try {
+        setLoading(true);
+        const params = { ...filters, page: pagination.page, limit: pagination.limit };
+        Object.keys(params).forEach((key) => { if (params[key] === '' || params[key] == null) delete params[key]; });
+        const [res, statsRes] = await Promise.all([serviceAPI.getAppointments(params), serviceAPI.getAppointmentStats()]);
+        setData(res.data?.data || []);
+        setPagination((prev) => ({ ...prev, ...(res.data?.pagination || {}) }));
+        setStats(statsRes.data?.data || {});
+      }
+      catch (_) { setData([]); } finally { setLoading(false); }
+  }, [filters, pagination.page, pagination.limit]);
 
   const fetchDropdowns = useCallback(async () => {
     try {
@@ -103,6 +137,19 @@ function Appointments() {
   }, []);
 
   useEffect(() => { fetchData(); fetchDropdowns(); }, [fetchData, fetchDropdowns]);
+
+  const updateFilter = (name, value) => {
+    setFilters((prev) => ({ ...prev, [name]: value }));
+    setPagination((prev) => ({ ...prev, page: 1 }));
+  };
+  const clearFilters = () => { setFilters({ search: '', status: '', customerId: '', dateFrom: '', dateTo: '' }); setPagination((prev) => ({ ...prev, page: 1 })); };
+
+  // Rule 2 — refresh dropdown and auto-select the customer created inline
+  const handleCustomerCreated = useCallback(async (created) => {
+    try { setCustomers(await fetchAllCustomersForDropdown()); } catch (_) { /* best-effort refresh */ }
+    const newId = created?._id || created?.id;
+    if (newId) setFormData((prev) => ({ ...prev, customerId: String(newId) }));
+  }, []);
 
   const openModal = (mode, item = null) => {
     setModalMode(mode);
@@ -202,6 +249,21 @@ function Appointments() {
         {canCreate && <button className="btn btn-primary" onClick={() => openModal('create')}>+ New Appointment</button>}
       </div>
 
+      <div className="stats-grid service-stats-grid">
+        {[['Total', stats.total, 'info'], ['Today', stats.today, 'primary'], ['Scheduled', stats.scheduled, 'warning'], ['In Progress', stats.in_progress, 'primary'], ['Completed', stats.completed, 'success']].map(([label, value, tone]) => (
+          <div className={`stat-card ${tone}`} key={label}><div className="stat-info"><h3>{label}</h3><div className="value">{value || 0}</div></div></div>
+        ))}
+      </div>
+
+      <div className="service-filter-bar">
+        <div className="form-group service-filter-search"><label>Search</label><input className="form-control" value={filters.search} onChange={(e) => updateFilter('search', e.target.value)} placeholder="Search appointment, customer or vehicle..." /></div>
+        <div className="form-group"><label>Status</label><select className="form-control" value={filters.status} onChange={(e) => updateFilter('status', e.target.value)}><option value="">All statuses</option><option value="scheduled">Scheduled</option><option value="confirmed">Confirmed</option><option value="in_progress">In progress</option><option value="completed">Completed</option><option value="cancelled">Cancelled</option><option value="no_show">No show</option></select></div>
+        <div className="form-group"><label>Customer</label><SearchableSelect value={filters.customerId} onChange={(e) => updateFilter('customerId', e.target.value)} options={customerOptions} placeholder="All customers" /></div>
+        <div className="form-group"><label>From</label><input type="date" className="form-control" value={filters.dateFrom} onChange={(e) => updateFilter('dateFrom', e.target.value)} /></div>
+        <div className="form-group"><label>To</label><input type="date" className="form-control" value={filters.dateTo} onChange={(e) => updateFilter('dateTo', e.target.value)} /></div>
+        <button type="button" className="btn btn-secondary service-filter-reset" onClick={clearFilters}>Reset</button>
+      </div>
+
       {/* Desktop Table */}
       <div className="desktop-only">
         <DataTable
@@ -278,6 +340,8 @@ function Appointments() {
         ))}
       </div>
 
+      <ServicePagination pagination={pagination} setPagination={setPagination} />
+
       {/* Modal */}
       {showModal && (
         <div className="modal-overlay" onClick={closeModal}>
@@ -289,7 +353,7 @@ function Appointments() {
             <form onSubmit={modalMode === 'view' ? (e) => e.preventDefault() : handleSubmit}>
               <div className="modal-body">
                 <div className="form-group">
-                  <label>Customer *</label>
+                  <label>Customer * {modalMode !== 'view' && <CustomerQuickCreate onCreated={handleCustomerCreated} />}</label>
                   <SearchableSelect name="customerId" value={formData.customerId} onChange={handleChange}
                     options={customerOptions} placeholder="Select Customer"
                     required disabled={modalMode === 'view'} />
@@ -383,6 +447,8 @@ const JC_STATUS_CLASS = { open: 'info', in_progress: 'warning', on_hold: 'second
 
 function JobCards() {
   const { user } = useAuth();
+  const { currency, serviceTax, taxAmount: calculateConfiguredTax } = useErpDocumentSettings();
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const urlSearch = searchParams.get('search') || '';
 
@@ -401,6 +467,9 @@ function JobCards() {
   const [advisors, setAdvisors] = useState([]);
   const [parts, setParts] = useState([]);
   const [vehicleBrands, setVehicleBrands] = useState([]);
+  const [stats, setStats] = useState({ total: 0, open: 0, in_progress: 0, completed: 0, delivered: 0, totalRevenue: 0 });
+  const [filters, setFilters] = useState({ search: urlSearch, status: '', customerId: '', technicianId: '', dateFrom: '', dateTo: '' });
+  const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 0 });
 
   const [formData, setFormData] = useState({
     customerId: '', vehicleId: '', vehicleNumber: '', vehicleMake: '', vehicleModel: '',
@@ -425,9 +494,17 @@ function JobCards() {
   const canComplete = ['super_admin', 'service_manager', 'technician'].includes(user?.role);
 
   const fetchData = useCallback(async () => {
-    try { setLoading(true); const res = await serviceAPI.getJobCards({ search: urlSearch }); setData(res.data?.data || []); }
+    try {
+      setLoading(true);
+      const params = { ...filters, page: pagination.page, limit: pagination.limit };
+      Object.keys(params).forEach((key) => { if (params[key] === '' || params[key] == null) delete params[key]; });
+      const [res, statsRes] = await Promise.all([serviceAPI.getJobCards(params), serviceAPI.getJobCardStats()]);
+      setData(res.data?.data || []);
+      setPagination((prev) => ({ ...prev, ...(res.data?.pagination || {}) }));
+      setStats(statsRes.data?.data || {});
+    }
     catch (_) { setData([]); } finally { setLoading(false); }
-  }, [urlSearch]);
+  }, [filters, pagination.page, pagination.limit]);
 
   const fetchDropdowns = useCallback(async () => {
     try {
@@ -456,6 +533,12 @@ function JobCards() {
   }, []);
 
   useEffect(() => { fetchData(); fetchDropdowns(); }, [fetchData, fetchDropdowns]);
+
+  const updateFilter = (name, value) => {
+    setFilters((prev) => ({ ...prev, [name]: value }));
+    setPagination((prev) => ({ ...prev, page: 1 }));
+  };
+  const clearFilters = () => { setFilters({ search: '', status: '', customerId: '', technicianId: '', dateFrom: '', dateTo: '' }); setPagination((prev) => ({ ...prev, page: 1 })); };
 
   const openModal = async (mode, item = null) => {
     setModalMode(mode);
@@ -505,11 +588,19 @@ function JobCards() {
     if (!formData.customerId) { toast.error('Customer is required'); return; }
     setSaving(true);
     try {
+      const laborBase = jobServices.reduce((sum, item) => sum + Number(item.total || 0), 0);
+      const partsBase = jobParts.filter((item) => !item.is_warranty).reduce((sum, item) => sum + Number(item.total || 0), 0);
+      const payload = {
+        ...formData,
+        taxAmount: Number(formData.taxAmount) > 0 || !serviceTax
+          ? Number(formData.taxAmount || 0)
+          : calculateConfiguredTax(Math.max(0, laborBase + partsBase - Number(formData.discount || 0)), serviceTax)
+      };
       if (modalMode === 'create') {
-        await serviceAPI.createJobCard(formData);
+        await serviceAPI.createJobCard(payload);
         toast.success('Job card created');
       } else {
-        await serviceAPI.updateJobCard(selectedItem.id, formData);
+        await serviceAPI.updateJobCard(selectedItem.id, payload);
         toast.success('Job card updated');
       }
       closeModal();
@@ -519,8 +610,6 @@ function JobCards() {
   };
 
   useModalKeyboard(showModal, closeModal, handleSubmit, saving);
-  useModalKeyboard(showServiceModal, () => setShowServiceModal(false), handleAddService, serviceSaving);
-  useModalKeyboard(showPartModal, () => setShowPartModal(false), handleAddPart, partSaving);
 
   const handleDelete = async () => {
     if (!confirmDelete) return;
@@ -584,9 +673,21 @@ function JobCards() {
   };
 
   const handlePartSelect = (e) => {
-    const p = parts.find((p) => p.id === parseInt(e.target.value));
+    const p = parts.find((p) => String(p.id) === String(e.target.value));
     setPartForm({ ...partForm, partId: e.target.value, unitPrice: p?.selling_price || '' });
   };
+
+  // Keyboard behaviour for the add-service / add-part sub-modals
+  // (registered after their submit handlers to avoid use-before-init).
+  useModalKeyboard(showServiceModal, () => setShowServiceModal(false), handleAddService, serviceSaving);
+  useModalKeyboard(showPartModal, () => setShowPartModal(false), handleAddPart, partSaving);
+
+  // Rule 2 — refresh dropdown and auto-select the customer created inline
+  const handleCustomerCreated = useCallback(async (created) => {
+    try { setCustomers(await fetchAllCustomersForDropdown()); } catch (_) { /* best-effort refresh */ }
+    const newId = created?._id || created?.id;
+    if (newId) setFormData((prev) => ({ ...prev, customerId: String(newId) }));
+  }, []);
 
   const totals = (() => {
     const laborTotal = jobServices.reduce((s, sv) => s + parseFloat(sv.total || 0), 0);
@@ -620,6 +721,22 @@ function JobCards() {
         {canCreate && <button className="btn btn-primary" onClick={() => openModal('create')}>+ New Job Card</button>}
       </div>
 
+      <div className="stats-grid service-stats-grid">
+        {[['Total', stats.total, 'info'], ['Open', stats.open, 'primary'], ['In Progress', stats.in_progress, 'warning'], ['Completed', stats.completed, 'success'], ['Revenue', `PKR ${Number(stats.totalRevenue || 0).toLocaleString()}`, 'success']].map(([label, value, tone]) => (
+          <div className={`stat-card ${tone}`} key={label}><div className="stat-info"><h3>{label}</h3><div className="value">{value || 0}</div></div></div>
+        ))}
+      </div>
+
+      <div className="service-filter-bar">
+        <div className="form-group service-filter-search"><label>Search</label><input className="form-control" value={filters.search} onChange={(e) => updateFilter('search', e.target.value)} placeholder="Search job card, customer or vehicle..." /></div>
+        <div className="form-group"><label>Status</label><select className="form-control" value={filters.status} onChange={(e) => updateFilter('status', e.target.value)}><option value="">All statuses</option><option value="open">Open</option><option value="in_progress">In progress</option><option value="on_hold">On hold</option><option value="completed">Completed</option><option value="delivered">Delivered</option><option value="cancelled">Cancelled</option></select></div>
+        <div className="form-group"><label>Customer</label><SearchableSelect value={filters.customerId} onChange={(e) => updateFilter('customerId', e.target.value)} options={customerOptions} placeholder="All customers" /></div>
+        <div className="form-group"><label>Technician</label><SearchableSelect value={filters.technicianId} onChange={(e) => updateFilter('technicianId', e.target.value)} options={technicianOptions} placeholder="All technicians" /></div>
+        <div className="form-group"><label>From</label><input type="date" className="form-control" value={filters.dateFrom} onChange={(e) => updateFilter('dateFrom', e.target.value)} /></div>
+        <div className="form-group"><label>To</label><input type="date" className="form-control" value={filters.dateTo} onChange={(e) => updateFilter('dateTo', e.target.value)} /></div>
+        <button type="button" className="btn btn-secondary service-filter-reset" onClick={clearFilters}>Reset</button>
+      </div>
+
       {/* Desktop Table */}
       <div className="desktop-only">
         <DataTable
@@ -631,6 +748,7 @@ function JobCards() {
             { header: 'Labor', render: (r) => `PKR ${Number(r.labor_total || 0).toLocaleString()}` },
             { header: 'Parts', render: (r) => `PKR ${Number(r.parts_total || 0).toLocaleString()}` },
             { header: 'Total', render: (r) => <strong>PKR {Number(r.grand_total || 0).toLocaleString()}</strong> },
+            { header: 'Invoice', render: (r) => r.invoice_number ? <button type="button" className="link-button" onClick={() => navigate(`/sales/invoices?search=${encodeURIComponent(r.invoice_number)}`)}>{r.invoice_number}</button> : <span className="text-muted">Pending</span> },
             { header: 'Status', render: (r) => (
               <select className={`badge badge-${JC_STATUS_CLASS[r.status] || 'info'}`}
                 value={r.status} onChange={(e) => handleStatusChange(r.id, e.target.value)}
@@ -684,6 +802,7 @@ function JobCards() {
             <div className="user-card-field"><span className="field-label">Customer</span><span>{jc.customer_name}</span></div>
             <div className="user-card-field"><span className="field-label">Vehicle</span><span>{jc.customer_vehicle_make} {jc.customer_vehicle_model} - {jc.customer_vehicle_number}</span></div>
             <div className="user-card-field"><span className="field-label">Total</span><span><strong>PKR {Number(jc.grand_total || 0).toLocaleString()}</strong></span></div>
+            <div className="user-card-field"><span className="field-label">Invoice</span><span>{jc.invoice_number ? <button type="button" className="link-button" onClick={() => navigate(`/sales/invoices?search=${encodeURIComponent(jc.invoice_number)}`)}>{jc.invoice_number}</button> : 'Pending'}</span></div>
             <div className="user-card-field"><span className="field-label">Status</span>
               <span className={`badge badge-${JC_STATUS_CLASS[jc.status] || 'info'}`}>{jc.status}</span>
             </div>
@@ -696,6 +815,8 @@ function JobCards() {
           </div>
         ))}
       </div>
+
+      <ServicePagination pagination={pagination} setPagination={setPagination} />
 
       {/* Main Job Card Modal */}
       {showModal && (
@@ -711,7 +832,7 @@ function JobCards() {
                   <div>
                     <h4 style={{ marginBottom: '0.75rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.5rem' }}>Customer & Vehicle</h4>
                     <div className="form-group">
-                      <label>Customer *</label>
+                      <label>Customer * {modalMode !== 'view' && <CustomerQuickCreate onCreated={handleCustomerCreated} />}</label>
                       <SearchableSelect name="customerId" value={formData.customerId} onChange={handleChange}
                         options={customerOptions} placeholder="Select Customer" required disabled={modalMode === 'view'} />
                     </div>
@@ -839,13 +960,13 @@ function JobCards() {
                   <div style={{ marginTop: '1rem', padding: '1rem', background: '#f8f9fa', borderRadius: '8px' }}>
                     <h4 style={{ marginBottom: '0.75rem' }}>Totals</h4>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '1rem', textAlign: 'center' }}>
-                      <div><small>Labor</small><div><strong>PKR {totals.laborTotal.toLocaleString()}</strong></div></div>
-                      <div><small>Parts</small><div><strong>PKR {totals.partsTotal.toLocaleString()}</strong></div></div>
+                      <div><small>Labor ({currency.code})</small><div><strong>{currency.symbol} {totals.laborTotal.toLocaleString()}</strong></div></div>
+                      <div><small>Parts ({currency.code})</small><div><strong>{currency.symbol} {totals.partsTotal.toLocaleString()}</strong></div></div>
                       <div><label style={{ fontSize: 12 }}>Discount</label><input type="number" name="discount" className="form-control" value={formData.discount} onChange={handleChange} disabled={modalMode === 'view'} /></div>
-                      <div><label style={{ fontSize: 12 }}>Tax</label><input type="number" name="taxAmount" className="form-control" value={formData.taxAmount} onChange={handleChange} disabled={modalMode === 'view'} /></div>
+                      <div><label style={{ fontSize: 12 }}>Tax {serviceTax ? `(${serviceTax.tax_name} ${serviceTax.tax_rate}%)` : ''}</label><input type="number" name="taxAmount" className="form-control" value={formData.taxAmount} onChange={handleChange} disabled={modalMode === 'view'} /></div>
                       <div style={{ background: '#1a73e8', color: 'white', padding: '0.5rem', borderRadius: '4px' }}>
                         <small>Grand Total</small>
-                        <div><strong>PKR {totals.grandTotal.toLocaleString()}</strong></div>
+                        <div><strong>{currency.symbol} {totals.grandTotal.toLocaleString()}</strong></div>
                       </div>
                     </div>
                   </div>

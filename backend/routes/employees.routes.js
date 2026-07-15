@@ -7,6 +7,8 @@ const roles = ['super_admin', 'admin', 'hr_admin'];
 
 router.get('/stats', authenticate, authorize(...roles), employees.getStats);
 router.get('/', authenticate, authorize(...roles), employees.listEmployees);
+router.patch('/bulk/deactivate', authenticate, authorize(...roles), employees.bulkDeactivateEmployees);
+router.delete('/bulk', authenticate, authorize(...roles), employees.bulkDeleteEmployees);
 router.get('/:id', authenticate, authorize(...roles), employees.getEmployee);
 router.post('/', authenticate, authorize(...roles), employees.createEmployee);
 router.put('/:id', authenticate, authorize(...roles), employees.updateEmployee);

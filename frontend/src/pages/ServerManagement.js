@@ -12,7 +12,7 @@ import FilterBar, {
   SearchInput,
   ResetFiltersButton,
 } from "../components/filters/FilterBar";
-import { serverManagementAPI, adminAPI, customerRoleConfigAPI } from "../services/api";
+import { serverManagementAPI, adminAPI, customerRoleConfigAPI, employeeRoleConfigAPI } from "../services/api";
 import { showApiSuccess, showApiError } from "../utils/toastResponse";
 import "../styles/serverManagement.css";
 import "../styles/filters.css";
@@ -23,8 +23,8 @@ const tabs = [
   "Roles Permissions",
   "User Permissions",
   "Log Permissions",
-  "Lead Assignment",
-  "Customer Config",
+  "Role Jobs",
+  "Role Usage",
 ];
 const assetFields = [
   ["favicon", "Favicon"],
@@ -369,6 +369,12 @@ function ServerManagement() {
   const [customerConfigActiveRoleId, setCustomerConfigActiveRoleId] = useState('');
   const [customerConfigAvailableRoleIds, setCustomerConfigAvailableRoleIds] = useState([]);
   const [customerConfigSaving, setCustomerConfigSaving] = useState(false);
+  const [employeeConfigActiveRoleId, setEmployeeConfigActiveRoleId] = useState('');
+  const [employeeConfigSaving, setEmployeeConfigSaving] = useState(false);
+  const [selectedJobRoleId, setSelectedJobRoleId] = useState('');
+  const [roleJobs, setRoleJobs] = useState([]);
+  const [roleJobsLoading, setRoleJobsLoading] = useState(false);
+  const [roleJobsSaving, setRoleJobsSaving] = useState(false);
   const [showLeadAssignmentRoleModal, setShowLeadAssignmentRoleModal] = useState(false);
   const [leadAssignmentRoleModalLoading, setLeadAssignmentRoleModalLoading] = useState(false);
   const [logRoleSearch, setLogRoleSearch] = useState("");
@@ -500,6 +506,8 @@ function ServerManagement() {
         setCustomerConfigActiveRoleId(crc.data.activeRoleId || '');
         setCustomerConfigAvailableRoleIds(Array.isArray(crc.data.availableRoleIds) ? crc.data.availableRoleIds : []);
       }
+      const { data: erc } = await employeeRoleConfigAPI.get();
+      if (erc?.data) setEmployeeConfigActiveRoleId(erc.data.activeRoleId || '');
     } catch (error) {
       showApiError(error, "Failed to load server management data");
     } finally {
@@ -964,7 +972,7 @@ function ServerManagement() {
           onClick={(event) => event.stopPropagation()}
           onSubmit={saveNewPage}
         >
-          <div className="sm-panel-header">
+          <div className="sm-page-modal-header">
             <div>
               <h2>Add Page</h2>
               <p>Create a Mongo Page for sidebar and permission management.</p>
@@ -977,7 +985,8 @@ function ServerManagement() {
               Close
             </button>
           </div>
-          <div className="sm-form-grid">
+          <div className="sm-page-modal-body">
+            <div className="sm-page-modal-grid">
             <label>
               Name
               <input
@@ -1092,8 +1101,9 @@ function ServerManagement() {
                 }
               />
             </label>
+            </div>
           </div>
-          <div className="sm-actions">
+          <div className="sm-page-modal-actions">
             <button
               type="button"
               className="btn btn-secondary"
@@ -1669,13 +1679,23 @@ function ServerManagement() {
         saveLogUserPermissions(event);
       }
       return;
-    } else if (activeTab === "Lead Assignment") {
+    } else if (activeTab === "Role Jobs") {
+      if (isDropdownOpen()) return;
       event.preventDefault();
-      saveLeadAssignment(event);
+      saveRoleJobs();
       return;
-    } else if (activeTab === "Customer Config") {
+    } else if (activeTab === "Role Usage") {
+      const target = event.target;
+      if (isDropdownOpen()) return;
       event.preventDefault();
-      saveCustomerConfig(event);
+      const panel = target?.closest?.('[data-role-usage-panel]')?.dataset?.roleUsagePanel;
+      if (panel === "customer") {
+        saveCustomerConfig(event);
+      } else if (panel === "employee") {
+        saveEmployeeConfig(event);
+      } else {
+        saveLeadAssignment(event);
+      }
       return;
     }
 
@@ -2067,157 +2087,266 @@ function ServerManagement() {
     }
   };
 
-  const renderCustomerConfig = () => (
-    <form
-      className="sm-panel"
-      onSubmit={(e) => {
-        e.preventDefault();
-        saveCustomerConfig();
-      }}
-    >
+  const saveEmployeeConfig = async () => {
+    if (savingRef.current.employeeConfig) return;
+    savingRef.current.employeeConfig = true;
+    setEmployeeConfigSaving(true);
+    try {
+      const { data: res } = await employeeRoleConfigAPI.update({ activeRoleId: employeeConfigActiveRoleId });
+      if (res?.success) showApiSuccess(res, 'Employee role config saved');
+      else throw new Error(res?.message || 'Failed to save');
+    } catch (err) {
+      showApiError(err, 'Failed to save employee role config');
+    } finally {
+      savingRef.current.employeeConfig = false;
+      setEmployeeConfigSaving(false);
+    }
+  };
+
+  const loadRoleJobs = async (roleId) => {
+    setSelectedJobRoleId(roleId);
+    if (!roleId) { setRoleJobs([]); return; }
+    setRoleJobsLoading(true);
+    try {
+      const { data: res } = await serverManagementAPI.getRoleJobs(roleId);
+      const role = res?.data?.role;
+      const saved = res?.data?.jobs || [];
+      const resourceMap = { sales: [{pageKey:'quotations',module:'quotations',label:'Quotations'},{pageKey:'bookings',module:'bookings',label:'Bookings'},{pageKey:'sales_orders',module:'sales_orders',label:'Sales Orders'},{pageKey:'invoices',module:'invoices',label:'Invoices'}] };
+      const enabledPages = (role?.permissions || []).filter((item) => item.canView && item.isActive !== false).flatMap((item) => resourceMap[item.pageKey] || [{...item,label:pages.find((page) => page.key === item.pageKey)?.label || item.pageKey}]);
+      setRoleJobs(enabledPages.map((page) => {
+        const current = saved.find((job) => job.pageKey === page.pageKey) || {};
+        return {
+          pageKey: page.pageKey,
+          module: page.module || page.pageKey,
+          label: page.label || pages.find((item) => item.key === page.pageKey)?.label || page.pageKey,
+          actions: { view: true, create: false, edit: false, delete: false, sendEmail: false, downloadPdf: false, export: false, ...(current.actions || {}) },
+          dataScope: { mode: current.dataScope?.mode || 'own', roles: (current.dataScope?.roles || []).map((item) => String(item._id || item)), users: (current.dataScope?.users || []).map((item) => String(item._id || item)) },
+        };
+      }));
+    } catch (err) { showApiError(err, 'Failed to load role jobs'); }
+    finally { setRoleJobsLoading(false); }
+  };
+
+  const updateRoleJob = (pageKey, updater) => setRoleJobs((items) => items.map((item) => item.pageKey === pageKey ? updater(item) : item));
+  const saveRoleJobs = async () => {
+    if (!selectedJobRoleId || savingRef.current.roleJobs) return;
+    savingRef.current.roleJobs = true; setRoleJobsSaving(true);
+    try {
+      const { data: res } = await serverManagementAPI.updateRoleJobs(selectedJobRoleId, roleJobs);
+      if (!res?.success) throw new Error(res?.message || 'Failed to save');
+      showApiSuccess(res, 'Role jobs saved');
+    } catch (err) { showApiError(err, 'Failed to save role jobs'); }
+    finally { savingRef.current.roleJobs = false; setRoleJobsSaving(false); }
+  };
+
+  const renderRoleJobs = () => {
+    const actionLabels = { create: 'Create', edit: 'Edit', delete: 'Delete', sendEmail: 'Send email', downloadPdf: 'Download PDF', export: 'Export' };
+    return <form className="sm-panel" onSubmit={(event) => { event.preventDefault(); saveRoleJobs(); }}>
+      <div className="sm-panel-header"><div><h2>Role Jobs</h2><p>Configure what a role can do and whose business data it can see. Own data is always included.</p></div><div style={{display:'flex',gap:8}}><button type="button" className="btn btn-secondary" onClick={() => setShowLeadAssignmentRoleModal(true)}>+ Create Role</button><button className="btn btn-primary" disabled={!selectedJobRoleId || roleJobsSaving}>{roleJobsSaving?'Saving...':'Save'}</button></div></div>
+      <div className="sm-form-grid"><label>Management Role</label><select className="form-input" value={selectedJobRoleId} onChange={(event) => loadRoleJobs(event.target.value)} style={{maxWidth:420}}><option value="">Select a role</option>{roleArr.filter((role) => role.name !== 'super_admin').map((role) => <option key={getRoleId(role)} value={getRoleId(role)}>{role.displayName || role.name}</option>)}</select></div>
+      {roleJobsLoading ? <p className="sm-empty">Loading role jobs...</p> : selectedJobRoleId && roleJobs.length === 0 ? <p className="sm-empty">Assign pages to this role in Roles Permissions first.</p> : <div className="sm-role-job-list">{roleJobs.map((job) => <section className="sm-role-job-card" key={job.pageKey} data-role-job={job.pageKey} tabIndex="-1"><div className="sm-role-job-heading"><div><strong>{job.label}</strong><span>{job.module}</span></div><span className="sm-own-data">Own data always visible</span></div><div className="sm-role-job-actions">{Object.entries(actionLabels).map(([key,label]) => <label key={key}><input type="checkbox" checked={job.actions[key] === true} onChange={() => updateRoleJob(job.pageKey, (item) => ({...item,actions:{...item.actions,[key]:!item.actions[key]}}))}/><span>{label}</span></label>)}</div><div className="sm-role-job-scope"><label>Additional data visibility</label><select value={job.dataScope.mode} onChange={(event) => updateRoleJob(job.pageKey, (item) => ({...item,dataScope:{...item.dataScope,mode:event.target.value}}))}><option value="own">Own only</option><option value="selected_roles">Own + selected roles</option><option value="selected_users">Own + selected users</option><option value="all">All data</option></select>{job.dataScope.mode === 'selected_roles' && <div className="sm-scope-options">{roleArr.filter((role) => String(getRoleId(role)) !== String(selectedJobRoleId)).map((role) => {const id=String(getRoleId(role));return <label key={id}><input type="checkbox" checked={job.dataScope.roles.includes(id)} onChange={() => updateRoleJob(job.pageKey,(item)=>({...item,dataScope:{...item.dataScope,roles:item.dataScope.roles.includes(id)?item.dataScope.roles.filter((value)=>value!==id):[...item.dataScope.roles,id]}}))}/>{role.displayName||role.name}</label>})}</div>}{job.dataScope.mode === 'selected_users' && <div className="sm-scope-options">{userArr.map((person) => {const id=String(person._id||person.id);return <label key={id}><input type="checkbox" checked={job.dataScope.users.includes(id)} onChange={() => updateRoleJob(job.pageKey,(item)=>({...item,dataScope:{...item.dataScope,users:item.dataScope.users.includes(id)?item.dataScope.users.filter((value)=>value!==id):[...item.dataScope.users,id]}}))}/>{person.firstName} {person.lastName}</label>})}</div>}</div></section>)}</div>}
+    </form>;
+  };
+
+  const renderEmployeeConfig = () => (
+    <form className="sm-panel" data-role-usage-panel="employee" onSubmit={(e) => { e.preventDefault(); saveEmployeeConfig(); }}>
       <div className="sm-panel-header">
         <div>
-          <h2>Customer Role Config</h2>
-          <p>
-            Select which role is assigned to newly converted customers and which roles are considered customer roles.
-          </p>
+          <h2>Employee Config</h2>
+          <p>Select the role automatically assigned whenever a new employee is created.</p>
         </div>
-        <div style={{ display: "flex", gap: "8px" }}>
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={() => setShowLeadAssignmentRoleModal(true)}
-          >
-            + Create Role
-          </button>
-          <button
-            type="submit"
-            className="btn btn-primary"
-            disabled={customerConfigSaving}
-          >
-            {customerConfigSaving ? "Saving..." : "Save"}
-          </button>
-        </div>
+        <button type="submit" className="btn btn-primary" disabled={employeeConfigSaving || !employeeConfigActiveRoleId}>
+          {employeeConfigSaving ? 'Saving...' : 'Save'}
+        </button>
       </div>
       <div className="sm-form-grid">
-        <label>Active Customer Role</label>
-        <select className="form-input" value={customerConfigActiveRoleId} onChange={(e) => setCustomerConfigActiveRoleId(e.target.value)} style={{ maxWidth: '400px' }}>
+        <label>New Employee Role</label>
+        <select className="form-input" value={employeeConfigActiveRoleId} onChange={(e) => setEmployeeConfigActiveRoleId(e.target.value)} style={{ maxWidth: '400px' }}>
           <option value="">Select a role</option>
           {roleArr.filter((r) => r.name !== 'super_admin').map((role) => (
             <option key={getRoleId(role)} value={getRoleId(role)}>{role.displayName || role.name}</option>
           ))}
         </select>
       </div>
-      <div className="sm-form-grid">
-        <label>Available Customer Roles</label>
-        {roleArr.length === 0 ? (
-          <p className="sm-empty">No roles found. Create roles first in the Roles Permissions tab.</p>
-        ) : (
-          <div className="sm-checkbox-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: "8px" }}>
-            {roleArr.filter((r) => r.name !== 'super_admin').map((role) => {
-              const rid = String(getRoleId(role));
-              const checked = customerConfigAvailableRoleIds.includes(rid);
-              return (
-                <label key={rid} className="sm-permission-row" style={{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 12px", border: "1px solid var(--border-light)", borderRadius: "8px", cursor: "pointer" }}>
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={() => {
-                      setCustomerConfigAvailableRoleIds((prev) =>
-                        prev.includes(rid) ? prev.filter((r) => r !== rid) : [...prev, rid]
-                      );
-                    }}
-                  />
-                  <span>{role.displayName || role.name}</span>
-                </label>
-              );
-            })}
-          </div>
-        )}
-      </div>
     </form>
   );
 
-  const renderLeadAssignment = () => (
-    <form
-      className="sm-panel"
-      onSubmit={(e) => {
-        e.preventDefault();
-        saveLeadAssignment();
-      }}
-    >
-      <div className="sm-panel-header">
-        <div>
-          <h2>Lead Assignment</h2>
-          <p>
-            Select which roles can be assigned as lead assignees. Only users
-            with these roles will appear in the lead assignee dropdown.
-          </p>
-        </div>
-        <div style={{ display: "flex", gap: "8px" }}>
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={() => setShowLeadAssignmentRoleModal(true)}
-          >
-            + Create Role
-          </button>
-          <button
-            type="submit"
-            className="btn btn-primary"
-            disabled={leadAssignmentSaving}
-          >
-            {leadAssignmentSaving ? "Saving..." : "Save"}
-          </button>
-        </div>
-      </div>
-      <div className="sm-form-grid">
-        <label>Roles Allowed for Lead Assignment</label>
-        {roleArr.length === 0 ? (
-          <p className="sm-empty">
-            No roles found. Create roles first in the Roles Permissions tab.
-          </p>
-        ) : (
-          <div
-            className="sm-checkbox-grid"
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
-              gap: "8px",
-            }}
-          >
-            {roleArr
-              .filter((r) => r.name !== "super_admin")
-              .map((role) => {
-                const rid = String(getRoleId(role));
-                const checked = leadAssignmentSelectedRoles.includes(rid);
-                return (
-                  <label
-                    key={rid}
-                    className="sm-permission-row"
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "8px",
-                      padding: "8px 12px",
-                      border: "1px solid var(--border-light)",
-                      borderRadius: "8px",
-                      cursor: "pointer",
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => toggleLeadAssignmentRole(rid)}
-                    />
-                    <span>{role.displayName || role.name}</span>
-                  </label>
-                );
-              })}
+
+
+  const renderRoleUsage = () => (
+    <div className="sm-role-usage">
+      <form
+        className="sm-panel"
+        onSubmit={(e) => {
+          e.preventDefault();
+          saveLeadAssignment();
+        }}
+      >
+        <div className="sm-panel-header">
+          <div>
+            <h2>Role Usage</h2>
+            <p>
+              Configure which roles are used for lead assignment and customer
+              management.
+            </p>
           </div>
-        )}
-      </div>
-    </form>
+          <div style={{ display: "flex", gap: "8px" }}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setShowLeadAssignmentRoleModal(true)}
+            >
+              + Create Role
+            </button>
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={leadAssignmentSaving}
+            >
+              {leadAssignmentSaving ? "Saving..." : "Save"}
+            </button>
+          </div>
+        </div>
+        <div className="sm-form-grid" data-role-usage-panel="lead" style={{ marginBottom: "24px" }}>
+          <label style={{ fontWeight: 600, fontSize: "14px", color: "var(--text-primary)" }}>
+            Lead Assignment Roles
+          </label>
+          <p style={{ fontSize: "13px", color: "var(--text-secondary)", margin: "-8px 0 12px 0" }}>
+            Select which roles can be assigned as lead assignees. Only users with these roles will appear in the lead assignee dropdown.
+          </p>
+          {roleArr.length === 0 ? (
+            <p className="sm-empty">
+              No roles found. Create roles first in the Roles Permissions tab.
+            </p>
+          ) : (
+            <div
+              className="sm-checkbox-grid"
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
+                gap: "8px",
+              }}
+            >
+              {roleArr
+                .filter((r) => r.name !== "super_admin")
+                .map((role) => {
+                  const rid = String(getRoleId(role));
+                  const checked = leadAssignmentSelectedRoles.includes(rid);
+                  return (
+                    <label
+                      key={rid}
+                      className="sm-permission-row"
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                        padding: "8px 12px",
+                        border: "1px solid var(--border-light)",
+                        borderRadius: "8px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleLeadAssignmentRole(rid)}
+                      />
+                      <span>{role.displayName || role.name}</span>
+                    </label>
+                  );
+                })}
+            </div>
+          )}
+        </div>
+        <div data-role-usage-panel="customer" style={{ borderTop: "1px solid var(--border-light)", paddingTop: "20px" }}>
+          <label style={{ fontWeight: 600, fontSize: "14px", color: "var(--text-primary)", display: "block", marginBottom: "4px" }}>
+            Customer Role Config
+          </label>
+          <p style={{ fontSize: "13px", color: "var(--text-secondary)", margin: "0 0 16px 0" }}>
+            Select which role is assigned to newly converted customers and which roles are considered customer roles.
+          </p>
+          <div className="sm-form-grid" style={{ marginBottom: "16px" }}>
+            <label>Active Customer Role</label>
+            <select
+              className="form-input"
+              value={customerConfigActiveRoleId}
+              onChange={(e) => setCustomerConfigActiveRoleId(e.target.value)}
+              style={{ maxWidth: "400px" }}
+            >
+              <option value="">Select a role</option>
+              {roleArr
+                .filter((r) => r.name !== "super_admin")
+                .map((role) => (
+                  <option key={getRoleId(role)} value={getRoleId(role)}>
+                    {role.displayName || role.name}
+                  </option>
+                ))}
+            </select>
+          </div>
+          <div className="sm-form-grid">
+            <label>Available Customer Roles</label>
+            {roleArr.length === 0 ? (
+              <p className="sm-empty">No roles found. Create roles first in the Roles Permissions tab.</p>
+            ) : (
+              <div
+                className="sm-checkbox-grid"
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
+                  gap: "8px",
+                }}
+              >
+                {roleArr
+                  .filter((r) => r.name !== "super_admin")
+                  .map((role) => {
+                    const rid = String(getRoleId(role));
+                    const checked = customerConfigAvailableRoleIds.includes(rid);
+                    return (
+                      <label
+                        key={rid}
+                        className="sm-permission-row"
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                          padding: "8px 12px",
+                          border: "1px solid var(--border-light)",
+                          borderRadius: "8px",
+                          cursor: "pointer",
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => {
+                            setCustomerConfigAvailableRoleIds((prev) =>
+                              prev.includes(rid)
+                                ? prev.filter((r) => r !== rid)
+                                : [...prev, rid],
+                            );
+                          }}
+                        />
+                        <span>{role.displayName || role.name}</span>
+                      </label>
+                    );
+                  })}
+              </div>
+            )}
+          </div>
+          <div style={{ marginTop: "16px", display: "flex", justifyContent: "flex-end" }}>
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={customerConfigSaving}
+              onClick={saveCustomerConfig}
+            >
+              {customerConfigSaving ? "Saving..." : "Save Customer Config"}
+            </button>
+          </div>
+        </div>
+      </form>
+      {renderEmployeeConfig()}
+    </div>
   );
 
   useModalKeyboard(showPageModal, () => setShowPageModal(false), null);
@@ -2272,8 +2401,8 @@ function ServerManagement() {
       {activeTab === "Roles Permissions" && renderRoles()}
       {activeTab === "User Permissions" && renderUserPermissions()}
       {activeTab === "Log Permissions" && renderLogPermissions()}
-      {activeTab === "Lead Assignment" && renderLeadAssignment()}
-      {activeTab === "Customer Config" && renderCustomerConfig()}
+      {activeTab === "Role Jobs" && renderRoleJobs()}
+      {activeTab === "Role Usage" && renderRoleUsage()}
       {renderPageModal()}
       <UserFormModal
         isOpen={showUserModal}

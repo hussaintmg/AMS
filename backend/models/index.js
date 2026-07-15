@@ -41,6 +41,11 @@ const EmailAsset = require('./EmailAsset.model');
 const EmailComponent = require('./EmailComponent.model');
 const EmailVariable = require('./EmailVariable.model');
 const EmailConfig = require('./EmailConfig.model');
+const PdfTemplate = require('./PdfTemplate.model');
+const PdfUsage = require('./PdfUsage.model');
+const PdfVariable = require('./PdfVariable.model');
+const Notification = require('./Notification.model');
+const SearchDocument = require('./SearchDocument.model');
 const { VehicleMake, VehicleModel, VehicleVariant, VehicleColor, PartCategory, Supplier } = require('./VehicleMaster.model');
 
 module.exports = {
@@ -87,6 +92,11 @@ module.exports = {
   EmailComponent,
   EmailVariable,
   EmailConfig,
+  PdfTemplate,
+  PdfUsage,
+  PdfVariable,
+  Notification,
+  SearchDocument,
   VehicleMake,
   VehicleModel,
   VehicleVariant,

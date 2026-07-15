@@ -1,16 +1,16 @@
 /**
  * ERP Settings Page
  * Comprehensive settings management with tabs for Companies, Branches, Settings, Currencies, and Taxes
- * Created by LOGIXINVENTOR (PVT) Ltd.
- * info@logixinventor.com +92 333 3836851
- * www.logixinventor.com | AMS
+ * Maintained by Hussain Developer
+ * hussaintmerng@gmail.com | +92 319 1634446
+ * AMS ERP
  * Date: 2026-01-08
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
 import SearchableSelect from '../components/SearchableSelect';
-import { erpSettingsAPI } from '../services/api';
+import { erpSettingsAPI, paymentMethodsAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
 import '../styles/userManagement.css';
@@ -925,7 +925,71 @@ function TaxesTab() {
 // MAIN SETTINGS COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════
 
-const SETTINGS_HASH_TABS = ['company', 'branches', 'currencies', 'taxes'];
+function PaymentMethodsTab() {
+    const [methods, setMethods] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [showModal, setShowModal] = useState(false);
+    const [modalMode, setModalMode] = useState('create');
+    const [selectedItem, setSelectedItem] = useState(null);
+    const [formData, setFormData] = useState({ name: '', code: '', type: 'cash', description: '', sortOrder: 0 });
+
+    const fetchData = useCallback(async () => {
+        try {
+            setLoading(true);
+            const res = await paymentMethodsAPI.getAll();
+            setMethods(res.data?.data || []);
+        } catch (error) { toast.error(error.response?.data?.message || 'Failed to load payment methods'); }
+        finally { setLoading(false); }
+    }, []);
+
+    useEffect(() => { fetchData(); }, [fetchData]);
+
+    const openModal = (mode, item = null) => {
+        setModalMode(mode); setSelectedItem(item);
+        setFormData(item ? {
+            name: item.name || '', code: item.code || '', type: item.type || 'cash',
+            description: item.description || '', sortOrder: item.sort_order || 0,
+        } : { name: '', code: '', type: 'cash', description: '', sortOrder: 0 });
+        setShowModal(true);
+    };
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        try {
+            if (modalMode === 'edit') await paymentMethodsAPI.update(selectedItem.id, formData);
+            else await paymentMethodsAPI.create(formData);
+            toast.success(`Payment method ${modalMode === 'edit' ? 'updated' : 'created'}`);
+            setShowModal(false); fetchData();
+        } catch (error) { toast.error(error.response?.data?.message || 'Failed to save payment method'); }
+    };
+
+    const toggle = async (id) => {
+        try { await paymentMethodsAPI.toggleStatus(id); toast.success('Payment method status updated'); fetchData(); }
+        catch (error) { toast.error(error.response?.data?.message || 'Failed to update status'); }
+    };
+
+    if (loading) return <div className="spinner" />;
+    return (
+        <div className="card">
+            <div className="card-header"><h3>Payment Methods</h3><button className="btn btn-primary" onClick={() => openModal('create')}>+ New Payment Method</button></div>
+            <div className="desktop-only">
+                <table className="data-table"><thead><tr><th>Name</th><th>Code</th><th>Type</th><th>Description</th><th>Usage</th><th>Status</th><th>Actions</th></tr></thead>
+                    <tbody>{methods.length === 0 ? <tr><td colSpan="7" style={{ textAlign: 'center' }}>No payment methods found</td></tr> : methods.map((m) => (
+                        <tr key={m.id}><td><strong>{m.name}</strong></td><td>{m.code || '-'}</td><td><span className="badge badge-info">{m.type}</span></td><td>{m.description || '-'}</td><td>{m.usage_count || 0}</td><td><span className={`badge badge-${m.is_active ? 'success' : 'secondary'}`}>{m.is_active ? 'Active' : 'Inactive'}</span></td><td><ActionButtons onEdit={() => openModal('edit', m)} showDelete={false} showToggle status={m.is_active} onToggle={() => toggle(m.id)} /></td></tr>
+                    ))}</tbody>
+                </table>
+            </div>
+            <div className="mobile-only"><div className="mobile-cards-container">{methods.map((m) => (
+                <div key={m.id} className="data-card"><div className="data-card-top"><div className="data-card-avatar avatar-blue">₨</div><div className="data-card-info"><span className="data-card-title">{m.name}</span><span className="data-card-subtitle">{m.code || m.type}</span></div><span className={`badge-pill ${m.is_active ? 'status-active' : 'status-inactive'}`}>{m.is_active ? 'Active' : 'Inactive'}</span></div><div className="data-card-body"><div className="data-card-row"><span className="row-label">Type</span><span className="row-value">{m.type}</span></div><div className="data-card-row"><span className="row-label">Usage</span><span className="row-value">{m.usage_count || 0}</span></div></div><div className="data-card-footer"><ActionButtons onEdit={() => openModal('edit', m)} onDelete={() => toggle(m.id)} /></div></div>
+            ))}</div></div>
+            {showModal && <Modal title={`${modalMode === 'create' ? 'Create' : 'Edit'} Payment Method`} onClose={() => setShowModal(false)}>
+                <form onSubmit={handleSubmit}><div className="form-group"><label>Name *</label><input className="form-control" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required /></div><div className="form-row"><div className="form-group"><label>Code</label><input className="form-control" value={formData.code} onChange={(e) => setFormData({ ...formData, code: e.target.value.toUpperCase() })} /></div><div className="form-group"><label>Type *</label><SearchableSelect className="form-control" value={formData.type} onChange={(e) => setFormData({ ...formData, type: e.target.value })}><option value="cash">Cash</option><option value="bank">Bank Transfer</option><option value="card">Card</option><option value="cheque">Cheque</option><option value="online">Online Payment</option></SearchableSelect></div></div><div className="form-group"><label>Description</label><textarea className="form-control" rows="2" value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} /></div><div className="form-group"><label>Sort Order</label><input type="number" className="form-control" value={formData.sortOrder} onChange={(e) => setFormData({ ...formData, sortOrder: e.target.value })} /></div><div className="form-actions" style={{ marginTop: 20, display: 'flex', justifyContent: 'flex-end', gap: 10 }}><button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)}>Cancel</button><button className="btn btn-primary" type="submit">{modalMode === 'create' ? 'Create' : 'Update'}</button></div></form>
+            </Modal>}
+        </div>
+    );
+}
+
+const SETTINGS_HASH_TABS = ['company', 'branches', 'currencies', 'taxes', 'payments'];
 
 function Settings() {
     const { user } = useAuth();
@@ -957,6 +1021,7 @@ function Settings() {
         { id: 'branches', label: 'Branches', icon: 'store' },
         { id: 'currencies', label: 'Currencies', icon: 'attach_money' },
         { id: 'taxes', label: 'Tax Config', icon: 'receipt' },
+        { id: 'payments', label: 'Payment Methods', icon: 'payments' },
     ];
 
     return (
@@ -1000,6 +1065,7 @@ function Settings() {
             {activeTab === 'branches' && <BranchesTab />}
             {activeTab === 'currencies' && <CurrenciesTab />}
             {activeTab === 'taxes' && <TaxesTab />}
+            {activeTab === 'payments' && <PaymentMethodsTab />}
 
         </div>
     );

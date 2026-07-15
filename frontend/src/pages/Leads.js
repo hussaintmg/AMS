@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Plus, ChevronLeft, ChevronRight, User, CalendarDays, ChartBar, ArrowRightLeft, X, Filter, Upload } from 'lucide-react';
 import { LeadsProvider, useLeads } from '../context/LeadsContext';
 import LeadFormModal from '../components/leads/LeadFormModal';
@@ -8,6 +8,7 @@ import LeadDrawer from '../components/leads/LeadDrawer';
 import ActionButtons from '../components/ActionButtons';
 import ConfirmModal from '../components/ConfirmModal';
 import BulkUploadModal from '../components/BulkUploadModal';
+import ServerPagination from '../components/ServerPagination';
 import '../styles/leadManagement.css';
 import '../styles/filters.css';
 
@@ -23,13 +24,14 @@ const statsIcons = {
 
 function LeadsPage() {
   const navigate = useNavigate();
+  const [urlParams] = useSearchParams();
   const { leads, meta, stats, pagination, search, filters, loading, handleSearch, handleFilter, clearFilters, goToPage, refreshLeads, deleteLead, loadLeads, convertLead } = useLeads();
   const [showForm, setShowForm] = useState(false);
   const [editLead, setEditLead] = useState(null);
   const [drawerId, setDrawerId] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
-  const [searchInput, setSearchInput] = useState(search);
+  const [searchInput, setSearchInput] = useState(() => urlParams.get('search') || search);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [showFilters, setShowFilters] = useState(false);
   const [converting, setConverting] = useState(null);
@@ -68,6 +70,11 @@ function LeadsPage() {
       setDeletingAll(false);
     }
   };
+
+  useEffect(() => {
+    const requestedId = urlParams.get('open');
+    if (requestedId) setDrawerId(requestedId);
+  }, []);
 
   useEffect(() => {
     const handler = () => setIsMobile(window.innerWidth < 768);
@@ -170,7 +177,7 @@ function LeadsPage() {
   };
 
   const renderTable = () => (
-    <div className="table-container desktop-only">
+    <div className="table-container desktop-only lead-table-scroll">
       {loading ? (
         <div className="loading-state"><div className="spinner"></div><p>Loading leads...</p></div>
       ) : leads.length === 0 ? (
@@ -180,7 +187,6 @@ function LeadsPage() {
           <thead>
             <tr>
               <th style={{ width: 40 }}><input type="checkbox" checked={selectedIds.size === leads.length && leads.length > 0} onChange={toggleSelectAll} /></th>
-              <th>Lead No</th>
               <th>Customer</th>
               <th>Contact</th>
               <th>Source</th>
@@ -196,12 +202,11 @@ function LeadsPage() {
             {leads.map((lead) => (
               <tr key={lead._id} className={lead.convertedToCustomer ? 'row-converted' : ''} onClick={() => setDrawerId(lead._id)} style={{ cursor: 'pointer' }}>
                 <td style={{ width: 40 }} onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selectedIds.has(lead._id)} onChange={() => toggleSelect(lead._id)} /></td>
-                <td><span className="lead-no-badge">{lead.leadNo}</span></td>
                 <td>
                   <div className="user-cell">
                     <div className="user-info">
                       <span className="user-name">{lead.customerName}</span>
-                      {lead.email && <span className="user-emp-id">{lead.email}</span>}
+                      {lead.email && <div className="user-emp-id">{lead.email}</div>}
                     </div>
                   </div>
                 </td>
@@ -310,16 +315,7 @@ function LeadsPage() {
     </div>
   );
 
-  const renderPagination = () => {
-    if (pagination.pages <= 1) return null;
-    return (
-      <div className="pagination">
-        <button className="btn btn-secondary btn-sm" disabled={pagination.page <= 1} onClick={() => goToPage(pagination.page - 1)}><ChevronLeft size={16} /></button>
-        <span className="page-info">Page {pagination.page} of {pagination.pages} ({pagination.total} total)</span>
-        <button className="btn btn-secondary btn-sm" disabled={pagination.page >= pagination.pages} onClick={() => goToPage(pagination.page + 1)}><ChevronRight size={16} /></button>
-      </div>
-    );
-  };
+  const renderPagination = () => <ServerPagination page={pagination.page} totalPages={pagination.pages} total={pagination.total} limit={pagination.limit || 20} onPageChange={goToPage} loading={loading} />;
 
   const renderFilters = () => (
     <div className="filter-bar">
@@ -437,14 +433,14 @@ function LeadsPage() {
 
       {renderFilters()}
 
-      {isMobile ? renderCards() : renderTable()}
       {selectedIds.size > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, marginTop: 8 }}>
-          <span style={{ fontWeight: 600, color: '#991b1b' }}>{selectedIds.size} selected</span>
-          <button className="btn btn-danger btn-sm" onClick={() => setDeleteAllTarget(true)}>Delete All</button>
+        <div className="selection-bar">
+          <span className="selection-count">{selectedIds.size} selected</span>
+          <button className="btn btn-danger btn-sm" onClick={() => setDeleteAllTarget(true)}>Delete Selected</button>
           <button className="btn btn-secondary btn-sm" onClick={() => setSelectedIds(new Set())}>Deselect All</button>
         </div>
       )}
+      {isMobile ? renderCards() : renderTable()}
       {renderPagination()}
 
       {deleteAllTarget && (

@@ -1,7 +1,7 @@
 /**
  * Sidebar Component
- * Created by LOGIXINVENTOR (PVT) Ltd.
- * www.logixinventor.com | AMS
+ * Maintained by Hussain Developer
+ * AMS ERP
  */
 
 import React, { useEffect, useMemo, useState } from 'react';

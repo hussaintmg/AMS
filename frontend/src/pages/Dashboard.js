@@ -3,7 +3,6 @@
  */
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { dashboardAPI } from '../services/api';
 import {
@@ -19,8 +18,9 @@ import {
     Legend,
     Filler
 } from 'chart.js';
-import { Line, Doughnut } from 'react-chartjs-2';
+import { Line, Bar, Doughnut } from 'react-chartjs-2';
 import '../styles/dashboard.css';
+import { Link } from 'react-router-dom';
 
 // Register Chart.js components
 ChartJS.register(
@@ -40,7 +40,7 @@ ChartJS.register(
  * Main Dashboard Component
  * Renders different views based on user role
  */
-const chartAnim = { duration: 280 };
+const chartAnim = { duration: 650, easing: 'easeOutQuart' };
 
 function Dashboard() {
     const { user, hasRole } = useAuth();
@@ -210,6 +210,15 @@ function Dashboard() {
                 pointBorderWidth: 2,
                 pointRadius: 4,
                 pointHoverRadius: 6
+            },
+            {
+                label: 'Orders',
+                data: salesTrend.datasets.orders || [],
+                borderColor: '#10b981',
+                backgroundColor: 'rgba(16,185,129,0.08)',
+                fill: false,
+                tension: 0.35,
+                yAxisID: 'orders'
             }
         ]
     }), [salesTrend]);
@@ -242,6 +251,11 @@ function Dashboard() {
                     color: '#6b7280',
                     callback: (val) => formatCurrency(val)
                 }
+            },
+            orders: {
+                position: 'right',
+                grid: { drawOnChartArea: false },
+                ticks: { color: '#6b7280' }
             }
         }
     }), [formatCurrency]);
@@ -285,6 +299,16 @@ function Dashboard() {
         animation: chartAnim,
         cutout: '60%'
     }), []);
+
+    const pipelineChartData = useMemo(() => ({
+        labels: ['Leads', 'Quotations', 'Bookings', 'Sales orders', 'Invoices'],
+        datasets: [{ data: [stats.activeLeads || 0, stats.totalQuotations || 0, stats.totalBookings || 0, stats.monthlySalesCount || 0, stats.totalInvoices || 0], backgroundColor: ['#2563eb', '#7c3aed', '#f59e0b', '#10b981', '#06b6d4'], borderWidth: 0, borderRadius: 5 }]
+    }), [stats]);
+
+    const financeChartData = useMemo(() => ({
+        labels: ['Revenue', 'Outstanding A/R', 'Service revenue'],
+        datasets: [{ data: [stats.monthlyRevenue || 0, stats.outstandingReceivables || 0, stats.serviceRevenue || 0], backgroundColor: ['#10b981', '#ef4444', '#8b5cf6'], borderWidth: 0, hoverOffset: 7 }]
+    }), [stats]);
 
     // Current date formatting
     const currentDate = new Date();
@@ -419,6 +443,9 @@ function Dashboard() {
                     value={stats.monthlySalesCount || 0}
                     color="blue"
                 />
+                <StatCard materialIcon="request_quote" label="Quotations" value={stats.totalQuotations || 0} color="cyan" />
+                <StatCard materialIcon="event_note" label="Bookings" value={stats.totalBookings || 0} color="purple" />
+                <StatCard materialIcon="description" label="Invoices" value={stats.totalInvoices || 0} color="blue" />
                 <StatCard
                     materialIcon="event"
                     label={"Today's appointments"}
@@ -432,6 +459,7 @@ function Dashboard() {
                     isCurrency
                     color="red"
                 />
+                <StatCard materialIcon="build_circle" label="Service revenue" value={stats.serviceRevenue || 0} isCurrency color="green" />
                 {isAdmin && (
                     <StatCard
                         materialIcon="inventory_2"
@@ -440,6 +468,22 @@ function Dashboard() {
                         color="orange"
                     />
                 )}
+            </div>
+
+            <h2 className="section-heading">Business overview</h2>
+            <div className="dashboard-grid three-col">
+                <div className="chart-card">
+                    <div className="chart-card-header"><h3 className="chart-card-title"><span className="material-icons chart-title-mi" aria-hidden>account_tree</span>Pipeline volume</h3></div>
+                    <div className="chart-container"><Bar data={pipelineChartData} options={{responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{x:{grid:{display:false}},y:{beginAtZero:true,ticks:{precision:0}}}}} /></div>
+                </div>
+                <div className="chart-card">
+                    <div className="chart-card-header"><h3 className="chart-card-title"><span className="material-icons chart-title-mi" aria-hidden>account_balance_wallet</span>Finance mix</h3></div>
+                    <div className="chart-container"><Doughnut data={financeChartData} options={{responsive:true, maintainAspectRatio:false, cutout:'62%', plugins:{legend:{position:'bottom',labels:{usePointStyle:true,padding:12}}}}} /></div>
+                </div>
+                <div className="chart-card">
+                    <div className="chart-card-header"><h3 className="chart-card-title"><span className="material-icons chart-title-mi" aria-hidden>insights</span>Revenue and orders</h3></div>
+                    <div className="chart-container"><Line data={salesChartData} options={salesChartOptions} /></div>
+                </div>
             </div>
 
             {showHrStrip && stats.hr && (
@@ -528,6 +572,12 @@ function Dashboard() {
                                 <span className="no-data-text">No inventory breakdown</span>
                             </div>
                         )}
+                    </div>
+                </div>
+                <div className="chart-card">
+                    <div className="chart-card-header"><h3 className="chart-card-title"><span className="material-icons chart-title-mi" aria-hidden>bar_chart</span>Order volume</h3></div>
+                    <div className="chart-container">
+                        {salesTrend.labels.length > 0 ? <Bar data={{labels: salesTrend.labels, datasets: [{label: 'Orders', data: salesTrend.datasets.orders || [], backgroundColor: '#10b981', borderRadius: 5, maxBarThickness: 26}]}} options={{responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{x:{grid:{display:false}},y:{beginAtZero:true, ticks:{precision:0}}}}} /> : <div className="no-data"><span className="no-data-text">No order data for this range</span></div>}
                     </div>
                 </div>
             </div>
@@ -643,9 +693,10 @@ function Dashboard() {
                                 </div>
                             ))
                         ) : (
-                            <div className="no-data no-data-compact">
-                                <span className="material-icons no-data-mi">forum</span>
-                                <span className="no-data-text">No recent activity</span>
+                            <div className="dashboard-empty-state">
+                                <span className="material-icons dashboard-empty-icon">forum</span>
+                                <strong>No recent activity</strong>
+                                <span>New records, updates and assignments will appear here.</span>
                             </div>
                         )}
                     </div>
@@ -730,9 +781,10 @@ function Dashboard() {
                                 </div>
                             ))
                         ) : (
-                            <div className="no-data no-data-compact">
-                                <span className="material-icons no-data-mi">groups</span>
-                                <span className="no-data-text">No data for this view</span>
+                            <div className="dashboard-empty-state">
+                                <span className="material-icons dashboard-empty-icon">groups</span>
+                                <strong>No performer data yet</strong>
+                                <span>Completed sales and service work will be ranked here.</span>
                             </div>
                         )}
                     </div>

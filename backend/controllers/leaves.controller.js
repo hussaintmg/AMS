@@ -4,6 +4,28 @@ const AppError = require('../utils/AppError');
 
 const getUserId = (req) => req.user?.id || req.user?._id;
 
+const getBulkIds = (req) => {
+  const ids = Array.isArray(req.body?.ids) ? [...new Set(req.body.ids.filter(Boolean))] : [];
+  if (!ids.length) throw new AppError('Select at least one leave request', 400);
+  return ids;
+};
+
+exports.bulkDeleteLeaves = async (req, res, next) => {
+  try {
+    const ids = getBulkIds(req);
+    const result = await Leave.updateMany({ _id: { $in: ids }, isDeleted: false }, { $set: { isDeleted: true, isActive: false, updatedBy: getUserId(req) } });
+    res.json({ success: true, message: `${result.modifiedCount} leave request(s) deleted`, data: { modifiedCount: result.modifiedCount } });
+  } catch (error) { next(error); }
+};
+
+exports.bulkDeactivateLeaves = async (req, res, next) => {
+  try {
+    const ids = getBulkIds(req);
+    const result = await Leave.updateMany({ _id: { $in: ids }, isDeleted: false, isActive: { $ne: false } }, { $set: { isActive: false, updatedBy: getUserId(req) } });
+    res.json({ success: true, message: `${result.modifiedCount} leave request(s) deactivated`, data: { modifiedCount: result.modifiedCount } });
+  } catch (error) { next(error); }
+};
+
 exports.listLeaves = async (req, res, next) => {
   try {
     const { search, status, leaveType, employee, from, to, page = 1, limit = 50 } = req.query;

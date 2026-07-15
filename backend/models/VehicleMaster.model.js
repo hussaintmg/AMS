@@ -1,9 +1,12 @@
 const mongoose = require('mongoose');
 
 const vehicleMakeSchema = new mongoose.Schema({
-  name: { type: String, required: [true, 'Make name is required'], trim: true },
+  name: { type: String, required: [true, 'Brand name is required'], trim: true },
   country: { type: String, trim: true, default: '' },
   logo: { type: String, trim: true, default: '' },
+  description: { type: String, trim: true, default: '' },
+  established_year: { type: Number, default: null },
+  website: { type: String, trim: true, default: '' },
   is_active: { type: Boolean, default: true },
 }, { timestamps: true });
 

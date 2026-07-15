@@ -8,6 +8,7 @@ import { useUserManagement } from '../context/UserManagementContext';
 import toast from 'react-hot-toast';
 import ErrorPopup from '../components/ErrorPopup';
 import ActionButtons from '../components/ActionButtons';
+import { Search } from "lucide-react";
 import '../styles/userManagement.css';
 
 const UserManagement = () => {
@@ -24,7 +25,7 @@ const UserManagement = () => {
     const [errorPopup, setErrorPopup] = useState(null);
 
     const [page, setPage] = useState(1);
-    const [limit] = useState(15);
+    const [limit] = useState(20);
     const [totalPages, setTotalPages] = useState(1);
     const [total, setTotal] = useState(0);
     const [searchParams] = useSearchParams();
@@ -261,6 +262,9 @@ const UserManagement = () => {
 
             <div className="filters-bar">
                 <div className="search-box">
+                    <span className="search-icon">
+                                  <Search size={18} style={{ color: "#9ca3af" }} />
+                                </span>
                     <input
                         type="text"
                         placeholder="Search by name, email, phone, or ID..."
@@ -268,7 +272,6 @@ const UserManagement = () => {
                         onChange={(e) => setSearch(e.target.value)}
                         className="search-input"
                     />
-                    <span className="search-icon">🔍</span>
                 </div>
                 <span className="results-count">{total} users found</span>
             </div>

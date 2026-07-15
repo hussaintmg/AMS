@@ -1,7 +1,7 @@
 /**
  * Simple Event Bus for decoupled communication
- * Created by LOGIXINVENTOR (PVT) Ltd.
- * www.logixinventor.com | AMS
+ * Maintained by Hussain Developer
+ * AMS ERP
  *
  * Listeners must be removable: addEventListener/removeEventListener require the
  * same function reference. We wrap callbacks in a stable handler stored in a WeakMap.

@@ -1,7 +1,7 @@
 /**
  * Parts Inventory Page Styles
- * Created by LOGIXINVENTOR (PVT) Ltd.
- * www.logixinventor.com | AMS
+ * Maintained by Hussain Developer
+ * AMS ERP
  * Date: 2026-01-06
  */
 
@@ -161,6 +161,10 @@
     border-radius: 10px;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
+.parts-inventory-page .filters-grid { display: grid; grid-template-columns: minmax(250px, 1fr) repeat(2, minmax(180px, 220px)) auto; align-items: end; }
+.parts-inventory-page .filter-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.parts-inventory-page .filter-field label { font-size: 0.75rem; font-weight: 600; color: #64748b; }
+.parts-inventory-page .filter-field-actions { flex-direction: row; align-items: center; justify-content: flex-end; min-height: 42px; }
 
 .parts-inventory-page .search-box {
     position: relative;
@@ -199,7 +203,7 @@
     border-radius: 8px;
     font-size: 0.9rem;
     background: white;
-    min-width: 140px;
+    min-width: 0;
 }
 
 .parts-inventory-page .results-count {
@@ -213,13 +217,14 @@
     background: #fff;
     border: 1px solid #edf2f7;
     border-radius: 16px;
-    overflow: hidden;
+    overflow-x: auto;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
     margin-bottom: 1.5rem;
 }
 
 .parts-inventory-page .data-table {
     width: 100%;
+    min-width: 900px;
     border-collapse: collapse;
 }
 
@@ -645,7 +650,7 @@
 }
 
 /* Mobile responsive */
-@media (max-width: 768px) {
+@media (max-width: 1024px) {
     .parts-inventory-page .tabs-container {
         flex-wrap: wrap;
     }
@@ -658,6 +663,7 @@
     .parts-inventory-page .filters-bar {
         flex-direction: column;
     }
+    .parts-inventory-page .filters-grid { display: grid; grid-template-columns: 1fr 1fr; }
     .parts-inventory-page .search-box {
         min-width: 100%;
     }
@@ -683,3 +689,4 @@
         grid-template-columns: 1fr;
     }
 }
+@media (max-width: 640px) { .parts-inventory-page .filters-grid { grid-template-columns: 1fr; } }

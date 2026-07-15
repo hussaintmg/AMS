@@ -1,8 +1,8 @@
 /**
  * Searchable Select Component Styles
- * Created by LOGIXINVENTOR (PVT) Ltd.
- * info@logixinventor.com +92 333 3836851
- * www.logixinventor.com | AMS
+ * Maintained by Hussain Developer
+ * hussaintmerng@gmail.com | +92 319 1634446
+ * AMS ERP
  * Date: 2026-04-05
  */
 
@@ -144,10 +144,13 @@
 }
 
 .ss-portal-dropdown .ss-search-icon {
-    font-size: 14px;
+    display: inline-flex;
+    width: 16px;
+    height: 16px;
     margin-right: 8px;
     opacity: 0.6;
 }
+.ss-portal-dropdown .ss-search-icon svg { width: 100%; height: 100%; }
 
 .ss-portal-dropdown .ss-search-input {
     flex: 1;

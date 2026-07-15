@@ -1,8 +1,8 @@
 /**
  * Profile Routes — MongoDB
- * Created by LOGIXINVENTOR (PVT) Ltd.
- * info@logixinventor.com +92 333 3836851
- * www.logixinventor.com | AMS
+ * Maintained by Hussain Developer
+ * hussaintmerng@gmail.com | +92 319 1634446
+ * AMS ERP
  */
 
 const express = require("express");

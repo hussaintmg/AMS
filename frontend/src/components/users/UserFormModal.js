@@ -232,8 +232,7 @@ function UserFormModal({
                   {allowCreateRole && onOpenCreateRole && (
                     <button
                       type="button"
-                      className="btn btn-secondary"
-                      style={{ padding: "8px 12px", whiteSpace: "nowrap" }}
+                      className="label-add-link"
                       onClick={onOpenCreateRole}
                       title="Create new role"
                     >
@@ -274,8 +273,7 @@ function UserFormModal({
                   {allowCreateDepartment && onOpenCreateDepartment && (
                     <button
                       type="button"
-                      className="btn btn-secondary"
-                      style={{ padding: "8px 12px", whiteSpace: "nowrap" }}
+                      className="label-add-link"
                       onClick={onOpenCreateDepartment}
                       title="Create new department"
                     >

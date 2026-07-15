@@ -614,7 +614,7 @@
 }
 
 /* Responsive */
-@media (max-width: 768px) {
+@media (max-width: 1024px) {
     .service-master-page .desktop-table {
         display: none;
     }
@@ -666,7 +666,7 @@
     border-color: var(--primary-600);
 }
 
-@media (min-width: 769px) {
+@media (min-width: 1025px) {
     .service-master-page .desktop-table {
         display: block;
     }

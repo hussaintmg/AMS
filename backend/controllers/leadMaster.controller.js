@@ -85,10 +85,23 @@ exports.getAll = async (req, res) => {
 
     const items = await Model.find(filter).sort({ sortOrder: 1, name: 1 }).lean();
 
-    if (type === 'sources') {
-      const Lead = require('../models/Lead.model');
+    // Attach lead usage counts. Leads reference source/type/priority by ObjectId,
+    // but store the city as a plain name string, so match cities by name.
+    const Lead = require('../models/Lead.model');
+    const refField = { sources: 'source', types: 'type', priorities: 'priority' }[type];
+    if (refField) {
       const itemsWithCount = await Promise.all(items.map(async (item) => {
-        const leadCount = await Lead.countDocuments({ source: item._id, isActive: true });
+        const leadCount = await Lead.countDocuments({ [refField]: item._id, isActive: true });
+        return { ...item, lead_count: leadCount };
+      }));
+      return res.json({ success: true, data: itemsWithCount });
+    }
+    if (type === 'cities') {
+      const itemsWithCount = await Promise.all(items.map(async (item) => {
+        const leadCount = await Lead.countDocuments({
+          city: new RegExp(`^${String(item.name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'),
+          isActive: true,
+        });
         return { ...item, lead_count: leadCount };
       }));
       return res.json({ success: true, data: itemsWithCount });

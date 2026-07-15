@@ -1,7 +1,7 @@
 /**
  * Customer Repository - Specialized Customer Operations
- * Created by LOGIXINVENTOR (PVT) Ltd.
- * www.logixinventor.com | AMS
+ * Maintained by Hussain Developer
+ * AMS ERP
  */
 
 const BaseRepository = require('./BaseRepository');

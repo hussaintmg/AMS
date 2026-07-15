@@ -19,6 +19,7 @@ const DepartmentManagement = () => {
     updateDepartment,
     deleteDepartment,
     loadDepartments,
+    loadUsers,
     loadRoles,
     loadDepartmentStats,
     loadDepartmentById,
@@ -61,6 +62,7 @@ const DepartmentManagement = () => {
       setLoading(true);
       const [deptData] = await Promise.all([
         loadDepartments(),
+        loadUsers({ limit: 1000 }),
         loadRoles(),
         loadDepartmentStats(),
       ]);
@@ -72,31 +74,21 @@ const DepartmentManagement = () => {
     } finally {
       setLoading(false);
     }
-  }, [loadDepartments, loadRoles, loadDepartmentStats]);
+  }, [loadDepartments, loadUsers, loadRoles, loadDepartmentStats]);
 
   useEffect(() => {
     if (user) loadAllData();
   }, [user, loadAllData]);
 
-  // Sync users
   useEffect(() => {
-    if (ctxUsers && Array.isArray(ctxUsers)) {
-      setAllUsers(
-        ctxUsers.map((u) => ({
-          id: u._id || u.id,
-          _id: u._id || u.id,
-          first_name: u.firstName || u.first_name || "",
-          last_name: u.lastName || u.last_name || "",
-          firstName: u.firstName || u.first_name || "",
-          lastName: u.lastName || u.last_name || "",
-          email: u.email,
-          phone: u.phone,
-          status: u.status,
-          isActive: u.isActive,
-          role: u.role,
-        }))
-      );
-    }
+    if (!Array.isArray(ctxUsers)) return;
+    setAllUsers(ctxUsers.map((item) => ({
+      ...item,
+      id: item._id || item.id,
+      _id: item._id || item.id,
+      firstName: item.firstName || item.first_name || '',
+      lastName: item.lastName || item.last_name || '',
+    })));
   }, [ctxUsers]);
 
   // Sync stats
@@ -219,12 +211,9 @@ const DepartmentManagement = () => {
   const handleAssignStaff = async (userId, deptId) => {
     try {
       const result = await assignUserDepartment(userId, deptId);
-      if (result.success) {
-        toast.success("Staff added");
-        await refreshDrawer();
-      } else {
-        toast.error(result.message || "Failed to add staff");
-      }
+      if (!result.success) throw new Error(result.message);
+      toast.success("User added to department");
+      await Promise.all([refreshDrawer(), loadAllData()]);
     } catch (err) {
       toast.error("Failed to add staff");
     }
@@ -234,14 +223,11 @@ const DepartmentManagement = () => {
   const handleRemoveStaff = async (userId, deptId) => {
     try {
       const result = await removeUserDepartment(userId, deptId);
-      if (result.success) {
-        toast.success("Staff removed from department");
-        await refreshDrawer();
-      } else {
-        toast.error(result.message || "Failed to remove staff");
-      }
+      if (!result.success) throw new Error(result.message);
+      toast.success("User removed from department");
+      await Promise.all([refreshDrawer(), loadAllData()]);
     } catch (err) {
-      toast.error("Failed to remove staff");
+      toast.error("Failed to remove user");
     }
   };
 
@@ -249,36 +235,27 @@ const DepartmentManagement = () => {
   const handleToggleStaffStatus = async (userId) => {
     try {
       const result = await toggleUserStatus(userId);
-      if (result.success) {
-        await refreshDrawer();
-      }
+      if (!result.success) throw new Error(result.message);
+      await Promise.all([refreshDrawer(), loadAllData()]);
     } catch (err) {
       toast.error("Failed to toggle status");
     }
   };
 
-  // Edit staff user (create or update)
+  // Create or edit department users. Employee records are read-only here.
   const handleEditStaffUser = async (formData, mode, userIdOrDeptId) => {
     try {
       if (mode === "create") {
-        // Pre-assign department in formData
         const deptId = userIdOrDeptId;
         const result = await createUser({ ...formData, department: deptId });
-        if (result.success) {
-          toast.success("User created and added to staff");
-          await refreshDrawer();
-        } else {
-          setErrorPopup(result.error || { message: "Failed to create user" });
-        }
+        if (!result.success) throw new Error(result.message);
+        toast.success("User created and added to staff");
+        await Promise.all([refreshDrawer(), loadAllData()]);
       } else if (mode === "edit") {
-        const userId = userIdOrDeptId;
-        const result = await updateUser(userId, formData);
-        if (result.success) {
-          toast.success("User updated");
-          await refreshDrawer();
-        } else {
-          setErrorPopup(result.error || { message: "Failed to update user" });
-        }
+        const result = await updateUser(userIdOrDeptId, formData);
+        if (!result.success) throw new Error(result.message);
+        toast.success("User updated");
+        await Promise.all([refreshDrawer(), loadAllData()]);
       }
     } catch (err) {
       setErrorPopup({ message: "Failed to save user" });

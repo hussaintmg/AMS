@@ -1,0 +1,165 @@
+/**
+ * Invoice factory — builds invoices from other documents (sales orders,
+ * job cards) so the "invoice ready" rule is enforced everywhere a sale
+ * happens. Shared by sales, service and invoice controllers.
+ */
+const Invoice = require('../models/Invoice.model');
+const { nextDocNumber } = require('./docNumber');
+const { recordCustomerActivity } = require('./customerSync');
+const logger = require('./logger');
+
+const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+
+function statusForPayment(totalAmount, paidAmount) {
+  if (totalAmount > 0 && paidAmount >= totalAmount) return 'paid';
+  if (paidAmount > 0) return 'partial';
+  return 'draft';
+}
+
+/**
+ * Create an invoice for a sales order (idempotent — returns the existing
+ * active invoice if one was already generated for the order).
+ */
+async function createInvoiceForOrder(order, { dueDays = 30, userId = null } = {}) {
+  const existing = await Invoice.findOne({ salesOrder: order._id, status: { $ne: 'cancelled' } });
+  if (existing) return { invoice: existing, created: false };
+
+  const items = (order.items || []).map((item) => ({
+    description: item.description,
+    quantity: item.quantity || 1,
+    unitPrice: item.unitPrice || 0,
+    taxAmount: 0,
+    totalPrice: item.totalPrice || 0,
+    type: item.type || order.saleType,
+  }));
+
+  const chargeLines = [
+    ['Accessories', order.accessoriesTotal],
+    ['Registration charges', order.registrationCharges],
+    ['Insurance charges', order.insuranceCharges],
+    ['Other charges', order.otherCharges],
+  ];
+  chargeLines.forEach(([description, value]) => {
+    const amount = Number(value) || 0;
+    if (amount > 0) {
+      items.push({ description, quantity: 1, unitPrice: amount, taxAmount: 0, totalPrice: amount, type: 'charge' });
+    }
+  });
+
+  const subtotal = round2(items.reduce((sum, item) => sum + (Number(item.totalPrice) || 0), 0));
+  const discountAmount = round2((Number(order.discountAmount) || 0) + (Number(order.exchangeValue) || 0));
+  const taxAmount = round2(Number(order.taxAmount) || 0);
+  const totalAmount = round2(order.totalAmount != null ? order.totalAmount : subtotal - discountAmount + taxAmount);
+  const paidAmount = round2(Number(order.paidAmount) || 0);
+  const balanceAmount = round2(totalAmount - paidAmount);
+
+  const invoiceNumber = await nextDocNumber(Invoice, 'invoiceNumber', 'INV');
+  const now = new Date();
+
+  const invoice = await Invoice.create({
+    invoiceNumber,
+    invoiceType: order.saleType === 'parts' ? 'parts' : 'sales',
+    salesOrder: order._id,
+    customer: order.customer,
+    status: statusForPayment(totalAmount, paidAmount),
+    invoiceDate: now,
+    dueDate: new Date(now.getTime() + (Number(dueDays) || 30) * 24 * 60 * 60 * 1000),
+    subtotal,
+    taxAmount,
+    discountAmount,
+    totalAmount,
+    paidAmount,
+    balanceAmount,
+    items,
+    notes: order.exchangeVehicleDetails ? `Trade-in: ${order.exchangeVehicleDetails}` : '',
+    createdBy: userId,
+  });
+
+  await recordCustomerActivity({
+    customerId: order.customer,
+    docType: 'invoice',
+    docId: invoice._id,
+    number: invoiceNumber,
+    amount: totalAmount,
+    description: `Invoice ${invoiceNumber} for sales order ${order.orderNumber}`,
+    userId,
+    outstandingDelta: balanceAmount,
+  });
+
+  logger.info(`Invoice ${invoiceNumber} generated for sales order ${order.orderNumber}`);
+  return { invoice, created: true };
+}
+
+/**
+ * Create a service invoice for a completed job card (idempotent).
+ */
+async function createInvoiceForJobCard(jobCard, { dueDays = 30, userId = null } = {}) {
+  const existing = await Invoice.findOne({ jobCard: jobCard._id, status: { $ne: 'cancelled' } });
+  if (existing) return { invoice: existing, created: false };
+
+  const items = [];
+  (jobCard.services || []).forEach((service) => {
+    items.push({
+      description: service.description || 'Labor',
+      quantity: 1,
+      unitPrice: Number(service.total) || 0,
+      taxAmount: 0,
+      totalPrice: Number(service.total) || 0,
+      type: 'service',
+    });
+  });
+  (jobCard.parts || []).forEach((part) => {
+    if (part.isWarranty) return;
+    items.push({
+      description: `${part.name || 'Part'}${part.partCode ? ` (${part.partCode})` : ''}`,
+      quantity: Number(part.quantity) || 1,
+      unitPrice: Number(part.unitPrice) || 0,
+      taxAmount: 0,
+      totalPrice: Number(part.totalPrice) || 0,
+      type: 'parts',
+    });
+  });
+
+  const subtotal = round2(items.reduce((sum, item) => sum + (Number(item.totalPrice) || 0), 0));
+  const discountAmount = round2(Number(jobCard.discount) || 0);
+  const taxAmount = round2(Number(jobCard.taxAmount) || 0);
+  const totalAmount = round2(subtotal - discountAmount + taxAmount);
+
+  const invoiceNumber = await nextDocNumber(Invoice, 'invoiceNumber', 'INV');
+  const now = new Date();
+
+  const invoice = await Invoice.create({
+    invoiceNumber,
+    invoiceType: 'service',
+    jobCard: jobCard._id,
+    customer: jobCard.customer,
+    status: 'draft',
+    invoiceDate: now,
+    dueDate: new Date(now.getTime() + (Number(dueDays) || 30) * 24 * 60 * 60 * 1000),
+    subtotal,
+    taxAmount,
+    discountAmount,
+    totalAmount,
+    paidAmount: 0,
+    balanceAmount: totalAmount,
+    items,
+    notes: `Service job card ${jobCard.jobCardNumber}`,
+    createdBy: userId,
+  });
+
+  await recordCustomerActivity({
+    customerId: jobCard.customer,
+    docType: 'invoice',
+    docId: invoice._id,
+    number: invoiceNumber,
+    amount: totalAmount,
+    description: `Service invoice ${invoiceNumber} for job card ${jobCard.jobCardNumber}`,
+    userId,
+    outstandingDelta: totalAmount,
+  });
+
+  logger.info(`Service invoice ${invoiceNumber} generated for job card ${jobCard.jobCardNumber}`);
+  return { invoice, created: true };
+}
+
+module.exports = { createInvoiceForOrder, createInvoiceForJobCard, statusForPayment, round2 };

@@ -1,5 +1,6 @@
 import React from 'react';
 import './DataTable.css';
+import ServerPagination from './ServerPagination';
 
 const DataTable = ({
   columns = [],
@@ -123,27 +124,7 @@ const DataTable = ({
       </div>
 
       {/* Pagination */}
-      {pagination && onPageChange && (
-        <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', marginTop: '20px', alignItems: 'center' }}>
-          <button
-            className="btn btn-sm btn-secondary"
-            disabled={pagination.page <= 1}
-            onClick={() => onPageChange(pagination.page - 1)}
-          >
-            Previous
-          </button>
-          <span style={{ padding: '8px 16px', fontSize: '14px' }}>
-            Page {pagination.page} of {pagination.totalPages || 1}
-          </span>
-          <button
-            className="btn btn-sm btn-secondary"
-            disabled={pagination.page >= (pagination.totalPages || 1)}
-            onClick={() => onPageChange(pagination.page + 1)}
-          >
-            Next
-          </button>
-        </div>
-      )}
+      {pagination && onPageChange && <ServerPagination page={pagination.page} totalPages={pagination.totalPages} total={pagination.total || 0} limit={pagination.limit || 20} onPageChange={onPageChange} loading={loading} />}
     </div>
   );
 };

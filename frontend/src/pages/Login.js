@@ -1,7 +1,7 @@
 /**
  * Login Page
- * Created by LOGIXINVENTOR (PVT) Ltd.
- * www.logixinventor.com | AMS
+ * Maintained by Hussain Developer
+ * AMS ERP
  */
 
 import React, { useState, useEffect } from 'react';

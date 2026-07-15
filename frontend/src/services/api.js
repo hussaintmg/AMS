@@ -1,7 +1,7 @@
 /**
  * API Service
- * Created by LOGIXINVENTOR (PVT) Ltd.
- * www.logixinventor.com | AMS
+ * Maintained by Hussain Developer
+ * AMS ERP
  */
 
 import axios from 'axios';
@@ -18,12 +18,30 @@ const api = axios.create({
 
 // Request interceptor
 api.interceptors.request.use((config) => {
+    // Cookies are the primary auth transport. Keep a bearer fallback for
+    // sessions restored from storage and for deployments where cookies are
+    // blocked by the browser/proxy.
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+    if (token) {
+        config.headers = config.headers || {};
+        config.headers.Authorization = `Bearer ${token}`;
+    }
     return config;
 });
 
 // Response interceptor - handle errors
 api.interceptors.response.use(
-    (response) => response,
+    (response) => {
+        // Some endpoints return HTTP 200 for business failures. Do not treat
+        // those responses as successful operations in the UI.
+        const payload = response.data;
+        if (payload?.warning && !response.config?.silentToast) {
+            toast(payload.message || 'Please review this operation', { icon: '⚠️' });
+        } else if (payload?.success === false && !response.config?.silentToast) {
+            toast.error(payload.message || 'Operation failed');
+        }
+        return response;
+    },
     (error) => {
         const message = error.response?.data?.message || 'An error occurred';
         const resolution = error.response?.data?.resolution;
@@ -84,6 +102,14 @@ export const authAPI = {
     resetPassword: (data) => api.post('/auth/reset-password', data)
 };
 
+export const notificationsAPI = {
+    list: (limit = 20) => api.get('/notifications', { params: { limit } }),
+    markRead: (id) => api.patch(`/notifications/${id}/read`),
+    markAllRead: () => api.patch('/notifications/read-all'),
+    getPreferences: () => api.get('/notifications/settings/preferences'),
+    savePreferences: (data) => api.put('/notifications/settings/preferences', data),
+};
+
 export const serverManagementAPI = {
     getPermissionSettings: () => api.get('/server-management/permission-settings'),
     updatePermissionSettings: (data) => api.put('/server-management/permission-settings', data),
@@ -117,6 +143,8 @@ export const serverManagementAPI = {
     getUserPermissions: (id) => id ? api.get(`/server-management/users/${id}/permissions`) : api.get('/server-management/user-permissions'),
     updateUserPermissions: (id, permissions) => api.put(`/server-management/users/${id}/permissions`, { permissions }),
     updateRolePermissions: (id, permissions) => api.put(`/server-management/roles/${id}/permissions`, { permissions }),
+    getRoleJobs: (id) => api.get(`/server-management/roles/${id}/jobs`),
+    updateRoleJobs: (id, jobs) => api.put(`/server-management/roles/${id}/jobs`, { jobs }),
     updateUserLogsPermissions: (id, payload) => api.put(
         `/server-management/users/${id}/logs-permissions`,
         payload && typeof payload === 'object' && ('logsPermissions' in payload || 'logPermissionSource' in payload)
@@ -184,6 +212,26 @@ export const customerRoleConfigAPI = {
     update: (data) => api.put('/server-management/customer-role-config', data),
 };
 
+export const pdfManagementAPI = {
+    getTemplates: (params) => api.get('/pdf-management/templates', { params }),
+    getTemplate: (id) => api.get(`/pdf-management/templates/${id}`),
+    createTemplate: (data) => api.post('/pdf-management/templates', data),
+    updateTemplate: (id, data) => api.put(`/pdf-management/templates/${id}`, data),
+    deleteTemplate: (id) => api.delete(`/pdf-management/templates/${id}`),
+    getUsages: () => api.get('/pdf-management/usages'),
+    assignUsage: (documentType, templateId) => api.put(`/pdf-management/usages/${documentType}`, { templateId }),
+    getVariables: (documentType) => api.get('/pdf-management/variables', { params: { documentType } }),
+    createVariable: (data) => api.post('/pdf-management/variables', data),
+    bulkVariables: (data) => api.post('/pdf-management/variables/bulk', data),
+    download: (documentType, id) => api.get(`/pdf-management/download/${documentType}/${id}`, { responseType: 'blob' }),
+    downloadBulk: (documentType, ids) => api.post(`/pdf-management/download/${documentType}/bulk`, { ids }, { responseType: 'blob' }),
+};
+
+export const employeeRoleConfigAPI = {
+    get: () => api.get('/server-management/employee-role-config'),
+    update: (data) => api.put('/server-management/employee-role-config', data),
+};
+
 // Customers (MongoDB)
 export const customerAPI = {
     getAll: (params) => api.get('/customers', { params }),
@@ -249,6 +297,8 @@ export const salesAPI = {
     deleteQuotation: (id) => api.delete(`/quotations/${id}`),
     updateQuotationStatus: (id, status) => api.patch(`/quotations/${id}/status`, { status }),
     convertQuotation: (id, data) => api.post(`/quotations/${id}/convert`, data),
+    sendQuotationEmail: (id) => api.post(`/quotations/${id}/send-email`),
+    bulkQuotations: (operation, ids) => api.post('/quotations/bulk', { operation, ids }),
     getQuotationStats: () => api.get('/quotations/stats'),
     // Bookings
     getBookings: (params) => api.get('/bookings', { params }),
@@ -258,6 +308,8 @@ export const salesAPI = {
     deleteBooking: (id, data) => api.delete(`/bookings/${id}`, { data }),
     allocateVehicle: (id, vehicleId) => api.post(`/bookings/${id}/allocate`, { vehicleId }),
     convertBooking: (id, data) => api.post(`/bookings/${id}/convert`, data),
+    sendBookingEmail: (id) => api.post(`/bookings/${id}/send-email`),
+    bulkBookings: (operation, ids) => api.post('/bookings/bulk', { operation, ids }),
     getBookingStats: () => api.get('/bookings/stats'),
     // Sales Orders
     getOrders: (params) => api.get('/sales', { params }),
@@ -271,6 +323,8 @@ export const salesAPI = {
     deliverOrder: (id) => api.post(`/sales/${id}/deliver`),
     generateInvoice: (id, dueDays = 30) => api.post(`/sales/${id}/invoice`, { dueDays }),
     getOrderHistory: (id) => api.get(`/sales/${id}/history`),
+    sendOrderEmail: (id) => api.post(`/sales/${id}/send-email`),
+    bulkOrders: (operation, ids) => api.post('/sales/bulk', { operation, ids }),
     getSalesStats: () => api.get('/sales/stats'),
     getOrderStats: () => api.get('/sales/order-stats'),
 
@@ -333,6 +387,8 @@ export const invoiceAPI = {
     delete: (id, data) => api.delete(`/invoices/${id}`, { data }),
     updateStatus: (id, status) => api.put(`/invoices/${id}/status`, { status }),
     send: (id) => api.post(`/invoices/${id}/send`),
+    sendEmail: (id) => api.post(`/invoices/${id}/send-email`),
+    bulk: (operation, ids) => api.post('/invoices/bulk', { operation, ids }),
     getHistory: (id) => api.get(`/invoices/${id}/history`),
     // Items
     addItem: (id, item) => api.post(`/invoices/${id}/items`, item),
@@ -418,7 +474,10 @@ export const reportAPI = {
     getLeadStatistics: (params) => api.get('/reports/lead-statistics', { params }),
     getServiceAnalytics: (params) => api.get('/reports/service-analytics', { params }),
     getServiceKpiDetail: (params) => api.get('/reports/service-kpi-detail', { params }),
-    getLowStockParts: (params) => api.get('/reports/low-stock-parts', { params })
+    getLowStockParts: (params) => api.get('/reports/low-stock-parts', { params }),
+    getExpenses: (params) => api.get('/reports/expenses', { params }),
+    getPayments: (params) => api.get('/reports/payments', { params }),
+    getEmployees: (params) => api.get('/reports/employees', { params })
 };
 
 // Admin - User Management
@@ -534,6 +593,7 @@ export const erpSettingsAPI = {
 export const vehicleMasterAPI = {
     // Stats
     getStats: () => api.get('/vehicle-master/stats'),
+    toggleActive: (type, id) => api.patch(`/vehicle-master/toggle/${type}/${id}`),
 
     // Makes
     getMakes: (params) => api.get('/vehicle-master/makes', { params }),
@@ -634,7 +694,8 @@ export const profileAPI = {
 
 // Global Search API
 export const searchAPI = {
-    search: (query, limit = 20) => api.get('/search', { params: { query, limit } })
+    search: (query, limit = 20, type = 'all', config = {}) => api.get('/search', { ...config, params: { q: query, query, limit, type, ...(config.params || {}) } }),
+    suggest: (query, config = {}) => api.get('/search/suggest', { ...config, params: { q: query, ...(config.params || {}) } })
 };
 
 // Order Form Customers API
@@ -677,6 +738,8 @@ export const employeeAPI = {
     create: (data) => api.post('/employees', data),
     update: (id, data) => api.put(`/employees/${id}`, data),
     remove: (id) => api.delete(`/employees/${id}`),
+    bulkDelete: (ids) => api.delete('/employees/bulk', { data: { ids } }),
+    bulkDeactivate: (ids) => api.patch('/employees/bulk/deactivate', { ids }),
     toggleStatus: (id) => api.patch(`/employees/${id}/toggle`),
     getStats: () => api.get('/employees/stats')
 };
@@ -697,6 +760,8 @@ export const leavesAPI = {
     create: (data) => api.post('/leaves', data),
     update: (id, data) => api.put(`/leaves/${id}`, data),
     remove: (id) => api.delete(`/leaves/${id}`),
+    bulkDelete: (ids) => api.delete('/leaves/bulk', { data: { ids } }),
+    bulkDeactivate: (ids) => api.patch('/leaves/bulk/deactivate', { ids }),
     setStatus: (id, data) => api.patch(`/leaves/${id}/status`, data),
     getStats: () => api.get('/leaves/stats')
 };
@@ -710,6 +775,8 @@ export const expensesAPI = {
     create: (data) => api.post('/expenses', data),
     update: (id, data) => api.put(`/expenses/${id}`, data),
     remove: (id) => api.delete(`/expenses/${id}`),
+    bulkDelete: (ids) => api.delete('/expenses/bulk', { data: { ids } }),
+    bulkDeactivate: (ids) => api.patch('/expenses/bulk/deactivate', { ids }),
     setStatus: (id, data) => api.patch(`/expenses/${id}/status`, data),
     postExpense: (id) => api.post(`/expenses/${id}/post`),
     getStats: () => api.get('/expenses/stats')
@@ -717,6 +784,8 @@ export const expensesAPI = {
 
 export const ledgerAPI = {
     list: (params) => api.get('/ledger', { params }),
+    create: (data) => api.post('/ledger', data),
+    getAccounts: () => api.get('/ledger/accounts'),
     get: (id) => api.get(`/ledger/${id}`),
     getStats: () => api.get('/ledger/stats')
 };

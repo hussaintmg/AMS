@@ -9,22 +9,23 @@ function calcDropdownPosition(triggerEl, optionCount) {
     const spaceBelow = window.innerHeight - rect.bottom;
     const spaceAbove = rect.top;
     let top;
+    let bottom;
     let opensUp = false;
     if (spaceBelow >= dropdownHeight + 6) {
-        top = rect.bottom + 6;
+        top = rect.bottom;
     } else if (spaceAbove >= dropdownHeight + 6) {
-        top = rect.top - dropdownHeight - 6;
+        bottom = window.innerHeight - rect.top;
         opensUp = true;
     } else if (spaceBelow >= spaceAbove) {
-        top = rect.bottom + 6;
+        top = rect.bottom;
     } else {
-        top = rect.top - dropdownHeight - 6;
+        bottom = window.innerHeight - rect.top;
         opensUp = true;
     }
     return {
         position: 'fixed',
         left: rect.left + 'px',
-        top: top + 'px',
+        ...(opensUp ? { bottom: bottom + 'px' } : { top: top + 'px' }),
         width: Math.max(rect.width, 180) + 'px',
         zIndex: 9999,
         maxHeight: '260px',
@@ -33,7 +34,9 @@ function calcDropdownPosition(triggerEl, optionCount) {
         border: '1.5px solid #3b82f6',
         borderRadius: '8px',
         boxShadow: '0 10px 25px rgba(0, 0, 0, 0.12)',
-        ...(opensUp ? { borderBottom: 'none', borderBottomLeftRadius: 0, borderBottomRightRadius: 0 } : { borderTop: 'none', borderTopLeftRadius: 0, borderTopRightRadius: 0 }),
+        ...(opensUp
+            ? { borderBottom: 'none', borderBottomLeftRadius: 0, borderBottomRightRadius: 0, display: 'flex', flexDirection: 'column-reverse' }
+            : { borderTop: 'none', borderTopLeftRadius: 0, borderTopRightRadius: 0 }),
     };
 }
 
@@ -213,7 +216,9 @@ const SearchableSelect = ({
             className="ss-portal-dropdown"
         >
             <div className="ss-search-wrapper">
-                <span className="ss-search-icon">🔍</span>
+                <span className="ss-search-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><path d="m20 20-4-4" /></svg>
+                </span>
                 <input
                     ref={inputRef}
                     type="text"

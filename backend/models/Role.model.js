@@ -20,6 +20,25 @@ const logPermissionsSchema = new mongoose.Schema({
   updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
 }, { _id: false });
 
+const roleJobSchema = new mongoose.Schema({
+  pageKey: { type: String, required: true, trim: true },
+  module: { type: String, trim: true },
+  actions: {
+    view: { type: Boolean, default: true },
+    create: { type: Boolean, default: false },
+    edit: { type: Boolean, default: false },
+    delete: { type: Boolean, default: false },
+    sendEmail: { type: Boolean, default: false },
+    downloadPdf: { type: Boolean, default: false },
+    export: { type: Boolean, default: false },
+  },
+  dataScope: {
+    mode: { type: String, enum: ['own', 'selected_roles', 'selected_users', 'all'], default: 'own' },
+    roles: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Role' }],
+    users: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  }
+}, { _id: false });
+
 const normalizeLogPermissions = (permissions) => {
   if (!permissions || typeof permissions !== 'object') return { mode: 'own', users: [], roles: [] };
   if (Array.isArray(permissions)) {
@@ -64,6 +83,7 @@ const roleSchema = new mongoose.Schema({
     set: normalizeLogPermissions,
     default: () => ({ mode: 'own', users: [], roles: [] }),
   },
+  jobs: { type: [roleJobSchema], default: [] },
   count: {
     type: Number,
     default: 0,

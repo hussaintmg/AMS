@@ -87,11 +87,23 @@ export function EmployeesProvider({ children }) {
     } finally { setSaving(false); }
   }, []);
 
+  const bulkDeleteEmployees = useCallback(async (ids) => {
+    try { setSaving(true); const res = await employeeAPI.bulkDelete(ids); showApiSuccess(res, 'Employees deleted'); return { success: true };
+    } catch (err) { showApiError(err, 'Failed to delete employees'); return { success: false, error: err.response?.data }; }
+    finally { setSaving(false); }
+  }, []);
+
+  const bulkDeactivateEmployees = useCallback(async (ids) => {
+    try { setSaving(true); const res = await employeeAPI.bulkDeactivate(ids); showApiSuccess(res, 'Employees deactivated'); return { success: true };
+    } catch (err) { showApiError(err, 'Failed to deactivate employees'); return { success: false, error: err.response?.data }; }
+    finally { setSaving(false); }
+  }, []);
+
   const value = useMemo(() => ({
     employees, departments, roles, stats, loading, saving, error,
     setEmployees, setDepartments,
     loadEmployees, loadStats, loadReferenceData,
-    createEmployee, updateEmployee, deleteEmployee, toggleEmployeeStatus,
+    createEmployee, updateEmployee, deleteEmployee, toggleEmployeeStatus, bulkDeleteEmployees, bulkDeactivateEmployees,
   }), [employees, departments, roles, stats, loading, saving, error]);
 
   return <EmployeesContext.Provider value={value}>{children}</EmployeesContext.Provider>;

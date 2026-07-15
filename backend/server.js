@@ -1,8 +1,8 @@
 /**
  * Auto Management System (AMS) - Main Server
- * Created by LOGIXINVENTOR (PVT) Ltd.
- * info@logixinventor.com +92 333 3836851
- * www.logixinventor.com | AMS
+ * Maintained by Hussain Developer
+ * hussaintmerng@gmail.com | +92 319 1634446
+ * AMS ERP
  */
 
 require("dotenv").config({ path: "../.env" });
@@ -47,7 +47,6 @@ const salesMasterRoutes = require("./routes/sales-master.routes");
 const profileRoutes = require("./routes/profile.routes");
 const globalSearchRoutes = require("./routes/global-search.routes");
 const uploaderRoutes = require("./routes/uploader.routes");
-const vehicleBrandingRoutes = require("./routes/vehicle-branding.routes");
 const bulkImportRoutes = require("./routes/bulk-import.routes");
 const employeesRoutes = require("./routes/employees.routes");
 const payrollRoutes = require("./routes/payroll.routes");
@@ -57,6 +56,9 @@ const ledgerRoutes = require("./routes/ledger.routes");
 const serverManagementRoutes = require("./routes/server-management.routes");
 const logsRoutes = require("./routes/logs.routes");
 const emailRoutes = require("./routes/email.routes");
+const pdfManagementRoutes = require("./routes/pdf-management.routes");
+const notificationRoutes = require("./routes/notifications.routes");
+const businessNotifications = require("./middleware/businessNotifications");
 
 const app = express();
 const server = http.createServer(app);
@@ -112,7 +114,7 @@ app.use((req, res, next) => {
   const originalStatus = res.status.bind(res);
 
   res.status = (code) => {
-    if (code >= 500) {
+    if (code >= 500 && !['/health', '/healthz', '/api/health'].includes(req.path)) {
       logger.warn("Converted backend 5xx response to safe JSON status", {
         originalStatus: code,
         path: req.path,
@@ -137,9 +139,9 @@ const swaggerOptions = {
       version: "1.0.0",
       description: "CRM & ERP API for Automobile Dealerships",
       contact: {
-        name: "LOGIXINVENTOR (PVT) Ltd.",
-        email: "info@logixinventor.com",
-        url: "https://www.logixinventor.com",
+        name: "Hussain Developer",
+        email: "hussaintmerng@gmail.com",
+        url: "mailto:hussaintmerng@gmail.com",
       },
     },
     servers: [
@@ -192,21 +194,39 @@ app.use(
   swaggerUi.setup(swaggerSpec, {
     customCss: ".swagger-ui .topbar { display: none }",
     customSiteTitle: "AMS API Documentation",
+    swaggerOptions: {
+      persistAuthorization: true,
+      displayRequestDuration: true,
+      tryItOutEnabled: true,
+      filter: true,
+      requestInterceptor: (request) => {
+        request.credentials = 'include';
+        return request;
+      }
+    }
   }),
 );
 
 // Health Check
-app.get('/api/health', (req, res) => {
+const healthCheck = (req, res) => {
     const mongoose = require('mongoose');
     const mongoStatus = mongoose.connection.readyState === 1 ? 'connected' : 'disconnected';
-    res.json({
-        status: 'OK',
-        message: 'AMS API Server is running',
+    const healthy = mongoStatus === 'connected';
+    res.status(healthy ? 200 : 503).json({
+        success: healthy,
+        status: healthy ? 'ok' : 'degraded',
+        message: healthy ? 'AMS API Server is healthy' : 'AMS API Server is running but database is unavailable',
+        service: 'ams-api',
+        version: process.env.APP_VERSION || '1.0.0',
         timestamp: new Date().toISOString(),
         database: 'MongoDB',
-        mongoStatus
+        mongoStatus,
+        uptimeSeconds: Math.floor(process.uptime())
     });
-});
+};
+app.get('/health', healthCheck);
+app.get('/healthz', healthCheck);
+app.get('/api/health', healthCheck);
 
 // Unauthenticated build marker (so you can curl after deploy). If employee save still mentions
 // sp_employee_upsert, this process is outdated — restart the API on this port.
@@ -218,6 +238,7 @@ app.get("/api/employees/_build", (_req, res) => {
 });
 
 // API Routes
+app.use(businessNotifications);
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/admin", adminRoutes);
@@ -243,7 +264,6 @@ app.use("/api/service-master", serviceMasterRoutes);
 app.use("/api/profile", profileRoutes);
 app.use("/api/search", globalSearchRoutes);
 app.use("/api/uploader", uploaderRoutes);
-app.use("/api/vehicle-branding", vehicleBrandingRoutes);
 app.use("/api/bulk-import", bulkImportRoutes);
 app.use("/api/employees", employeesRoutes);
 app.use("/api/payroll", payrollRoutes);
@@ -253,6 +273,8 @@ app.use("/api/ledger", ledgerRoutes);
 app.use("/api/server-management", serverManagementRoutes);
 app.use("/api/logs", logsRoutes);
 app.use("/api/email", emailRoutes);
+app.use("/api/pdf-management", pdfManagementRoutes);
+app.use("/api/notifications", notificationRoutes);
 
 // 404 Handler
 app.use((req, res) => {

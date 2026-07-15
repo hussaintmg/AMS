@@ -431,6 +431,33 @@
   padding: 0;
 }
 
+.sm-page-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 20px 24px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.sm-page-modal-header h2 { margin: 0 0 4px; font-size: 18px; color: #0f172a; }
+.sm-page-modal-header p { margin: 0; color: #64748b; font-size: 13px; line-height: 1.45; }
+.sm-page-modal-body { padding: 22px 24px 6px; }
+.sm-page-modal-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 18px; }
+.sm-page-modal-grid label { display: flex; flex-direction: column; gap: 7px; min-width: 0; color: #334155; font-size: 13px; font-weight: 700; }
+.sm-page-modal-grid .form-input { width: 100%; min-height: 40px; box-sizing: border-box; }
+.sm-page-modal-grid .sm-inline-toggle { flex-direction: row; align-items: center; gap: 10px; padding-top: 25px; }
+.sm-page-modal-actions { display: flex; justify-content: flex-end; align-items: center; gap: 10px; padding: 16px 24px 20px; border-top: 1px solid #e2e8f0; background: #f8fafc; }
+
+@media (max-width: 640px) {
+  .sm-page-modal-header { padding: 16px; }
+  .sm-page-modal-body { padding: 18px 16px 4px; }
+  .sm-page-modal-grid { grid-template-columns: 1fr; gap: 14px; }
+  .sm-page-modal-grid .sm-inline-toggle { padding-top: 0; }
+  .sm-page-modal-actions { padding: 14px 16px 16px; }
+}
+
 .sm-modal-header {
   display: flex;
   justify-content: space-between;
@@ -741,3 +768,4 @@
     display: flex;
   }
 }
+.sm-role-job-list{display:grid;gap:12px;margin-top:18px}.sm-role-job-card{border:1px solid var(--border-light,#e2e8f0);border-radius:8px;padding:16px;background:#fff}.sm-role-job-card:focus-within{border-color:#3b82f6;box-shadow:0 0 0 2px #3b82f61a}.sm-role-job-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}.sm-role-job-heading>div{display:flex;flex-direction:column}.sm-role-job-heading span{font-size:12px;color:#64748b}.sm-own-data{background:#ecfdf5;color:#047857!important;padding:4px 7px;border-radius:4px}.sm-role-job-actions{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}.sm-role-job-actions label,.sm-scope-options label{display:flex;align-items:center;gap:6px;border:1px solid #dbe2ea;border-radius:5px;padding:7px 9px;font-size:12px}.sm-role-job-scope>label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5px}.sm-role-job-scope>select{width:min(360px,100%);padding:8px;border:1px solid #cbd5e1;border-radius:5px}.sm-scope-options{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:6px;margin-top:9px;max-height:210px;overflow-y:auto}

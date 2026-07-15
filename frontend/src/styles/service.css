@@ -1,0 +1,47 @@
+.service-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  margin: 16px 0;
+}
+.service-stats-grid .stat-card {
+  min-height: 82px;
+  padding: 14px 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, .04);
+}
+.service-stats-grid .stat-info h3 { margin: 0 0 6px; color: #64748b; font-size: 12px; font-weight: 600; text-transform: uppercase; }
+.service-stats-grid .stat-info .value { color: #0f172a; font-size: 22px; font-weight: 700; }
+.service-filter-bar {
+  display: grid;
+  grid-template-columns: minmax(220px, 2fr) repeat(4, minmax(130px, 1fr)) auto;
+  gap: 12px;
+  align-items: end;
+  margin: 16px 0;
+  padding: 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+.service-filter-bar .form-group { margin: 0; }
+.service-filter-bar label { display: block; margin-bottom: 5px; color: #475569; font-size: 12px; font-weight: 600; }
+.service-filter-reset { height: 38px; white-space: nowrap; }
+.service-pagination { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 16px; padding: 14px 4px 2px; color: #64748b; font-size: 13px; }
+.service-pagination-actions { display: flex; align-items: center; gap: 8px; }
+.service-pagination-actions .form-control { width: auto; min-width: 92px; }
+.service-pagination-actions .btn { min-width: 34px; padding: 6px 10px; }
+.link-button { padding: 0; border: 0; background: transparent; color: #2563eb; cursor: pointer; font-weight: 600; }
+.text-muted { color: #94a3b8; }
+@media (max-width: 1100px) {
+  .service-stats-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .service-filter-bar { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .service-filter-search { grid-column: span 3; }
+}
+@media (max-width: 700px) {
+  .service-stats-grid, .service-filter-bar { grid-template-columns: 1fr 1fr; }
+  .service-filter-search { grid-column: span 2; }
+  .service-pagination { align-items: flex-start; flex-direction: column; }
+  .service-pagination-actions { width: 100%; justify-content: space-between; }
+}

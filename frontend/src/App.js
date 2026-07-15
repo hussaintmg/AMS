@@ -1,12 +1,11 @@
 /**
  * Main App Component
- * Created by LOGIXINVENTOR (PVT) Ltd.
- * www.logixinventor.com | AMS
+ * Maintained by Hussain Developer
+ * AMS ERP
  */
 
 import React from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import { Toaster } from 'react-hot-toast';
 import { useAuth } from './context/AuthContext';
 import eventBus from './utils/eventBus';
 import ErrorPopup from './components/ErrorPopup';
@@ -19,7 +18,6 @@ import Dashboard from './pages/Dashboard';
 import Leads from './pages/Leads';
 import Customers from './pages/Customers';
 import Vehicles from './pages/Vehicles';
-import VehicleBranding from './pages/VehicleBranding';
 import PartsInventory from './pages/PartsInventory';
 import Sales from './pages/Sales';
 import Service from './pages/Service';
@@ -46,7 +44,11 @@ import MasterDataHub from './pages/MasterDataHub';
 import ServerManagement from './pages/ServerManagement';
 import Logs from './pages/Logs';
 import EmailTemplates from './pages/EmailTemplates';
+import PdfManagement from './pages/PdfManagement';
+import PdfTemplateEditor from './pages/PdfTemplateEditor';
 import NoAccess from './pages/NoAccess';
+import NotificationSettings from './pages/NotificationSettings';
+import SearchResults from './pages/SearchResults';
 import { getFirstAllowedPage, canViewPage } from './utils/permissions';
 
 const ProtectedPage = ({ children }) => {
@@ -100,7 +102,6 @@ const AppLayout = () => {
                     <Route path="lead-master" element={<ProtectedPage path="/lead-master"><LeadMasterData /></ProtectedPage>} />
                     <Route path="sales-master" element={<ProtectedPage path="/sales-master"><SalesMasterData /></ProtectedPage>} />
                     <Route path="customers" element={<ProtectedPage path="/customers"><Customers /></ProtectedPage>} />
-                    <Route path="vehicle-branding" element={<ProtectedPage path="/vehicle-branding"><VehicleBranding /></ProtectedPage>} />
                     <Route path="vehicles" element={<ProtectedPage path="/vehicles"><Vehicles /></ProtectedPage>} />
                     <Route path="vehicle-master" element={<ProtectedPage path="/vehicle-master"><VehicleMasterData /></ProtectedPage>} />
                     <Route path="warehouses" element={<ProtectedPage path="/warehouses"><WarehouseManagement /></ProtectedPage>} />
@@ -115,6 +116,8 @@ const AppLayout = () => {
                     <Route path="hr/ledger" element={<ProtectedPage path="/hr/ledger"><Ledger /></ProtectedPage>} />
                     <Route path="uploader/order-form" element={<ProtectedPage path="/uploader/order-form"><OrderFormUpload /></ProtectedPage>} />
                     <Route path="profile" element={<ProtectedPage path="/profile"><Profile /></ProtectedPage>} />
+                    <Route path="notification-settings" element={<NotificationSettings />} />
+                    <Route path="search" element={<SearchResults />} />
 
                     {/* Admin Routes */}
                     <Route path="admin/users" element={<ProtectedPage path="/admin/users"><UserManagement /></ProtectedPage>} />
@@ -124,6 +127,8 @@ const AppLayout = () => {
                     <Route path="payment-methods" element={<ProtectedPage path="/payment-methods"><PaymentMethods /></ProtectedPage>} />
                     <Route path="settings" element={<ProtectedPage path="/settings"><Settings /></ProtectedPage>} />
                     <Route path="email/*" element={<ProtectedPage path="/email"><EmailTemplates /></ProtectedPage>} />
+                    <Route path="pdf-management" element={<ProtectedPage path="/pdf-management"><PdfManagement /></ProtectedPage>} />
+                    <Route path="pdf-management/templates/:id/editor" element={<ProtectedPage path="/pdf-management"><PdfTemplateEditor /></ProtectedPage>} />
                     <Route path="server-management" element={<ProtectedPage path="/server-management"><ServerManagement /></ProtectedPage>} />
                     <Route path="logs" element={<ProtectedPage path="/logs"><Logs /></ProtectedPage>} />
                     <Route path="*" element={<Navigate to={getFirstAllowedPage(effectivePermissions)} replace />} />
@@ -164,7 +169,6 @@ function App() {
     if (!user) {
         return (
             <>
-                <Toaster position="top-right" />
                 {globalError && (
                     <ErrorPopup
                         error={globalError}
@@ -185,7 +189,6 @@ function App() {
     // User is logged in, show main app
     return (
         <>
-            <Toaster position="top-right" />
             {globalError && (
                 <ErrorPopup
                     error={globalError}

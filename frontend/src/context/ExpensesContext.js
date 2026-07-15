@@ -97,6 +97,17 @@ export function ExpensesProvider({ children }) {
     } finally { setSaving(false); }
   }, []);
 
+  const bulkDeleteExpenses = useCallback(async (ids) => {
+    try { setSaving(true); const res = await expensesAPI.bulkDelete(ids); showApiSuccess(res, 'Expenses deleted'); return { success: true };
+    } catch (err) { showApiError(err, 'Failed to delete expenses'); return { success: false, error: err.response?.data }; }
+    finally { setSaving(false); }
+  }, []);
+  const bulkDeactivateExpenses = useCallback(async (ids) => {
+    try { setSaving(true); const res = await expensesAPI.bulkDeactivate(ids); showApiSuccess(res, 'Expenses deactivated'); return { success: true };
+    } catch (err) { showApiError(err, 'Failed to deactivate expenses'); return { success: false, error: err.response?.data }; }
+    finally { setSaving(false); }
+  }, []);
+
   const createCategory = useCallback(async (formData) => {
     try { setSaving(true); const res = await expensesAPI.createCategory(formData);
       showApiSuccess(res, 'Category created'); await loadCategories(); return { success: true, data: res.data?.data };
@@ -117,7 +128,7 @@ export function ExpensesProvider({ children }) {
     expenses, categories, employees, stats, loading, saving, error,
     setExpenses, setCategories, setEmployees,
     loadExpenses, loadCategories, loadStats, loadReferenceData,
-    createExpense, updateExpense, deleteExpense, setExpenseStatus, postExpense,
+    createExpense, updateExpense, deleteExpense, setExpenseStatus, postExpense, bulkDeleteExpenses, bulkDeactivateExpenses,
     createCategory, updateCategory,
   }), [expenses, categories, employees, stats, loading, saving, error]);
 

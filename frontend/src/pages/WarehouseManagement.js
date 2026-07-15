@@ -6,6 +6,7 @@ import ToggleSwitch from '../components/ToggleSwitch';
 import ConfirmModal from '../components/ConfirmModal';
 import useModalKeyboard from '../hooks/useModalKeyboard';
 import '../styles/warehouseManagement.css';
+import ServerPagination from '../components/ServerPagination';
 
 const toArray = (value) => Array.isArray(value) ? value : [];
 
@@ -13,7 +14,7 @@ function WarehouseManagement() {
   const [warehouses, setWarehouses] = useState([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
-  const [pagination, setPagination] = useState({ page: 1, limit: 15, total: 0, totalPages: 1 });
+  const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 1 });
   const [stats, setStats] = useState({});
 
   // Modal
@@ -175,28 +176,7 @@ function WarehouseManagement() {
     />
   );
 
-  const renderPagination = () => {
-    const { page, totalPages } = pagination;
-    if (totalPages <= 1) return null;
-    return (
-      <div className="pagination">
-        <button className="btn-page" disabled={page <= 1} onClick={() => paginate(page - 1)}>Previous</button>
-        <div className="page-numbers">
-          {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
-            let p;
-            if (totalPages <= 7) { p = i + 1; }
-            else if (page <= 4) { p = i + 1; }
-            else if (page >= totalPages - 3) { p = totalPages - 6 + i; }
-            else { p = page - 3 + i; }
-            return (
-              <button key={p} className={`btn-page ${p === page ? 'active' : ''}`} onClick={() => paginate(p)}>{p}</button>
-            );
-          })}
-        </div>
-        <button className="btn-page" disabled={page >= totalPages} onClick={() => paginate(page + 1)}>Next</button>
-      </div>
-    );
-  };
+  const renderPagination = () => <ServerPagination {...pagination} onPageChange={paginate} loading={loading} />;
 
   // ── Table ────────────────────────────────────────────────────────────
 
@@ -391,7 +371,7 @@ function WarehouseManagement() {
         <div className="action-bar">
           <div className="search-box">
             <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              <circle cx="11" cy="11" r="7" strokeWidth="2" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="m20 20-4-4" />
             </svg>
             <input type="text" placeholder="Search by name, code, city, manager..." value={search} onChange={handleSearch} />
           </div>

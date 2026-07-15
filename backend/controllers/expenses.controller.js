@@ -5,6 +5,32 @@ const AppError = require('../utils/AppError');
 
 const getUserId = (req) => req.user?.id || req.user?._id;
 
+const getBulkIds = (req) => {
+  const ids = Array.isArray(req.body?.ids) ? [...new Set(req.body.ids.filter(Boolean))] : [];
+  if (!ids.length) throw new AppError('Select at least one expense', 400);
+  return ids;
+};
+
+exports.bulkDeleteExpenses = async (req, res, next) => {
+  try {
+    const ids = getBulkIds(req);
+    const protectedCount = await Expense.countDocuments({ _id: { $in: ids }, isDeleted: false, status: 'posted' });
+    if (protectedCount) throw new AppError('Posted expenses cannot be deleted', 400);
+    const result = await Expense.updateMany({ _id: { $in: ids }, isDeleted: false }, { $set: { isDeleted: true, isActive: false, updatedBy: getUserId(req) } });
+    res.json({ success: true, message: `${result.modifiedCount} expense(s) deleted`, data: { modifiedCount: result.modifiedCount } });
+  } catch (error) { next(error); }
+};
+
+exports.bulkDeactivateExpenses = async (req, res, next) => {
+  try {
+    const ids = getBulkIds(req);
+    const protectedCount = await Expense.countDocuments({ _id: { $in: ids }, isDeleted: false, status: 'posted' });
+    if (protectedCount) throw new AppError('Posted expenses cannot be deactivated', 400);
+    const result = await Expense.updateMany({ _id: { $in: ids }, isDeleted: false, isActive: { $ne: false } }, { $set: { isActive: false, updatedBy: getUserId(req) } });
+    res.json({ success: true, message: `${result.modifiedCount} expense(s) deactivated`, data: { modifiedCount: result.modifiedCount } });
+  } catch (error) { next(error); }
+};
+
 exports.listExpenses = async (req, res, next) => {
   try {
     const { search, category, status, from, to, page = 1, limit = 50 } = req.query;

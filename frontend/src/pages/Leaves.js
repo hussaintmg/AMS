@@ -8,6 +8,8 @@ import ConfirmModal from '../components/ConfirmModal';
 import ActionButtons from '../components/ActionButtons';
 import LeaveFormModal from './LeaveFormModal';
 import LeaveDrawer from './LeaveDrawer';
+import BulkSelectionBar from '../components/BulkSelectionBar';
+import { Search } from "lucide-react";
 import '../styles/userManagement.css';
 
 const STATUS_BADGE = {
@@ -21,14 +23,14 @@ const Leaves = () => {
     leaves: ctxLeaves, employees, stats,
     loading: ctxLoading, saving,
     loadLeaves, loadReferenceData,
-    createLeave, updateLeave, deleteLeave, approveRejectLeave,
+    createLeave, updateLeave, deleteLeave, approveRejectLeave, bulkDeleteLeaves, bulkDeactivateLeaves,
     setLeaves,
   } = useLeaves();
   const [loading, setLoading] = useState(true);
   const [errorPopup, setErrorPopup] = useState(null);
 
   const [page, setPage] = useState(1);
-  const [limit] = useState(15);
+  const [limit] = useState(20);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
   const [searchParams] = useSearchParams();
@@ -44,6 +46,16 @@ const Leaves = () => {
 
   const [drawerLeave, setDrawerLeave] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [bulkAction, setBulkAction] = useState(null);
+  const toggleSelected = (id) => setSelectedIds(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
+  const allSelected = ctxLeaves.length > 0 && ctxLeaves.every(item => selectedIds.has(item._id || item.id));
+  const toggleAll = () => setSelectedIds(allSelected ? new Set() : new Set(ctxLeaves.map(item => item._id || item.id)));
+  const handleBulkAction = async () => {
+    const result = bulkAction === 'delete' ? await bulkDeleteLeaves([...selectedIds]) : await bulkDeactivateLeaves([...selectedIds]);
+    if (result.success) { setSelectedIds(new Set()); setBulkAction(null); fetchLeaves(); loadReferenceData(); }
+    else if (result.error) setErrorPopup(result.error);
+  };
 
   const canApprove = hasRole(['super_admin', 'admin', 'hr_admin']);
 
@@ -169,9 +181,11 @@ const Leaves = () => {
 
       <div className="filters-bar">
         <div className="search-box">
+          <span className="search-icon">
+              <Search size={18} style={{ color: "#9ca3af" }} />
+            </span>
           <input type="text" placeholder="Search by reason..."
             value={search} onChange={(e) => setSearch(e.target.value)} className="search-input" />
-          <span className="search-icon">🔍</span>
         </div>
         <select className="form-control" style={{ width: 140 }} value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}>
@@ -183,6 +197,7 @@ const Leaves = () => {
         </select>
         <span className="results-count">{total} requests found</span>
       </div>
+      <BulkSelectionBar count={selectedIds.size} disabled={saving} onDeactivate={() => setBulkAction('deactivate')} onDelete={() => setBulkAction('delete')} />
 
       <div className="table-container desktop-only">
         {loading ? (
@@ -197,6 +212,7 @@ const Leaves = () => {
           <table className="data-table">
             <thead>
               <tr>
+                <th className="selection-cell"><input type="checkbox" aria-label="Select all leave requests on this page" checked={allSelected} onChange={toggleAll} /></th>
                 <th>Employee</th>
                 <th>Leave Type</th>
                 <th>Start</th>
@@ -211,6 +227,7 @@ const Leaves = () => {
                 const id = leave._id || leave.id;
                 return (
                   <tr key={id} onClick={() => setDrawerLeave(leave)} style={{ cursor: 'pointer' }}>
+                    <td className="selection-cell" onClick={e => e.stopPropagation()}><input type="checkbox" aria-label="Select leave request" checked={selectedIds.has(id)} onChange={() => toggleSelected(id)} /></td>
                     <td>{empName(leave)}</td>
                     <td><span className="badge badge-info">{leave.leaveType || '-'}</span></td>
                     <td>{leave.startDate ? new Date(leave.startDate).toLocaleDateString('en-GB') : '-'}</td>
@@ -267,6 +284,7 @@ const Leaves = () => {
               const statusKey = (leave.status || '').toLowerCase();
               return (
                 <div key={id} className="data-card" onClick={() => setDrawerLeave(leave)}>
+                  <input type="checkbox" className="card-select-checkbox" aria-label="Select leave request" checked={selectedIds.has(id)} onChange={() => toggleSelected(id)} onClick={e => e.stopPropagation()} />
                   <div className="data-card-top">
                     <div className="data-card-avatar">
                       {((leave.employee?.firstName?.[0] || '') + (leave.employee?.lastName?.[0] || '')).trim() || '?'}
@@ -331,6 +349,15 @@ const Leaves = () => {
           <button className="btn-page" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>Next →</button>
         </div>
       )}
+
+      <ConfirmModal
+        isOpen={!!bulkAction}
+        title={bulkAction === 'delete' ? 'Delete Leave Requests' : 'Deactivate Leave Requests'}
+        message={`${bulkAction === 'delete' ? 'Delete' : 'Deactivate'} ${selectedIds.size} selected leave request(s)?`}
+        confirmText={bulkAction === 'delete' ? 'Delete' : 'Deactivate'}
+        onConfirm={handleBulkAction}
+        onCancel={() => setBulkAction(null)}
+      />
 
       <ConfirmModal
         isOpen={!!confirmDelete}

@@ -1,8 +1,8 @@
 /**
  * Role Management Page
  * Manage roles and permissions
- * Created by LOGIXINVENTOR (PVT) Ltd.
- * www.logixinventor.com | AMS
+ * Maintained by Hussain Developer
+ * AMS ERP
  * Date: 2026-01-06
  */
 

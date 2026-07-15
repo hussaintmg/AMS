@@ -1,1026 +1,960 @@
 /**
- * Service Management Controller
- * Comprehensive CRUD operations for Appointments and Job Cards
- * Created by LOGIXINVENTOR (PVT) Ltd.
- * info@logixinventor.com +92 333 3836851
- * www.logixinventor.com | AMS
- * Date: 2026-01-08
- *
- * Compatibility note: `service_advisor_id` / `technician_id` columns removed from
- * service_appointments and job_cards INSERTs/UPDATEs because current DB schema
- * uses `created_by` instead. See PROJECT_MEMORY.md for details.
+ * Service Management Controller (MongoDB)
+ * Comprehensive CRUD operations for Appointments and Job Cards.
+ * Every document is linked to the selected customer and written back to
+ * the customer's document (salesSummary + salesHistory). Completing a job
+ * card automatically prepares its service invoice.
+ * Maintained by Hussain Developer
+ * hussaintmerng@gmail.com | +92 319 1634446
+ * AMS ERP
  */
 
-const { query } = require('../config/database');
+const mongoose = require('mongoose');
 const { AppError } = require('../middleware/errorHandler');
 const logger = require('../utils/logger');
+const ServiceAppointment = require('../models/ServiceAppointment.model');
+const JobCard = require('../models/JobCard.model');
+const ServiceType = require('../models/ServiceType.model');
+const Part = require('../models/Part.model');
+const Customer = require('../models/Customer.model');
+const User = require('../models/User.model');
+const Role = require('../models/Role.model');
+const { nextDocNumber } = require('../utils/docNumber');
+const { recordCustomerActivity } = require('../utils/customerSync');
+const { createInvoiceForJobCard } = require('../utils/invoiceFactory');
+
+const sanitizeId = (id) => {
+    if (id === '' || id === undefined || id === null) return null;
+    return mongoose.Types.ObjectId.isValid(id) ? id : null;
+};
+
+const num = (v, fallback = 0) => {
+    const parsed = Number(v);
+    return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const customerName = (customer) => {
+    if (!customer || typeof customer !== 'object') return '';
+    const name = [customer.firstName, customer.lastName].filter(Boolean).join(' ');
+    return name || customer.companyName || '';
+};
+
+const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+async function findCustomerIdsBySearch(search) {
+    const regex = new RegExp(escapeRegex(search), 'i');
+    const customers = await Customer.find({
+        $or: [{ firstName: regex }, { lastName: regex }, { companyName: regex }, { phone: regex }, { customerCode: regex }],
+    }).select('_id').limit(500).lean();
+    return customers.map((c) => c._id);
+}
+
+async function requireCustomer(customerId) {
+    if (!sanitizeId(customerId)) throw new AppError('Customer is required', 400);
+    const customer = await Customer.findOne({ _id: customerId, deletedAt: null }).lean();
+    if (!customer) throw new AppError('Customer not found', 404);
+    return customer;
+}
+
+const vehicleSnapshotFromBody = (body, current = {}) => ({
+    number: body.vehicleNumber !== undefined ? String(body.vehicleNumber || '').trim() : (current.number || ''),
+    make: body.vehicleMake !== undefined ? String(body.vehicleMake || '').trim() : (current.make || ''),
+    model: body.vehicleModel !== undefined ? String(body.vehicleModel || '').trim() : (current.model || ''),
+    year: body.vehicleYear !== undefined ? (num(body.vehicleYear, null) || null) : (current.year || null),
+    vin: body.vehicleVin !== undefined ? String(body.vehicleVin || '').trim() : (current.vin || ''),
+});
 
 // ═══════════════════════════════════════════════════════════════════════════
-// APPOINTMENTS CONTROLLER
+// APPOINTMENTS
 // ═══════════════════════════════════════════════════════════════════════════
 
-/**
- * Get all appointments with filters and pagination
- */
+const mapAppointment = (a) => ({
+    id: a._id,
+    appointment_number: a.appointmentNumber,
+    customer_id: a.customer?._id || a.customer || null,
+    customer_name: customerName(a.customer),
+    customer_phone: a.customer?.phone || '',
+    vehicle_id: a.vehicle || null,
+    customer_vehicle_number: a.customerVehicle?.number || '',
+    customer_vehicle_make: a.customerVehicle?.make || '',
+    customer_vehicle_model: a.customerVehicle?.model || '',
+    customer_vehicle_year: a.customerVehicle?.year || '',
+    customer_vehicle_vin: a.customerVehicle?.vin || '',
+    service_type_id: a.serviceTypeRef || null,
+    service_type_name: a.serviceType?.name || '',
+    service_advisor_id: a.serviceAdvisor || null,
+    appointment_date: a.appointmentDate || null,
+    appointment_time: a.appointmentTime || '',
+    estimated_duration: a.estimatedDuration || '',
+    customer_concerns: a.customerConcerns || '',
+    notes: a.notes || '',
+    status: a.status || 'scheduled',
+    created_at: a.createdAt,
+    updated_at: a.updatedAt,
+});
+
 const getAllAppointments = async (req, res, next) => {
     try {
         const { status, dateFrom, dateTo, customerId, search, page = 1, limit = 20 } = req.query;
-        const offset = (parseInt(page) - 1) * parseInt(limit);
 
-        const sql = `
-            SELECT * FROM vw_appointments_list
-            WHERE (? IS NULL OR status = ?)
-            AND (? IS NULL OR appointment_date >= ?)
-            AND (? IS NULL OR appointment_date <= ?)
-            AND (? IS NULL OR customer_id = ?)
-            AND (? IS NULL OR 
-                 appointment_number LIKE CONCAT('%', ?, '%') OR
-                 customer_name LIKE CONCAT('%', ?, '%') OR
-                 customer_phone LIKE CONCAT('%', ?, '%') OR
-                 customer_vehicle_number LIKE CONCAT('%', ?, '%'))
-            ORDER BY appointment_date DESC, appointment_time DESC
-            LIMIT ? OFFSET ?
-        `;
+        const filter = {};
+        if (status) filter.status = status;
+        if (sanitizeId(customerId)) filter.customer = customerId;
+        if (dateFrom || dateTo) {
+            filter.appointmentDate = {};
+            if (dateFrom) filter.appointmentDate.$gte = new Date(dateFrom);
+            if (dateTo) {
+                const end = new Date(dateTo);
+                end.setHours(23, 59, 59, 999);
+                filter.appointmentDate.$lte = end;
+            }
+        }
+        if (search) {
+            const regex = new RegExp(escapeRegex(search), 'i');
+            const customerIds = await findCustomerIdsBySearch(search);
+            filter.$or = [
+                { appointmentNumber: regex },
+                { 'customerVehicle.number': regex },
+                { 'customerVehicle.make': regex },
+                { 'customerVehicle.model': regex },
+                { 'serviceType.name': regex },
+                ...(customerIds.length ? [{ customer: { $in: customerIds } }] : []),
+            ];
+        }
 
-        const countSql = `
-            SELECT COUNT(*) as total FROM vw_appointments_list
-            WHERE (? IS NULL OR status = ?)
-            AND (? IS NULL OR appointment_date >= ?)
-            AND (? IS NULL OR appointment_date <= ?)
-            AND (? IS NULL OR customer_id = ?)
-            AND (? IS NULL OR 
-                 appointment_number LIKE CONCAT('%', ?, '%') OR
-                 customer_name LIKE CONCAT('%', ?, '%') OR
-                 customer_phone LIKE CONCAT('%', ?, '%') OR
-                 customer_vehicle_number LIKE CONCAT('%', ?, '%'))
-        `;
+        const pageNum = Math.max(1, parseInt(page, 10) || 1);
+        const limitNum = Math.min(200, Math.max(1, parseInt(limit, 10) || 20));
 
-        const params = [
-            status || null, status || null,
-            dateFrom || null, dateFrom || null,
-            dateTo || null, dateTo || null,
-            customerId || null, customerId || null,
-            search || null, search || null, search || null, search || null, search || null,
-            parseInt(limit), offset
-        ];
-
-        const countParams = [
-            status || null, status || null,
-            dateFrom || null, dateFrom || null,
-            dateTo || null, dateTo || null,
-            customerId || null, customerId || null,
-            search || null, search || null, search || null, search || null, search || null
-        ];
-
-        const [appointments, countResult] = await Promise.all([
-            query(sql, params),
-            query(countSql, countParams)
+        const [appointments, total] = await Promise.all([
+            ServiceAppointment.find(filter)
+                .populate('customer', 'firstName lastName companyName phone customerCode')
+                .sort({ appointmentDate: -1, createdAt: -1 })
+                .skip((pageNum - 1) * limitNum)
+                .limit(limitNum)
+                .lean(),
+            ServiceAppointment.countDocuments(filter),
         ]);
-
-        const total = countResult && countResult[0] ? countResult[0].total : 0;
 
         res.json({
             success: true,
-            data: appointments || [],
-            pagination: {
-                page: parseInt(page),
-                limit: parseInt(limit),
-                total: total,
-                totalPages: Math.ceil(total / parseInt(limit))
-            }
+            data: appointments.map(mapAppointment),
+            pagination: { page: pageNum, limit: limitNum, total, totalPages: Math.ceil(total / limitNum) },
         });
     } catch (error) {
-        logger.error('ServiceManagement error:', error);
+        logger.error('Error fetching appointments:', error);
         next(error);
     }
 };
 
-/**
- * Get appointment by ID
- */
 const getAppointmentById = async (req, res, next) => {
     try {
-        const { id } = req.params;
-        const appointments = await query('SELECT * FROM vw_appointments_list WHERE id = ?', [id]);
-
-        if (appointments.length === 0) {
-            throw new AppError('Appointment not found', 404);
-        }
-
-        res.json({ success: true, data: appointments[0] });
+        const appointment = await ServiceAppointment.findById(req.params.id)
+            .populate('customer', 'firstName lastName companyName phone customerCode')
+            .lean();
+        if (!appointment) throw new AppError('Appointment not found', 404);
+        res.json({ success: true, data: mapAppointment(appointment) });
     } catch (error) {
-        logger.error('ServiceManagement error:', error);
         next(error);
     }
 };
 
-/**
- * Create new appointment
- */
+async function resolveServiceType(serviceTypeId) {
+    if (!sanitizeId(serviceTypeId)) return { ref: null, snapshot: {} };
+    const type = await ServiceType.findById(serviceTypeId).lean();
+    if (!type) return { ref: null, snapshot: {} };
+    return {
+        ref: type._id,
+        snapshot: { name: type.name, code: type.code || '', description: type.description || '', basePrice: type.basePrice || 0 },
+    };
+}
+
 const createAppointment = async (req, res, next) => {
     try {
         const {
-            customerId, vehicleId, vehicleNumber, vehicleMake, vehicleModel,
-            vehicleYear, vehicleVin, serviceTypeId, appointmentDate, appointmentTime,
-            estimatedDuration, customerConcerns, notes, serviceAdvisorId
+            customerId, vehicleId, serviceTypeId, appointmentDate, appointmentTime,
+            estimatedDuration, customerConcerns, notes, serviceAdvisorId,
         } = req.body;
 
-        // Validation
-        if (!customerId || !appointmentDate || !appointmentTime) {
-            throw new AppError('Customer, appointment date and time are required', 400);
+        if (!appointmentDate || !appointmentTime) {
+            throw new AppError('Customer, date, and time are required', 400);
         }
 
-        // Generate appointment number
-        const [{ next_num }] = await query('SELECT COALESCE(MAX(id), 0) + 1 AS next_num FROM service_appointments');
-        const appointmentNumber = `APT${String(next_num).padStart(6, '0')}`;
+        const customer = await requireCustomer(customerId);
+        const serviceType = await resolveServiceType(serviceTypeId);
+        const appointmentNumber = await nextDocNumber(ServiceAppointment, 'appointmentNumber', 'APT');
 
-        const result = await query(`
-            INSERT INTO service_appointments (
-                appointment_number, customer_id, vehicle_id, customer_vehicle_number,
-                customer_vehicle_make, customer_vehicle_model, customer_vehicle_year,
-                customer_vehicle_vin, service_type_id, appointment_date, appointment_time,
-                estimated_duration, customer_concerns, notes, created_by
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `, [
-            appointmentNumber, customerId, vehicleId || null, vehicleNumber,
-            vehicleMake, vehicleModel, vehicleYear || null, vehicleVin || null,
-            serviceTypeId || null, appointmentDate, appointmentTime,
-            estimatedDuration || null, customerConcerns || null, notes || null,
-            req.user.id
-        ]);
-
-        const [newAppointment] = await query('SELECT * FROM vw_appointments_list WHERE id = ?', [result.insertId]);
-
-        res.status(201).json({
-            success: true,
-            message: 'Appointment created successfully',
-            data: newAppointment
+        const appointment = await ServiceAppointment.create({
+            appointmentNumber,
+            customer: customer._id,
+            vehicle: sanitizeId(vehicleId),
+            customerVehicle: vehicleSnapshotFromBody(req.body),
+            serviceTypeRef: serviceType.ref,
+            serviceType: serviceType.snapshot,
+            serviceAdvisor: sanitizeId(serviceAdvisorId),
+            appointmentDate: new Date(appointmentDate),
+            appointmentTime: appointmentTime || '',
+            estimatedDuration: num(estimatedDuration, null) || null,
+            customerConcerns: customerConcerns || '',
+            status: 'scheduled',
+            notes: notes || '',
+            createdBy: req.user.id,
         });
+
+        await recordCustomerActivity({
+            customerId: customer._id,
+            docType: 'service_appointment',
+            docId: appointment._id,
+            number: appointmentNumber,
+            amount: serviceType.snapshot.basePrice || 0,
+            description: `Service appointment ${appointmentNumber}${serviceType.snapshot.name ? ` — ${serviceType.snapshot.name}` : ''} on ${appointmentDate} ${appointmentTime}`,
+            userId: req.user.id,
+        });
+
+        logger.info(`Appointment ${appointmentNumber} created by user ${req.user.id}`);
+        res.status(201).json({ success: true, data: mapAppointment({ ...appointment.toObject(), customer }), message: 'Appointment created successfully' });
     } catch (error) {
-        logger.error('ServiceManagement error:', error);
+        logger.error('Error creating appointment:', error);
         next(error);
     }
 };
 
-/**
- * Update appointment
- */
 const updateAppointment = async (req, res, next) => {
     try {
-        const { id } = req.params;
-        const {
-            customerId, vehicleId, vehicleNumber, vehicleMake, vehicleModel,
-            vehicleYear, vehicleVin, serviceTypeId, appointmentDate, appointmentTime,
-            estimatedDuration, customerConcerns, notes, serviceAdvisorId
-        } = req.body;
-
-        // Check if appointment exists
-        const [existing] = await query('SELECT id, status FROM service_appointments WHERE id = ?', [id]);
-        if (!existing) {
-            throw new AppError('Appointment not found', 404);
+        const appointment = await ServiceAppointment.findById(req.params.id);
+        if (!appointment) throw new AppError('Appointment not found', 404);
+        if (['completed', 'cancelled', 'no_show'].includes(appointment.status)) {
+            throw new AppError(`Appointment is ${appointment.status} and cannot be edited`, 400);
         }
 
-        await query(`
-            UPDATE service_appointments SET
-                customer_id = COALESCE(?, customer_id),
-                vehicle_id = ?,
-                customer_vehicle_number = COALESCE(?, customer_vehicle_number),
-                customer_vehicle_make = COALESCE(?, customer_vehicle_make),
-                customer_vehicle_model = COALESCE(?, customer_vehicle_model),
-                customer_vehicle_year = ?,
-                customer_vehicle_vin = ?,
-                service_type_id = ?,
-                appointment_date = COALESCE(?, appointment_date),
-                appointment_time = COALESCE(?, appointment_time),
-                estimated_duration = ?,
-                customer_concerns = ?,
-                notes = ?,
-                updated_at = NOW()
-            WHERE id = ?
-        `, [
-            customerId, vehicleId || null, vehicleNumber, vehicleMake, vehicleModel,
-            vehicleYear || null, vehicleVin || null, serviceTypeId || null,
-            appointmentDate, appointmentTime, estimatedDuration || null,
-            customerConcerns || null, notes || null, id
-        ]);
+        const {
+            customerId, vehicleId, serviceTypeId, appointmentDate, appointmentTime,
+            estimatedDuration, customerConcerns, notes, serviceAdvisorId, status,
+        } = req.body;
 
-        const [updatedAppointment] = await query('SELECT * FROM vw_appointments_list WHERE id = ?', [id]);
+        if (sanitizeId(customerId)) {
+            const customer = await requireCustomer(customerId);
+            appointment.customer = customer._id;
+        }
+        if (serviceTypeId !== undefined) {
+            const serviceType = await resolveServiceType(serviceTypeId);
+            appointment.serviceTypeRef = serviceType.ref;
+            appointment.serviceType = serviceType.snapshot;
+        }
 
-        res.json({
-            success: true,
-            message: 'Appointment updated successfully',
-            data: updatedAppointment
-        });
+        appointment.customerVehicle = vehicleSnapshotFromBody(req.body, appointment.customerVehicle || {});
+        if (vehicleId !== undefined) appointment.vehicle = sanitizeId(vehicleId);
+        if (appointmentDate) appointment.appointmentDate = new Date(appointmentDate);
+        if (appointmentTime !== undefined) appointment.appointmentTime = appointmentTime;
+        if (estimatedDuration !== undefined) appointment.estimatedDuration = num(estimatedDuration, null) || null;
+        if (customerConcerns !== undefined) appointment.customerConcerns = customerConcerns;
+        if (notes !== undefined) appointment.notes = notes;
+        if (serviceAdvisorId !== undefined) appointment.serviceAdvisor = sanitizeId(serviceAdvisorId);
+        if (status) appointment.status = status;
+        appointment.updatedBy = req.user.id;
+        await appointment.save();
+
+        res.json({ success: true, message: 'Appointment updated successfully' });
     } catch (error) {
-        logger.error('ServiceManagement error:', error);
         next(error);
     }
 };
 
-/**
- * Update appointment status
- */
 const updateAppointmentStatus = async (req, res, next) => {
     try {
-        const { id } = req.params;
         const { status } = req.body;
-
         const validStatuses = ['scheduled', 'confirmed', 'in_progress', 'completed', 'cancelled', 'no_show'];
-        if (!validStatuses.includes(status)) {
+        if (!status || !validStatuses.includes(status)) {
             throw new AppError(`Invalid status. Must be one of: ${validStatuses.join(', ')}`, 400);
         }
 
-        await query('UPDATE service_appointments SET status = ?, updated_at = NOW() WHERE id = ?', [status, id]);
+        const appointment = await ServiceAppointment.findByIdAndUpdate(
+            req.params.id,
+            { status, updatedBy: req.user.id, ...(status === 'cancelled' ? { cancelledAt: new Date() } : {}) },
+            { new: true },
+        );
+        if (!appointment) throw new AppError('Appointment not found', 404);
 
-        const [updatedAppointment] = await query('SELECT * FROM vw_appointments_list WHERE id = ?', [id]);
-
-        res.json({
-            success: true,
-            message: 'Appointment status updated',
-            data: updatedAppointment
-        });
+        res.json({ success: true, message: 'Status updated successfully' });
     } catch (error) {
-        logger.error('ServiceManagement error:', error);
         next(error);
     }
 };
 
-/**
- * Delete (cancel) appointment
- */
 const deleteAppointment = async (req, res, next) => {
     try {
-        const { id } = req.params;
+        const appointment = await ServiceAppointment.findById(req.params.id);
+        if (!appointment) throw new AppError('Appointment not found', 404);
 
-        const result = await query(
-            'UPDATE service_appointments SET status = ?, updated_at = NOW() WHERE id = ?',
-            ['cancelled', id]
-        );
-
-        if (result.affectedRows === 0) {
-            throw new AppError('Appointment not found', 404);
-        }
+        appointment.status = 'cancelled';
+        appointment.cancelledAt = new Date();
+        appointment.updatedBy = req.user.id;
+        await appointment.save();
 
         res.json({ success: true, message: 'Appointment cancelled successfully' });
     } catch (error) {
-        logger.error('ServiceManagement error:', error);
         next(error);
     }
 };
 
-/**
- * Get appointment statistics
- */
 const getAppointmentStats = async (req, res, next) => {
     try {
-        const [stats] = await query(`
-            SELECT 
-                COUNT(*) AS total,
-                SUM(CASE WHEN status = 'scheduled' THEN 1 ELSE 0 END) AS scheduled,
-                SUM(CASE WHEN status = 'confirmed' THEN 1 ELSE 0 END) AS confirmed,
-                SUM(CASE WHEN status = 'in_progress' THEN 1 ELSE 0 END) AS in_progress,
-                SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed,
-                SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) AS cancelled,
-                SUM(CASE WHEN status = 'no_show' THEN 1 ELSE 0 END) AS no_show,
-                SUM(CASE WHEN DATE(appointment_date) = CURDATE() THEN 1 ELSE 0 END) AS today,
-                SUM(CASE WHEN appointment_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 7 DAY) THEN 1 ELSE 0 END) AS this_week
-            FROM service_appointments
-        `);
+        const startOfDay = new Date();
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date();
+        endOfDay.setHours(23, 59, 59, 999);
 
-        res.json({ success: true, data: stats });
+        const [result, today] = await Promise.all([
+            ServiceAppointment.aggregate([
+                {
+                    $group: {
+                        _id: null,
+                        total: { $sum: 1 },
+                        scheduled: { $sum: { $cond: [{ $eq: ['$status', 'scheduled'] }, 1, 0] } },
+                        confirmed: { $sum: { $cond: [{ $eq: ['$status', 'confirmed'] }, 1, 0] } },
+                        in_progress: { $sum: { $cond: [{ $eq: ['$status', 'in_progress'] }, 1, 0] } },
+                        completed: { $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] } },
+                    },
+                },
+            ]),
+            ServiceAppointment.countDocuments({ appointmentDate: { $gte: startOfDay, $lte: endOfDay } }),
+        ]);
+
+        res.json({
+            success: true,
+            data: { ...(result[0] || { total: 0, scheduled: 0, confirmed: 0, in_progress: 0, completed: 0 }), today },
+        });
     } catch (error) {
-        logger.error('ServiceManagement error:', error);
         next(error);
     }
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
-// JOB CARDS CONTROLLER
+// JOB CARDS
 // ═══════════════════════════════════════════════════════════════════════════
 
-/**
- * Get all job cards with filters and pagination
- */
+const mapJobCardService = (s) => ({
+    id: s._id,
+    service_type_id: s.serviceType || null,
+    labor_rate_id: s.laborRate || null,
+    technician_id: s.technician || null,
+    description: s.description || '',
+    hours: s.hours || 0,
+    rate: s.rate || 0,
+    total: s.total || 0,
+    status: s.status || 'pending',
+});
+
+const mapJobCardPart = (p) => ({
+    id: p._id,
+    part_id: p.part || null,
+    part_number: p.partCode || '',
+    part_name: p.name || '',
+    quantity: p.quantity || 1,
+    unit_price: p.unitPrice || 0,
+    total: p.totalPrice || 0,
+    is_warranty: !!p.isWarranty,
+});
+
+const mapJobCard = (jc, { detailed = false } = {}) => ({
+    id: jc._id,
+    job_card_number: jc.jobCardNumber,
+    appointment_id: jc.appointment || null,
+    customer_id: jc.customer?._id || jc.customer || null,
+    customer_name: customerName(jc.customer),
+    customer_phone: jc.customer?.phone || '',
+    vehicle_id: jc.vehicle || null,
+    customer_vehicle_number: jc.customerVehicle?.number || '',
+    customer_vehicle_make: jc.customerVehicle?.make || '',
+    customer_vehicle_model: jc.customerVehicle?.model || '',
+    customer_vehicle_year: jc.customerVehicle?.year || '',
+    customer_vehicle_vin: jc.customerVehicle?.vin || '',
+    service_advisor_id: jc.serviceAdvisor || null,
+    technician_id: jc.technician || null,
+    warranty_type_id: jc.warrantyType || null,
+    status: jc.status || 'open',
+    odometer_reading: jc.odometer || '',
+    fuel_level: jc.fuelLevel || '',
+    promised_date: jc.promisedDate || null,
+    customer_remarks: jc.customerRemarks || jc.complaint || '',
+    technician_remarks: jc.technicianRemarks || '',
+    labor_total: jc.laborTotal || 0,
+    parts_total: jc.partsTotal || 0,
+    discount: jc.discount || 0,
+    tax_amount: jc.taxAmount || 0,
+    grand_total: jc.grandTotal || 0,
+    received_date: jc.receivedDate || jc.createdAt,
+    invoice_id: jc.invoice || null,
+    invoice_number: jc.invoice?.invoiceNumber || '',
+    created_at: jc.createdAt,
+    updated_at: jc.updatedAt,
+    ...(detailed ? {
+        services: (jc.services || []).map(mapJobCardService),
+        parts: (jc.parts || []).map(mapJobCardPart),
+    } : {}),
+});
+
+const recomputeJobCardTotals = (jobCard) => {
+    const laborTotal = (jobCard.services || []).reduce((sum, s) => sum + num(s.total), 0);
+    const partsTotal = (jobCard.parts || []).filter((p) => !p.isWarranty).reduce((sum, p) => sum + num(p.totalPrice), 0);
+    jobCard.laborTotal = laborTotal;
+    jobCard.partsTotal = partsTotal;
+    jobCard.grandTotal = laborTotal + partsTotal - num(jobCard.discount) + num(jobCard.taxAmount);
+    jobCard.totalAmount = jobCard.grandTotal;
+};
+
 const getAllJobCards = async (req, res, next) => {
     try {
         const { status, dateFrom, dateTo, customerId, technicianId, search, page = 1, limit = 20 } = req.query;
-        const offset = (parseInt(page) - 1) * parseInt(limit);
 
-        const sql = `
-            SELECT * FROM vw_job_cards_list
-            WHERE (? IS NULL OR status = ?)
-            AND (? IS NULL OR DATE(received_date) >= ?)
-            AND (? IS NULL OR DATE(received_date) <= ?)
-            AND (? IS NULL OR customer_id = ?)
-            AND (? IS NULL OR 
-                 job_card_number LIKE CONCAT('%', ?, '%') OR
-                 customer_name LIKE CONCAT('%', ?, '%') OR
-                 customer_phone LIKE CONCAT('%', ?, '%') OR
-                 customer_vehicle_number LIKE CONCAT('%', ?, '%'))
-            ORDER BY received_date DESC
-            LIMIT ? OFFSET ?
-        `;
-
-        const countSql = `
-            SELECT COUNT(*) as total FROM vw_job_cards_list
-            WHERE (? IS NULL OR status = ?)
-            AND (? IS NULL OR DATE(received_date) >= ?)
-            AND (? IS NULL OR DATE(received_date) <= ?)
-            AND (? IS NULL OR customer_id = ?)
-            AND (? IS NULL OR 
-                 job_card_number LIKE CONCAT('%', ?, '%') OR
-                 customer_name LIKE CONCAT('%', ?, '%') OR
-                 customer_phone LIKE CONCAT('%', ?, '%') OR
-                 customer_vehicle_number LIKE CONCAT('%', ?, '%'))
-        `;
-
-        const params = [
-            status || null, status || null,
-            dateFrom || null, dateFrom || null,
-            dateTo || null, dateTo || null,
-            customerId || null, customerId || null,
-            search || null, search || null, search || null, search || null, search || null,
-            parseInt(limit), offset
-        ];
-
-        const countParams = [
-            status || null, status || null,
-            dateFrom || null, dateFrom || null,
-            dateTo || null, dateTo || null,
-            customerId || null, customerId || null,
-            search || null, search || null, search || null, search || null, search || null
-        ];
-
-        const [jobCards, countResult] = await Promise.all([
-            query(sql, params),
-            query(countSql, countParams)
-        ]);
-
-        const total = countResult && countResult[0] ? countResult[0].total : 0;
-
-        res.json({
-            success: true,
-            data: jobCards || [],
-            pagination: {
-                page: parseInt(page),
-                limit: parseInt(limit),
-                total: total,
-                totalPages: Math.ceil(total / parseInt(limit))
+        const filter = {};
+        if (status) filter.status = status;
+        if (sanitizeId(customerId)) filter.customer = customerId;
+        if (sanitizeId(technicianId)) filter.technician = technicianId;
+        if (dateFrom || dateTo) {
+            filter.createdAt = {};
+            if (dateFrom) filter.createdAt.$gte = new Date(dateFrom);
+            if (dateTo) {
+                const end = new Date(dateTo);
+                end.setHours(23, 59, 59, 999);
+                filter.createdAt.$lte = end;
             }
-        });
-    } catch (error) {
-        logger.error('ServiceManagement error:', error);
-        next(error);
-    }
-};
-
-/**
- * Get job card by ID with services and parts
- */
-const getJobCardById = async (req, res, next) => {
-    try {
-        const { id } = req.params;
-
-        const [jobCard, services, parts] = await Promise.all([
-            query('SELECT * FROM vw_job_cards_list WHERE id = ?', [id]),
-            query(`
-                SELECT jcs.*, st.name AS service_type_name,
-                       NULL AS technician_name
-                FROM job_card_services jcs
-                LEFT JOIN service_types st ON jcs.service_type_id = st.id
-                WHERE jcs.job_card_id = ?
-                ORDER BY jcs.id
-            `, [id]),
-            query(`
-                SELECT jcp.*, p.part_code, p.name AS part_name, p.current_stock
-                FROM job_card_parts jcp
-                LEFT JOIN parts p ON jcp.part_id = p.id
-                WHERE jcp.job_card_id = ?
-                ORDER BY jcp.id
-            `, [id])
-        ]);
-
-        if (jobCard.length === 0) {
-            throw new AppError('Job card not found', 404);
+        }
+        if (search) {
+            const regex = new RegExp(escapeRegex(search), 'i');
+            const customerIds = await findCustomerIdsBySearch(search);
+            filter.$or = [
+                { jobCardNumber: regex },
+                { 'customerVehicle.number': regex },
+                { 'customerVehicle.make': regex },
+                { 'customerVehicle.model': regex },
+                ...(customerIds.length ? [{ customer: { $in: customerIds } }] : []),
+            ];
         }
 
+        const pageNum = Math.max(1, parseInt(page, 10) || 1);
+        const limitNum = Math.min(200, Math.max(1, parseInt(limit, 10) || 20));
+
+        const [jobCards, total] = await Promise.all([
+            JobCard.find(filter)
+                .populate('customer', 'firstName lastName companyName phone customerCode')
+                .populate('invoice', 'invoiceNumber status totalAmount')
+                .sort({ createdAt: -1 })
+                .skip((pageNum - 1) * limitNum)
+                .limit(limitNum)
+                .lean(),
+            JobCard.countDocuments(filter),
+        ]);
+
         res.json({
             success: true,
-            data: {
-                ...jobCard[0],
-                services,
-                parts
-            }
+            data: jobCards.map((jc) => mapJobCard(jc)),
+            pagination: { page: pageNum, limit: limitNum, total, totalPages: Math.ceil(total / limitNum) },
         });
     } catch (error) {
-        logger.error('ServiceManagement error:', error);
+        logger.error('Error fetching job cards:', error);
         next(error);
     }
 };
 
-/**
- * Create new job card
- */
+const getJobCardById = async (req, res, next) => {
+    try {
+        const jobCard = await JobCard.findById(req.params.id)
+            .populate('customer', 'firstName lastName companyName phone customerCode')
+            .populate('invoice', 'invoiceNumber status totalAmount')
+            .lean();
+        if (!jobCard) throw new AppError('Job card not found', 404);
+        res.json({ success: true, data: mapJobCard(jobCard, { detailed: true }) });
+    } catch (error) {
+        next(error);
+    }
+};
+
 const createJobCard = async (req, res, next) => {
     try {
         const {
-            appointmentId, customerId, vehicleId, vehicleNumber, vehicleMake,
-            vehicleModel, vehicleVin, odometerReading, fuelLevel, promisedDate,
-            customerRemarks, discount, taxAmount
+            appointmentId, customerId, vehicleId, odometerReading, fuelLevel, promisedDate,
+            customerRemarks, technicianRemarks, serviceAdvisorId, technicianId,
+            discount, taxAmount, warrantyTypeId,
         } = req.body;
 
-        // Validation
-        if (!customerId) {
-            throw new AppError('Customer is required', 400);
-        }
+        const customer = await requireCustomer(customerId);
+        const jobCardNumber = await nextDocNumber(JobCard, 'jobCardNumber', 'JC');
 
-        // Generate job card number
-        const [{ next_num }] = await query('SELECT COALESCE(MAX(id), 0) + 1 AS next_num FROM job_cards');
-        const jobCardNumber = `JC${String(next_num).padStart(6, '0')}`;
+        const jobCard = await JobCard.create({
+            jobCardNumber,
+            appointment: sanitizeId(appointmentId),
+            customer: customer._id,
+            vehicle: sanitizeId(vehicleId),
+            customerVehicle: vehicleSnapshotFromBody(req.body),
+            serviceAdvisor: sanitizeId(serviceAdvisorId),
+            technician: sanitizeId(technicianId),
+            warrantyType: sanitizeId(warrantyTypeId),
+            status: 'open',
+            odometer: num(odometerReading, null) || null,
+            fuelLevel: fuelLevel || '',
+            promisedDate: promisedDate ? new Date(promisedDate) : null,
+            customerRemarks: customerRemarks || '',
+            complaint: customerRemarks || '',
+            technicianRemarks: technicianRemarks || '',
+            discount: num(discount),
+            taxAmount: num(taxAmount),
+            receivedDate: new Date(),
+            createdBy: req.user.id,
+        });
 
-        const result = await query(`
-            INSERT INTO job_cards (
-                job_card_number, appointment_id, customer_id, vehicle_id,
-                customer_vehicle_number, customer_vehicle_make, customer_vehicle_model,
-                customer_vehicle_vin, odometer_reading, fuel_level, received_date,
-                promised_date, customer_remarks, discount, tax_amount, created_by
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?)
-        `, [
-            jobCardNumber, appointmentId || null, customerId, vehicleId || null,
-            vehicleNumber, vehicleMake, vehicleModel, vehicleVin || null,
-            odometerReading || null, fuelLevel || null,
-            promisedDate || null, customerRemarks || null,
-            discount || 0, taxAmount || 0,
-            req.user.id
-        ]);
-
-        // Update appointment status if linked
-        if (appointmentId) {
-            await query(
-                'UPDATE service_appointments SET status = ?, updated_at = NOW() WHERE id = ?',
-                ['in_progress', appointmentId]
+        // Cross-model: link the appointment to its job card
+        if (sanitizeId(appointmentId)) {
+            await ServiceAppointment.findOneAndUpdate(
+                { _id: appointmentId, status: { $in: ['scheduled', 'confirmed'] } },
+                { status: 'in_progress', updatedBy: req.user.id },
             );
         }
 
-        const [newJobCard] = await query('SELECT * FROM vw_job_cards_list WHERE id = ?', [result.insertId]);
+        await recordCustomerActivity({
+            customerId: customer._id,
+            docType: 'job_card',
+            docId: jobCard._id,
+            number: jobCardNumber,
+            description: `Job card ${jobCardNumber} opened${jobCard.customerVehicle?.number ? ` for vehicle ${jobCard.customerVehicle.number}` : ''}`,
+            userId: req.user.id,
+        });
 
+        logger.info(`Job card ${jobCardNumber} created by user ${req.user.id}`);
         res.status(201).json({
             success: true,
+            data: mapJobCard({ ...jobCard.toObject(), customer }, { detailed: true }),
             message: 'Job card created successfully',
-            data: newJobCard
         });
     } catch (error) {
-        logger.error('ServiceManagement error:', error);
+        logger.error('Error creating job card:', error);
         next(error);
     }
 };
 
-/**
- * Update job card
- */
 const updateJobCard = async (req, res, next) => {
     try {
-        const { id } = req.params;
+        const jobCard = await JobCard.findById(req.params.id);
+        if (!jobCard) throw new AppError('Job card not found', 404);
+        if (['delivered', 'cancelled'].includes(jobCard.status)) {
+            throw new AppError(`Job card is ${jobCard.status} and cannot be edited`, 400);
+        }
+
         const {
-            customerId, vehicleId, vehicleNumber, vehicleMake, vehicleModel,
-            vehicleVin, odometerReading, fuelLevel, promisedDate, customerRemarks,
-            technicianRemarks, serviceAdvisorId, technicianId, discount, taxAmount
+            customerId, vehicleId, odometerReading, fuelLevel, promisedDate,
+            customerRemarks, technicianRemarks, serviceAdvisorId, technicianId,
+            discount, taxAmount, warrantyTypeId, status,
         } = req.body;
 
-        // Check if job card exists
-        const [existing] = await query('SELECT id FROM job_cards WHERE id = ?', [id]);
-        if (!existing) {
-            throw new AppError('Job card not found', 404);
+        if (sanitizeId(customerId)) {
+            const customer = await requireCustomer(customerId);
+            jobCard.customer = customer._id;
         }
 
-        await query(`
-            UPDATE job_cards SET
-                customer_id = COALESCE(?, customer_id),
-                vehicle_id = ?,
-                customer_vehicle_number = COALESCE(?, customer_vehicle_number),
-                customer_vehicle_make = COALESCE(?, customer_vehicle_make),
-                customer_vehicle_model = COALESCE(?, customer_vehicle_model),
-                customer_vehicle_vin = ?,
-                odometer_reading = ?,
-                fuel_level = ?,
-                promised_date = ?,
-                customer_remarks = ?,
-                technician_remarks = ?,
-                discount = COALESCE(?, discount),
-                tax_amount = COALESCE(?, tax_amount),
-                updated_at = NOW()
-            WHERE id = ?
-        `, [
-            customerId, vehicleId || null, vehicleNumber, vehicleMake, vehicleModel,
-            vehicleVin || null, odometerReading || null, fuelLevel || null,
-            promisedDate || null, customerRemarks || null, technicianRemarks || null,
-            discount, taxAmount, id
-        ]);
+        jobCard.customerVehicle = vehicleSnapshotFromBody(req.body, jobCard.customerVehicle || {});
+        if (vehicleId !== undefined) jobCard.vehicle = sanitizeId(vehicleId);
+        if (odometerReading !== undefined) jobCard.odometer = num(odometerReading, null) || null;
+        if (fuelLevel !== undefined) jobCard.fuelLevel = fuelLevel;
+        if (promisedDate !== undefined) jobCard.promisedDate = promisedDate ? new Date(promisedDate) : null;
+        if (customerRemarks !== undefined) { jobCard.customerRemarks = customerRemarks; jobCard.complaint = customerRemarks; }
+        if (technicianRemarks !== undefined) jobCard.technicianRemarks = technicianRemarks;
+        if (serviceAdvisorId !== undefined) jobCard.serviceAdvisor = sanitizeId(serviceAdvisorId);
+        if (technicianId !== undefined) jobCard.technician = sanitizeId(technicianId);
+        if (warrantyTypeId !== undefined) jobCard.warrantyType = sanitizeId(warrantyTypeId);
+        if (discount !== undefined) jobCard.discount = num(discount);
+        if (taxAmount !== undefined) jobCard.taxAmount = num(taxAmount);
+        if (status) jobCard.status = status;
+        jobCard.updatedBy = req.user.id;
+        recomputeJobCardTotals(jobCard);
+        await jobCard.save();
 
-        // Recalculate totals
-        await recalculateJobCardTotals(id);
-
-        const [updatedJobCard] = await query('SELECT * FROM vw_job_cards_list WHERE id = ?', [id]);
-
-        res.json({
-            success: true,
-            message: 'Job card updated successfully',
-            data: updatedJobCard
-        });
+        res.json({ success: true, message: 'Job card updated successfully' });
     } catch (error) {
-        logger.error('ServiceManagement error:', error);
         next(error);
     }
 };
 
-/**
- * Update job card status
- */
 const updateJobCardStatus = async (req, res, next) => {
     try {
-        const { id } = req.params;
         const { status } = req.body;
-
         const validStatuses = ['open', 'in_progress', 'on_hold', 'completed', 'delivered', 'cancelled'];
-        if (!validStatuses.includes(status)) {
+        if (!status || !validStatuses.includes(status)) {
             throw new AppError(`Invalid status. Must be one of: ${validStatuses.join(', ')}`, 400);
         }
+        if (status === 'completed') {
+            const jobCard = await JobCard.findOne({ appointment: req.params.id });
+            if (!jobCard) throw new AppError('Create a job card before completing this service', 400);
+            req.params.id = jobCard._id;
+            return completeJobCard(req, res, next);
+        }
+        if (status === 'cancelled') return deleteJobCard(req, res, next);
 
-        const updateFields = status === 'completed'
-            ? 'status = ?, actual_completion_date = NOW(), updated_at = NOW()'
-            : 'status = ?, updated_at = NOW()';
+        const jobCard = await JobCard.findByIdAndUpdate(
+            req.params.id,
+            { status, updatedBy: req.user.id, ...(status === 'delivered' ? { deliveredAt: new Date() } : {}) },
+            { new: true },
+        );
+        if (!jobCard) throw new AppError('Job card not found', 404);
 
-        await query(`UPDATE job_cards SET ${updateFields} WHERE id = ?`, [status, id]);
-
-        const [updatedJobCard] = await query('SELECT * FROM vw_job_cards_list WHERE id = ?', [id]);
-
-        res.json({
-            success: true,
-            message: 'Job card status updated',
-            data: updatedJobCard
-        });
+        res.json({ success: true, message: 'Status updated successfully' });
     } catch (error) {
-        logger.error('ServiceManagement error:', error);
         next(error);
     }
 };
 
-/**
- * Complete job card
- */
 const completeJobCard = async (req, res, next) => {
     try {
-        const { id } = req.params;
-        const { technicianRemarks } = req.body;
+        const { technicianRemarks } = req.body || {};
+        const jobCard = await JobCard.findById(req.params.id);
+        if (!jobCard) throw new AppError('Job card not found', 404);
+        if (['cancelled', 'delivered'].includes(jobCard.status)) {
+            throw new AppError(`Job card is ${jobCard.status} and cannot be completed`, 400);
+        }
 
-        // Recalculate totals first
-        await recalculateJobCardTotals(id);
+        if (technicianRemarks) jobCard.technicianRemarks = technicianRemarks;
+        recomputeJobCardTotals(jobCard);
+        jobCard.status = 'completed';
+        jobCard.completedAt = new Date();
+        jobCard.updatedBy = req.user.id;
+        await jobCard.save();
 
-        // Update status and remarks
-        await query(`
-            UPDATE job_cards SET
-                status = 'completed',
-                actual_completion_date = NOW(),
-                technician_remarks = COALESCE(?, technician_remarks),
-                updated_at = NOW()
-            WHERE id = ?
-        `, [technicianRemarks || null, id]);
+        // Cross-model: customer document + automatic service invoice
+        await recordCustomerActivity({
+            customerId: jobCard.customer,
+            docType: 'job_card',
+            docId: jobCard._id,
+            number: jobCard.jobCardNumber,
+            amount: jobCard.grandTotal,
+            description: `Job card ${jobCard.jobCardNumber} completed — PKR ${Number(jobCard.grandTotal).toLocaleString()}`,
+            userId: req.user.id,
+            countDocument: false,
+            spentDelta: num(jobCard.grandTotal),
+        });
 
-        // Update linked appointment if exists
-        await query(`
-            UPDATE service_appointments sa
-            INNER JOIN job_cards jc ON sa.id = jc.appointment_id
-            SET sa.status = 'completed', sa.updated_at = NOW()
-            WHERE jc.id = ? AND jc.appointment_id IS NOT NULL
-        `, [id]);
+        let invoiceNumber = null;
+        try {
+            const { invoice } = await createInvoiceForJobCard(jobCard, { userId: req.user.id });
+            jobCard.invoice = invoice._id;
+            invoiceNumber = invoice.invoiceNumber;
+            await jobCard.save();
+        } catch (invoiceError) {
+            logger.error(`Auto-invoice failed for job card ${jobCard.jobCardNumber}:`, invoiceError);
+        }
 
-        const [completedJobCard] = await query('SELECT * FROM vw_job_cards_list WHERE id = ?', [id]);
+        // Close the linked appointment
+        if (jobCard.appointment) {
+            await ServiceAppointment.findOneAndUpdate(
+                { _id: jobCard.appointment, status: { $nin: ['cancelled', 'no_show'] } },
+                { status: 'completed', updatedBy: req.user.id },
+            );
+        }
 
+        logger.info(`Job card ${jobCard.jobCardNumber} completed by user ${req.user.id}`);
         res.json({
             success: true,
-            message: 'Job card completed successfully',
-            data: completedJobCard
+            data: { invoiceNumber },
+            message: invoiceNumber ? `Job card completed — invoice ${invoiceNumber} generated` : 'Job card completed',
         });
     } catch (error) {
-        logger.error('ServiceManagement error:', error);
+        logger.error('Error completing job card:', error);
         next(error);
     }
 };
 
-/**
- * Delete (cancel) job card
- */
 const deleteJobCard = async (req, res, next) => {
     try {
-        const { id } = req.params;
+        const jobCard = await JobCard.findById(req.params.id);
+        if (!jobCard) throw new AppError('Job card not found', 404);
+        if (jobCard.status === 'delivered') throw new AppError('Delivered job cards cannot be cancelled', 400);
 
-        const result = await query(
-            'UPDATE job_cards SET status = ?, updated_at = NOW() WHERE id = ?',
-            ['cancelled', id]
-        );
-
-        if (result.affectedRows === 0) {
-            throw new AppError('Job card not found', 404);
+        // Restore part stock for parts that were reserved on this job card
+        for (const part of jobCard.parts || []) {
+            if (part.part) {
+                await Part.findByIdAndUpdate(part.part, { $inc: { currentStock: num(part.quantity, 1) } });
+            }
         }
+
+        jobCard.status = 'cancelled';
+        jobCard.cancelledAt = new Date();
+        jobCard.updatedBy = req.user.id;
+        await jobCard.save();
 
         res.json({ success: true, message: 'Job card cancelled successfully' });
     } catch (error) {
-        logger.error('ServiceManagement error:', error);
         next(error);
     }
 };
 
-/**
- * Get job card statistics
- */
 const getJobCardStats = async (req, res, next) => {
     try {
-        const [stats] = await query(`
-            SELECT 
-                COUNT(*) AS total,
-                SUM(CASE WHEN status = 'open' THEN 1 ELSE 0 END) AS open,
-                SUM(CASE WHEN status = 'in_progress' THEN 1 ELSE 0 END) AS in_progress,
-                SUM(CASE WHEN status = 'on_hold' THEN 1 ELSE 0 END) AS on_hold,
-                SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed,
-                SUM(CASE WHEN status = 'delivered' THEN 1 ELSE 0 END) AS delivered,
-                SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) AS cancelled,
-                COALESCE(SUM(CASE WHEN status IN ('completed', 'delivered') THEN total_amount ELSE 0 END), 0) AS total_revenue,
-                COALESCE(SUM(CASE WHEN status IN ('completed', 'delivered') AND DATE(actual_completion_date) = CURDATE() THEN total_amount ELSE 0 END), 0) AS revenue_today,
-                COALESCE(AVG(CASE WHEN status IN ('completed', 'delivered') THEN total_amount ELSE NULL END), 0) AS avg_job_value
-            FROM job_cards
-        `);
-
-        res.json({ success: true, data: stats });
+        const [result] = await JobCard.aggregate([
+            { $match: { status: { $ne: 'cancelled' } } },
+            {
+                $group: {
+                    _id: null,
+                    total: { $sum: 1 },
+                    open: { $sum: { $cond: [{ $eq: ['$status', 'open'] }, 1, 0] } },
+                    in_progress: { $sum: { $cond: [{ $eq: ['$status', 'in_progress'] }, 1, 0] } },
+                    completed: { $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] } },
+                    delivered: { $sum: { $cond: [{ $eq: ['$status', 'delivered'] }, 1, 0] } },
+                    totalRevenue: { $sum: '$grandTotal' },
+                },
+            },
+        ]);
+        res.json({
+            success: true,
+            data: result || { total: 0, open: 0, in_progress: 0, completed: 0, delivered: 0, totalRevenue: 0 },
+        });
     } catch (error) {
-        logger.error('ServiceManagement error:', error);
         next(error);
     }
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
-// JOB CARD SERVICES CONTROLLER
+// JOB CARD SERVICES
 // ═══════════════════════════════════════════════════════════════════════════
 
-/**
- * Add service to job card
- */
+async function loadEditableJobCard(id) {
+    const jobCard = await JobCard.findById(id);
+    if (!jobCard) throw new AppError('Job card not found', 404);
+    if (['completed', 'delivered', 'cancelled'].includes(jobCard.status)) {
+        throw new AppError(`Job card is ${jobCard.status} and cannot be modified`, 400);
+    }
+    return jobCard;
+}
+
 const addJobCardService = async (req, res, next) => {
     try {
-        const { id: jobCardId } = req.params;
-        const { serviceTypeId, description, hours, rate, technicianId } = req.body;
-
-        if (!description || !rate) {
+        const { serviceTypeId, laborRateId, description, hours, rate, technicianId } = req.body;
+        if (!description || rate === undefined || rate === '') {
             throw new AppError('Description and rate are required', 400);
         }
 
-        const total = (parseFloat(hours) || 1) * parseFloat(rate);
-
-        const result = await query(`
-            INSERT INTO job_card_services (job_card_id, service_type_id, description, labor_hours, rate, amount)
-            VALUES (?, ?, ?, ?, ?, ?)
-        `, [jobCardId, serviceTypeId || null, description, hours || null, rate, total]);
-
-        // Recalculate job card totals
-        await recalculateJobCardTotals(jobCardId);
-
-        const [newService] = await query(`
-            SELECT jcs.*, st.name AS service_type_name
-            FROM job_card_services jcs
-            LEFT JOIN service_types st ON jcs.service_type_id = st.id
-            WHERE jcs.id = ?
-        `, [result.insertId]);
-
-        res.status(201).json({
-            success: true,
-            message: 'Service added to job card',
-            data: newService
+        const jobCard = await loadEditableJobCard(req.params.id);
+        const serviceHours = num(hours);
+        const serviceRate = num(rate);
+        jobCard.services.push({
+            serviceType: sanitizeId(serviceTypeId),
+            laborRate: sanitizeId(laborRateId),
+            technician: sanitizeId(technicianId),
+            description,
+            hours: serviceHours,
+            rate: serviceRate,
+            total: serviceHours > 0 ? serviceHours * serviceRate : serviceRate,
+            status: 'pending',
         });
+        recomputeJobCardTotals(jobCard);
+        jobCard.updatedBy = req.user.id;
+        await jobCard.save();
+
+        const added = jobCard.services[jobCard.services.length - 1];
+        res.status(201).json({ success: true, data: mapJobCardService(added), message: 'Service added successfully' });
     } catch (error) {
-        logger.error('ServiceManagement error:', error);
         next(error);
     }
 };
 
-/**
- * Update job card service
- */
 const updateJobCardService = async (req, res, next) => {
     try {
-        const { id: jobCardId, serviceId } = req.params;
-        const { serviceTypeId, description, hours, rate, technicianId, status } = req.body;
+        const jobCard = await loadEditableJobCard(req.params.id);
+        const service = jobCard.services.id(req.params.serviceId);
+        if (!service) throw new AppError('Service not found', 404);
 
-        const total = (parseFloat(hours) || 1) * parseFloat(rate);
+        const { serviceTypeId, laborRateId, description, hours, rate, technicianId, status } = req.body;
+        if (serviceTypeId !== undefined) service.serviceType = sanitizeId(serviceTypeId);
+        if (laborRateId !== undefined) service.laborRate = sanitizeId(laborRateId);
+        if (technicianId !== undefined) service.technician = sanitizeId(technicianId);
+        if (description !== undefined) service.description = description;
+        if (hours !== undefined) service.hours = num(hours);
+        if (rate !== undefined) service.rate = num(rate);
+        if (status !== undefined) service.status = status;
+        service.total = num(service.hours) > 0 ? num(service.hours) * num(service.rate) : num(service.rate);
 
-        await query(`
-            UPDATE job_card_services SET
-                service_type_id = ?,
-                description = ?,
-                labor_hours = ?,
-                rate = ?,
-                amount = ?,
-                status = COALESCE(?, status)
-            WHERE id = ? AND job_card_id = ?
-        `, [serviceTypeId || null, description, hours || null, rate, total, status, serviceId, jobCardId]);
+        recomputeJobCardTotals(jobCard);
+        jobCard.updatedBy = req.user.id;
+        await jobCard.save();
 
-        // Recalculate job card totals
-        await recalculateJobCardTotals(jobCardId);
-
-        const [updatedService] = await query(`
-            SELECT jcs.*, st.name AS service_type_name
-            FROM job_card_services jcs
-            LEFT JOIN service_types st ON jcs.service_type_id = st.id
-            WHERE jcs.id = ?
-        `, [serviceId]);
-
-        res.json({
-            success: true,
-            message: 'Service updated',
-            data: updatedService
-        });
+        res.json({ success: true, message: 'Service updated successfully' });
     } catch (error) {
-        logger.error('ServiceManagement error:', error);
         next(error);
     }
 };
 
-/**
- * Delete job card service
- */
 const deleteJobCardService = async (req, res, next) => {
     try {
-        const { id: jobCardId, serviceId } = req.params;
+        const jobCard = await loadEditableJobCard(req.params.id);
+        const service = jobCard.services.id(req.params.serviceId);
+        if (!service) throw new AppError('Service not found', 404);
 
-        await query('DELETE FROM job_card_services WHERE id = ? AND job_card_id = ?', [serviceId, jobCardId]);
+        service.deleteOne();
+        recomputeJobCardTotals(jobCard);
+        jobCard.updatedBy = req.user.id;
+        await jobCard.save();
 
-        // Recalculate job card totals
-        await recalculateJobCardTotals(jobCardId);
-
-        res.json({ success: true, message: 'Service removed from job card' });
+        res.json({ success: true, message: 'Service removed successfully' });
     } catch (error) {
-        logger.error('ServiceManagement error:', error);
         next(error);
     }
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
-// JOB CARD PARTS CONTROLLER
+// JOB CARD PARTS
 // ═══════════════════════════════════════════════════════════════════════════
 
-/**
- * Add part to job card
- */
 const addJobCardPart = async (req, res, next) => {
     try {
-        const { id: jobCardId } = req.params;
         const { partId, quantity, unitPrice, isWarranty } = req.body;
-
-        if (!partId || !quantity || !unitPrice) {
-            throw new AppError('Part, quantity, and unit price are required', 400);
+        if (!sanitizeId(partId) || !num(quantity)) {
+            throw new AppError('Part and quantity are required', 400);
         }
 
-        // Check stock
-        const [part] = await query('SELECT current_stock, name FROM parts WHERE id = ?', [partId]);
-        if (!part) {
-            throw new AppError('Part not found', 404);
+        const jobCard = await loadEditableJobCard(req.params.id);
+        const part = await Part.findById(partId);
+        if (!part) throw new AppError('Part not found', 404);
+
+        const qty = Math.max(1, num(quantity, 1));
+        if (num(part.currentStock) < qty) {
+            throw new AppError(`Insufficient stock. Available: ${part.currentStock}`, 400);
         }
-        if (part.current_stock < quantity) {
-            throw new AppError(`Insufficient stock for ${part.name}. Available: ${part.current_stock}`, 400);
-        }
 
-        const total = parseInt(quantity) * parseFloat(unitPrice);
-
-        const result = await query(`
-            INSERT INTO job_card_parts (job_card_id, part_id, quantity, unit_price, total, is_warranty)
-            VALUES (?, ?, ?, ?, ?, ?)
-        `, [jobCardId, partId, quantity, unitPrice, total, isWarranty || false]);
-
-        // Deduct stock
-        await query('UPDATE parts SET current_stock = current_stock - ? WHERE id = ?', [quantity, partId]);
-
-        // Recalculate job card totals
-        await recalculateJobCardTotals(jobCardId);
-
-        const [newPart] = await query(`
-            SELECT jcp.*, p.part_code, p.name AS part_name, p.current_stock
-            FROM job_card_parts jcp
-            LEFT JOIN parts p ON jcp.part_id = p.id
-            WHERE jcp.id = ?
-        `, [result.insertId]);
-
-        res.status(201).json({
-            success: true,
-            message: 'Part added to job card',
-            data: newPart
+        const price = unitPrice !== undefined && unitPrice !== '' ? num(unitPrice) : num(part.sellingPrice);
+        jobCard.parts.push({
+            part: part._id,
+            partCode: part.partCode || part.sku || '',
+            name: part.name || '',
+            quantity: qty,
+            unitPrice: price,
+            totalPrice: qty * price,
+            isWarranty: !!isWarranty,
         });
+        recomputeJobCardTotals(jobCard);
+        jobCard.updatedBy = req.user.id;
+        await jobCard.save();
+
+        // Cross-model: reserve stock
+        await Part.findByIdAndUpdate(part._id, { $inc: { currentStock: -qty } });
+
+        const added = jobCard.parts[jobCard.parts.length - 1];
+        res.status(201).json({ success: true, data: mapJobCardPart(added), message: 'Part added successfully' });
     } catch (error) {
-        logger.error('ServiceManagement error:', error);
         next(error);
     }
 };
 
-/**
- * Update job card part
- */
 const updateJobCardPart = async (req, res, next) => {
     try {
-        const { id: jobCardId, partId: partRecordId } = req.params;
-        const { quantity, unitPrice, isWarranty } = req.body;
+        const jobCard = await loadEditableJobCard(req.params.id);
+        const partLine = jobCard.parts.id(req.params.partId);
+        if (!partLine) throw new AppError('Part not found on job card', 404);
 
-        // Get existing values
-        const [existing] = await query(
-            'SELECT part_id, quantity FROM job_card_parts WHERE id = ?',
-            [partRecordId]
-        );
-        if (!existing) {
-            throw new AppError('Part record not found', 404);
+        const { quantity, unitPrice, isWarranty } = req.body;
+        const oldQty = num(partLine.quantity, 1);
+
+        if (quantity !== undefined) partLine.quantity = Math.max(1, num(quantity, 1));
+        if (unitPrice !== undefined) partLine.unitPrice = num(unitPrice);
+        if (isWarranty !== undefined) partLine.isWarranty = !!isWarranty;
+        partLine.totalPrice = num(partLine.quantity, 1) * num(partLine.unitPrice);
+
+        recomputeJobCardTotals(jobCard);
+        jobCard.updatedBy = req.user.id;
+        await jobCard.save();
+
+        // Cross-model: adjust reserved stock by the quantity change
+        const qtyDelta = num(partLine.quantity, 1) - oldQty;
+        if (qtyDelta !== 0 && partLine.part) {
+            await Part.findByIdAndUpdate(partLine.part, { $inc: { currentStock: -qtyDelta } });
         }
 
-        const total = parseInt(quantity) * parseFloat(unitPrice);
-        const stockDiff = existing.quantity - parseInt(quantity);
-
-        await query(`
-            UPDATE job_card_parts SET
-                quantity = ?,
-                unit_price = ?,
-                total = ?,
-                is_warranty = COALESCE(?, is_warranty)
-            WHERE id = ?
-        `, [quantity, unitPrice, total, isWarranty, partRecordId]);
-
-        // Adjust stock
-        await query('UPDATE parts SET current_stock = current_stock + ? WHERE id = ?', [stockDiff, existing.part_id]);
-
-        // Recalculate job card totals
-        await recalculateJobCardTotals(jobCardId);
-
-        const [updatedPart] = await query(`
-            SELECT jcp.*, p.part_code, p.name AS part_name, p.current_stock
-            FROM job_card_parts jcp
-            LEFT JOIN parts p ON jcp.part_id = p.id
-            WHERE jcp.id = ?
-        `, [partRecordId]);
-
-        res.json({
-            success: true,
-            message: 'Part updated',
-            data: updatedPart
-        });
+        res.json({ success: true, message: 'Part updated successfully' });
     } catch (error) {
-        logger.error('ServiceManagement error:', error);
         next(error);
     }
 };
 
-/**
- * Delete job card part
- */
 const deleteJobCardPart = async (req, res, next) => {
     try {
-        const { id: jobCardId, partId: partRecordId } = req.params;
+        const jobCard = await loadEditableJobCard(req.params.id);
+        const partLine = jobCard.parts.id(req.params.partId);
+        if (!partLine) throw new AppError('Part not found on job card', 404);
 
-        // Get existing values to return stock
-        const [existing] = await query(
-            'SELECT part_id, quantity FROM job_card_parts WHERE id = ?',
-            [partRecordId]
-        );
+        const restoreQty = num(partLine.quantity, 1);
+        const partRef = partLine.part;
+        partLine.deleteOne();
+        recomputeJobCardTotals(jobCard);
+        jobCard.updatedBy = req.user.id;
+        await jobCard.save();
 
-        if (existing) {
-            // Return stock
-            await query('UPDATE parts SET current_stock = current_stock + ? WHERE id = ?',
-                [existing.quantity, existing.part_id]);
+        // Cross-model: release reserved stock
+        if (partRef) {
+            await Part.findByIdAndUpdate(partRef, { $inc: { currentStock: restoreQty } });
         }
 
-        await query('DELETE FROM job_card_parts WHERE id = ? AND job_card_id = ?', [partRecordId, jobCardId]);
-
-        // Recalculate job card totals
-        await recalculateJobCardTotals(jobCardId);
-
-        res.json({ success: true, message: 'Part removed from job card' });
+        res.json({ success: true, message: 'Part removed successfully' });
     } catch (error) {
-        logger.error('ServiceManagement error:', error);
         next(error);
     }
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
-// LOOKUP ENDPOINTS
+// LOOKUPS
 // ═══════════════════════════════════════════════════════════════════════════
 
-/**
- * Get service types
- */
 const getServiceTypes = async (req, res, next) => {
     try {
-        const types = await query('SELECT * FROM service_types WHERE is_active = TRUE ORDER BY name');
-        res.json({ success: true, data: types });
+        const types = await ServiceType.find({ isActive: true }).sort({ name: 1 }).lean();
+        res.json({
+            success: true,
+            data: types.map((t) => ({
+                id: t._id,
+                name: t.name,
+                code: t.code || '',
+                base_price: t.basePrice || 0,
+                estimated_hours: t.estimatedHours || 0,
+            })),
+        });
     } catch (error) {
-        logger.error('ServiceManagement error:', error);
         next(error);
     }
 };
 
-/**
- * Get technicians
- */
+async function getUsersByRolePattern(pattern) {
+    const roles = await Role.find({ name: { $regex: pattern, $options: 'i' } }).select('_id').lean();
+    if (!roles.length) return [];
+    const users = await User.find({ role: { $in: roles.map((r) => r._id) }, isActive: true })
+        .select('firstName lastName email')
+        .sort({ firstName: 1 })
+        .lean();
+    return users.map((u) => ({ id: u._id, name: [u.firstName, u.lastName].filter(Boolean).join(' ') || u.email }));
+}
+
 const getTechnicians = async (req, res, next) => {
     try {
-        const technicians = await query(`
-            SELECT u.id, CONCAT(u.first_name, ' ', u.last_name) AS name, r.name AS role
-            FROM users u
-            INNER JOIN roles r ON u.role_id = r.id
-            WHERE r.name IN ('technician', 'service_advisor', 'service_manager')
-            AND u.is_active = TRUE
-            ORDER BY u.first_name
-        `);
+        const technicians = await getUsersByRolePattern('technician');
         res.json({ success: true, data: technicians });
     } catch (error) {
-        logger.error('ServiceManagement error:', error);
         next(error);
     }
 };
 
-/**
- * Get service advisors
- */
 const getAdvisors = async (req, res, next) => {
     try {
-        const advisors = await query(`
-            SELECT u.id, CONCAT(u.first_name, ' ', u.last_name) AS name
-            FROM users u
-            INNER JOIN roles r ON u.role_id = r.id
-            WHERE r.name IN ('service_advisor', 'service_manager', 'super_admin')
-            AND u.is_active = TRUE
-            ORDER BY u.first_name
-        `);
+        const advisors = await getUsersByRolePattern('service_(advisor|manager)|advisor');
         res.json({ success: true, data: advisors });
     } catch (error) {
-        logger.error('ServiceManagement error:', error);
         next(error);
     }
-};
-
-// ═══════════════════════════════════════════════════════════════════════════
-// HELPER FUNCTIONS
-// ═══════════════════════════════════════════════════════════════════════════
-
-/**
- * Recalculate job card totals
- */
-const recalculateJobCardTotals = async (jobCardId) => {
-    const [[laborTotal]] = await query(
-        'SELECT COALESCE(SUM(total), 0) AS total FROM job_card_services WHERE job_card_id = ?',
-        [jobCardId]
-    );
-    const [[partsTotal]] = await query(
-        'SELECT COALESCE(SUM(total), 0) AS total FROM job_card_parts WHERE job_card_id = ? AND is_warranty = FALSE',
-        [jobCardId]
-    );
-    const [[jobCard]] = await query(
-        'SELECT COALESCE(discount, 0) AS discount, COALESCE(tax_amount, 0) AS tax_amount FROM job_cards WHERE id = ?',
-        [jobCardId]
-    );
-
-    const grandTotal = parseFloat(laborTotal.total) + parseFloat(partsTotal.total)
-        - parseFloat(jobCard.discount) + parseFloat(jobCard.tax_amount);
-
-        await query(`
-            UPDATE job_cards SET
-                labor_total = ?,
-                parts_total = ?,
-                total_amount = ?,
-                updated_at = NOW()
-            WHERE id = ?
-        `, [laborTotal.total, partsTotal.total, grandTotal, jobCardId]);
 };
 
 module.exports = {
     // Appointments
-    getAllAppointments,
-    getAppointmentById,
-    createAppointment,
-    updateAppointment,
-    updateAppointmentStatus,
-    deleteAppointment,
-    getAppointmentStats,
+    getAllAppointments, getAppointmentById, createAppointment, updateAppointment,
+    updateAppointmentStatus, deleteAppointment, getAppointmentStats,
     // Job Cards
-    getAllJobCards,
-    getJobCardById,
-    createJobCard,
-    updateJobCard,
-    updateJobCardStatus,
-    completeJobCard,
-    deleteJobCard,
-    getJobCardStats,
+    getAllJobCards, getJobCardById, createJobCard, updateJobCard,
+    updateJobCardStatus, completeJobCard, deleteJobCard, getJobCardStats,
     // Job Card Services
-    addJobCardService,
-    updateJobCardService,
-    deleteJobCardService,
+    addJobCardService, updateJobCardService, deleteJobCardService,
     // Job Card Parts
-    addJobCardPart,
-    updateJobCardPart,
-    deleteJobCardPart,
+    addJobCardPart, updateJobCardPart, deleteJobCardPart,
     // Lookups
-    getServiceTypes,
-    getTechnicians,
-    getAdvisors
+    getServiceTypes, getTechnicians, getAdvisors,
 };

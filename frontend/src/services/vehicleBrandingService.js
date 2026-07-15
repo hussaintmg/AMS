@@ -1,9 +1,10 @@
 /**
- * Vehicle Branding Service
- * AJAX/Async API calls for vehicle brand management
- * Created by LOGIXINVENTOR (PVT) Ltd.
- * www.logixinventor.com | AMS
- * Date: 2026-05-08
+ * Vehicle Brand lookup service
+ * Brands are now managed as "Makes/Brands" inside Vehicle Master Data.
+ * This thin service exposes the active brand list (sourced from the vehicle
+ * master makes endpoint) for dropdowns in Sales & Service.
+ * Maintained by Hussain Developer
+ * AMS ERP
  */
 
 import api from './api';
@@ -13,113 +14,27 @@ const handleApiError = (error) => {
     throw new Error(message);
 };
 
-export const getAllBrands = async (params = {}) => {
-    try {
-        const queryParams = {};
-
-        if (params.page !== undefined) queryParams.page = params.page;
-        if (params.limit !== undefined) queryParams.limit = params.limit;
-        if (params.search !== undefined) queryParams.search = params.search;
-        if (params.is_active !== undefined && params.is_active !== null) queryParams.is_active = params.is_active;
-
-        const response = await api.get('/vehicle-branding', { params: queryParams });
-        return response.data;
-    } catch (error) {
-        handleApiError(error);
-    }
-};
-
-export const getBrandById = async (id) => {
-    try {
-        const response = await api.get(`/vehicle-branding/${id}`);
-        return response.data;
-    } catch (error) {
-        handleApiError(error);
-    }
-};
-
-export const createBrand = async (brandData) => {
-    try {
-        const payload = {
-            name: brandData.name,
-            description: brandData.description || '',
-            logo_url: brandData.logo_url || '',
-            country_of_origin: brandData.country_of_origin || '',
-            established_year: brandData.established_year || null,
-            website: brandData.website || ''
-        };
-        const response = await api.post('/vehicle-branding', payload);
-        return response.data;
-    } catch (error) {
-        handleApiError(error);
-    }
-};
-
-export const updateBrand = async (id, brandData) => {
-    try {
-        const payload = {
-            name: brandData.name,
-            description: brandData.description || '',
-            logo_url: brandData.logo_url || '',
-            country_of_origin: brandData.country_of_origin || '',
-            established_year: brandData.established_year || null,
-            website: brandData.website || '',
-            is_active: brandData.is_active !== undefined ? brandData.is_active : true,
-            display_order: brandData.display_order || 0
-        };
-        const response = await api.put(`/vehicle-branding/${id}`, payload);
-        return response.data;
-    } catch (error) {
-        handleApiError(error);
-    }
-};
-
-export const deleteBrand = async (id) => {
-    try {
-        const response = await api.delete(`/vehicle-branding/${id}`);
-        return response.data;
-    } catch (error) {
-        handleApiError(error);
-    }
-};
-
+// Returns active brands in the legacy shape { success, data: { brands: [{id, name, ...}] } }
 export const getActiveBrands = async () => {
     try {
-        const response = await api.get('/vehicle-branding/active');
-        return response.data;
-    } catch (error) {
-        handleApiError(error);
-    }
-};
-
-export const getBrandStats = async () => {
-    try {
-        const response = await api.get('/vehicle-branding/stats');
-        return response.data;
-    } catch (error) {
-        handleApiError(error);
-    }
-};
-
-export const bulkUpdateStatus = async (brandIds, is_active) => {
-    try {
-        const response = await api.post('/vehicle-branding/bulk-update-status', {
-            brandIds,
-            is_active
-        });
-        return response.data;
+        const response = await api.get('/vehicle-master/makes', { params: { is_active: true, limit: 1000 } });
+        const makes = response?.data?.data?.makes || [];
+        const brands = makes.map((m) => ({
+            id: m.id,
+            name: m.name,
+            logo_url: m.logo || '',
+            country_of_origin: m.country || '',
+            description: m.description || '',
+            website: m.website || '',
+            established_year: m.established_year || null,
+            is_active: m.is_active,
+        }));
+        return { success: true, data: { brands } };
     } catch (error) {
         handleApiError(error);
     }
 };
 
 export default {
-    getAllBrands,
-    getBrandById,
-    createBrand,
-    updateBrand,
-    deleteBrand,
     getActiveBrands,
-    getBrandStats,
-    bulkUpdateStatus
 };

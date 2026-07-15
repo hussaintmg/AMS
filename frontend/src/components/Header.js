@@ -1,7 +1,7 @@
 /**
  * Header Component
- * Created by LOGIXINVENTOR (PVT) Ltd.
- * www.logixinventor.com | AMS
+ * Maintained by Hussain Developer
+ * AMS ERP
  */
 
 import React, {
@@ -14,10 +14,11 @@ import React, {
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { searchAPI } from "../services/api";
+import { searchAPI, notificationsAPI } from "../services/api";
 import { getAvatarUrl } from "../utils/assetUrl";
 import SearchDropdown from "./SearchDropdown";
-import { LogOut, LayoutDashboard } from "lucide-react";
+import { LogOut, LayoutDashboard, Bell, Settings, CheckCheck } from "lucide-react";
+import "../styles/notifications.css";
 
 const USER_DROPDOWN_WIDTH = 240;
 const USER_DROPDOWN_MAX_HEIGHT = 320;
@@ -29,22 +30,54 @@ function Header({ onMenuClick }) {
   const { user, logout } = useAuth();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
+  const [suggestions, setSuggestions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [userDropdownStyle, setUserDropdownStyle] = useState({});
   const [avatarError, setAvatarError] = useState(false);
   const [error, setError] = useState(null);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [notifications, setNotifications] = useState([]);
+  const [unread, setUnread] = useState(0);
   const dropdownRef = useRef(null);
   const userMenuRef = useRef(null);
   const userDropdownRef = useRef(null);
   const searchTimeoutRef = useRef(null);
+  const searchAbortRef = useRef(null);
+  const searchInputRef = useRef(null);
+  const notifRef = useRef(null);
+  const [activeSearchIndex, setActiveSearchIndex] = useState(0);
 
   const hasAvatar = user?.avatar && !avatarError;
   const avatarUrl = hasAvatar ? getAvatarUrl(user.avatar) : "";
   const initials = user
     ? `${user.firstName?.[0] || ""}${user.lastName?.[0] || ""}`.toUpperCase()
     : "U";
+
+  const loadNotifications = useCallback(() => {
+    if (!user) return;
+    notificationsAPI.list(20).then((res) => {
+      setNotifications(res.data?.data?.items || []);
+      setUnread(res.data?.data?.unread || 0);
+    }).catch(() => {});
+  }, [user]);
+
+  useEffect(() => {
+    loadNotifications();
+    const timer = setInterval(loadNotifications, 30000);
+    return () => clearInterval(timer);
+  }, [loadNotifications]);
+
+  const openNotification = async (item) => {
+    if (!item.isRead) await notificationsAPI.markRead(item._id).catch(() => {});
+    setShowNotifications(false); loadNotifications();
+    if (item.link) navigate(item.link);
+  };
+
+  const markAllRead = async () => {
+    await notificationsAPI.markAllRead(); loadNotifications();
+  };
 
   const positionUserDropdown = useCallback(() => {
     if (!userMenuRef.current) return;
@@ -100,6 +133,18 @@ function Header({ onMenuClick }) {
     if (!showUserDropdown) return;
     positionUserDropdown();
   }, [showUserDropdown, positionUserDropdown]);
+
+  useEffect(() => {
+    const handleShortcut = (event) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); searchInputRef.current?.focus(); }
+      if (event.key === 'Escape') setShowDropdown(false);
+      if (!showDropdown || !results.length) return;
+      if (event.key === 'ArrowDown') { event.preventDefault(); setActiveSearchIndex(i => (i + 1) % results.length); }
+      if (event.key === 'ArrowUp') { event.preventDefault(); setActiveSearchIndex(i => (i - 1 + results.length) % results.length); }
+      if (event.key === 'Enter') { event.preventDefault(); const item=results[activeSearchIndex]; if(item){navigate(item.link||item.url);setShowDropdown(false);} }
+    };
+    document.addEventListener('keydown', handleShortcut); return () => document.removeEventListener('keydown', handleShortcut);
+  }, [showDropdown, results, activeSearchIndex, navigate]);
 
   // Handle clicks outside of search dropdown
   useEffect(() => {
@@ -159,6 +204,24 @@ function Header({ onMenuClick }) {
     };
   }, [showUserDropdown, positionUserDropdown]);
 
+  useEffect(() => {
+    if (!showNotifications) return;
+    const handleClickOutside = (event) => {
+      if (notifRef.current && !notifRef.current.contains(event.target)) {
+        setShowNotifications(false);
+      }
+    };
+    const handleKey = (event) => {
+      if (event.key === "Escape") setShowNotifications(false);
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, [showNotifications]);
+
   // Perform search
   const performSearch = async (searchTerm) => {
     if (!searchTerm || searchTerm.trim().length < 3) {
@@ -172,19 +235,29 @@ function Header({ onMenuClick }) {
     setShowDropdown(true);
 
     try {
-      const res = await searchAPI.search(searchTerm);
-      if (res.data.success) {
-        setResults(res.data.data);
+      searchAbortRef.current?.abort();
+      const controller = new AbortController(); searchAbortRef.current = controller;
+      const res = await searchAPI.search(searchTerm, 5, 'all', { signal: controller.signal });
+      searchAPI.suggest(searchTerm, { signal: controller.signal }).then(r => setSuggestions(r.data?.suggestions || [])).catch(() => {});
+      if (res.data?.success) {
+        const items = res.data.results || res.data.data || [];
+        setResults(Array.isArray(items) ? items : []);
       } else {
-        setError(res.data.message || "Search failed");
+        setError(res.data?.message || "Search failed");
       }
     } catch (err) {
+      if (err.code === 'ERR_CANCELED' || err.name === 'CanceledError') return;
       console.error("Global search error:", err);
       setError("Failed to fetch search results");
     } finally {
       setLoading(false);
     }
   };
+
+  useEffect(() => () => {
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    searchAbortRef.current?.abort();
+  }, []);
 
   // Debounced search input handler
   const handleSearchChange = (e) => {
@@ -196,11 +269,18 @@ function Header({ onMenuClick }) {
     }
 
     if (value.trim().length >= 3) {
+      setLoading(true);
+      setError(null);
+      setShowDropdown(true);
+      searchAbortRef.current?.abort();
       searchTimeoutRef.current = setTimeout(() => {
         performSearch(value);
       }, 500); // 500ms debounce
     } else {
+      searchAbortRef.current?.abort();
+      setLoading(false);
       setResults([]);
+      setSuggestions([]);
       setShowDropdown(false);
     }
   };
@@ -234,7 +314,7 @@ function Header({ onMenuClick }) {
         ref={dropdownRef}
         style={{ position: "relative" }}
       >
-        <div className="header-search">
+        <div className="header-search" role="combobox" aria-expanded={showDropdown} aria-controls="global-search-results">
           <svg
             width="20"
             height="20"
@@ -250,10 +330,11 @@ function Header({ onMenuClick }) {
             />
           </svg>
           <input
+            ref={searchInputRef}
             type="text"
-            placeholder="Search leads, customers, vehicles..."
+            placeholder="Search customers, invoices, orders..."
             value={query}
-            onChange={handleSearchChange}
+            onChange={(e) => { setActiveSearchIndex(0); handleSearchChange(e); }}
             onFocus={() => query.trim().length >= 3 && setShowDropdown(true)}
           />
         </div>
@@ -264,27 +345,38 @@ function Header({ onMenuClick }) {
             error={error}
             query={query}
             onClose={() => setShowDropdown(false)}
+            activeIndex={activeSearchIndex}
+            suggestions={suggestions}
           />
         )}
       </div>
 
       <div className="header-actions">
-        <button className="header-action-btn" title="Notifications">
-          <svg
-            width="20"
-            height="20"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="2"
-              d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
-            />
-          </svg>
-        </button>
+        <div ref={notifRef} style={{position:'relative'}}>
+          <button className="header-action-btn" title="Notifications" onClick={() => { setShowNotifications(v => !v); setShowUserDropdown(false); if (!showNotifications) loadNotifications(); }}><Bell size={20}/>{unread > 0 && <span className="notification-badge">{unread > 99 ? '99+' : unread}</span>}</button>
+          {showNotifications && (
+            <div className="notification-popover">
+              <div className="notification-popover-header">
+                <strong>Notifications</strong>
+                <div>
+                  <button title="Mark all read" onClick={markAllRead}><CheckCheck size={16}/></button>
+                  <button title="Settings" onClick={() => {setShowNotifications(false);navigate('/notification-settings')}}><Settings size={16}/></button>
+                </div>
+              </div>
+              <div className="notification-list">
+                {notifications.map(item => (
+                  <button key={item._id} className={`notification-item ${item.isRead ? '' : 'unread'}`} onClick={() => openNotification(item)}>
+                    <strong>{item.title}</strong>
+                    <span>{item.message}</span>
+                    <small>{new Date(item.createdAt).toLocaleString()}</small>
+                  </button>
+                ))}
+                {!notifications.length && <div className="notification-empty">No notifications yet.</div>}
+              </div>
+              <button className="notification-popover-footer" onClick={() => {setShowNotifications(false);navigate('/notification-settings')}}>Manage notification settings</button>
+            </div>
+          )}
+        </div>
 
         <div className="user-menu-container" style={{ position: "relative" }}>
           <div

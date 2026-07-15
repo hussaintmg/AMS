@@ -1,9 +1,9 @@
 /**
  * Vehicle Inventory Page
  * Professional corporate UI for managing vehicle inventory with full CRUD operations
- * Created by LOGIXINVENTOR (PVT) Ltd.
- * info@logixinventor.com +92 333 3836851
- * www.logixinventor.com | AMS
+ * Maintained by Hussain Developer
+ * hussaintmerng@gmail.com | +92 319 1634446
+ * AMS ERP
  * Date: 2026-01-06
  */
 
@@ -22,6 +22,7 @@ import ConfirmModal from "../components/ConfirmModal";
 import { ArrowUpTrayIcon } from "@heroicons/react/24/outline";
 import DataTable from "../components/DataTable";
 import useModalKeyboard from "../hooks/useModalKeyboard";
+import { Search } from "lucide-react";
 import "../styles/vehicleInventory.css";
 
 const Vehicles = () => {
@@ -35,7 +36,7 @@ const Vehicles = () => {
 
   // Pagination & filtering
   const [page, setPage] = useState(1);
-  const [limit] = useState(15);
+  const [limit] = useState(20);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
   const [searchParams] = useSearchParams();
@@ -458,7 +459,8 @@ const Vehicles = () => {
         const match = updatedConditions.find(
           (c) => c.id === parseInt(newItem.id) || c.id === newItem.id,
         );
-        if (match) setFormData((prev) => ({ ...prev, conditionType: match.name }));
+        if (match)
+          setFormData((prev) => ({ ...prev, conditionType: match.name }));
       }
     } catch (err) {
       console.error(`Error refreshing ${type}s:`, err);
@@ -656,100 +658,90 @@ const Vehicles = () => {
       <ErrorPopup error={errorPopup} onClose={() => setErrorPopup(null)} />
 
       {/* Filters */}
-      <div className="filters-bar">
-        <div className="search-box">
-          <input
-            type="text"
-            placeholder="Search by VIN, engine number, make..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="search-input"
-          />
-          <span className="search-icon">🔍</span>
+      <div className="filters-bar filters-grid">
+        <div className="filter-field filter-field-search">
+          <label>Search</label>
+          <div className="search-box">
+            <span className="search-icon">
+              <Search size={18} style={{ color: "#9ca3af" }} />
+            </span>
+            <input
+              type="text"
+              placeholder="Search by VIN, engine number, brand..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="search-input"
+            />
+          </div>
         </div>
 
-        <SearchableSelect
-          value={statusFilter}
-          onChange={(e) => {
-            setStatusFilter(e.target.value);
-            setPage(1);
-          }}
-          className="filter-select"
-        >
-          <option value="">All Status</option>
-          {statusOptions.map((status) => (
-            <option key={status.id} value={status.status_code}>
-              {status.status_name}
-            </option>
-          ))}
-        </SearchableSelect>
-
-        <SearchableSelect
-          value={makeFilter}
-          onChange={(e) => {
-            setMakeFilter(e.target.value);
-            setPage(1);
-          }}
-          className="filter-select"
-        >
-          <option value="">All Makes</option>
-          {makes.map((make) => (
-            <option key={make.id} value={make.id}>
-              {make.name}
-            </option>
-          ))}
-        </SearchableSelect>
-
-        {(search || statusFilter || makeFilter) && (
-          <button
-            type="button"
-            className="btn btn-sm btn-outline filter-reset-btn"
-            onClick={() => {
-              setSearch("");
-              setStatusFilter("");
-              setMakeFilter("");
+        <div className="filter-field">
+          <label>Status</label>
+          <SearchableSelect
+            value={statusFilter}
+            onChange={(e) => {
+              setStatusFilter(e.target.value);
               setPage(1);
             }}
-            title="Reset all filters"
+            className="filter-select"
           >
-            Reset
-          </button>
-        )}
-        <span className="results-count">{total} vehicles found</span>
-      </div>
+            <option value="">All Status</option>
+            {statusOptions.map((status) => (
+              <option key={status.id} value={status.status_code}>
+                {status.status_name}
+              </option>
+            ))}
+          </SearchableSelect>
+        </div>
 
-      {/* Vehicles Table */}
-      <DataTable
-        columns={vehicleColumns}
-        data={vehicles}
-        loading={loading}
-        pagination={{ page, totalPages }}
-        onPageChange={(p) => setPage(p)}
-        onRowClick={(row) => openModal("edit", row)}
-      />
+        <div className="filter-field">
+          <label>Brand</label>
+          <SearchableSelect
+            value={makeFilter}
+            onChange={(e) => {
+              setMakeFilter(e.target.value);
+              setPage(1);
+            }}
+            className="filter-select"
+          >
+            <option value="">All Brands</option>
+            {makes.map((make) => (
+              <option key={make.id} value={make.id}>
+                {make.name}
+              </option>
+            ))}
+          </SearchableSelect>
+        </div>
+
+        <div className="filter-field filter-field-actions">
+          {(search || statusFilter || makeFilter) && (
+            <button
+              type="button"
+              className="btn btn-sm btn-outline filter-reset-btn"
+              onClick={() => {
+                setSearch("");
+                setStatusFilter("");
+                setMakeFilter("");
+                setPage(1);
+              }}
+              title="Reset all filters"
+            >
+              Reset
+            </button>
+          )}
+          <span className="results-count">{total} vehicles found</span>
+        </div>
+      </div>
 
       {/* Bulk Delete Bar */}
       {selectedIds.size > 0 && (
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 12,
-            padding: "12px 16px",
-            background: "#fef2f2",
-            border: "1px solid #fecaca",
-            borderRadius: 8,
-            marginBottom: 12,
-          }}
-        >
-          <span style={{ fontWeight: 600, color: "#991b1b" }}>
-            {selectedIds.size} selected
-          </span>
+        <div className="selection-bar">
+          <span className="selection-count">{selectedIds.size} selected</span>
           <button
             className="btn btn-danger btn-sm"
             onClick={() => setDeleteAllTarget(true)}
           >
-            Delete All
+            Delete Selected
           </button>
           <button
             className="btn btn-secondary btn-sm"
@@ -759,6 +751,16 @@ const Vehicles = () => {
           </button>
         </div>
       )}
+
+      {/* Vehicles Table */}
+      <DataTable
+        columns={vehicleColumns}
+        data={vehicles}
+        loading={loading}
+        pagination={{ page, totalPages, total, limit }}
+        onPageChange={(p) => setPage(p)}
+        onRowClick={(row) => openModal("edit", row)}
+      />
 
       <ConfirmModal
         isOpen={!!deleteTarget}
@@ -882,12 +884,12 @@ const Vehicles = () => {
                           justifyContent: "space-between",
                         }}
                       >
-                        Make *
+                        Brand *
                         <a
                           className="label-add-link"
                           onClick={() => openQuickCreate("make")}
                         >
-                          + Make
+                          + Brand
                         </a>
                       </label>
                       <SearchableSelect
@@ -896,7 +898,7 @@ const Vehicles = () => {
                         onChange={handleInputChange}
                         required
                       >
-                        <option value="">Select Make</option>
+                        <option value="">Select Brand</option>
                         {makes.map((make) => (
                           <option key={make.id} value={make.id}>
                             {make.name}
@@ -1014,9 +1016,21 @@ const Vehicles = () => {
                       />
                     </div>
                     <div className="form-group">
-                      <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <label
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                        }}
+                      >
                         Condition
-                        <a className="label-add-link" onClick={() => openQuickCreate("condition")} title="Add Condition">+ Condition</a>
+                        <a
+                          className="label-add-link"
+                          onClick={() => openQuickCreate("condition")}
+                          title="Add Condition"
+                        >
+                          + Condition
+                        </a>
                       </label>
                       <SearchableSelect
                         name="conditionType"
@@ -1024,10 +1038,7 @@ const Vehicles = () => {
                         onChange={handleInputChange}
                       >
                         {conditionOptions.map((condition) => (
-                          <option
-                            key={condition.id}
-                            value={condition.name}
-                          >
+                          <option key={condition.id} value={condition.name}>
                             {condition.name}
                           </option>
                         ))}

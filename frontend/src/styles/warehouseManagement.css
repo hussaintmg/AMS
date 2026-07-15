@@ -534,7 +534,7 @@
   .wh-page .drawer-grid { grid-template-columns: 1fr; }
 }
 
-@media (max-width: 768px) {
+@media (max-width: 1024px) {
   .wh-page .desktop-table { display: none; }
   .wh-page .mobile-cards-view { display: block; }
   .wh-page .action-bar { flex-direction: column; align-items: stretch; }
@@ -544,7 +544,7 @@
   .wh-page .grid-cols-2 { grid-template-columns: 1fr; }
 }
 
-@media (min-width: 769px) {
+@media (min-width: 1025px) {
   .wh-page .desktop-table { display: block; }
   .wh-page .mobile-cards-view { display: none; }
 }

@@ -1,13 +1,13 @@
 /**
  * AMS Frontend Entry Point
- * Created by LOGIXINVENTOR (PVT) Ltd.
- * www.logixinventor.com | AMS
+ * Maintained by Hussain Developer
+ * AMS ERP
  */
 
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
-import { Toaster } from 'react-hot-toast';
+import toast, { Toaster, ToastBar } from 'react-hot-toast';
 import { AuthProvider } from './context/AuthContext';
 import { BrandingProvider } from './context/BrandingContext';
 import { ApiProvider } from './context/ApiProvider';
@@ -45,9 +45,9 @@ root.render(
                                             position="top-right"
                                             toastOptions={{
                                                 duration: 4000,
-                                                style: { background: '#1e3a5f', color: '#fff' }
+                                                style: { background: '#1e3a5f', color: '#fff', cursor: 'pointer' }
                                             }}
-                                        />
+                                        >{(t) => <ToastBar toast={t} style={{ ...t.style, cursor: 'pointer' }} onClick={() => toast.dismiss(t.id)} />}</Toaster>
                                         <App />
                                     </ProfileProvider>
                                     </LogsProvider>

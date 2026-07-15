@@ -18,6 +18,7 @@ const compareValues = (a, b, direction) => {
 };
 
 const isActionHeader = (headerText) => /action(s)?|operation(s)?/i.test(headerText);
+const isSelectionHeader = (header) => !getCellText(header) || Boolean(header?.querySelector('input[type="checkbox"]'));
 
 const updateSortStyles = (table, activeIndex, direction) => {
     const headerCells = table.querySelectorAll('thead tr:first-child th');
@@ -84,7 +85,9 @@ const enhanceTable = (table) => {
         const filterCell = document.createElement('th');
         filterCell.className = 'table-filter-cell';
 
-        if (!isActionHeader(th.textContent || '')) {
+        const skipEnhancement = isActionHeader(th.textContent || '') || isSelectionHeader(th);
+
+        if (!skipEnhancement) {
             const input = document.createElement('input');
             input.type = 'text';
             input.className = 'table-filter-input';
@@ -96,7 +99,7 @@ const enhanceTable = (table) => {
 
         filterRow.appendChild(filterCell);
 
-        if (!isActionHeader(th.textContent || '')) {
+        if (!skipEnhancement) {
             th.classList.add('sortable');
             th.tabIndex = 0;
             const sortArrow = document.createElement('span');

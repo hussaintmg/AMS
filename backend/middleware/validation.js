@@ -1,8 +1,8 @@
 /**
  * Validation Middleware
  * Uses express-validator to validate request inputs
- * Created by LOGIXINVENTOR (PVT) Ltd.
- * www.logixinventor.com | AMS
+ * Maintained by Hussain Developer
+ * AMS ERP
  * Date: 2026-05-08
  */
 

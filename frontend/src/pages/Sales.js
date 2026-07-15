@@ -1,23 +1,24 @@
 /**
  * Sales Management Page
  * Professional Corporate UI for Quotations, Bookings, Sales Orders and Invoices
- * Created by LOGIXINVENTOR (PVT) Ltd.
- * info@logixinventor.com +92 333 3836851
- * www.logixinventor.com | AMS
+ * Maintained by Hussain Developer
+ * hussaintmerng@gmail.com | +92 319 1634446
+ * AMS ERP
  * Date: 2026-01-09
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
 import SearchableSelect from '../components/SearchableSelect';
 import { Routes, Route, useNavigate, useSearchParams } from 'react-router-dom';
-import { salesAPI, invoiceAPI, customerAPI, vehicleAPI, partsAPI, paymentMethodsAPI, erpSettingsAPI, reportsAPI, adminAPI } from '../services/api';
-import vehicleBrandingService from '../services/vehicleBrandingService';
+import { salesAPI, invoiceAPI, customerAPI, vehicleAPI, partsAPI, serviceMasterAPI, paymentMethodsAPI, erpSettingsAPI, reportsAPI, adminAPI, pdfManagementAPI } from '../services/api';
 import toast from 'react-hot-toast';
 import ActionButtons from '../components/ActionButtons';
 import ConfirmModal from '../components/ConfirmModal';
+import CustomerQuickCreate from '../components/customers/CustomerQuickCreate';
 import { useAuth } from '../context/AuthContext';
-import { Send, DollarSign, ChevronLeft, ChevronRight, FileText, Truck, Eye, Pencil, Trash2, Upload } from 'lucide-react';
+import { Send, DollarSign, FileText, Truck, Eye, Pencil, Trash2, Upload, X, Download } from 'lucide-react';
 import BulkUploadModal from '../components/BulkUploadModal';
+import ServerPagination from '../components/ServerPagination';
 
 import SalesFilterBar from '../components/sales/SalesFilterBar';
 import CorporatePrintHeader, { SalesDocumentMeta } from '../components/sales/CorporatePrintHeader';
@@ -38,9 +39,13 @@ import {
 import { printSalesModal } from '../utils/printSalesModal';
 import { renderSalesTemplate } from '../utils/documentTemplateRender';
 import { useSalesHtmlTemplate } from '../hooks/useSalesHtmlTemplate';
+import useErpDocumentSettings from '../hooks/useErpDocumentSettings';
 import RenderedHtmlDocumentTemplate from '../components/sales/RenderedHtmlDocumentTemplate';
 import '../styles/sales-print.css';
 import '../styles/userManagement.css';
+import { getRoleJob, canRoleDo } from '../utils/roleJobs';
+
+const policyAllows = (user, resource, action, legacy) => getRoleJob(user, resource) ? canRoleDo(user, resource, action) : legacy;
 
 // Debounce hook
 function useDebounce(value, delay) {
@@ -55,6 +60,30 @@ function useDebounce(value, delay) {
 /** Print open sales document modal via isolated iframe (reliable in Chrome). */
 function runSalesPrint() {
     printSalesModal();
+}
+
+async function downloadSalesPdf(documentType, id, filename) {
+    try {
+        const response = await pdfManagementAPI.download(documentType, id);
+        const url = URL.createObjectURL(response.data);
+        const link = document.createElement('a'); link.href = url; link.download = `${filename || documentType}.pdf`;
+        document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
+    } catch (error) { toast.error(error.response?.data?.message || 'PDF download failed'); }
+}
+
+async function downloadSalesPdfBulk(documentType, rows) {
+    if (!rows.length) return toast.error('No records to download');
+    try {
+        const response = await pdfManagementAPI.downloadBulk(documentType, rows.map((row) => row.id));
+        const url = URL.createObjectURL(response.data); const link = document.createElement('a');
+        link.href = url; link.download = `${documentType}-documents.zip`; document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
+    } catch (error) { toast.error(error.response?.data?.message || 'Bulk PDF download failed'); }
+}
+
+function BulkSalesActions({type,selectedRows,onClear,onRefresh,canEmail,canPdf,canDelete}){
+ const [busy,setBusy]=useState('');if(!selectedRows.length)return null;const ids=selectedRows.map(row=>row.id);
+ const run=async operation=>{if(operation==='delete'&&!window.confirm(`Cancel/delete ${ids.length} selected records?`))return;setBusy(operation);try{const apiCall=type==='quotation'?salesAPI.bulkQuotations:type==='booking'?salesAPI.bulkBookings:type==='order'?salesAPI.bulkOrders:invoiceAPI.bulk;const res=await apiCall(operation,ids);toast.success(res.data?.message||'Bulk action completed');onClear();if(operation==='delete')await onRefresh();}catch(e){toast.error(e.response?.data?.message||'Bulk action failed')}finally{setBusy('')}};
+ return <div className="sales-bulk-toolbar"><strong>{ids.length} selected</strong>{canEmail&&<button disabled={!!busy} onClick={()=>run('email')}><Send size={16}/>{busy==='email'?'Sending...':'Send email'}</button>}{canPdf&&<button disabled={!!busy} onClick={()=>downloadSalesPdfBulk(type,selectedRows)}><Download size={16}/>Download PDFs</button>}{canDelete&&<button className="danger" disabled={!!busy} onClick={()=>run('delete')}><Trash2 size={16}/>{busy==='delete'?'Deleting...':'Delete'}</button>}<button onClick={onClear}><X size={16}/>Deselect</button></div>
 }
 
 /** Active company from ERP Settings for printed letterhead on quotations / bookings / orders */
@@ -123,6 +152,7 @@ function Sales() {
 function Quotations() {
     const { user } = useAuth();
     const companyInfo = useCompanyLetterhead();
+    const { currency, salesTax, taxAmount: calculateConfiguredTax } = useErpDocumentSettings();
     const [searchParams] = useSearchParams();
     const urlSearch = searchParams.get('search') || '';
     const [data, setData] = useState([]);
@@ -130,6 +160,7 @@ function Quotations() {
     const [showModal, setShowModal] = useState(false);
     const [modalMode, setModalMode] = useState('create');
     const [selectedItem, setSelectedItem] = useState(null);
+    const [selectedIds,setSelectedIds]=useState([]);
     const { templateHtml, templateLoading } = useSalesHtmlTemplate(
         'quotation',
         companyInfo?.id,
@@ -140,7 +171,6 @@ function Quotations() {
     const [customers, setCustomers] = useState([]);
     const [vehicles, setVehicles] = useState([]);
     const [vehicleVariants, setVehicleVariants] = useState([]);
-    const [vehicleBrands, setVehicleBrands] = useState([]);
     const [parts, setParts] = useState([]);
 
     const [formData, setFormData] = useState({
@@ -158,8 +188,11 @@ function Quotations() {
     });
     const debouncedSearch = useDebounce(filters.search, 300);
 
-    const canCreate = user?.role === 'super_admin' || user?.role === 'admin' || user?.role === 'sales_manager' || user?.role === 'sales_executive';
-    const canEdit = user?.role === 'super_admin' || user?.role === 'admin' || user?.role === 'sales_manager';
+    const canCreate = policyAllows(user, 'quotations', 'create', ['super_admin','admin','sales_manager','sales_executive'].includes(user?.role));
+    const canEdit = policyAllows(user, 'quotations', 'edit', ['super_admin','admin','sales_manager'].includes(user?.role));
+    const canDelete = policyAllows(user, 'quotations', 'delete', canEdit);
+    const canSendEmail = policyAllows(user, 'quotations', 'sendEmail', canCreate);
+    const canDownloadPdf = policyAllows(user, 'quotations', 'downloadPdf', true);
 
     // Status options for Quotations
     const statusOptions = [
@@ -204,28 +237,14 @@ function Quotations() {
                 fetchAllCustomersForDropdown(),
                 vehicleAPI.getAll({ limit: 200 }),
                 vehicleAPI.getVariants(),
-                vehicleBrandingService.getActiveBrands(),
                 partsAPI.getAll({ limit: 200 })
             ]);
 
             setCustomers(results[0].status === 'fulfilled' ? results[0].value || [] : []);
             setVehicles(results[1].status === 'fulfilled' && results[1].value?.data?.data?.vehicles ? results[1].value?.data?.data?.vehicles : []);
-            const brands = results[3].status === 'fulfilled'
-                ? (results[3].value?.data?.brands || results[3].value?.data?.data?.brands || [])
-                : [];
-            setVehicleBrands(brands);
-
             const variants = results[2].status === 'fulfilled' ? (results[2].value?.data?.data || []) : [];
-            if (brands.length > 0) {
-                const allowedMakes = new Set(brands.map((b) => (b.name || '').toLowerCase().trim()));
-                setVehicleVariants(
-                    variants.filter((v) => allowedMakes.has((v.make_name || '').toLowerCase().trim()))
-                );
-            } else {
-                setVehicleVariants(variants);
-            }
-
-            setParts(results[4].status === 'fulfilled' && results[4].value?.data?.data?.parts ? results[4].value?.data?.data?.parts : []);
+            setVehicleVariants(variants);
+            setParts(results[3].status === 'fulfilled' && results[3].value?.data?.data?.parts ? results[3].value.data.data.parts : []);
         } catch (error) {
             console.error('Error fetching dropdowns:', error);
         }
@@ -233,6 +252,13 @@ function Quotations() {
 
     useEffect(() => { fetchDropdowns(); }, [fetchDropdowns]);
     useEffect(() => { fetchData(); }, [fetchData]);
+
+    // Rule 2 — refresh dropdown and auto-select the customer created inline
+    const handleCustomerCreated = useCallback(async (created) => {
+        try { setCustomers(await fetchAllCustomersForDropdown()); } catch (_) { /* dropdown refresh best-effort */ }
+        const newId = created?._id || created?.id;
+        if (newId) setFormData(prev => ({ ...prev, customerId: String(newId) }));
+    }, []);
 
     const handleFilterChange = (key, value) => {
         setFilters(prev => ({ ...prev, [key]: value }));
@@ -277,6 +303,7 @@ function Quotations() {
 
     const handleChange = (e) => {
         const { name, value } = e.target;
+
         if (name === 'saleType') {
             setFormData((prev) => ({
                 ...prev,
@@ -295,10 +322,13 @@ function Quotations() {
     const handleSubmit = async (e) => {
         e.preventDefault();
         try {
+            const baseAmount = Math.max(0, Number(formData.vehiclePrice || 0) - Number(formData.discountAmount || 0));
             const payload = {
                 ...formData,
-                // Backend only supports saleType: 'vehicle' | 'parts'
-                saleType: formData.saleType === 'parts' ? 'parts' : 'vehicle'
+                saleType: formData.saleType === 'parts' ? 'parts' : 'vehicle',
+                taxAmount: Number(formData.taxAmount) > 0 || !salesTax
+                    ? Number(formData.taxAmount || 0)
+                    : calculateConfiguredTax(baseAmount, salesTax)
             };
             if (modalMode === 'create') {
                 await salesAPI.createQuotation(payload);
@@ -360,6 +390,15 @@ function Quotations() {
         });
     };
 
+    const handleSendEmail = async (item) => {
+        try {
+            await salesAPI.sendQuotationEmail(item.id);
+            toast.success(`Quotation emailed to ${item.customer_name}`);
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Failed to email quotation');
+        }
+    };
+
     const getStatusBadge = (status) => {
         const colors = { draft: 'secondary', sent: 'info', accepted: 'success', rejected: 'danger', converted: 'primary', expired: 'warning' };
         return <span className={`badge badge-${colors[status] || 'secondary'}`}>{status.toUpperCase()}</span>;
@@ -372,7 +411,7 @@ function Quotations() {
             <ConfirmModal {...confirmModal} onCancel={() => setConfirmModal({ ...confirmModal, isOpen: false })} />
             <div className="card-header d-flex justify-content-between align-items-center">
                 <h3>Quotations</h3>
-                {canCreate && <button className="btn btn-primary" onClick={() => openModal('create')}>+ New Quotation</button>}
+                <div className="sales-header-actions">{canCreate && <button className="btn btn-primary" onClick={() => openModal('create')}>+ New Quotation</button>}</div>
             </div>
 
             <SalesFilterBar
@@ -384,12 +423,13 @@ function Quotations() {
                 statusOptions={statusOptions}
                 customers={customers}
             />
+            <BulkSalesActions type="quotation" selectedRows={data.filter(x=>selectedIds.includes(x.id))} onClear={()=>setSelectedIds([])} onRefresh={fetchData} canEmail={canSendEmail} canPdf={canDownloadPdf} canDelete={canDelete}/>
 
             <div className="desktop-table">
                 <table className="data-table">
                     <thead>
                         <tr>
-                            <th>Quote #</th>
+                            <th className="sales-select-cell"><input type="checkbox" aria-label="Select all quotations" checked={data.length>0&&data.every(x=>selectedIds.includes(x.id))} onChange={e=>setSelectedIds(e.target.checked?data.map(x=>x.id):[])}/></th><th>Quote #</th>
                             <th>Date</th>
                             <th>Customer</th>
                             <th>Item</th>
@@ -400,7 +440,8 @@ function Quotations() {
                     </thead>
                     <tbody>
                         {data.map(q => (
-                            <tr key={q.id}>
+                            <tr key={q.id} className={selectedIds.includes(q.id)?'selected-row':''}>
+                                <td className="sales-select-cell"><input type="checkbox" checked={selectedIds.includes(q.id)} onChange={e=>setSelectedIds(ids=>e.target.checked?[...new Set([...ids,q.id])]:ids.filter(id=>id!==q.id))}/></td>
                                 <td><strong>{q.quotation_number}</strong></td>
                                 <td>{new Date(q.created_at).toLocaleDateString()}</td>
                                 <td>{q.customer_name}</td>
@@ -412,10 +453,12 @@ function Quotations() {
                                         showView={true}
                                         onView={() => openModal('view', q)}
                                         onEdit={canEdit && q.status === 'draft' ? () => openModal('edit', q) : null}
-                                        onDelete={canEdit && q.status === 'draft' ? () => handleDeleteClick(q.id) : null}
-                                        extraActions={q.status === 'sent' || q.status === 'accepted' ? [
-                                            { icon: <span className="material-icons">shopping_cart</span>, title: 'Convert', onClick: () => handleConvertClick(q), className: 'btn-success' }
-                                        ] : []}
+                                        onDelete={canDelete && q.status === 'draft' ? () => handleDeleteClick(q.id) : null}
+                                        customActions={[
+                                            ...(canDownloadPdf ? [{ icon: <Download size={18} />, title: 'Download PDF', onClick: () => downloadSalesPdf('quotation', q.id, q.quotation_number), className: 'btn-info' }] : []),
+                                            ...(canSendEmail ? [{ icon: <Send size={18} className="action-icon" />, title: 'Send quotation email', onClick: () => handleSendEmail(q), className: 'btn-info' }] : []),
+                                            ...(q.status === 'sent' || q.status === 'accepted' ? [{ icon: <span className="material-icons">shopping_cart</span>, title: 'Convert', onClick: () => handleConvertClick(q), className: 'btn-success' }] : [])
+                                        ]}
                                     />
                                 </td>
                             </tr>
@@ -430,7 +473,7 @@ function Quotations() {
                         {data.map(q => (
                             <div key={q.id} className="data-card">
                                 <div className="data-card-top">
-                                    <div className="data-card-avatar avatar-amber">Q</div>
+                                    <input className="sales-mobile-select" type="checkbox" checked={selectedIds.includes(q.id)} onChange={e=>setSelectedIds(ids=>e.target.checked?[...new Set([...ids,q.id])]:ids.filter(id=>id!==q.id))}/><div className="data-card-avatar avatar-amber">Q</div>
                                     <div className="data-card-info">
                                         <span className="data-card-title">{q.quotation_number}</span>
                                         <span className="data-card-subtitle">{q.customer_name}</span>
@@ -448,9 +491,10 @@ function Quotations() {
                                         onView={() => openModal('view', q)}
                                         onEdit={canEdit && q.status === 'draft' ? () => openModal('edit', q) : null}
                                         onDelete={canEdit && q.status === 'draft' ? () => handleDeleteClick(q.id) : null}
-                                        extraActions={q.status === 'sent' || q.status === 'accepted' ? [
-                                            { icon: <span className="material-icons">shopping_cart</span>, title: 'Convert', onClick: () => handleConvertClick(q), className: 'btn-success' }
-                                        ] : []}
+                                        customActions={[
+                                            ...(canSendEmail ? [{ icon: <Send size={18} className="action-icon" />, title: 'Send quotation email', onClick: () => handleSendEmail(q), className: 'btn-info' }] : []),
+                                            ...(q.status === 'sent' || q.status === 'accepted' ? [{ icon: <span className="material-icons">shopping_cart</span>, title: 'Convert', onClick: () => handleConvertClick(q), className: 'btn-success' }] : [])
+                                        ]}
                                     />
                                 </div>
                             </div>
@@ -459,41 +503,14 @@ function Quotations() {
                 </div>
             )}
 
-            {/* Pagination */}
-            <div className="pagination-controls" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', borderTop: '1px solid var(--gray-100)' }}>
-                <span style={{ color: 'var(--gray-500)', fontSize: '0.9rem' }}>
-                    Showing {((pagination.page - 1) * pagination.limit) + 1} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total}
-                </span>
-                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                    <SearchableSelect
-                        className="form-select"
-                        value={pagination.limit}
-                        onChange={(e) => setPagination(prev => ({ ...prev, limit: parseInt(e.target.value), page: 1 }))}
-                        style={{ width: 'auto', padding: '0.25rem 0.5rem' }}
-                    >
-                        <option value="10">10 / page</option>
-                        <option value="20">20 / page</option>
-                        <option value="50">50 / page</option>
-                    </SearchableSelect>
-                    <button
-                        className="btn btn-secondary"
-                        onClick={() => setPagination(prev => ({ ...prev, page: prev.page - 1 }))}
-                        disabled={pagination.page <= 1}
-                        style={{ padding: '0.5rem' }}
-                    >
-                        <ChevronLeft size={16} />
-                    </button>
-                    <span style={{ color: 'var(--gray-600)' }}>Page {pagination.page} of {pagination.totalPages || 1}</span>
-                    <button
-                        className="btn btn-secondary"
-                        onClick={() => setPagination(prev => ({ ...prev, page: prev.page + 1 }))}
-                        disabled={pagination.page >= pagination.totalPages}
-                        style={{ padding: '0.5rem' }}
-                    >
-                        <ChevronRight size={16} />
-                    </button>
-                </div>
-            </div>
+            <ServerPagination
+                page={pagination.page}
+                totalPages={pagination.totalPages || 1}
+                total={pagination.total}
+                limit={pagination.limit}
+                onPageChange={(page) => setPagination(prev => ({ ...prev, page }))}
+                loading={loading}
+            />
 
             {showModal && (
                 <Modal
@@ -556,7 +573,7 @@ function Quotations() {
                     ) : (
                         <form onSubmit={handleSubmit}>
                             <div className="form-group">
-                                <label>Customer *</label>
+                                <label>Customer * <CustomerQuickCreate onCreated={handleCustomerCreated} /></label>
                                 <SearchableSelect name="customerId" value={formData.customerId} onChange={handleChange} required>
                                     <option value="">Select Customer</option>
                                     {customers.map(c => <option key={c.id} value={c.id}>{customerOptionLabel(c)}</option>)}
@@ -566,7 +583,6 @@ function Quotations() {
                                 <label>Sale Type</label>
                                 <SearchableSelect name="saleType" value={formData.saleType} onChange={handleChange}>
                                     <option value="vehicle_inventory">Vehicle Inventory</option>
-                                    <option value="vehicle_branding">Vehicle Branding</option>
                                     <option value="parts">Parts</option>
                                 </SearchableSelect>
                             </div>
@@ -577,19 +593,7 @@ function Quotations() {
                                     <SearchableSelect name="vehicleVariantId" value={formData.vehicleVariantId} onChange={handleChange} required>
                                         <option value="">Select Vehicle</option>
                                         {vehicles.map(v => (
-                                            <option key={v.id} value={v.variant_id || v.id}>{v.make_name} {v.model_name} {v.variant_name} ({v.color})</option>
-                                        ))}
-                                    </SearchableSelect>
-                                </div>
-                            ) : formData.saleType === 'vehicle_branding' ? (
-                                <div className="form-group">
-                                    <label>Vehicle (Branding) *</label>
-                                    <SearchableSelect name="vehicleVariantId" value={formData.vehicleVariantId} onChange={handleChange} required>
-                                        <option value="">Select Vehicle Variant</option>
-                                        {vehicleVariants.map(vv => (
-                                            <option key={vv.id} value={vv.id}>
-                                                {(vv.make_name || vv.make || '').toString()} {(vv.model_name || vv.model || '').toString()} {(vv.name || vv.variant_name || '').toString()}
-                                            </option>
+                                            <option key={v.id} value={v.variant_id || v.id}>{v.make_name} {v.model_name} {v.variant_name} ({v.color_name || v.color})</option>
                                         ))}
                                     </SearchableSelect>
                                 </div>
@@ -611,7 +615,7 @@ function Quotations() {
 
                             <div className="form-row">
                                 <div className="form-group">
-                                    <label>Price *</label>
+                                    <label>Price ({currency.code}) *</label>
                                     <input type="number" name="vehiclePrice" value={formData.vehiclePrice} onChange={handleChange} required placeholder="Base Price" />
                                 </div>
                                 <div className="form-group">
@@ -621,7 +625,7 @@ function Quotations() {
                             </div>
                             <div className="form-row">
                                 <div className="form-group">
-                                    <label>Tax</label>
+                                    <label>Tax {salesTax ? `(${salesTax.tax_name} ${salesTax.tax_rate}%)` : ''}</label>
                                     <input type="number" name="taxAmount" value={formData.taxAmount} onChange={handleChange} />
                                 </div>
                                 <div className="form-group">
@@ -652,6 +656,7 @@ function Quotations() {
 function Bookings() {
     const { user } = useAuth();
     const companyInfo = useCompanyLetterhead();
+    const { currency, salesTax, taxAmount: calculateConfiguredTax } = useErpDocumentSettings();
     const [searchParams] = useSearchParams();
     const urlSearch = searchParams.get('search') || '';
     const [data, setData] = useState([]);
@@ -659,6 +664,7 @@ function Bookings() {
     const [showModal, setShowModal] = useState(false);
     const [modalMode, setModalMode] = useState('create');
     const [selectedItem, setSelectedItem] = useState(null);
+    const [selectedIds,setSelectedIds]=useState([]);
     const { templateHtml, templateLoading } = useSalesHtmlTemplate(
         'booking',
         companyInfo?.id,
@@ -669,7 +675,7 @@ function Bookings() {
 
     const [formData, setFormData] = useState({
         customerId: '', saleType: 'vehicle', vehicleVariantId: '', bookingAmount: '',
-        totalAmount: '', expectedDeliveryDate: '', priority: 'normal', notes: ''
+        totalAmount: '', taxAmount: '0', expectedDeliveryDate: '', priority: 'normal', notes: ''
     });
 
     // Filters & Pagination
@@ -681,7 +687,11 @@ function Bookings() {
     });
     const debouncedSearch = useDebounce(filters.search, 300);
 
-    const canAction = user?.role === 'super_admin' || user?.role === 'admin' || user?.role === 'sales_manager';
+    const canAction = policyAllows(user, 'bookings', 'edit', ['super_admin','admin','sales_manager'].includes(user?.role));
+    const canDelete = policyAllows(user, 'bookings', 'delete', ['super_admin','sales_manager'].includes(user?.role));
+    const canCreate = policyAllows(user, 'bookings', 'create', canAction);
+    const canSendEmail = policyAllows(user, 'bookings', 'sendEmail', ['super_admin','admin','sales_manager','sales_executive'].includes(user?.role));
+    const canDownloadPdf = policyAllows(user, 'bookings', 'downloadPdf', true);
 
     const statusOptions = [
         { label: 'Pending', value: 'pending' },
@@ -734,6 +744,13 @@ function Bookings() {
     useEffect(() => { fetchDropdowns(); }, [fetchDropdowns]);
     useEffect(() => { fetchData(); }, [fetchData]);
 
+    // Rule 2 — refresh dropdown and auto-select the customer created inline
+    const handleCustomerCreated = useCallback(async (created) => {
+        try { setCustomers(await fetchAllCustomersForDropdown()); } catch (_) { /* dropdown refresh best-effort */ }
+        const newId = created?._id || created?.id;
+        if (newId) setFormData(prev => ({ ...prev, customerId: String(newId) }));
+    }, []);
+
     const handleFilterChange = (key, value) => {
         setFilters(prev => ({ ...prev, [key]: value }));
         if (key !== 'sortBy' && key !== 'sortOrder') setPagination(prev => ({ ...prev, page: 1 }));
@@ -754,6 +771,7 @@ function Bookings() {
                 vehicleVariantId: item.vehicle_variant_id || '',
                 bookingAmount: item.booking_amount || '',
                 totalAmount: item.total_amount || '',
+                taxAmount: item.tax_amount || '0',
                 expectedDeliveryDate: item.expected_delivery_date ? item.expected_delivery_date.split('T')[0] : '',
                 priority: item.priority || 'normal',
                 notes: item.notes || ''
@@ -761,7 +779,7 @@ function Bookings() {
         } else {
             setFormData({
                 customerId: '', saleType: 'vehicle', vehicleVariantId: '', bookingAmount: '',
-                totalAmount: '', expectedDeliveryDate: '', priority: 'normal', notes: ''
+                totalAmount: '', taxAmount: '0', expectedDeliveryDate: '', priority: 'normal', notes: ''
             });
         }
         setShowModal(true);
@@ -769,16 +787,30 @@ function Bookings() {
 
     const closeModal = () => { setShowModal(false); setSelectedItem(null); };
 
-    const handleChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
+    const handleChange = (e) => {
+        const { name, value } = e.target;
+        if (name === 'saleType') {
+            setFormData(prev => ({ ...prev, saleType: value, vehicleVariantId: '' }));
+            return;
+        }
+        setFormData(prev => ({ ...prev, [name]: value }));
+    };
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         try {
+            const baseAmount = Number(formData.totalAmount || 0);
+            const payload = {
+                ...formData,
+                taxAmount: Number(formData.taxAmount) > 0 || !salesTax
+                    ? Number(formData.taxAmount || 0)
+                    : calculateConfiguredTax(baseAmount, salesTax)
+            };
             if (modalMode === 'create') {
-                await salesAPI.createBooking(formData);
+                await salesAPI.createBooking(payload);
                 toast.success('Booking created');
             } else if (modalMode === 'edit') {
-                await salesAPI.updateBooking(selectedItem.id, formData);
+                await salesAPI.updateBooking(selectedItem.id, payload);
                 toast.success('Booking updated');
             }
             closeModal();
@@ -789,6 +821,15 @@ function Bookings() {
     };
 
     // Allocate Vehicle Modal Logic could go here...
+
+    const handleSendEmail = async (item) => {
+        try {
+            await salesAPI.sendBookingEmail(item.id);
+            toast.success(`Booking emailed to ${item.customer_name}`);
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Failed to email booking');
+        }
+    };
 
     const getStatusBadge = (status) => {
         const colors = { pending: 'warning', confirmed: 'info', processing: 'primary', ready: 'success', cancelled: 'danger' };
@@ -801,7 +842,7 @@ function Bookings() {
         <div className="card sales-page">
             <div className="card-header d-flex justify-content-between align-items-center">
                 <h3>Bookings</h3>
-                {canAction && <button className="btn btn-primary" onClick={() => openModal('create')}>+ New Booking</button>}
+                <div className="sales-header-actions">{canCreate && <button className="btn btn-primary" onClick={() => openModal('create')}>+ New Booking</button>}</div>
             </div>
 
             <SalesFilterBar
@@ -830,10 +871,11 @@ function Bookings() {
             />
 
             <div className="desktop-table">
+                <BulkSalesActions type="booking" selectedRows={data.filter(x=>selectedIds.includes(x.id))} onClear={()=>setSelectedIds([])} onRefresh={fetchData} canEmail={canSendEmail} canPdf={canDownloadPdf} canDelete={canDelete}/>
                 <table className="data-table">
                     <thead>
                         <tr>
-                            <th>Booking #</th>
+                            <th className="sales-select-cell"><input type="checkbox" aria-label="Select all bookings" checked={data.length>0&&data.every(x=>selectedIds.includes(x.id))} onChange={e=>setSelectedIds(e.target.checked?data.map(x=>x.id):[])}/></th><th>Booking #</th>
                             <th>Customer</th>
                             <th>Vehicle</th>
                             <th>Amount Paid</th>
@@ -844,7 +886,8 @@ function Bookings() {
                     </thead>
                     <tbody>
                         {data.map(b => (
-                            <tr key={b.id}>
+                            <tr key={b.id} className={selectedIds.includes(b.id)?'selected-row':''}>
+                                <td className="sales-select-cell"><input type="checkbox" checked={selectedIds.includes(b.id)} onChange={e=>setSelectedIds(ids=>e.target.checked?[...new Set([...ids,b.id])]:ids.filter(id=>id!==b.id))}/></td>
                                 <td><strong>{b.booking_number}</strong></td>
                                 <td>{b.customer_name}</td>
                                 <td>{b.item_name || b.vehicle_full_name || 'Parts/Services'}</td>
@@ -856,6 +899,7 @@ function Bookings() {
                                         showView={true}
                                         onView={() => openModal('view', b)}
                                         onEdit={canAction && !['cancelled', 'completed'].includes(b.status) ? () => openModal('edit', b) : null}
+                                        customActions={[...(canDownloadPdf ? [{ icon: <Download size={18}/>, title: 'Download PDF', onClick: () => downloadSalesPdf('booking', b.id, b.booking_number), className: 'btn-info' }] : []), ...(canSendEmail ? [{ icon: <Send size={18} className="action-icon" />, title: 'Send booking email', onClick: () => handleSendEmail(b), className: 'btn-info' }] : [])]}
                                     />
                                 </td>
                             </tr>
@@ -870,7 +914,7 @@ function Bookings() {
                         {data.map(b => (
                             <div key={b.id} className="data-card">
                                 <div className="data-card-top">
-                                    <div className="data-card-avatar avatar-purple">B</div>
+                                    <input className="sales-mobile-select" type="checkbox" checked={selectedIds.includes(b.id)} onChange={e=>setSelectedIds(ids=>e.target.checked?[...new Set([...ids,b.id])]:ids.filter(id=>id!==b.id))}/><div className="data-card-avatar avatar-purple">B</div>
                                     <div className="data-card-info">
                                         <span className="data-card-title">{b.booking_number}</span>
                                         <span className="data-card-subtitle">{b.customer_name}</span>
@@ -887,6 +931,7 @@ function Bookings() {
                                         showView={true}
                                         onView={() => openModal('view', b)}
                                         onEdit={canAction && !['cancelled', 'completed'].includes(b.status) ? () => openModal('edit', b) : null}
+                                        customActions={canSendEmail ? [{ icon: <Send size={18} className="action-icon" />, title: 'Send booking email', onClick: () => handleSendEmail(b), className: 'btn-info' }] : []}
                                     />
                                 </div>
                             </div>
@@ -895,41 +940,14 @@ function Bookings() {
                 </div>
             )}
 
-            {/* Pagination Controls */}
-            <div className="pagination-controls" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', borderTop: '1px solid var(--gray-100)' }}>
-                <span style={{ color: 'var(--gray-500)', fontSize: '0.9rem' }}>
-                    Showing {((pagination.page - 1) * pagination.limit) + 1} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total}
-                </span>
-                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                    <SearchableSelect
-                        className="form-select"
-                        value={pagination.limit}
-                        onChange={(e) => setPagination(prev => ({ ...prev, limit: parseInt(e.target.value), page: 1 }))}
-                        style={{ width: 'auto', padding: '0.25rem 0.5rem' }}
-                    >
-                        <option value="10">10 / page</option>
-                        <option value="20">20 / page</option>
-                        <option value="50">50 / page</option>
-                    </SearchableSelect>
-                    <button
-                        className="btn btn-secondary"
-                        onClick={() => setPagination(prev => ({ ...prev, page: prev.page - 1 }))}
-                        disabled={pagination.page <= 1}
-                        style={{ padding: '0.5rem' }}
-                    >
-                        <ChevronLeft size={16} />
-                    </button>
-                    <span style={{ color: 'var(--gray-600)' }}>Page {pagination.page} of {pagination.totalPages || 1}</span>
-                    <button
-                        className="btn btn-secondary"
-                        onClick={() => setPagination(prev => ({ ...prev, page: prev.page + 1 }))}
-                        disabled={pagination.page >= pagination.totalPages}
-                        style={{ padding: '0.5rem' }}
-                    >
-                        <ChevronRight size={16} />
-                    </button>
-                </div>
-            </div>
+            <ServerPagination
+                page={pagination.page}
+                totalPages={pagination.totalPages || 1}
+                total={pagination.total}
+                limit={pagination.limit}
+                onPageChange={(page) => setPagination(prev => ({ ...prev, page }))}
+                loading={loading}
+            />
 
             {
                 showModal && (
@@ -987,30 +1005,42 @@ function Bookings() {
                         ) : (
                             <form onSubmit={handleSubmit}>
                                 <div className="form-group">
-                                    <label>Customer *</label>
+                                    <label>Customer * <CustomerQuickCreate onCreated={handleCustomerCreated} /></label>
                                     <SearchableSelect name="customerId" value={formData.customerId} onChange={handleChange} required>
                                         <option value="">Select Customer</option>
                                         {customers.map(c => <option key={c.id} value={c.id}>{customerOptionLabel(c)}</option>)}
                                     </SearchableSelect>
                                 </div>
                                 <div className="form-group">
+                                    <label>Sale Type *</label>
+                                    <SearchableSelect name="saleType" value={formData.saleType} onChange={handleChange} required>
+                                        <option value="vehicle">Vehicle</option>
+                                    </SearchableSelect>
+                                </div>
+                                {formData.saleType === 'vehicle' ? (
+                                <div className="form-group">
                                     <label>Vehicle *</label>
                                     <SearchableSelect name="vehicleVariantId" value={formData.vehicleVariantId} onChange={handleChange} required>
                                         <option value="">Select Vehicle</option>
                                         {vehicles.map(v => (
-                                            <option key={v.id} value={v.variant_id || v.id}>{v.make_name} {v.model_name} {v.variant_name} ({v.color})</option>
+                                            <option key={v.id} value={v.variant_id || v.id}>{v.make_name} {v.model_name} {v.variant_name} ({v.color_name || v.color})</option>
                                         ))}
                                     </SearchableSelect>
                                 </div>
+                                ) : null}
                                 <div className="form-row">
                                     <div className="form-group">
-                                        <label>Booking Amount *</label>
+                                        <label>Booking Amount ({currency.code}) *</label>
                                         <input type="number" name="bookingAmount" value={formData.bookingAmount} onChange={handleChange} required />
                                     </div>
                                     <div className="form-group">
-                                        <label>Total Amount</label>
+                                        <label>Total Amount ({currency.code})</label>
                                         <input type="number" name="totalAmount" value={formData.totalAmount} onChange={handleChange} />
                                     </div>
+                                </div>
+                                <div className="form-group">
+                                    <label>Tax Amount {salesTax ? `(${salesTax.tax_name} ${salesTax.tax_rate}%)` : ''}</label>
+                                    <input type="number" name="taxAmount" value={formData.taxAmount} onChange={handleChange} min="0" />
                                 </div>
                                 <div className="form-row">
                                     <div className="form-group">
@@ -1050,6 +1080,7 @@ function Bookings() {
 function SalesOrders() {
     const { user } = useAuth();
     const companyInfo = useCompanyLetterhead();
+    const { currency, salesTax, taxAmount: calculateConfiguredTax } = useErpDocumentSettings();
     const [searchParams] = useSearchParams();
     const urlSearch = searchParams.get('search') || '';
     const navigate = useNavigate();
@@ -1058,6 +1089,7 @@ function SalesOrders() {
     const [showModal, setShowModal] = useState(false);
     const [modalMode, setModalMode] = useState('create');
     const [selectedItem, setSelectedItem] = useState(null);
+    const [selectedIds,setSelectedIds]=useState([]);
     const { templateHtml, templateLoading } = useSalesHtmlTemplate(
         'order',
         companyInfo?.id,
@@ -1081,15 +1113,17 @@ function SalesOrders() {
         expectedDeliveryDate: '', notes: ''
     });
 
-    const canCreate = ['super_admin', 'admin', 'sales_manager'].includes(user?.role);
-    const canEdit = ['super_admin', 'sales_manager'].includes(user?.role);
-    const canDelete = user?.role === 'super_admin';
+    const canCreate = policyAllows(user, 'sales_orders', 'create', ['super_admin','admin','sales_manager'].includes(user?.role));
+    const canEdit = policyAllows(user, 'sales_orders', 'edit', ['super_admin','sales_manager'].includes(user?.role));
+    const canDelete = policyAllows(user, 'sales_orders', 'delete', user?.role === 'super_admin');
     const canDeliverOrInvoice = ['super_admin', 'admin', 'sales_manager', 'accountant'].includes(user?.role);
+    const canSendEmail = policyAllows(user, 'sales_orders', 'sendEmail', ['super_admin','admin','sales_manager','sales_executive'].includes(user?.role));
+    const canDownloadPdf = policyAllows(user, 'sales_orders', 'downloadPdf', true);
 
     // Filters & Pagination
     const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 0 });
     const [filters, setFilters] = useState({
-        search: '', status: '', customerId: '',
+        search: urlSearch, status: '', customerId: '',
         dateFrom: '', dateTo: '',
         sortBy: 'created_at', sortOrder: 'desc'
     });
@@ -1203,12 +1237,25 @@ function SalesOrders() {
     };
 
     const closeModal = () => { setShowModal(false); setSelectedItem(null); };
+
+    // Rule 2 — refresh dropdown and auto-select the customer created inline
+    const handleCustomerCreated = useCallback(async (created) => {
+        try { setCustomers(await fetchAllCustomersForDropdown()); } catch (_) { /* dropdown refresh best-effort */ }
+        const newId = created?._id || created?.id;
+        if (newId) setFormData(prev => ({ ...prev, customerId: String(newId) }));
+    }, []);
+
     const handleChange = (e) => {
         const { name, value } = e.target;
 
+        if (name === 'saleType') {
+            setFormData(prev => ({ ...prev, saleType: value, vehicleId: '', partId: '', vehiclePrice: '' }));
+            return;
+        }
+
         // Auto-fill price for vehicle selection
         if (name === 'vehicleId') {
-            const vehicle = vehicles.find(v => v.id === parseInt(value));
+            const vehicle = vehicles.find(v => String(v.id) === String(value));
             if (vehicle) {
                 setFormData(prev => ({
                     ...prev,
@@ -1220,7 +1267,7 @@ function SalesOrders() {
         }
         // Auto-fill price for part selection
         if (name === 'partId') {
-            const part = parts.find(p => p.id === parseInt(value));
+            const part = parts.find(p => String(p.id) === String(value));
             if (part) {
                 const qty = parseInt(formData.partQuantity) || 1;
                 setFormData(prev => ({
@@ -1233,7 +1280,7 @@ function SalesOrders() {
         }
         if (name === 'partQuantity') {
             const qty = parseInt(value) || 0;
-            const part = parts.find(p => p.id === parseInt(formData.partId));
+            const part = parts.find(p => String(p.id) === String(formData.partId));
             if (part) {
                 setFormData(prev => ({
                     ...prev,
@@ -1249,11 +1296,17 @@ function SalesOrders() {
     const handleSubmit = async (e) => {
         e.preventDefault();
         try {
+            const payload = {
+                ...formData,
+                taxAmount: Number(formData.taxAmount) > 0 || !salesTax
+                    ? Number(formData.taxAmount || 0)
+                    : calculateConfiguredTax(Number(formData.vehiclePrice || 0), salesTax)
+            };
             if (modalMode === 'create') {
-                await salesAPI.createDirectOrder(formData);
+                await salesAPI.createDirectOrder(payload);
                 toast.success('Sales order created successfully');
             } else if (modalMode === 'edit') {
-                await salesAPI.updateOrder(selectedItem.id, formData);
+                await salesAPI.updateOrder(selectedItem.id, payload);
                 toast.success('Sales order updated successfully');
             }
             closeModal();
@@ -1302,6 +1355,15 @@ function SalesOrders() {
         });
     };
 
+    const handleSendEmail = async (item) => {
+        try {
+            await salesAPI.sendOrderEmail(item.id);
+            toast.success(`Sales order emailed to ${item.customer_name}`);
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Failed to email sales order');
+        }
+    };
+
     const handleGenerateInvoice = (item) => {
         setConfirmModal({
             isOpen: true,
@@ -1319,6 +1381,33 @@ function SalesOrders() {
                     navigate('/sales/invoices');
                 } catch (error) {
                     toast.error(error.response?.data?.message || 'Failed to generate invoice');
+                }
+            }
+        });
+    };
+
+    const handleViewInvoice = (item) => {
+        navigate(`/sales/invoices?search=${encodeURIComponent(item.invoice_number || '')}`);
+    };
+
+    const handleEditInvoice = (item) => {
+        navigate(`/sales/invoices?search=${encodeURIComponent(item.invoice_number || '')}`);
+    };
+
+    const handleDeleteInvoice = (item) => {
+        setConfirmModal({
+            isOpen: true,
+            title: 'Delete Invoice',
+            message: `Delete invoice ${item.invoice_number}? The order can be re-invoiced afterwards.`,
+            type: 'danger',
+            onConfirm: async () => {
+                try {
+                    await invoiceAPI.delete(item.invoice_id, { reason: 'Deleted from sales orders view' });
+                    toast.success('Invoice deleted');
+                    setConfirmModal({ isOpen: false });
+                    fetchData();
+                } catch (error) {
+                    toast.error(error.response?.data?.message || 'Failed to delete invoice');
                 }
             }
         });
@@ -1346,7 +1435,7 @@ function SalesOrders() {
     return (
         <div className="card sales-page">
             <div className="card-header d-flex justify-content-between align-items-center">
-                <h3>Sales Orders</h3>
+                <div><h3>Sales Orders</h3><BulkSalesActions type="order" selectedRows={data.filter(x=>selectedIds.includes(x.id))} onClear={()=>setSelectedIds([])} onRefresh={fetchData} canEmail={canSendEmail} canPdf={canDownloadPdf} canDelete={canDelete}/></div>
                 {canCreate && (
                     <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
                         <button
@@ -1380,7 +1469,7 @@ function SalesOrders() {
                 <table className="data-table">
                     <thead>
                         <tr>
-                            <th>Order #</th>
+                            <th className="sales-select-cell"><input type="checkbox" aria-label="Select all sales orders" checked={data.length>0&&data.every(x=>selectedIds.includes(x.id))} onChange={e=>setSelectedIds(e.target.checked?data.map(x=>x.id):[])}/></th><th>Order #</th>
                             <th>Date</th>
                             <th>Customer</th>
                             <th>Type</th>
@@ -1394,11 +1483,12 @@ function SalesOrders() {
                     </thead>
                     <tbody>
                         {data.map(o => (
-                            <tr key={o.id}>
+                            <tr key={o.id} className={selectedIds.includes(o.id)?'selected-row':''}>
+                                <td className="sales-select-cell"><input type="checkbox" checked={selectedIds.includes(o.id)} onChange={e=>setSelectedIds(ids=>e.target.checked?[...new Set([...ids,o.id])]:ids.filter(id=>id!==o.id))}/></td>
                                 <td><strong>{o.order_number}</strong></td>
                                 <td>{new Date(o.created_at).toLocaleDateString()}</td>
                                 <td>{o.customer_name}</td>
-                                <td><span className={`badge badge-${o.sale_type === 'parts' ? 'secondary' : 'primary'}`} style={{ fontSize: '0.8em' }}>{(o.sale_type || 'vehicle').toUpperCase()}</span></td>
+                                <td><span className={`badge badge-${o.sale_type === 'parts' ? 'secondary' : o.sale_type === 'service' ? 'info' : 'primary'}`} style={{ fontSize: '0.8em' }}>{(o.sale_type || 'vehicle').toUpperCase()}</span></td>
                                 <td>{o.item_name || `${o.make_name || ''} ${o.model_name || ''} ${o.variant_name || ''}`.trim() || 'Parts/Services'}</td>
                                 <td>PKR {Number(o.grand_total).toLocaleString()}</td>
                                 <td>PKR {Number(o.paid_amount).toLocaleString()}</td>
@@ -1419,6 +1509,8 @@ function SalesOrders() {
                                         onEdit={() => openModal('edit', o)}
                                         onDelete={() => handleCancelClick(o)}
                                         customActions={[
+                                            ...(canDownloadPdf ? [{ icon: <Download size={18}/>, title: 'Download PDF', onClick: () => downloadSalesPdf('order', o.id, o.order_number), className: 'btn-info' }] : []),
+                                            ...(canSendEmail ? [{ icon: <Send size={18} className="action-icon" />, title: 'Send sales order email', onClick: () => handleSendEmail(o), className: 'btn-info' }] : []),
                                             ...(canDeliverOrInvoice && !o.invoice_number && o.status === 'confirmed' ? [{
                                                 icon: <FileText size={18} className="action-icon" />,
                                                 title: 'Generate Invoice',
@@ -1466,12 +1558,12 @@ function SalesOrders() {
                         {data.map(o => (
                             <div key={o.id} className="data-card">
                                 <div className="data-card-top">
-                                    <div className="data-card-avatar avatar-green">{o.sale_type === 'parts' ? 'P' : 'V'}</div>
+                                    <input className="sales-mobile-select" type="checkbox" checked={selectedIds.includes(o.id)} onChange={e=>setSelectedIds(ids=>e.target.checked?[...new Set([...ids,o.id])]:ids.filter(id=>id!==o.id))}/><div className="data-card-avatar avatar-green">{o.sale_type === 'parts' ? 'P' : o.sale_type === 'service' ? 'S' : 'V'}</div>
                                     <div className="data-card-info">
                                         <span className="data-card-title">{o.order_number}</span>
                                         <span className="data-card-subtitle">{o.customer_name}</span>
                                     </div>
-                                    <span className={`badge-pill ${o.sale_type === 'parts' ? 'status-inactive' : 'status-active'}`}>{(o.sale_type || 'vehicle').toUpperCase()}</span>
+                                    <span className={`badge-pill ${o.sale_type === 'parts' ? 'status-inactive' : o.sale_type === 'service' ? 'status-pending' : 'status-active'}`}>{(o.sale_type || 'vehicle').toUpperCase()}</span>
                                     {getStatusBadge(o.status)}
                                 </div>
                                 <div className="data-card-body">
@@ -1489,6 +1581,7 @@ function SalesOrders() {
                                         onEdit={() => openModal('edit', o)}
                                         onDelete={() => handleCancelClick(o)}
                                         customActions={[
+                                            ...(canSendEmail ? [{ icon: <Send size={18} className="action-icon" />, title: 'Send sales order email', onClick: () => handleSendEmail(o), className: 'btn-info' }] : []),
                                             ...(canDeliverOrInvoice && !o.invoice_number && o.status === 'confirmed' ? [{
                                                 icon: <FileText size={18} className="action-icon" />,
                                                 title: 'Generate Invoice',
@@ -1530,41 +1623,14 @@ function SalesOrders() {
                 </div>
             )}
 
-            {/* Pagination Controls */}
-            <div className="pagination-controls" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', borderTop: '1px solid var(--gray-100)' }}>
-                <span style={{ color: 'var(--gray-500)', fontSize: '0.9rem' }}>
-                    Showing {((pagination.page - 1) * pagination.limit) + 1} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total}
-                </span>
-                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                    <SearchableSelect
-                        className="form-select"
-                        value={pagination.limit}
-                        onChange={(e) => setPagination(prev => ({ ...prev, limit: parseInt(e.target.value), page: 1 }))}
-                        style={{ width: 'auto', padding: '0.25rem 0.5rem' }}
-                    >
-                        <option value="10">10 / page</option>
-                        <option value="20">20 / page</option>
-                        <option value="50">50 / page</option>
-                    </SearchableSelect>
-                    <button
-                        className="btn btn-secondary"
-                        onClick={() => setPagination(prev => ({ ...prev, page: prev.page - 1 }))}
-                        disabled={pagination.page <= 1}
-                        style={{ padding: '0.5rem' }}
-                    >
-                        <ChevronLeft size={16} />
-                    </button>
-                    <span style={{ color: 'var(--gray-600)' }}>Page {pagination.page} of {pagination.totalPages || 1}</span>
-                    <button
-                        className="btn btn-secondary"
-                        onClick={() => setPagination(prev => ({ ...prev, page: prev.page + 1 }))}
-                        disabled={pagination.page >= pagination.totalPages}
-                        style={{ padding: '0.5rem' }}
-                    >
-                        <ChevronRight size={16} />
-                    </button>
-                </div>
-            </div>
+            <ServerPagination
+                page={pagination.page}
+                totalPages={pagination.totalPages || 1}
+                total={pagination.total}
+                limit={pagination.limit}
+                onPageChange={(page) => setPagination(prev => ({ ...prev, page }))}
+                loading={loading}
+            />
 
             <ConfirmModal
                 isOpen={confirmModal.isOpen}
@@ -1696,7 +1762,7 @@ function SalesOrders() {
 
                             <div className="form-row">
                                 <div className="form-group">
-                                    <label>Customer *</label>
+                                    <label>Customer * <CustomerQuickCreate onCreated={handleCustomerCreated} /></label>
                                     <SearchableSelect name="customerId" value={formData.customerId} onChange={handleChange} required>
                                         <option value="">Select Customer</option>
                                         {customers.map(c => (
@@ -1724,7 +1790,7 @@ function SalesOrders() {
                                             <option value="">Select Part</option>
                                             {parts.map(p => (
                                                 <option key={p.id} value={p.id}>
-                                                    {p.name || p.part_name} ({p.part_number}) - Stock: {p.quantity_in_stock}
+                                                    {p.name || p.part_name} ({p.part_number}) - Stock: {p.current_stock ?? p.quantity_in_stock ?? 0}
                                                 </option>
                                             ))}
                                         </SearchableSelect>
@@ -1741,7 +1807,7 @@ function SalesOrders() {
 
                             <div className="form-row">
                                 <div className="form-group">
-                                    <label>{formData.saleType === 'vehicle' ? 'Vehicle Price *' : 'Total Price *'}</label>
+                                    <label>{formData.saleType === 'vehicle' ? `Vehicle Price (${currency.code}) *` : `Total Price (${currency.code}) *`}</label>
                                     <input type="number" name="vehiclePrice" value={formData.vehiclePrice} onChange={handleChange} required min="0" />
                                 </div>
                                 <div className="form-group">
@@ -1755,7 +1821,7 @@ function SalesOrders() {
                                     <input type="number" name="discountAmount" value={formData.discountAmount} onChange={handleChange} min="0" />
                                 </div>
                                 <div className="form-group">
-                                    <label>Tax Amount</label>
+                                    <label>Tax Amount {salesTax ? `(${salesTax.tax_name} ${salesTax.tax_rate}%)` : ''}</label>
                                     <input type="number" name="taxAmount" value={formData.taxAmount} onChange={handleChange} min="0" />
                                 </div>
                             </div>
@@ -1866,6 +1932,7 @@ function SalesOrders() {
 
 function Invoices() {
     const { user } = useAuth();
+    const { currency, salesTax, serviceTax, taxAmount: calculateConfiguredTax } = useErpDocumentSettings();
     const [searchParams] = useSearchParams();
     const urlSearch = searchParams.get('search') || '';
     const [data, setData] = useState([]);
@@ -1873,6 +1940,7 @@ function Invoices() {
     const [showModal, setShowModal] = useState(false);
     const [modalMode, setModalMode] = useState('view');
     const [selectedItem, setSelectedItem] = useState(null);
+    const [selectedIds,setSelectedIds]=useState([]);
     const [invoiceDetails, setInvoiceDetails] = useState(null);
     const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', onConfirm: null });
     const [companyInfo, setCompanyInfo] = useState(null);
@@ -1885,7 +1953,7 @@ function Invoices() {
     // Filters & Pagination
     const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 0 });
     const [filters, setFilters] = useState({
-        search: '', status: '', customerId: '',
+        search: urlSearch, status: '', customerId: '',
         dateFrom: '', dateTo: '',
         sortBy: 'created_at', sortOrder: 'desc'
     });
@@ -1896,6 +1964,7 @@ function Invoices() {
     const [paymentData, setPaymentData] = useState({ amount: '', paymentMethodId: '', referenceNumber: '', notes: '' });
     const [paymentMethods, setPaymentMethods] = useState([]);
     const [invoiceStatuses, setInvoiceStatuses] = useState([]);
+    const [serviceTypes, setServiceTypes] = useState([]);
 
     // Create/Edit Invoice Form
     const [customers, setCustomers] = useState([]);
@@ -1907,11 +1976,12 @@ function Invoices() {
         items: [{ description: '', quantity: 1, unitPrice: '', taxAmount: '0' }]
     });
 
-    const canCreate = ['super_admin', 'admin', 'sales_manager', 'accountant'].includes(user?.role);
-    const canEdit = ['super_admin', 'admin', 'accountant'].includes(user?.role);
-    const canDelete = user?.role === 'super_admin';
+    const canCreate = policyAllows(user, 'invoices', 'create', ['super_admin','admin','sales_manager','accountant'].includes(user?.role));
+    const canEdit = policyAllows(user, 'invoices', 'edit', ['super_admin','admin','accountant'].includes(user?.role));
+    const canDelete = policyAllows(user, 'invoices', 'delete', user?.role === 'super_admin');
     const canRecordPayment = ['super_admin', 'admin', 'sales_manager', 'accountant'].includes(user?.role);
-    const canSend = ['super_admin', 'admin', 'sales_manager', 'accountant'].includes(user?.role);
+    const canSend = policyAllows(user, 'invoices', 'sendEmail', ['super_admin','admin','sales_manager','accountant'].includes(user?.role));
+    const canDownloadPdf = policyAllows(user, 'invoices', 'downloadPdf', true);
 
     const fetchData = useCallback(async () => {
         try {
@@ -1963,10 +2033,12 @@ function Invoices() {
                 fetchAllCustomersForDropdown(),
                 invoiceAPI.getPaymentMethods(),
                 erpSettingsAPI.getCompanies({ limit: 1 }),
-                adminAPI.getStatusesByTable('invoices')
+                adminAPI.getStatusesByTable('invoices'),
+                serviceMasterAPI.getTypes({ is_active: true, limit: 200 })
             ]);
             setCustomers(results[0].status === 'fulfilled' ? results[0].value || [] : []);
             setPaymentMethods(results[1].status === 'fulfilled' ? results[1].value?.data?.data || [] : []);
+            setServiceTypes(results[4].status === 'fulfilled' ? results[4].value?.data?.data || [] : []);
 
             // Set company info for invoices
             if (results[2].status === 'fulfilled' && results[2].value?.data?.data?.length > 0) {
@@ -1999,18 +2071,20 @@ function Invoices() {
         }
     }, [urlSearch]);
 
+    // Rule 2 — refresh dropdown and auto-select the customer created inline
+    const handleCustomerCreated = useCallback(async (created) => {
+        try { setCustomers(await fetchAllCustomersForDropdown()); } catch (_) { /* dropdown refresh best-effort */ }
+        const newId = created?._id || created?.id;
+        if (newId) setFormData(prev => ({ ...prev, customerId: String(newId) }));
+    }, []);
+
     const openModal = async (mode, item = null) => {
         setModalMode(mode);
         setSelectedItem(item);
 
         if (mode === 'view' && item) {
             try {
-                // Ensure ID is a valid integer to prevent malformed requests
-                const invoiceId = parseInt(item.id, 10);
-                if (isNaN(invoiceId)) {
-                    throw new Error('Invalid invoice ID');
-                }
-                const res = await invoiceAPI.getById(invoiceId);
+                const res = await invoiceAPI.getById(item.id);
                 setInvoiceDetails(res.data?.data);
             } catch (error) {
                 console.error('Error fetching invoice details:', error);
@@ -2075,7 +2149,15 @@ function Invoices() {
         e.preventDefault();
         try {
             if (modalMode === 'create') {
-                const invoiceTotal = calculateSubtotal() + calculateTotalTax();
+                const configuredTax = formData.invoiceType === 'service' ? serviceTax : salesTax;
+                const preparedItems = formData.items.map(item => {
+                    if (Number(item.taxAmount) > 0 || !configuredTax) return item;
+                    const base = (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0);
+                    return { ...item, taxAmount: calculateConfiguredTax(base, configuredTax) };
+                });
+                const preparedSubtotal = preparedItems.reduce((sum, item) => sum + ((Number(item.quantity) || 0) * (Number(item.unitPrice) || 0)), 0);
+                const preparedTax = preparedItems.reduce((sum, item) => sum + (Number(item.taxAmount) || 0), 0);
+                const invoiceTotal = preparedSubtotal + preparedTax;
                 const hasInitialPaymentInput = formData.initialPaidAmount !== '' && formData.initialPaidAmount !== null && formData.initialPaidAmount !== undefined;
                 const parsedInitialPaidAmount = hasInitialPaymentInput ? Number(formData.initialPaidAmount) : 0;
                 if (hasInitialPaymentInput && Number.isNaN(parsedInitialPaidAmount)) {
@@ -2103,8 +2185,9 @@ function Invoices() {
 
                 const submitData = {
                     ...formData,
-                    subtotal: calculateSubtotal(),
-                    taxAmount: calculateTotalTax()
+                    items: preparedItems,
+                    subtotal: preparedSubtotal,
+                    taxAmount: preparedTax
                 };
                 delete submitData.paymentMethodId;
                 delete submitData.initialPaidAmount;
@@ -2113,7 +2196,7 @@ function Invoices() {
                 if (amountToRecord > 0) {
                     await invoiceAPI.recordPayment(res.data.data.id, {
                         amount: amountToRecord,
-                        paymentMethodId: Number(formData.paymentMethodId),
+                        paymentMethodId: formData.paymentMethodId,
                         referenceNumber: '',
                         notes: 'Initial payment recorded during invoice creation'
                     });
@@ -2145,8 +2228,7 @@ function Invoices() {
             type: 'danger',
             onConfirm: async () => {
                 try {
-                    const invoiceId = parseInt(item.id, 10);
-                    await invoiceAPI.delete(invoiceId, { reason: 'Voided by user' });
+                    await invoiceAPI.delete(item.id, { reason: 'Voided by user' });
                     toast.success('Invoice voided successfully');
                     setConfirmModal({ isOpen: false });
                     fetchData();
@@ -2160,19 +2242,18 @@ function Invoices() {
     const handleSendClick = (item) => {
         setConfirmModal({
             isOpen: true,
-            title: 'Send Invoice',
-            message: `Send invoice ${item.invoice_number} to customer? This will update the status to "Sent".`,
+            title: 'Send Invoice Email',
+            message: `Email invoice ${item.invoice_number} to its customer?`,
             type: 'primary',
-            confirmText: 'Send Invoice',
+            confirmText: 'Send Email',
             onConfirm: async () => {
                 try {
-                    const invoiceId = parseInt(item.id, 10);
-                    await invoiceAPI.send(invoiceId);
-                    toast.success('Invoice sent successfully');
+                    await invoiceAPI.sendEmail(item.id);
+                    toast.success('Invoice emailed successfully');
                     setConfirmModal({ isOpen: false });
                     fetchData();
                 } catch (error) {
-                    toast.error(error.response?.data?.message || 'Failed to send invoice');
+                    toast.error(error.response?.data?.message || 'Failed to email invoice');
                 }
             }
         });
@@ -2189,8 +2270,7 @@ function Invoices() {
     const handleRecordPayment = async (e) => {
         e.preventDefault();
         try {
-            const invoiceId = parseInt(selectedItem.id, 10);
-            await invoiceAPI.recordPayment(invoiceId, paymentData);
+            await invoiceAPI.recordPayment(selectedItem.id, paymentData);
             toast.success('Payment recorded successfully');
             setShowPaymentModal(false);
             setSelectedItem(null);
@@ -2226,12 +2306,12 @@ function Invoices() {
     return (
         <div className="card sales-page">
             <div className="card-header d-flex justify-content-between align-items-center">
-                <h3>Invoices</h3>
+                <div><h3>Invoices</h3><BulkSalesActions type="invoice" selectedRows={data.filter(x=>selectedIds.includes(x.id))} onClear={()=>setSelectedIds([])} onRefresh={fetchData} canEmail={canSend} canPdf={canDownloadPdf} canDelete={canDelete}/></div>
                 {canCreate && (
-                    <button className="btn btn-primary" onClick={() => openModal('create')}>
+                    <div className="sales-header-actions"><button className="btn btn-primary" onClick={() => openModal('create')}>
                         <span className="material-icons" style={{ fontSize: '18px', verticalAlign: 'middle', marginRight: '4px' }}>add</span>
                         Create Manual Invoice
-                    </button>
+                    </button></div>
                 )}
             </div>
 
@@ -2249,7 +2329,7 @@ function Invoices() {
                 <table className="data-table">
                     <thead>
                         <tr>
-                            <th>Invoice #</th>
+                            <th className="sales-select-cell"><input type="checkbox" aria-label="Select all invoices" checked={data.length>0&&data.every(x=>selectedIds.includes(x.id))} onChange={e=>setSelectedIds(e.target.checked?data.map(x=>x.id):[])}/></th><th>Invoice #</th>
                             <th>Date</th>
                             <th>Due Date</th>
                             <th>Customer</th>
@@ -2263,7 +2343,8 @@ function Invoices() {
                     </thead>
                     <tbody>
                         {data.map(inv => (
-                            <tr key={inv.id}>
+                            <tr key={inv.id} className={selectedIds.includes(inv.id)?'selected-row':''}>
+                                <td className="sales-select-cell"><input type="checkbox" checked={selectedIds.includes(inv.id)} onChange={e=>setSelectedIds(ids=>e.target.checked?[...new Set([...ids,inv.id])]:ids.filter(id=>id!==inv.id))}/></td>
                                 <td><strong>{inv.invoice_number}</strong></td>
                                 <td>{new Date(inv.invoice_date).toLocaleDateString()}</td>
                                 <td>{new Date(inv.due_date).toLocaleDateString()}</td>
@@ -2284,9 +2365,10 @@ function Invoices() {
                                         onEdit={() => openModal('edit', inv)}
                                         onDelete={() => handleVoidClick(inv)}
                                         customActions={[
-                                            ...(canSend && inv.status === 'draft' ? [{
+                                            ...(canDownloadPdf ? [{ icon: <Download size={18}/>, title: 'Download PDF', onClick: () => downloadSalesPdf('invoice', inv.id, inv.invoice_number), className: 'btn-info' }] : []),
+                                            ...(canSend && inv.status !== 'cancelled' ? [{
                                                 icon: <Send size={18} className="action-icon" />,
-                                                title: 'Send Invoice',
+                                                title: 'Send invoice email',
                                                 onClick: () => handleSendClick(inv),
                                                 className: 'btn-info'
                                             }] : []),
@@ -2311,7 +2393,7 @@ function Invoices() {
                         {data.map(inv => (
                             <div key={inv.id} className="data-card">
                                 <div className="data-card-top">
-                                    <div className="data-card-avatar avatar-rose">I</div>
+                                    <input className="sales-mobile-select" type="checkbox" checked={selectedIds.includes(inv.id)} onChange={e=>setSelectedIds(ids=>e.target.checked?[...new Set([...ids,inv.id])]:ids.filter(id=>id!==inv.id))}/><div className="data-card-avatar avatar-rose">I</div>
                                     <div className="data-card-info">
                                         <span className="data-card-title">{inv.invoice_number}</span>
                                         <span className="data-card-subtitle">{inv.customer_name}</span>
@@ -2336,9 +2418,9 @@ function Invoices() {
                                         onEdit={() => openModal('edit', inv)}
                                         onDelete={() => handleVoidClick(inv)}
                                         customActions={[
-                                            ...(canSend && inv.status === 'draft' ? [{
+                                            ...(canSend && inv.status !== 'cancelled' ? [{
                                                 icon: <Send size={18} className="action-icon" />,
-                                                title: 'Send Invoice',
+                                                title: 'Send invoice email',
                                                 onClick: () => handleSendClick(inv),
                                                 className: 'btn-info'
                                             }] : []),
@@ -2357,41 +2439,14 @@ function Invoices() {
                 </div>
             )}
 
-            {/* Pagination Controls */}
-            <div className="pagination-controls" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', borderTop: '1px solid var(--gray-100)' }}>
-                <span style={{ color: 'var(--gray-500)', fontSize: '0.9rem' }}>
-                    Showing {((pagination.page - 1) * pagination.limit) + 1} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total}
-                </span>
-                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                    <SearchableSelect
-                        className="form-select"
-                        value={pagination.limit}
-                        onChange={(e) => setPagination(prev => ({ ...prev, limit: parseInt(e.target.value), page: 1 }))}
-                        style={{ width: 'auto', padding: '0.25rem 0.5rem' }}
-                    >
-                        <option value="10">10 / page</option>
-                        <option value="20">20 / page</option>
-                        <option value="50">50 / page</option>
-                    </SearchableSelect>
-                    <button
-                        className="btn btn-secondary"
-                        onClick={() => setPagination(prev => ({ ...prev, page: prev.page - 1 }))}
-                        disabled={pagination.page <= 1}
-                        style={{ padding: '0.5rem' }}
-                    >
-                        <ChevronLeft size={16} />
-                    </button>
-                    <span style={{ color: 'var(--gray-600)' }}>Page {pagination.page} of {pagination.totalPages || 1}</span>
-                    <button
-                        className="btn btn-secondary"
-                        onClick={() => setPagination(prev => ({ ...prev, page: prev.page + 1 }))}
-                        disabled={pagination.page >= pagination.totalPages}
-                        style={{ padding: '0.5rem' }}
-                    >
-                        <ChevronRight size={16} />
-                    </button>
-                </div>
-            </div>
+            <ServerPagination
+                page={pagination.page}
+                totalPages={pagination.totalPages || 1}
+                total={pagination.total}
+                limit={pagination.limit}
+                onPageChange={(page) => setPagination(prev => ({ ...prev, page }))}
+                loading={loading}
+            />
 
             <ConfirmModal
                 isOpen={confirmModal.isOpen}
@@ -2598,7 +2653,7 @@ function Invoices() {
                                 <div style={{ flex: 2 }}>
                                     <div className="form-row">
                                         <div className="form-group" style={{ flex: 2 }}>
-                                            <label>Customer *</label>
+                                            <label>Customer * <CustomerQuickCreate onCreated={handleCustomerCreated} /></label>
                                             <SearchableSelect name="customerId" value={formData.customerId} onChange={handleChange} required className="form-control-lg">
                                                 <option value="">Select Customer</option>
                                                 {customers.map(c => (
@@ -2626,7 +2681,23 @@ function Invoices() {
                                                 <div key={index} style={{ display: 'flex', gap: '0.75rem', marginBottom: '0.75rem', alignItems: 'flex-start', paddingBottom: '0.75rem', borderBottom: '1px solid #f3f4f6' }}>
                                                     <div style={{ flex: 3 }}>
                                                         <label style={{ fontSize: '0.75rem' }}>Description</label>
-                                                        <input type="text" value={item.description} onChange={(e) => handleItemChange(index, 'description', e.target.value)} required placeholder="Item Name / Service" />
+                                                        {formData.invoiceType === 'service' ? (
+                                                            <SearchableSelect
+                                                                value={item.serviceTypeId || ''}
+                                                                onChange={(e) => {
+                                                                    const service = serviceTypes.find(s => String(s._id || s.id) === String(e.target.value));
+                                                                    handleItemChange(index, 'serviceTypeId', e.target.value);
+                                                                    handleItemChange(index, 'description', service?.name || '');
+                                                                    if (service?.basePrice !== undefined) handleItemChange(index, 'unitPrice', service.basePrice);
+                                                                }}
+                                                                required
+                                                            >
+                                                                <option value="">Select Service</option>
+                                                                {serviceTypes.map(service => <option key={service._id || service.id} value={service._id || service.id}>{service.name} {service.basePrice ? `(PKR ${Number(service.basePrice).toLocaleString()})` : ''}</option>)}
+                                                            </SearchableSelect>
+                                                        ) : (
+                                                            <input type="text" value={item.description} onChange={(e) => handleItemChange(index, 'description', e.target.value)} required placeholder="Item Name / Service" />
+                                                        )}
                                                     </div>
                                                     <div style={{ flex: 1 }}>
                                                         <label style={{ fontSize: '0.75rem' }}>Qty</label>
@@ -2637,7 +2708,7 @@ function Invoices() {
                                                         <input type="number" value={item.unitPrice} onChange={(e) => handleItemChange(index, 'unitPrice', e.target.value)} required min="0" />
                                                     </div>
                                                     <div style={{ flex: 1 }}>
-                                                        <label style={{ fontSize: '0.75rem' }}>Tax</label>
+                                                        <label style={{ fontSize: '0.75rem' }}>Tax {((formData.invoiceType === 'service' ? serviceTax : salesTax) ? `(${(formData.invoiceType === 'service' ? serviceTax : salesTax).tax_name} ${(formData.invoiceType === 'service' ? serviceTax : salesTax).tax_rate}%)` : '')}</label>
                                                         <input type="number" value={item.taxAmount} onChange={(e) => handleItemChange(index, 'taxAmount', e.target.value)} min="0" />
                                                     </div>
                                                     <div style={{ paddingTop: '1.5rem' }}>
@@ -2715,7 +2786,7 @@ function Invoices() {
                                         </div>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.25rem', marginTop: '1rem', color: '#2563eb' }}>
                                             <strong>Total</strong>
-                                            <strong>PKR {(calculateSubtotal() + calculateTotalTax()).toLocaleString()}</strong>
+                                            <strong>{currency.symbol} {(calculateSubtotal() + calculateTotalTax()).toLocaleString()}</strong>
                                         </div>
                                     </div>
 
@@ -2801,12 +2872,31 @@ const Modal = ({ title, children, onClose, size = 'medium', overlayClassName }) 
     const printRootId = overlayClassName && String(overlayClassName).includes('sales-print-modal')
         ? 'ams-active-sales-print'
         : undefined;
+
+    // Rule 4 — every modal closes on ESC. Skip when a nested modal
+    // (e.g. customer quick create) is stacked on top of this one.
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (e.key !== 'Escape') return;
+            if (document.querySelectorAll('.modal-overlay').length > 1) return;
+            onClose();
+        };
+        document.addEventListener('keydown', handleKeyDown);
+        return () => document.removeEventListener('keydown', handleKeyDown);
+    }, [onClose]);
+
     return (
-        <div id={printRootId} className={`modal-overlay${overlayClassName ? ` ${overlayClassName}` : ''}`}>
+        <div
+            id={printRootId}
+            className={`modal-overlay${overlayClassName ? ` ${overlayClassName}` : ''}`}
+            onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+        >
             <div className={`modal-content ${size === 'large' ? 'modal-lg' : ''}`} style={size === 'large' ? { maxWidth: '1200px', width: '95%' } : {}}>
                 <div className="modal-header">
                     <h3>{title}</h3>
-                    <button className="close-btn" onClick={onClose}>&times;</button>
+                    <button type="button" className="close-btn" onClick={onClose} aria-label="Close modal">
+                        <X size={20} aria-hidden="true" />
+                    </button>
                 </div>
                 <div className="modal-body">
                     {children}

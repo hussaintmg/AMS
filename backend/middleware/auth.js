@@ -3,6 +3,7 @@ const { User } = require('../models');
 const { AppError } = require('./errorHandler');
 const { getPermissionSettings, resolvePagePermissions, canAccessTarget, routeTarget } = require('../utils/permissionResolver');
 const { resolveEffectiveLogPermission } = require('../utils/logPermissionResolver');
+const { canDo, getJob } = require('../utils/roleJobs');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'ams_super_secret_key';
 
@@ -85,9 +86,17 @@ const authorize = (...roles) => {
   const normalizedRoles = roles.flat(Infinity).filter(Boolean).map(normalizeRole);
   return (req, res, next) => {
     if (!req.user) return next(new AppError('Authentication required', 401));
-    if (!normalizedRoles.includes(normalizeRole(req.user.role_name))) {
-      return next(new AppError('Access denied', 403));
-    }
+    if (normalizedRoles.includes(normalizeRole(req.user.role_name))) return next();
+    const base = String(req.baseUrl || '').split('/').filter(Boolean).pop();
+    const resource = { quotations: 'quotations', bookings: 'bookings', sales: 'sales_orders', invoices: 'invoices', leads: 'leads', customers: 'customers', employees: 'employees' }[base];
+    if (!resource || !getJob(req.user, resource)) return next(new AppError('Access denied', 403));
+    let action = 'view';
+    if (req.path.includes('send-email')) action = 'sendEmail';
+    else if (req.path.includes('pdf')) action = 'downloadPdf';
+    else if (req.method === 'POST') action = 'create';
+    else if (req.method === 'PUT' || req.method === 'PATCH') action = 'edit';
+    else if (req.method === 'DELETE') action = 'delete';
+    if (!canDo(req.user, resource, action)) return next(new AppError('Access denied', 403));
     next();
   };
 };

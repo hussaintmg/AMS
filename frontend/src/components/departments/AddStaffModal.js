@@ -84,7 +84,7 @@ function AddStaffModal({
               </select>
               {filteredUsers.length === 0 && (
                 <small style={{ color: '#94a3b8', display: 'block', marginTop: 4 }}>
-                  No available users. All active users are already staff or manager.
+                  No active users are available.
                 </small>
               )}
             </div>

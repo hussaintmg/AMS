@@ -475,7 +475,7 @@
 @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
 
 /* Responsive */
-@media (max-width: 768px) {
+@media (max-width: 1024px) {
     .sales-master-page .desktop-table { display: none; }
     .sales-master-page .mobile-cards-view { display: block; }
     .sales-master-page .action-bar { flex-direction: column; align-items: stretch; }
@@ -506,7 +506,7 @@
     border-color: var(--primary-600);
 }
 
-@media (min-width: 769px) {
+@media (min-width: 1025px) {
     .sales-master-page .desktop-table { display: block; }
     .sales-master-page .mobile-cards-view { display: none; }
 }

@@ -472,22 +472,22 @@ function DepartmentDrawer({
         saving={addStaffSaving}
       />
 
-      {/* Create User (from Add Staff) */}
+      {/* Create user from Add Staff */}
       <UserFormModal
         isOpen={showCreateUser}
         mode="create"
         initialData={null}
         roles={roles}
         departments={flatDepartments}
-        preselectDepartment={deptId}
         onClose={() => setShowCreateUser(false)}
+        preselectDepartment={deptId}
         onSubmit={handleCreateUser}
         loading={createUserSaving}
         allowCreateDepartment={false}
         allowCreateRole={false}
       />
 
-      {/* Edit Staff User */}
+      {/* Edit user */}
       <UserFormModal
         isOpen={showEditStaff}
         mode="edit"
@@ -526,10 +526,10 @@ function DepartmentDrawer({
       {/* Remove Staff Confirm */}
       <ConfirmModal
         isOpen={!!removeStaffConfirm}
-        title="Remove Staff"
+        title="Remove User"
         message={
           removeStaffConfirm
-            ? `Remove "${(removeStaffConfirm.firstName || '') + ' ' + (removeStaffConfirm.lastName || '')}" from this department? They will no longer be assigned.`
+            ? `Remove "${(removeStaffConfirm.firstName || '') + ' ' + (removeStaffConfirm.lastName || '')}" from this department?`
             : ''
         }
         onConfirm={() => handleRemoveStaff(removeStaffConfirm)}

@@ -9,7 +9,6 @@ import api from '../services/api';
 const IMPORT_TYPES = new Set([
     'leads',
     'customers',
-    'vehicle-brands',
     'vehicles',
     'sales-orders',
     'parts',

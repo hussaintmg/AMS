@@ -24,6 +24,29 @@ async function createAuditLog(userId, action, module, details, req) {
   }
 }
 
+const masterModels = {
+  makes: VehicleMake,
+  models: VehicleModel,
+  variants: VehicleVariant,
+  colors: VehicleColor,
+  categories: PartCategory,
+  suppliers: Supplier,
+  conditions: VehicleCondition,
+};
+
+const toggleActive = async (req, res, next) => {
+  try {
+    const Model = masterModels[req.params.type];
+    if (!Model) throw new AppError('Invalid vehicle master type', 400);
+    const doc = await Model.findById(req.params.id);
+    if (!doc) throw new AppError('Vehicle master record not found', 404);
+    doc.is_active = !doc.is_active;
+    await doc.save();
+    await createAuditLog(req.user?.id, 'Toggle Status', 'Vehicle Master Data', `${req.params.type} ${req.params.id} ${doc.is_active ? 'activated' : 'deactivated'}`, req);
+    res.json({ success: true, message: `Record ${doc.is_active ? 'activated' : 'deactivated'}`, data: { is_active: doc.is_active } });
+  } catch (error) { next(error); }
+};
+
 // ═══════════════════════════════════════════════════════════════════════════
 // VEHICLE MAKES
 // ═══════════════════════════════════════════════════════════════════════════
@@ -52,11 +75,23 @@ const getMakes = async (req, res, next) => {
         },
       },
       { $addFields: { model_count: { $size: '$models' } } },
+      {
+        $lookup: {
+          from: 'vehicles',
+          let: { mkName: '$name' },
+          pipeline: [
+            { $match: { $expr: { $and: [{ $eq: ['$make.name', '$$mkName'] }, { $ne: ['$isActive', false] }] } } },
+            { $count: 'c' },
+          ],
+          as: 'vc',
+        },
+      },
+      { $addFields: { vehicle_count: { $ifNull: [{ $arrayElemAt: ['$vc.c', 0] }, 0] } } },
     ]);
     res.json({
       success: true,
       data: {
-        makes: makes.map(m => ({ ...m, id: m._id.toString(), _id: undefined, models: undefined })),
+        makes: makes.map(m => ({ ...m, id: m._id.toString(), _id: undefined, models: undefined, vc: undefined })),
         pagination: {
           page: parseInt(page),
           limit: parseInt(limit),
@@ -73,12 +108,18 @@ const getMakes = async (req, res, next) => {
 
 const createMake = async (req, res, next) => {
   try {
-    const { name, country, logo, isActive } = req.body;
-    if (!name) throw new AppError('Make name is required', 400);
+    const { name, country, logo, description, establishedYear, website, isActive } = req.body;
+    if (!name) throw new AppError('Brand name is required', 400);
 
-    const doc = await VehicleMake.create({ name, country, logo, is_active: isActive });
+    const doc = await VehicleMake.create({
+      name, country, logo,
+      description: description || '',
+      established_year: establishedYear || null,
+      website: website || '',
+      is_active: isActive,
+    });
 
-    await createAuditLog(req.user.id, 'Create Make', 'Vehicle Master Data', `Make "${name}" created`, req);
+    await createAuditLog(req.user.id, 'Create Brand', 'Vehicle Master Data', `Brand "${name}" created`, req);
     logFileOperation(req, { action: 'createMake', name: name.trim() });
     logger.info(`Make created: ${name} by ${req.user.email}`);
 
@@ -96,16 +137,22 @@ const createMake = async (req, res, next) => {
 const updateMake = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { name, country, logo, isActive } = req.body;
+    const { name, country, logo, description, establishedYear, website, isActive } = req.body;
 
     const doc = await VehicleMake.findByIdAndUpdate(
       id,
-      { name, country, logo, is_active: isActive },
+      {
+        name, country, logo,
+        description: description || '',
+        established_year: establishedYear || null,
+        website: website || '',
+        is_active: isActive,
+      },
       { new: true, runValidators: true },
     );
-    if (!doc) throw new AppError('Make not found', 404);
+    if (!doc) throw new AppError('Brand not found', 404);
 
-    await createAuditLog(req.user.id, 'Update Make', 'Vehicle Master Data', `Make ID ${id} updated`, req);
+    await createAuditLog(req.user.id, 'Update Brand', 'Vehicle Master Data', `Brand ID ${id} updated`, req);
     logFileOperation(req, { action: 'updateMake', makeId: id });
     logger.info(`Make updated: ID ${id} by ${req.user.email}`);
 
@@ -172,7 +219,19 @@ const getModels = async (req, res, next) => {
         },
       },
       { $addFields: { variant_count: { $size: '$variants' } } },
-      { $project: { make: 0, variants: 0 } },
+      {
+        $lookup: {
+          from: 'vehicles',
+          let: { mdName: '$name', mkName: '$make_name' },
+          pipeline: [
+            { $match: { $expr: { $and: [{ $eq: ['$model.name', '$$mdName'] }, { $eq: ['$make.name', '$$mkName'] }, { $ne: ['$isActive', false] }] } } },
+            { $count: 'c' },
+          ],
+          as: 'vc',
+        },
+      },
+      { $addFields: { vehicle_count: { $ifNull: [{ $arrayElemAt: ['$vc.c', 0] }, 0] } } },
+      { $project: { make: 0, variants: 0, vc: 0 } },
     ]);
 
     res.json({
@@ -308,7 +367,19 @@ const getVariants = async (req, res, next) => {
       },
       { $unwind: { path: '$make', preserveNullAndEmptyArrays: true } },
       { $addFields: { model_name: '$model.name', make_name: '$make.name', make_id: '$make._id', model_id: '$model._id' } },
-      { $project: { model: 0, make: 0 } },
+      {
+        $lookup: {
+          from: 'vehicles',
+          let: { vName: '$name', mdName: '$model.name' },
+          pipeline: [
+            { $match: { $expr: { $and: [{ $eq: ['$variant.name', '$$vName'] }, { $eq: ['$model.name', '$$mdName'] }, { $ne: ['$isActive', false] }] } } },
+            { $count: 'c' },
+          ],
+          as: 'vc',
+        },
+      },
+      { $addFields: { vehicle_count: { $ifNull: [{ $arrayElemAt: ['$vc.c', 0] }, 0] } } },
+      { $project: { model: 0, make: 0, vc: 0 } },
     ]);
 
     res.json({
@@ -418,12 +489,24 @@ const getColors = async (req, res, next) => {
       { $sort: { createdAt: -1 } },
       { $skip: skip },
       { $limit: parseInt(limit) },
+      {
+        $lookup: {
+          from: 'vehicles',
+          let: { clName: '$name' },
+          pipeline: [
+            { $match: { $expr: { $and: [{ $eq: ['$color.name', '$$clName'] }, { $ne: ['$isActive', false] }] } } },
+            { $count: 'c' },
+          ],
+          as: 'vc',
+        },
+      },
+      { $addFields: { vehicle_count: { $ifNull: [{ $arrayElemAt: ['$vc.c', 0] }, 0] } } },
     ]);
 
     res.json({
       success: true,
       data: {
-        colors: colors.map(c => ({ ...c, id: c._id.toString(), _id: undefined })),
+        colors: colors.map(c => ({ ...c, id: c._id.toString(), _id: undefined, vc: undefined })),
       },
     });
   } catch (error) {
@@ -587,7 +670,19 @@ const getCategories = async (req, res, next) => {
         },
       },
       { $addFields: { sub_category_count: { $size: '$children' } } },
-      { $project: { parent: 0, children: 0 } },
+      {
+        $lookup: {
+          from: 'parts',
+          let: { catName: '$name' },
+          pipeline: [
+            { $match: { $expr: { $and: [{ $eq: ['$category.name', '$$catName'] }, { $ne: ['$isActive', false] }] } } },
+            { $count: 'c' },
+          ],
+          as: 'pc',
+        },
+      },
+      { $addFields: { parts_count: { $ifNull: [{ $arrayElemAt: ['$pc.c', 0] }, 0] } } },
+      { $project: { parent: 0, children: 0, pc: 0 } },
     ]);
 
     res.json({
@@ -914,6 +1009,7 @@ const deleteCondition = async (req, res, next) => {
 };
 
 module.exports = {
+  toggleActive,
   getMakes, createMake, updateMake, deleteMake,
   getModels, createModel, updateModel, deleteModel,
   getVariants, createVariant, updateVariant, deleteVariant,

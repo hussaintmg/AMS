@@ -1,15 +1,17 @@
 /**
  * Global Search Routes
- * Created by LOGIXINVENTOR (PVT) Ltd.
- * info@logixinventor.com +92 333 3836851
- * www.logixinventor.com | AMS
+ * Maintained by Hussain Developer
+ * hussaintmerng@gmail.com | +92 319 1634446
+ * AMS ERP
  * Date: 2026-01-11
  */
 
 const express = require('express');
 const router = express.Router();
 const globalSearchController = require('../controllers/global-search.controller');
-const { authenticate } = require('../middleware/auth');
+const { authenticate, authorize } = require('../middleware/auth');
+const { rebuildWithLog } = require('../services/searchIndex.service');
+const searchRateLimit = require('../middleware/searchRateLimit');
 
 /**
  * @swagger
@@ -72,6 +74,8 @@ const { authenticate } = require('../middleware/auth');
  *       500:
  *         description: Server error
  */
-router.get('/', authenticate, globalSearchController.search);
+router.get('/', authenticate, searchRateLimit, globalSearchController.search);
+router.get('/suggest', authenticate, searchRateLimit, globalSearchController.suggest);
+router.post('/rebuild', authenticate, authorize('super_admin'), async (req,res,next)=>{try{const count=await rebuildWithLog(req.user.id);res.json({success:true,data:{count},message:'Search index rebuilt'})}catch(e){next(e)}});
 
 module.exports = router;

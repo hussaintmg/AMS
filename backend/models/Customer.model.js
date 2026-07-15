@@ -1,5 +1,31 @@
 const mongoose = require('mongoose');
 
+// One entry per sales/service document created for this customer.
+// Written by utils/customerSync.js whenever quotations, bookings,
+// orders, invoices, payments or service documents are created.
+const salesHistoryEntrySchema = new mongoose.Schema({
+  docType: { type: String, trim: true }, // quotation | booking | sales_order | invoice | payment | service_appointment | job_card
+  docId: { type: mongoose.Schema.Types.ObjectId, default: null },
+  number: { type: String, trim: true, default: '' },
+  amount: { type: Number, default: 0 },
+  description: { type: String, trim: true, default: '' },
+  date: { type: Date, default: Date.now },
+  createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+}, { _id: false });
+
+const salesSummarySchema = new mongoose.Schema({
+  totalQuotations: { type: Number, default: 0 },
+  totalBookings: { type: Number, default: 0 },
+  totalOrders: { type: Number, default: 0 },
+  totalInvoices: { type: Number, default: 0 },
+  totalServiceVisits: { type: Number, default: 0 },
+  totalSpent: { type: Number, default: 0 },
+  totalPaid: { type: Number, default: 0 },
+  outstandingBalance: { type: Number, default: 0 },
+  lastDocumentNumber: { type: String, trim: true, default: '' },
+  lastActivityAt: { type: Date, default: null },
+}, { _id: false });
+
 const customerSchema = new mongoose.Schema({
   customerCode: { type: String, unique: true, trim: true },
   firstName: { type: String, trim: true, default: '' },
@@ -22,6 +48,8 @@ const customerSchema = new mongoose.Schema({
   zipCode: { type: String, trim: true, default: '' },
   leadRef: { type: mongoose.Schema.Types.ObjectId, ref: 'Lead', default: null },
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  salesSummary: { type: salesSummarySchema, default: () => ({}) },
+  salesHistory: { type: [salesHistoryEntrySchema], default: [] },
   isActive: { type: Boolean, default: true },
   deletedAt: { type: Date, default: null },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },

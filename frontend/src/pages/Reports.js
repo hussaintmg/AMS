@@ -74,9 +74,9 @@ const TAB_FETCHERS = {
     const rows = res.data?.data || [];
     return {
       totalLeads: rows.length || 0,
-      converted: 0,
-      lost: 0,
-      conversionRate: 0,
+      converted: rows.filter((r) => r.status === 'converted').length,
+      lost: rows.filter((r) => r.status === 'lost').length,
+      conversionRate: rows.length ? Math.round(rows.filter((r) => r.status === 'converted').length / rows.length * 10000) / 100 : 0,
       _rows: rows,
     };
   },
@@ -85,8 +85,8 @@ const TAB_FETCHERS = {
     const rows = res.data?.data || [];
     const totalRec = rows.reduce((s, r) => s + Number(r.outstanding || r.balance || 0), 0);
     return {
-      totalCustomers: rows.length || 0,
-      activeCustomers: rows.filter((r) => (r.status || 'active') === 'active').length,
+      totalCustomers: new Set(rows.map((r) => r.customerId || r.customer)).size || 0,
+      activeCustomers: new Set(rows.filter((r) => r.active !== false).map((r) => r.customerId || r.customer)).size,
       totalReceivables: totalRec,
       overdueAmount: rows.reduce((s, r) => {
         const d = r.due_date || r.dueDate;
@@ -142,9 +142,20 @@ const TAB_FETCHERS = {
       _rows: rows,
     };
   },
-  expenses: async (_params) => ({ totalExpenses: 0, pendingExpenses: 0, approvedExpenses: 0, monthExpenses: 0, _rows: [] }),
-  payments: async (_params) => ({ totalReceived: 0, pendingPayments: 0, monthPayments: 0, paymentMethods: 0, _rows: [] }),
-  employee: async (_params) => ({ totalEmployees: 0, activeEmployees: 0, onLeave: 0, departments: 0, _rows: [] }),
+  expenses: async (params) => {
+    const res = await reportAPI.getExpenses(params); const rows = res.data?.data || [];
+    const month = new Date().getMonth();
+    return { totalExpenses: rows.reduce((s, r) => s + Number(r.amount || 0), 0), pendingExpenses: rows.filter((r) => ['draft', 'submitted'].includes(r.status)).length, approvedExpenses: rows.filter((r) => ['approved', 'posted'].includes(r.status)).length, monthExpenses: rows.filter((r) => r.date && new Date(r.date).getMonth() === month).reduce((s, r) => s + Number(r.amount || 0), 0), _rows: rows };
+  },
+  payments: async (params) => {
+    const res = await reportAPI.getPayments(params); const rows = res.data?.data || [];
+    const month = new Date().getMonth();
+    return { totalReceived: rows.reduce((s, r) => s + Number(r.amount || 0), 0), pendingPayments: rows.filter((r) => r.status === 'pending').length, monthPayments: rows.filter((r) => r.date && new Date(r.date).getMonth() === month).reduce((s, r) => s + Number(r.amount || 0), 0), paymentMethods: new Set(rows.map((r) => r.method).filter(Boolean)).size, _rows: rows };
+  },
+  employee: async (params) => {
+    const res = await reportAPI.getEmployees(params); const rows = res.data?.data || [];
+    return { totalEmployees: rows.length, activeEmployees: rows.filter((r) => r.status === 'active').length, onLeave: rows.filter((r) => r.onLeave).length, departments: new Set(rows.map((r) => r.department).filter(Boolean)).size, _rows: rows };
+  },
 };
 
 function formatNum(n) {
@@ -159,9 +170,7 @@ function EmptyState({ tabKey }) {
       <div className="report-empty-icon">📊</div>
       <h3>No Data Available</h3>
       <p>
-        {['expenses', 'payments', 'employee'].includes(tabKey)
-          ? `${TABS.find((t) => t.key === tabKey)?.label || 'This report'} is pending implementation after MongoDB migration. Check back later.`
-          : `No records found for the selected date range. Try adjusting the filters or add some data first.`}
+        No records found for the selected date range. Try adjusting the filters or add some data first.
       </p>
     </div>
   );
@@ -202,7 +211,25 @@ function Reports() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const handleExport = (format) => {
-    toast.success(`Export as ${format.toUpperCase()} will be available after MongoDB migration.`);
+    const data = cardData?._rows || [];
+    if (!data.length) { toast.error('There is no report data to export.'); return; }
+    if (format === 'pdf') { window.print(); return; }
+    const columns = Object.keys(data[0]).filter((key) => key !== 'id');
+    const csv = [columns.join(','), ...data.map((row) => columns.map((key) => `"${String(row[key] ?? '').replace(/"/g, '""')}"`).join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob); const link = document.createElement('a');
+    link.href = url; link.download = `${activeTab}-report.${format === 'xlsx' ? 'csv' : 'csv'}`; link.click(); URL.revokeObjectURL(url);
+    toast.success(`${format.toUpperCase()} export downloaded.`);
+  };
+
+  const reportRows = cardData?._rows || [];
+  const reportColumns = reportRows.length ? Object.keys(reportRows[0]).filter((key) => key !== 'id' && key !== 'onLeave') : [];
+  const columnLabel = (key) => key.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase());
+  const displayCell = (key, value) => {
+    if (value === null || value === undefined || value === '') return '—';
+    if (['amount', 'revenue', 'payment', 'balance', 'outstanding', 'stockValue'].includes(key)) return `PKR ${Number(value || 0).toLocaleString()}`;
+    if (['date', 'dueDate'].includes(key)) return new Date(value).toLocaleDateString();
+    return String(value);
   };
 
   const cards = TAB_CARDS[activeTab] || [];
@@ -246,6 +273,11 @@ function Reports() {
         @keyframes spin { to { transform: rotate(360deg); } }
         @keyframes pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
         .report-error { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 1rem; color: #991b1b; text-align: center; margin-bottom: 1rem; }
+        .report-table-wrap { overflow-x: auto; border: 1px solid #e2e8f0; border-radius: 10px; background: #fff; }
+        .report-table { width: 100%; min-width: 760px; border-collapse: collapse; font-size: 0.82rem; }
+        .report-table th { padding: 0.75rem; text-align: left; background: #f8fafc; color: #475569; font-weight: 700; white-space: nowrap; }
+        .report-table td { padding: 0.75rem; border-top: 1px solid #eef2f7; color: #334155; white-space: nowrap; }
+        .report-table tr:hover td { background: #f8fbff; }
         @media (max-width: 768px) {
           .reports-tabs { overflow-x: auto; flex-wrap: nowrap; padding-bottom: 2px; }
           .reports-tab { font-size: 0.8rem; padding: 0.5rem 0.75rem; }
@@ -327,12 +359,12 @@ function Reports() {
                 </div>
               ))}
             </div>
-            {cardData._rows && cardData._rows.length > 0 ? (
-              <div style={{ padding: '1rem 0', fontSize: '0.85rem', color: '#64748b' }}>
-                {cardData._rows.length} record{cardData._rows.length !== 1 ? 's' : ''} found
-                <span style={{ marginLeft: '1rem', fontSize: '0.78rem', color: '#94a3b8' }}>
-                  (Detailed view coming after MongoDB migration)
-                </span>
+            {reportRows.length > 0 ? (
+              <div className="report-table-wrap">
+                <table className="report-table">
+                  <thead><tr>{reportColumns.map((key) => <th key={key}>{columnLabel(key)}</th>)}</tr></thead>
+                  <tbody>{reportRows.map((row, index) => <tr key={row.id || index}>{reportColumns.map((key) => <td key={key}>{displayCell(key, row[key])}</td>)}</tr>)}</tbody>
+                </table>
               </div>
             ) : (
               <EmptyState tabKey={activeTab} />

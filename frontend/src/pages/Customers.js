@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { Plus, ChevronLeft, ChevronRight, User, CalendarDays, ChartBar, ArrowRightLeft, X, Building2, Users, Filter, Upload } from 'lucide-react';
 import { CustomersProvider, useCustomers } from '../context/CustomersContext';
@@ -7,6 +8,7 @@ import CustomerDrawer from '../components/customers/CustomerDrawer';
 import ActionButtons from '../components/ActionButtons';
 import ConfirmModal from '../components/ConfirmModal';
 import BulkUploadModal from '../components/BulkUploadModal';
+import ServerPagination from '../components/ServerPagination';
 import '../styles/leadManagement.css';
 import '../styles/filters.css';
 
@@ -21,12 +23,13 @@ const statsIcons = {
 };
 
 function CustomersPage() {
+  const [urlParams] = useSearchParams();
   const { customers, stats, meta, pagination, loading, filters, search, handleSearch, handleFilter, clearFilters, loadCustomers, openDrawer, closeDrawer, drawerOpen, selectedCustomerId, refresh, deleteCustomer, toggleCustomerStatus } = useCustomers();
   const [showForm, setShowForm] = useState(false);
   const [editCustomer, setEditCustomer] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
-  const [searchInput, setSearchInput] = useState(search);
+  const [searchInput, setSearchInput] = useState(() => urlParams.get('search') || search);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [showFilters, setShowFilters] = useState(false);
   const [showBulkUpload, setShowBulkUpload] = useState(false);
@@ -64,6 +67,11 @@ function CustomersPage() {
       setDeletingAll(false);
     }
   };
+
+  useEffect(() => {
+    const requestedId = urlParams.get('open');
+    if (requestedId) openDrawer(requestedId);
+  }, []);
 
   useEffect(() => {
     const handler = () => setIsMobile(window.innerWidth < 768);
@@ -145,7 +153,7 @@ function CustomersPage() {
   };
 
   const renderTable = () => (
-    <div className="table-container desktop-only">
+    <div className="table-container desktop-only customer-table-scroll">
       {loading ? (
         <div className="loading-state"><div className="spinner"></div><p>Loading customers...</p></div>
       ) : customers.length === 0 ? (
@@ -157,7 +165,6 @@ function CustomersPage() {
               <th style={{ width: 40 }}><input type="checkbox" checked={selectedIds.size === customers.length && customers.length > 0} onChange={toggleSelectAll} /></th>
               <th>Customer</th>
               <th>Email</th>
-              <th>Phone</th>
               <th>Source</th>
               <th>Type</th>
               <th>Status</th>
@@ -180,7 +187,6 @@ function CustomersPage() {
                   </div>
                 </td>
                 <td>{c.email || '-'}</td>
-                <td>{c.phone || '-'}</td>
                 <td>{c.source?.name || '-'}</td>
                 <td>{c.type?.name || '-'}</td>
                 <td>{c.status || '-'}</td>
@@ -248,16 +254,7 @@ function CustomersPage() {
     </div>
   );
 
-  const renderPagination = () => {
-    if (pagination.pages <= 1) return null;
-    return (
-      <div className="pagination">
-        <button className="btn btn-secondary btn-sm" disabled={pagination.page <= 1} onClick={() => loadCustomers(pagination.page - 1)}><ChevronLeft size={16} /></button>
-        <span className="page-info">Page {pagination.page} of {pagination.pages} ({pagination.total} total)</span>
-        <button className="btn btn-secondary btn-sm" disabled={pagination.page >= pagination.pages} onClick={() => loadCustomers(pagination.page + 1)}><ChevronRight size={16} /></button>
-      </div>
-    );
-  };
+  const renderPagination = () => <ServerPagination page={pagination.page} totalPages={pagination.pages} total={pagination.total} limit={pagination.limit || 20} onPageChange={loadCustomers} loading={loading} />;
 
   const renderFilters = () => (
     <div className="filter-bar">
@@ -368,14 +365,14 @@ function CustomersPage() {
 
       {renderFilters()}
 
-      {isMobile ? renderCards() : renderTable()}
       {selectedIds.size > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, marginTop: 8 }}>
-          <span style={{ fontWeight: 600, color: '#991b1b' }}>{selectedIds.size} selected</span>
-          <button className="btn btn-danger btn-sm" onClick={() => setDeleteAllTarget(true)}>Delete All</button>
+        <div className="selection-bar">
+          <span className="selection-count">{selectedIds.size} selected</span>
+          <button className="btn btn-danger btn-sm" onClick={() => setDeleteAllTarget(true)}>Delete Selected</button>
           <button className="btn btn-secondary btn-sm" onClick={() => setSelectedIds(new Set())}>Deselect All</button>
         </div>
       )}
+      {isMobile ? renderCards() : renderTable()}
       {renderPagination()}
 
       {deleteAllTarget && (

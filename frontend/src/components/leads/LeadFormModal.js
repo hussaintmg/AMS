@@ -168,7 +168,7 @@ export default function LeadFormModal({ lead, onClose, onSaved }) {
     <label style={LABEL_STYLE}>
       <span>{text}</span>
       {onCreate && (
-        <button type="button" className="btn-link" onClick={onCreate} style={{ fontSize: '12px', padding: 0, border: 'none', background: 'none', color: 'var(--primary-600)', cursor: 'pointer', textDecoration: 'underline' }}>+ Create {text}</button>
+        <button type="button" className="label-add-link" onClick={onCreate}>+ Create {text}</button>
       )}
     </label>
   );

@@ -1,882 +1,750 @@
 /**
- * Invoice Management Controller
- * Comprehensive CRUD operations for Invoice Management
- * Created by LOGIXINVENTOR (PVT) Ltd.
- * info@logixinventor.com +92 333 3836851
- * www.logixinventor.com | AMS
- * Date: 2026-01-08
+ * Invoice Management Controller (MongoDB)
+ * Full CRUD for invoices, invoice items and payments.
+ * Every mutation is written back to the customer's document
+ * (salesSummary + salesHistory) and kept in sync with the linked
+ * sales order.
+ * Maintained by Hussain Developer
+ * hussaintmerng@gmail.com | +92 319 1634446
+ * AMS ERP
  */
 
-const { query } = require('../config/database');
+const mongoose = require('mongoose');
 const { AppError } = require('../middleware/errorHandler');
+const logger = require('../utils/logger');
+const Invoice = require('../models/Invoice.model');
+const Payment = require('../models/Payment.model');
+const PaymentMethod = require('../models/PaymentMethod.model');
+const SalesOrder = require('../models/SalesOrder.model');
+const Customer = require('../models/Customer.model');
+const { nextDocNumber } = require('../utils/docNumber');
+const { recordCustomerActivity } = require('../utils/customerSync');
+const { createInvoiceForOrder, round2 } = require('../utils/invoiceFactory');
+const { sendTemplateEmail } = require('../services/emailSender.service');
+const { allowedOwnerIds } = require('../utils/roleJobs');
+
+const sanitizeId = (id) => {
+    if (id === '' || id === undefined || id === null) return null;
+    return mongoose.Types.ObjectId.isValid(id) ? id : null;
+};
+
+const num = (v, fallback = 0) => {
+    const parsed = Number(v);
+    return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const customerName = (customer) => {
+    if (!customer || typeof customer !== 'object') return '';
+    const name = [customer.firstName, customer.lastName].filter(Boolean).join(' ');
+    return name || customer.companyName || '';
+};
+
+const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const displayStatus = (invoice) => {
+    if (['sent', 'partial'].includes(invoice.status) && invoice.dueDate && new Date(invoice.dueDate) < new Date()) {
+        return 'overdue';
+    }
+    return invoice.status || 'draft';
+};
+
+const mapInvoiceRow = (inv) => ({
+    id: inv._id,
+    invoice_number: inv.invoiceNumber,
+    invoice_type: inv.invoiceType || 'sales',
+    sales_order_id: inv.salesOrder?._id || inv.salesOrder || null,
+    order_number: inv.salesOrder?.orderNumber || null,
+    job_card_id: inv.jobCard || null,
+    customer_id: inv.customer?._id || inv.customer || null,
+    customer_name: customerName(inv.customer),
+    status: displayStatus(inv),
+    invoice_date: inv.invoiceDate || inv.createdAt,
+    due_date: inv.dueDate || null,
+    subtotal: inv.subtotal || 0,
+    discount_amount: inv.discountAmount || 0,
+    tax_amount: inv.taxAmount || 0,
+    total_amount: inv.totalAmount || 0,
+    paid_amount: inv.paidAmount || 0,
+    balance_amount: inv.balanceAmount || 0,
+    notes: inv.notes || '',
+    terms_and_conditions: inv.termsAndConditions || '',
+    created_at: inv.createdAt,
+    updated_at: inv.updatedAt,
+});
+
+const recomputeInvoiceTotals = (invoice) => {
+    const subtotal = round2((invoice.items || []).reduce((sum, item) => sum + num(item.totalPrice), 0));
+    const taxAmount = round2((invoice.items || []).reduce((sum, item) => sum + num(item.taxAmount), 0));
+    invoice.subtotal = subtotal;
+    invoice.taxAmount = taxAmount;
+    invoice.totalAmount = round2(subtotal - num(invoice.discountAmount) + taxAmount);
+    invoice.balanceAmount = round2(invoice.totalAmount - num(invoice.paidAmount));
+};
 
 // ═══════════════════════════════════════════════════════════════════════════
-// INVOICE CRUD OPERATIONS
+// LIST / DETAIL
 // ═══════════════════════════════════════════════════════════════════════════
 
-/**
- * Get all invoices with filters and pagination
- * @route GET /api/invoices
- */
 const getAllInvoices = async (req, res, next) => {
     try {
         const {
-            status, type, customerId, salesOrderId,
-            dateFrom, dateTo, search,
-            page = 1, limit = 20, sortBy = 'created_at', sortOrder = 'DESC'
+            status, type, customerId, salesOrderId, search, dateFrom, dateTo,
+            sortBy = 'created_at', sortOrder = 'DESC', page = 1, limit = 20,
         } = req.query;
 
-        let sql = `SELECT * FROM vw_invoice_summary WHERE 1=1`;
-        const params = [];
-
-        // Apply filters
-        if (status) {
-            sql += ` AND status = ?`;
-            params.push(status);
+        const filter = {};
+        const invoiceOwnerIds = await allowedOwnerIds(req.user, 'invoices');
+        if (invoiceOwnerIds !== null) filter.createdBy = { $in: invoiceOwnerIds };
+        if (status === 'overdue') {
+            filter.status = { $in: ['sent', 'partial'] };
+            filter.dueDate = { $lt: new Date() };
+        } else if (status) {
+            filter.status = status;
         }
-        if (type) {
-            sql += ` AND invoice_type = ?`;
-            params.push(type);
-        }
-        if (customerId) {
-            sql += ` AND customer_id = ?`;
-            params.push(customerId);
-        }
-        if (salesOrderId) {
-            sql += ` AND sales_order_id = ?`;
-            params.push(salesOrderId);
-        }
-        if (dateFrom) {
-            sql += ` AND invoice_date >= ?`;
-            params.push(dateFrom);
-        }
-        if (dateTo) {
-            sql += ` AND invoice_date <= ?`;
-            params.push(dateTo);
+        if (type) filter.invoiceType = type;
+        if (sanitizeId(customerId)) filter.customer = customerId;
+        if (sanitizeId(salesOrderId)) filter.salesOrder = salesOrderId;
+        if (dateFrom || dateTo) {
+            filter.invoiceDate = {};
+            if (dateFrom) filter.invoiceDate.$gte = new Date(dateFrom);
+            if (dateTo) {
+                const end = new Date(dateTo);
+                end.setHours(23, 59, 59, 999);
+                filter.invoiceDate.$lte = end;
+            }
         }
         if (search) {
-            sql += ` AND (invoice_number LIKE ? OR customer_name LIKE ? OR order_number LIKE ?)`;
-            const searchTerm = `%${search}%`;
-            params.push(searchTerm, searchTerm, searchTerm);
+            const regex = new RegExp(String(search).trim().split(/\s+/).map(escapeRegex).join('|'), 'i');
+            const customers = await Customer.find({
+                $or: [{ firstName: regex }, { lastName: regex }, { companyName: regex }, { phone: regex }, { customerCode: regex }],
+            }).select('_id').limit(500).lean();
+            filter.$or = [
+                { invoiceNumber: regex },
+                { 'items.description': regex },
+                ...(customers.length ? [{ customer: { $in: customers.map((c) => c._id) } }] : []),
+            ];
         }
 
-        // Get total count
-        const countSql = sql.replace('SELECT * FROM vw_invoice_summary', 'SELECT COUNT(*) as total FROM vw_invoice_summary');
-        const countResult = await query(countSql, params);
-        const total = countResult[0]?.total || 0;
+        const pageNum = Math.max(1, parseInt(page, 10) || 1);
+        const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
+        const sortMap = {
+            created_at: 'createdAt', invoice_date: 'invoiceDate', due_date: 'dueDate',
+            total_amount: 'totalAmount', invoice_number: 'invoiceNumber', status: 'status',
+        };
+        const sortField = sortMap[sortBy] || 'createdAt';
+        const sortDir = String(sortOrder).toUpperCase() === 'ASC' ? 1 : -1;
 
-        // Add sorting and pagination
-        const validSortColumns = ['invoice_number', 'invoice_date', 'due_date', 'total_amount', 'balance_amount', 'status', 'created_at'];
-        const sortColumn = validSortColumns.includes(sortBy) ? sortBy : 'created_at';
-        const order = sortOrder.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
-
-        sql += ` ORDER BY ${sortColumn} ${order}`;
-        sql += ` LIMIT ? OFFSET ?`;
-        params.push(parseInt(limit), (parseInt(page) - 1) * parseInt(limit));
-
-        const invoices = await query(sql, params);
+        const [invoices, total] = await Promise.all([
+            Invoice.find(filter)
+                .populate('customer', 'firstName lastName companyName phone customerCode')
+                .populate('salesOrder', 'orderNumber')
+                .sort({ [sortField]: sortDir })
+                .skip((pageNum - 1) * limitNum)
+                .limit(limitNum)
+                .lean(),
+            Invoice.countDocuments(filter),
+        ]);
 
         res.json({
             success: true,
-            data: invoices,
+            data: invoices.map(mapInvoiceRow),
             pagination: {
-                page: parseInt(page),
-                limit: parseInt(limit),
+                page: pageNum,
+                limit: limitNum,
                 total,
-                pages: Math.ceil(total / parseInt(limit))
-            }
+                pages: Math.ceil(total / limitNum),
+                totalPages: Math.ceil(total / limitNum),
+            },
         });
     } catch (error) {
+        logger.error('Error fetching invoices:', error);
         next(error);
     }
 };
 
-/**
- * Get invoice by ID with items and payments
- * @route GET /api/invoices/:id
- */
 const getInvoiceById = async (req, res, next) => {
     try {
-        const { id } = req.params;
+        const invoice = await Invoice.findById(sanitizeId(req.params.id))
+            .populate('customer', 'firstName lastName companyName phone email address city customerCode')
+            .populate('salesOrder', 'orderNumber')
+            .lean();
+        if (!invoice) throw new AppError('Invoice not found', 404);
 
-        // Validate and parse ID - handle cases like "2:1" or other malformed IDs
-        const invoiceId = parseInt(id, 10);
-        if (isNaN(invoiceId) || invoiceId <= 0) {
-            throw new AppError('Invalid invoice ID', 400);
-        }
+        const payments = await Payment.find({ invoice: invoice._id, status: { $ne: 'cancelled' } })
+            .sort({ paymentDate: 1 })
+            .lean();
 
-        // Get invoice with customer and order details
-        const invoiceResult = await query(`
-            SELECT 
-                i.*,
-                CONCAT(c.first_name, ' ', c.last_name) as customer_name,
-                c.email as customer_email,
-                c.phone as customer_phone,
-                c.address as customer_address,
-                c.city as customer_city,
-                c.cnic_number as customer_cnic,
-                c.company_name,
-                c.company_ntn as customer_ntn,
-                c.customer_type,
-                so.order_number,
-                jc.job_card_number,
-                CONCAT(u.first_name, ' ', u.last_name) as created_by_name
-            FROM invoices i
-            LEFT JOIN customers c ON i.customer_id = c.id
-            LEFT JOIN sales_orders so ON i.sales_order_id = so.id
-            LEFT JOIN job_cards jc ON i.job_card_id = jc.id
-            LEFT JOIN users u ON i.created_by = u.id
-            WHERE i.id = ?
-        `, [invoiceId]);
-
-        if (invoiceResult.length === 0) {
-            throw new AppError('Invoice not found', 404);
-        }
-
-        const invoice = invoiceResult[0];
-
-        // Check if company details are missing (snapshot failed or old invoice)
-        if (!invoice.company_name) {
-            // 1. Try fetching from companies table (Primary source)
-            let companyInfo = {};
-            try {
-                const companies = await query(`
-                    SELECT 
-                        company_name, address as company_address, phone as company_phone, 
-                        email as company_email, tax_id as company_ntn, logo as company_logo
-                    FROM companies 
-                    WHERE is_active = TRUE 
-                    ORDER BY id DESC LIMIT 1
-                `);
-                if (companies.length > 0) {
-                    companyInfo = companies[0];
-                }
-            } catch (err) {
-                console.warn('Could not fetch from companies table, falling back to settings', err.message);
-            }
-
-            // 2. Fallback to system_settings if no company found
-            if (!companyInfo.company_name) {
-                const companySettings = await query(`
-                    SELECT 
-                        MAX(CASE WHEN setting_key = 'company_name' THEN setting_value END) as company_name,
-                        MAX(CASE WHEN setting_key = 'company_address' THEN setting_value END) as company_address,
-                        MAX(CASE WHEN setting_key = 'company_phone' THEN setting_value END) as company_phone,
-                        MAX(CASE WHEN setting_key = 'company_email' THEN setting_value END) as company_email,
-                        MAX(CASE WHEN setting_key = 'company_ntn' THEN setting_value END) as company_ntn,
-                        MAX(CASE WHEN setting_key = 'company_logo' THEN setting_value END) as company_logo
-                    FROM system_settings 
-                    WHERE setting_key IN ('company_name', 'company_address', 'company_phone', 'company_email', 'company_ntn', 'company_logo')
-                `);
-                companyInfo = companySettings[0] || {};
-            }
-
-            // Update invoice object with fetched details
-            invoice.company_name = companyInfo.company_name || 'My Company';
-            invoice.company_address = companyInfo.company_address || '';
-            invoice.company_phone = companyInfo.company_phone || '';
-            invoice.company_email = companyInfo.company_email || '';
-            invoice.company_ntn = companyInfo.company_ntn || '';
-            invoice.company_logo = companyInfo.company_logo || '';
-        }
-
-        // Get invoice items
-        const items = await query(`
-            SELECT 
-                ii.*,
-                t.name as tax_name,
-                t.rate as tax_rate
-            FROM invoice_items ii
-            LEFT JOIN taxes t ON ii.tax_id = t.id
-            WHERE ii.invoice_id = ?
-            ORDER BY ii.id
-        `, [invoiceId]);
-
-        // Get payment history
-        const payments = await query(`
-            SELECT 
-                p.*,
-                pm.name as payment_method_name,
-                CONCAT(u.first_name, ' ', u.last_name) as received_by_name
-            FROM payments p
-            LEFT JOIN payment_methods pm ON p.payment_method_id = pm.id
-            LEFT JOIN users u ON p.received_by = u.id
-            WHERE p.invoice_id = ?
-            ORDER BY p.payment_date DESC
-        `, [invoiceId]);
-
+        const customer = invoice.customer || {};
         res.json({
             success: true,
             data: {
-                ...invoice,
-                items,
-                payments
-            }
+                ...mapInvoiceRow(invoice),
+                customer_address: [customer.address, customer.city].filter(Boolean).join(', '),
+                customer_phone: customer.phone || '',
+                customer_email: customer.email || '',
+                items: (invoice.items || []).map((item) => ({
+                    id: item._id,
+                    description: item.description,
+                    quantity: item.quantity || 1,
+                    unit_price: item.unitPrice || 0,
+                    tax_amount: item.taxAmount || 0,
+                    total: item.totalPrice || 0,
+                    type: item.type || '',
+                })),
+                payments: payments.map((payment) => ({
+                    id: payment._id,
+                    payment_number: payment.paymentNumber,
+                    payment_method_name: payment.method?.name || 'Payment',
+                    payment_date: payment.paymentDate || payment.createdAt,
+                    amount: payment.amount || 0,
+                    reference_number: payment.referenceNumber || '',
+                    notes: payment.notes || '',
+                })),
+            },
         });
     } catch (error) {
         next(error);
     }
 };
 
-/**
- * Create new invoice manually
- * @route POST /api/invoices
- */
+// ═══════════════════════════════════════════════════════════════════════════
+// CREATE / UPDATE / DELETE
+// ═══════════════════════════════════════════════════════════════════════════
+
 const createInvoice = async (req, res, next) => {
     try {
         const {
-            invoiceType = 'sales',
-            customerId,
-            salesOrderId,
-            jobCardId,
-            dueDays = 30,
-            subtotal = 0,
-            discountAmount = 0,
-            taxAmount = 0,
-            notes,
-            items = []
+            invoiceType, customerId, salesOrderId, jobCardId, dueDays,
+            discountAmount, notes, termsAndConditions, items,
         } = req.body;
 
-        if (!customerId) {
-            throw new AppError('Customer ID is required', 400);
-        }
+        if (!sanitizeId(customerId)) throw new AppError('Customer is required', 400);
+        const customer = await Customer.findOne({ _id: customerId, deletedAt: null }).lean();
+        if (!customer) throw new AppError('Customer not found', 404);
 
-        // Fetch Company Details for Snapshot
-        let companyInfo = {};
-
-        // 1. Try fetching from companies table (Primary source)
-        try {
-            const companies = await query(`
-                SELECT 
-                    company_name, address as company_address, phone as company_phone, 
-                    email as company_email, tax_id as company_ntn, logo as company_logo
-                FROM companies 
-                WHERE is_active = TRUE 
-                ORDER BY id DESC LIMIT 1
-            `);
-            if (companies.length > 0) {
-                companyInfo = companies[0];
-            }
-        } catch (err) {
-            console.warn('Could not fetch from companies table, falling back to settings', err.message);
-        }
-
-        // 2. Fallback to system_settings if no company found
-        if (!companyInfo.company_name) {
-            const companySettings = await query(`
-                SELECT 
-                    MAX(CASE WHEN setting_key = 'company_name' THEN setting_value END) as company_name,
-                    MAX(CASE WHEN setting_key = 'company_address' THEN setting_value END) as company_address,
-                    MAX(CASE WHEN setting_key = 'company_phone' THEN setting_value END) as company_phone,
-                    MAX(CASE WHEN setting_key = 'company_email' THEN setting_value END) as company_email,
-                    MAX(CASE WHEN setting_key = 'company_ntn' THEN setting_value END) as company_ntn,
-                    MAX(CASE WHEN setting_key = 'company_logo' THEN setting_value END) as company_logo
-                FROM system_settings 
-                WHERE setting_key IN ('company_name', 'company_address', 'company_phone', 'company_email', 'company_ntn', 'company_logo')
-            `);
-            companyInfo = companySettings[0] || {};
-        }
-
-        // Safely parse numeric values with fallback to 0
-        const safeParseFloat = (val) => {
-            const parsed = parseFloat(val);
-            return isNaN(parsed) ? 0 : parsed;
-        };
-
-        const parsedSubtotal = safeParseFloat(subtotal);
-        const parsedDiscount = safeParseFloat(discountAmount);
-        const parsedTax = safeParseFloat(taxAmount);
-        const parsedDueDays = parseInt(dueDays) || 30;
-
-        // Calculate subtotal from items if items are provided
-        let calculatedSubtotal = parsedSubtotal;
-        if (items.length > 0) {
-            calculatedSubtotal = items.reduce((sum, item) => {
-                const qty = parseInt(item.quantity) || 1;
-                const price = safeParseFloat(item.unitPrice);
-                return sum + (qty * price);
-            }, 0);
-        }
-
-        // Calculate total
-        const totalAmount = calculatedSubtotal - parsedDiscount + parsedTax;
-
-        // Insert invoice (trigger will generate invoice number)
-        // Updated to include company snapshot columns
-        const result = await query(`
-            INSERT INTO invoices (
-                invoice_type, sales_order_id, job_card_id, customer_id,
-                company_name, company_address, company_phone, company_email, company_ntn, company_logo,
-                invoice_date, due_date, subtotal, discount_amount, tax_amount,
-                total_amount, paid_amount, balance_amount, status, notes, created_by
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), DATE_ADD(CURDATE(), INTERVAL ? DAY), ?, ?, ?, ?, 0, ?, 'draft', ?, ?)
-        `, [
-            invoiceType,
-            salesOrderId || null,
-            jobCardId || null,
-            parseInt(customerId),
-            companyInfo.company_name || 'My Company',
-            companyInfo.company_address || '',
-            companyInfo.company_phone || '',
-            companyInfo.company_email || '',
-            companyInfo.company_ntn || '',
-            companyInfo.company_logo || '',
-            parsedDueDays,
-            calculatedSubtotal,
-            parsedDiscount,
-            parsedTax,
-            totalAmount,
-            totalAmount,
-            notes || null,
-            req.user.id
-        ]);
-
-        const invoiceId = result.insertId;
-
-        // Get the generated invoice number
-        const invoiceData = await query(`SELECT invoice_number FROM invoices WHERE id = ?`, [invoiceId]);
-
-        // Add invoice items if provided
-        if (items.length > 0) {
-            for (const item of items) {
-                const qty = parseInt(item.quantity) || 1;
-                const unitPrice = safeParseFloat(item.unitPrice);
-                const itemTaxAmount = safeParseFloat(item.taxAmount);
-                const itemTotal = (qty * unitPrice) + itemTaxAmount;
-
-                await query(`
-                    INSERT INTO invoice_items (invoice_id, description, quantity, unit_price, tax_id, tax_amount, total)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                `, [
-                    invoiceId,
-                    item.description || 'Item',
-                    qty,
+        const invoiceItems = (Array.isArray(items) ? items : [])
+            .filter((item) => item && item.description)
+            .map((item) => {
+                const quantity = Math.max(1, num(item.quantity, 1));
+                const unitPrice = num(item.unitPrice);
+                return {
+                    description: item.description,
+                    quantity,
                     unitPrice,
-                    item.taxId || null,
-                    itemTaxAmount,
-                    itemTotal
-                ]);
-            }
+                    taxAmount: num(item.taxAmount),
+                    totalPrice: round2(quantity * unitPrice),
+                    type: item.type || invoiceType || 'sales',
+                };
+            });
+        if (!invoiceItems.length) throw new AppError('At least one line item is required', 400);
 
-            // Recalculate totals after adding items
-            await query(`CALL sp_update_invoice_totals(?)`, [invoiceId]);
-        }
+        const subtotal = round2(invoiceItems.reduce((sum, item) => sum + item.totalPrice, 0));
+        const taxAmount = round2(invoiceItems.reduce((sum, item) => sum + item.taxAmount, 0));
+        const discount = num(discountAmount);
+        const totalAmount = round2(subtotal - discount + taxAmount);
 
-        // Update customer outstanding balance (only if total > 0)
-        if (totalAmount > 0) {
-            await query(`
-                UPDATE customers SET outstanding_balance = outstanding_balance + ? WHERE id = ?
-            `, [totalAmount, parseInt(customerId)]);
-        }
+        const invoiceNumber = await nextDocNumber(Invoice, 'invoiceNumber', 'INV');
+        const now = new Date();
 
+        const invoice = await Invoice.create({
+            invoiceNumber,
+            invoiceType: invoiceType || 'sales',
+            salesOrder: sanitizeId(salesOrderId),
+            jobCard: sanitizeId(jobCardId),
+            customer: customer._id,
+            status: 'draft',
+            invoiceDate: now,
+            dueDate: new Date(now.getTime() + Math.max(0, num(dueDays, 30)) * 24 * 60 * 60 * 1000),
+            subtotal,
+            taxAmount,
+            discountAmount: discount,
+            totalAmount,
+            paidAmount: 0,
+            balanceAmount: totalAmount,
+            items: invoiceItems,
+            notes,
+            termsAndConditions,
+            createdBy: req.user.id,
+        });
+
+        await recordCustomerActivity({
+            customerId: customer._id,
+            docType: 'invoice',
+            docId: invoice._id,
+            number: invoiceNumber,
+            amount: totalAmount,
+            description: `Invoice ${invoiceNumber} (${invoiceType || 'sales'}) created`,
+            userId: req.user.id,
+            spentDelta: sanitizeId(salesOrderId) ? 0 : totalAmount,
+            outstandingDelta: totalAmount,
+        });
+
+        logger.info(`Invoice ${invoiceNumber} created by user ${req.user.id}`);
         res.status(201).json({
             success: true,
+            data: { id: invoice._id, invoice_number: invoiceNumber, invoiceNumber },
             message: 'Invoice created successfully',
-            data: {
-                id: invoiceId,
-                invoice_number: invoiceData[0]?.invoice_number
-            }
         });
     } catch (error) {
+        logger.error('Error creating invoice:', error);
         next(error);
     }
 };
 
-
-/**
- * Create invoice from sales order
- * @route POST /api/invoices/from-sales-order
- */
 const createFromSalesOrder = async (req, res, next) => {
     try {
-        const { salesOrderId, dueDays = 30 } = req.body;
+        const { salesOrderId, dueDays } = req.body;
+        if (!sanitizeId(salesOrderId)) throw new AppError('Sales order is required', 400);
 
-        if (!salesOrderId) {
-            throw new AppError('Sales Order ID is required', 400);
+        const order = await SalesOrder.findById(salesOrderId);
+        if (!order) throw new AppError('Sales order not found', 404);
+        if (order.status === 'cancelled') throw new AppError('Cancelled orders cannot be invoiced', 400);
+
+        const { invoice, created } = await createInvoiceForOrder(order, { dueDays, userId: req.user.id });
+        if (created) {
+            order.status = 'invoiced';
+            order.updatedBy = req.user.id;
+            await order.save();
         }
 
-        // Check if invoice already exists for this sales order
-        const existing = await query(`
-            SELECT id, invoice_number FROM invoices WHERE sales_order_id = ? AND status != 'cancelled'
-        `, [salesOrderId]);
-
-        if (existing.length > 0) {
-            throw new AppError(`Invoice ${existing[0].invoice_number} already exists for this sales order`, 400);
-        }
-
-        // Check sales order exists and is in valid status
-        const orderCheck = await query(`
-            SELECT id, status, customer_id FROM sales_orders WHERE id = ?
-        `, [salesOrderId]);
-
-        if (orderCheck.length === 0) {
-            throw new AppError('Sales order not found', 404);
-        }
-
-        if (!['confirmed', 'pending'].includes(orderCheck[0].status)) {
-            throw new AppError('Cannot create invoice for sales order in ' + orderCheck[0].status + ' status', 400);
-        }
-
-        // Call stored procedure to create invoice
-        await query(`CALL sp_create_invoice_from_sales_order(?, ?, ?, @invoice_id, @invoice_number)`, [
-            salesOrderId,
-            req.user.id,
-            dueDays
-        ]);
-
-        // Get the result
-        const result = await query(`SELECT @invoice_id as id, @invoice_number as invoice_number`);
-
-        res.status(201).json({
+        res.status(created ? 201 : 200).json({
             success: true,
-            message: 'Invoice created from sales order successfully',
-            data: {
-                id: result[0].id,
-                invoice_number: result[0].invoice_number
-            }
+            data: { id: invoice._id, invoice_number: invoice.invoiceNumber },
+            message: created ? 'Invoice created from sales order' : 'Invoice already exists for this order',
         });
     } catch (error) {
         next(error);
     }
 };
 
-/**
- * Update invoice (draft status only)
- * @route PUT /api/invoices/:id
- */
 const updateInvoice = async (req, res, next) => {
     try {
-        const { id } = req.params;
+        const invoice = await Invoice.findById(sanitizeId(req.params.id));
+        if (!invoice) throw new AppError('Invoice not found', 404);
+        if (invoice.status !== 'draft') throw new AppError('Only draft invoices can be edited', 400);
 
-        // Validate and parse ID
-        const invoiceId = parseInt(id, 10);
-        if (isNaN(invoiceId) || invoiceId <= 0) {
-            throw new AppError('Invalid invoice ID', 400);
-        }
-
-        const {
-            dueDays,
-            discountAmount,
-            taxAmount,
-            notes,
-            termsAndConditions
-        } = req.body;
-
-        // Check invoice exists and is in draft status
-        const invoice = await query(`SELECT id, status, subtotal FROM invoices WHERE id = ?`, [invoiceId]);
-        if (invoice.length === 0) {
-            throw new AppError('Invoice not found', 404);
-        }
-        if (invoice[0].status !== 'draft') {
-            throw new AppError('Can only update invoices in draft status', 400);
-        }
-
-        // Build update query dynamically
-        const updates = [];
-        const params = [];
+        const { dueDays, discountAmount, notes, termsAndConditions } = req.body;
+        const oldBalance = num(invoice.balanceAmount);
+        const oldTotal = num(invoice.totalAmount);
 
         if (dueDays !== undefined) {
-            updates.push('due_date = DATE_ADD(invoice_date, INTERVAL ? DAY)');
-            params.push(dueDays);
+            const base = invoice.invoiceDate || invoice.createdAt || new Date();
+            invoice.dueDate = new Date(new Date(base).getTime() + Math.max(0, num(dueDays, 30)) * 24 * 60 * 60 * 1000);
         }
-        if (discountAmount !== undefined) {
-            updates.push('discount_amount = ?');
-            params.push(discountAmount);
-        }
-        if (taxAmount !== undefined) {
-            updates.push('tax_amount = ?');
-            params.push(taxAmount);
-        }
-        if (notes !== undefined) {
-            updates.push('notes = ?');
-            params.push(notes);
-        }
-        if (termsAndConditions !== undefined) {
-            updates.push('terms_and_conditions = ?');
-            params.push(termsAndConditions);
-        }
+        if (discountAmount !== undefined) invoice.discountAmount = num(discountAmount);
+        if (notes !== undefined) invoice.notes = notes;
+        if (termsAndConditions !== undefined) invoice.termsAndConditions = termsAndConditions;
+        invoice.updatedBy = req.user.id;
+        recomputeInvoiceTotals(invoice);
+        await invoice.save();
 
-        if (updates.length === 0) {
-            throw new AppError('No fields to update', 400);
-        }
-
-        // Add updated_at
-        updates.push('updated_at = NOW()');
-        params.push(invoiceId);
-
-        await query(`UPDATE invoices SET ${updates.join(', ')} WHERE id = ?`, params);
-
-        // Recalculate totals
-        await query(`CALL sp_update_invoice_totals(?)`, [invoiceId]);
-
-        res.json({
-            success: true,
-            message: 'Invoice updated successfully'
+        await recordCustomerActivity({
+            customerId: invoice.customer,
+            docType: 'invoice',
+            docId: invoice._id,
+            number: invoice.invoiceNumber,
+            amount: invoice.totalAmount,
+            description: `Invoice ${invoice.invoiceNumber} updated`,
+            userId: req.user.id,
+            countDocument: false,
+            spentDelta: invoice.salesOrder ? 0 : num(invoice.totalAmount) - oldTotal,
+            outstandingDelta: num(invoice.balanceAmount) - oldBalance,
         });
+
+        res.json({ success: true, message: 'Invoice updated successfully' });
     } catch (error) {
         next(error);
     }
 };
 
-/**
- * Cancel/void invoice
- * @route DELETE /api/invoices/:id
- */
 const deleteInvoice = async (req, res, next) => {
     try {
-        const { id } = req.params;
-        const { reason } = req.body;
+        const invoice = await Invoice.findById(sanitizeId(req.params.id));
+        if (!invoice) throw new AppError('Invoice not found', 404);
+        if (invoice.status === 'paid') throw new AppError('Paid invoices cannot be cancelled', 400);
+        if (invoice.status === 'cancelled') throw new AppError('Invoice already cancelled', 400);
 
-        // Validate and parse ID
-        const invoiceId = parseInt(id, 10);
-        if (isNaN(invoiceId) || invoiceId <= 0) {
-            throw new AppError('Invalid invoice ID', 400);
+        const outstandingDelta = -num(invoice.balanceAmount);
+        invoice.status = 'cancelled';
+        invoice.cancelledAt = new Date();
+        invoice.updatedBy = req.user.id;
+        await invoice.save();
+
+        // Allow the linked order to be re-invoiced
+        if (invoice.salesOrder) {
+            await SalesOrder.findOneAndUpdate(
+                { _id: invoice.salesOrder, status: 'invoiced' },
+                { status: 'confirmed', updatedBy: req.user.id },
+            );
         }
 
-        // Check invoice exists
-        const invoice = await query(`
-            SELECT id, status, balance_amount, customer_id, sales_order_id 
-            FROM invoices WHERE id = ?
-        `, [invoiceId]);
-
-        if (invoice.length === 0) {
-            throw new AppError('Invoice not found', 404);
-        }
-
-        if (invoice[0].status === 'cancelled') {
-            throw new AppError('Invoice is already cancelled', 400);
-        }
-
-        if (invoice[0].status === 'paid') {
-            throw new AppError('Cannot cancel a paid invoice', 400);
-        }
-
-        // Update invoice status to cancelled
-        await query(`
-            UPDATE invoices 
-            SET status = 'cancelled', notes = CONCAT(COALESCE(notes, ''), '\nCancelled: ', ?), updated_at = NOW()
-            WHERE id = ?
-        `, [reason || 'No reason provided', invoiceId]);
-
-        // Revert customer outstanding balance
-        await query(`
-            UPDATE customers SET outstanding_balance = outstanding_balance - ? WHERE id = ?
-        `, [invoice[0].balance_amount, invoice[0].customer_id]);
-
-        // Revert sales order status if linked
-        if (invoice[0].sales_order_id) {
-            await query(`
-                UPDATE sales_orders SET status = 'confirmed' WHERE id = ? AND status = 'invoiced'
-            `, [invoice[0].sales_order_id]);
-        }
-
-        res.json({
-            success: true,
-            message: 'Invoice cancelled successfully'
+        await recordCustomerActivity({
+            customerId: invoice.customer,
+            docType: 'invoice',
+            docId: invoice._id,
+            number: invoice.invoiceNumber,
+            amount: invoice.totalAmount,
+            description: `Invoice ${invoice.invoiceNumber} cancelled`,
+            userId: req.user.id,
+            countDocument: false,
+            spentDelta: invoice.salesOrder ? 0 : -num(invoice.totalAmount),
+            outstandingDelta,
         });
+
+        logger.info(`Invoice ${invoice.invoiceNumber} cancelled by user ${req.user.id}`);
+        res.json({ success: true, message: 'Invoice cancelled successfully' });
     } catch (error) {
         next(error);
     }
 };
 
-/**
- * Update invoice status
- * @route PUT /api/invoices/:id/status
- */
 const updateInvoiceStatus = async (req, res, next) => {
     try {
-        const { id } = req.params;
         const { status } = req.body;
-
-        // Check if status exists in statuses table
-        const statusCheck = await query(`
-            SELECT id FROM statuses WHERE name = ? AND (table_name = 'invoices' OR table_name IS NULL)
-        `, [status]);
-
-        if (statusCheck.length === 0 && !['draft', 'sent', 'partial', 'paid', 'overdue', 'cancelled'].includes(status)) {
-            // Fallback to hardcoded check if master data fails, but ideally master data is the source
-            throw new AppError('Invalid status', 400);
+        const validStatuses = ['draft', 'sent', 'partial', 'paid', 'overdue', 'cancelled'];
+        if (!status) throw new AppError('Status is required', 400);
+        if (!validStatuses.includes(status)) {
+            throw new AppError(`Invalid status. Must be one of: ${validStatuses.join(', ')}`, 400);
         }
+        if (status === 'cancelled') return deleteInvoice(req, res, next);
 
-        await query(`CALL sp_update_invoice_status(?, ?)`, [id, status]);
+        const invoice = await Invoice.findById(sanitizeId(req.params.id));
+        if (!invoice) throw new AppError('Invoice not found', 404);
+        if (invoice.status === 'cancelled') throw new AppError('Cancelled invoices cannot change status', 400);
 
-        res.json({
-            success: true,
-            message: 'Invoice status updated successfully'
-        });
-    } catch (error) {
-        next(error);
-    }
-};
-
-// ═══════════════════════════════════════════════════════════════════════════
-// INVOICE ITEMS MANAGEMENT
-// ═══════════════════════════════════════════════════════════════════════════
-
-/**
- * Add invoice item
- * @route POST /api/invoices/:id/items
- */
-const addInvoiceItem = async (req, res, next) => {
-    try {
-        const { id } = req.params;
-        const { description, quantity = 1, unitPrice, taxId } = req.body;
-
-        if (!description || !unitPrice) {
-            throw new AppError('Description and unit price are required', 400);
-        }
-
-        // Check invoice exists and is in draft status
-        const invoice = await query(`SELECT id, status FROM invoices WHERE id = ?`, [id]);
-        if (invoice.length === 0) {
-            throw new AppError('Invoice not found', 404);
-        }
-        if (invoice[0].status !== 'draft') {
-            throw new AppError('Can only add items to draft invoices', 400);
-        }
-
-        // Call stored procedure to add item
-        await query(`CALL sp_add_invoice_item(?, ?, ?, ?, ?, @item_id)`, [
-            id, description, quantity, unitPrice, taxId || null
-        ]);
-
-        const result = await query(`SELECT @item_id as id`);
-
-        res.status(201).json({
-            success: true,
-            message: 'Item added successfully',
-            data: { id: result[0].id }
-        });
-    } catch (error) {
-        next(error);
-    }
-};
-
-/**
- * Update invoice item
- * @route PUT /api/invoices/:id/items/:itemId
- */
-const updateInvoiceItem = async (req, res, next) => {
-    try {
-        const { id, itemId } = req.params;
-        const { description, quantity, unitPrice, taxId } = req.body;
-
-        // Check invoice exists and is in draft status
-        const invoice = await query(`SELECT id, status FROM invoices WHERE id = ?`, [id]);
-        if (invoice.length === 0) {
-            throw new AppError('Invoice not found', 404);
-        }
-        if (invoice[0].status !== 'draft') {
-            throw new AppError('Can only update items in draft invoices', 400);
-        }
-
-        // Call stored procedure to update item
-        await query(`CALL sp_update_invoice_item(?, ?, ?, ?, ?)`, [
-            itemId, description, quantity, unitPrice, taxId || null
-        ]);
-
-        res.json({
-            success: true,
-            message: 'Item updated successfully'
-        });
-    } catch (error) {
-        next(error);
-    }
-};
-
-/**
- * Remove invoice item
- * @route DELETE /api/invoices/:id/items/:itemId
- */
-const removeInvoiceItem = async (req, res, next) => {
-    try {
-        const { id, itemId } = req.params;
-
-        // Check invoice exists and is in draft status
-        const invoice = await query(`SELECT id, status FROM invoices WHERE id = ?`, [id]);
-        if (invoice.length === 0) {
-            throw new AppError('Invoice not found', 404);
-        }
-        if (invoice[0].status !== 'draft') {
-            throw new AppError('Can only remove items from draft invoices', 400);
-        }
-
-        // Call stored procedure to delete item
-        await query(`CALL sp_delete_invoice_item(?)`, [itemId]);
-
-        res.json({
-            success: true,
-            message: 'Item removed successfully'
-        });
-    } catch (error) {
-        next(error);
-    }
-};
-
-// ═══════════════════════════════════════════════════════════════════════════
-// PAYMENT MANAGEMENT
-// ═══════════════════════════════════════════════════════════════════════════
-
-/**
- * Record payment against invoice
- * @route POST /api/invoices/:id/payments
- */
-const recordPayment = async (req, res, next) => {
-    try {
-        const { id } = req.params;
-        const { amount, paymentMethodId, referenceNumber, notes } = req.body;
-
-        if (!amount || amount <= 0) {
-            throw new AppError('Valid payment amount is required', 400);
-        }
-        if (!paymentMethodId) {
-            throw new AppError('Payment method is required', 400);
-        }
-
-        // Call stored procedure to record payment
-        await query(`CALL sp_record_invoice_payment(?, ?, ?, ?, ?, ?, @payment_id)`, [
-            id, amount, paymentMethodId, referenceNumber || null, req.user.id, notes || null
-        ]);
-
-        const result = await query(`SELECT @payment_id as id`);
-
-        res.status(201).json({
-            success: true,
-            message: 'Payment recorded successfully',
-            data: { id: result[0].id }
-        });
-    } catch (error) {
-        next(error);
-    }
-};
-
-/**
- * Get payment methods list
- * @route GET /api/invoices/payment-methods
- */
-const getPaymentMethods = async (req, res, next) => {
-    try {
-        // Use GROUP BY to ensure uniqueness by name
-        const methods = await query(`
-            SELECT MIN(id) as id, name, MIN(type) as type 
-            FROM payment_methods 
-            WHERE is_active = TRUE 
-            GROUP BY name 
-            ORDER BY name
-        `);
-
-        res.json({
-            success: true,
-            data: methods
-        });
-    } catch (error) {
-        next(error);
-    }
-};
-
-// ═══════════════════════════════════════════════════════════════════════════
-// STATISTICS & REPORTS
-// ═══════════════════════════════════════════════════════════════════════════
-
-/**
- * Get invoice statistics
- * @route GET /api/invoices/stats
- */
-const getInvoiceStats = async (req, res, next) => {
-    try {
-        const stats = await query(`SELECT * FROM vw_invoice_stats`);
-        const aging = await query(`SELECT * FROM vw_invoice_aging`);
-
-        res.json({
-            success: true,
-            data: {
-                summary: stats[0] || {},
-                aging: aging || []
+        if (status === 'paid' && num(invoice.balanceAmount) > 0) {
+            const settled = num(invoice.balanceAmount);
+            invoice.paidAmount = num(invoice.totalAmount);
+            invoice.balanceAmount = 0;
+            await recordCustomerActivity({
+                customerId: invoice.customer,
+                docType: 'payment',
+                docId: invoice._id,
+                number: invoice.invoiceNumber,
+                amount: settled,
+                description: `Invoice ${invoice.invoiceNumber} marked as paid`,
+                userId: req.user.id,
+                countDocument: false,
+                paidDelta: settled,
+                outstandingDelta: -settled,
+            });
+            if (invoice.salesOrder) {
+                const order = await SalesOrder.findById(invoice.salesOrder);
+                if (order) {
+                    order.paidAmount = num(order.paidAmount) + settled;
+                    order.balanceAmount = num(order.totalAmount) - order.paidAmount;
+                    await order.save();
+                }
             }
-        });
-    } catch (error) {
-        next(error);
-    }
-};
-
-/**
- * Get QR code data for invoice
- * @route GET /api/invoices/:id/qr-data
- */
-const getQRCodeData = async (req, res, next) => {
-    try {
-        const { id } = req.params;
-
-        const result = await query(`
-            SELECT fn_get_invoice_qr_data(?) as qr_data
-        `, [id]);
-
-        if (!result[0]?.qr_data) {
-            throw new AppError('Invoice not found', 404);
         }
 
-        res.json({
-            success: true,
-            data: {
-                qr_data: result[0].qr_data
-            }
-        });
+        invoice.status = status;
+        invoice.updatedBy = req.user.id;
+        await invoice.save();
+
+        logger.info(`Invoice ${invoice.invoiceNumber} status updated to ${status}`);
+        res.json({ success: true, message: 'Invoice status updated successfully' });
     } catch (error) {
         next(error);
     }
 };
 
-/**
- * Send invoice (update status to sent)
- * @route POST /api/invoices/:id/send
- */
 const sendInvoice = async (req, res, next) => {
     try {
-        const { id } = req.params;
+        const invoice = await Invoice.findById(sanitizeId(req.params.id));
+        if (!invoice) throw new AppError('Invoice not found', 404);
+        if (invoice.status !== 'draft') throw new AppError('Only draft invoices can be sent', 400);
 
-        // Check invoice exists and is in draft status
-        const invoice = await query(`SELECT id, status, invoice_number FROM invoices WHERE id = ?`, [id]);
-        if (invoice.length === 0) {
-            throw new AppError('Invoice not found', 404);
+        invoice.status = 'sent';
+        invoice.updatedBy = req.user.id;
+        await invoice.save();
+
+        res.json({ success: true, message: 'Invoice sent successfully' });
+    } catch (error) {
+        next(error);
+    }
+};
+
+const sendInvoiceEmail = async (req, res, next) => {
+    try {
+        const invoice = await Invoice.findById(sanitizeId(req.params.id))
+            .populate('customer', 'firstName lastName companyName email phone customerCode')
+            .lean();
+        if (!invoice) throw new AppError('Invoice not found', 404);
+        if (!invoice.customer?.email) throw new AppError('The selected customer does not have an email address', 400);
+
+        const result = await sendTemplateEmail({
+            usageKey: 'invoice_customer',
+            to: invoice.customer.email,
+            sentBy: req.user.id,
+            context: { customer: invoice.customer, invoice: {
+                number: invoice.invoiceNumber,
+                date: invoice.invoiceDate || invoice.createdAt,
+                dueDate: invoice.dueDate,
+                amount: invoice.totalAmount,
+                dueAmount: invoice.balanceAmount,
+                status: invoice.status,
+            } },
+        });
+        if (result.status !== 'sent') throw new AppError(result.errorMessage || 'Email could not be sent', 502);
+
+        res.json({ success: true, message: `Invoice ${invoice.invoiceNumber} emailed to ${invoice.customer.email}` });
+    } catch (error) {
+        next(error);
+    }
+};
+
+const bulkInvoices = async(req,res,next)=>{try{const {ids=[],operation}=req.body;if(!Array.isArray(ids)||!ids.length)throw new AppError('Select at least one invoice',400);if(ids.length>100)throw new AppError('A maximum of 100 invoices is allowed',400);const results=[];for(const id of ids){try{if(operation==='email'){const invoice=await Invoice.findById(sanitizeId(id)).populate('customer','firstName lastName companyName email phone customerCode').lean();if(!invoice?.customer?.email)throw new Error('Customer email is missing');const result=await sendTemplateEmail({usageKey:'invoice_customer',to:invoice.customer.email,sentBy:req.user.id,context:{customer:invoice.customer,invoice:{number:invoice.invoiceNumber,date:invoice.invoiceDate||invoice.createdAt,dueDate:invoice.dueDate,amount:invoice.totalAmount,dueAmount:invoice.balanceAmount,status:invoice.status}}});if(result.status!=='sent')throw new Error(result.errorMessage||'Email failed');results.push({id,success:true,recipient:invoice.customer.email});}else if(operation==='delete'){const invoice=await Invoice.findById(sanitizeId(id));if(!invoice)throw new Error('Invoice not found');if(invoice.status==='paid'||invoice.status==='cancelled')throw new Error(`Invoice is ${invoice.status}`);invoice.status='cancelled';invoice.cancelledAt=new Date();invoice.updatedBy=req.user.id;await invoice.save();if(invoice.salesOrder)await SalesOrder.findOneAndUpdate({_id:invoice.salesOrder,status:'invoiced'},{status:'confirmed',updatedBy:req.user.id});results.push({id,success:true});}else throw new Error('Invalid bulk operation');}catch(error){results.push({id,success:false,error:error.message})}}const succeeded=results.filter(x=>x.success).length;res.json({success:succeeded>0,message:`${succeeded} of ${ids.length} invoices processed`,data:{succeeded,failed:ids.length-succeeded,results}})}catch(e){next(e)}};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ITEMS
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function applyItemMutation(req, res, next, mutate, successMessage) {
+    try {
+        const invoice = await Invoice.findById(sanitizeId(req.params.id));
+        if (!invoice) throw new AppError('Invoice not found', 404);
+        if (invoice.status !== 'draft') throw new AppError('Only draft invoices can be modified', 400);
+
+        const oldBalance = num(invoice.balanceAmount);
+        const oldTotal = num(invoice.totalAmount);
+        const payload = mutate(invoice);
+        recomputeInvoiceTotals(invoice);
+        invoice.updatedBy = req.user.id;
+        await invoice.save();
+
+        await recordCustomerActivity({
+            customerId: invoice.customer,
+            docType: 'invoice',
+            docId: invoice._id,
+            number: invoice.invoiceNumber,
+            amount: invoice.totalAmount,
+            description: `Invoice ${invoice.invoiceNumber} items updated`,
+            userId: req.user.id,
+            countDocument: false,
+            spentDelta: invoice.salesOrder ? 0 : num(invoice.totalAmount) - oldTotal,
+            outstandingDelta: num(invoice.balanceAmount) - oldBalance,
+        });
+
+        res.status(payload?.created ? 201 : 200).json({
+            success: true,
+            data: payload?.data,
+            message: successMessage,
+        });
+    } catch (error) {
+        next(error);
+    }
+}
+
+const addInvoiceItem = (req, res, next) => applyItemMutation(req, res, next, (invoice) => {
+    const { description, quantity, unitPrice, taxAmount } = req.body;
+    if (!description || unitPrice === undefined) throw new AppError('Description and unit price are required', 400);
+    const qty = Math.max(1, num(quantity, 1));
+    invoice.items.push({
+        description,
+        quantity: qty,
+        unitPrice: num(unitPrice),
+        taxAmount: num(taxAmount),
+        totalPrice: round2(qty * num(unitPrice)),
+    });
+    const item = invoice.items[invoice.items.length - 1];
+    return { created: true, data: { id: item._id } };
+}, 'Item added successfully');
+
+const updateInvoiceItem = (req, res, next) => applyItemMutation(req, res, next, (invoice) => {
+    const item = invoice.items.id(req.params.itemId);
+    if (!item) throw new AppError('Invoice item not found', 404);
+    const { description, quantity, unitPrice, taxAmount } = req.body;
+    if (description !== undefined) item.description = description;
+    if (quantity !== undefined) item.quantity = Math.max(1, num(quantity, 1));
+    if (unitPrice !== undefined) item.unitPrice = num(unitPrice);
+    if (taxAmount !== undefined) item.taxAmount = num(taxAmount);
+    item.totalPrice = round2(num(item.quantity, 1) * num(item.unitPrice));
+    return { data: { id: item._id } };
+}, 'Item updated successfully');
+
+const removeInvoiceItem = (req, res, next) => applyItemMutation(req, res, next, (invoice) => {
+    const item = invoice.items.id(req.params.itemId);
+    if (!item) throw new AppError('Invoice item not found', 404);
+    item.deleteOne();
+    return {};
+}, 'Item removed successfully');
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PAYMENTS
+// ═══════════════════════════════════════════════════════════════════════════
+
+const recordPayment = async (req, res, next) => {
+    try {
+        const { amount, paymentMethodId, referenceNumber, notes } = req.body;
+        const paymentAmount = num(amount);
+        if (paymentAmount <= 0) throw new AppError('Payment amount must be greater than zero', 400);
+
+        const invoice = await Invoice.findById(sanitizeId(req.params.id));
+        if (!invoice) throw new AppError('Invoice not found', 404);
+        if (invoice.status === 'cancelled') throw new AppError('Cannot record payment on a cancelled invoice', 400);
+        if (paymentAmount > num(invoice.balanceAmount)) {
+            throw new AppError('Payment amount cannot exceed the outstanding balance', 400);
         }
-        if (invoice[0].status !== 'draft') {
-            throw new AppError('Only draft invoices can be sent', 400);
+
+        let method = null;
+        if (sanitizeId(paymentMethodId)) {
+            method = await PaymentMethod.findById(paymentMethodId).lean();
+        }
+        if (!method) throw new AppError('Payment method is required', 400);
+
+        const paymentNumber = await nextDocNumber(Payment, 'paymentNumber', 'PAY');
+        const payment = await Payment.create({
+            paymentNumber,
+            invoice: invoice._id,
+            customer: invoice.customer,
+            methodRef: method._id,
+            method: { name: method.name, code: method.code || '', type: method.type || '' },
+            amount: paymentAmount,
+            paymentDate: new Date(),
+            referenceNumber: referenceNumber || '',
+            notes: notes || '',
+            status: 'completed',
+            createdBy: req.user.id,
+        });
+
+        invoice.paidAmount = round2(num(invoice.paidAmount) + paymentAmount);
+        invoice.balanceAmount = round2(num(invoice.totalAmount) - invoice.paidAmount);
+        invoice.status = invoice.balanceAmount <= 0 ? 'paid' : 'partial';
+        invoice.updatedBy = req.user.id;
+        await invoice.save();
+
+        // Keep the linked sales order payment figures in sync
+        if (invoice.salesOrder) {
+            const order = await SalesOrder.findById(invoice.salesOrder);
+            if (order) {
+                order.paidAmount = round2(num(order.paidAmount) + paymentAmount);
+                order.balanceAmount = round2(num(order.totalAmount) - order.paidAmount);
+                order.updatedBy = req.user.id;
+                await order.save();
+            }
         }
 
-        // Call stored procedure to send invoice
-        await query(`CALL sp_send_invoice(?, ?)`, [id, req.user.id]);
+        await recordCustomerActivity({
+            customerId: invoice.customer,
+            docType: 'payment',
+            docId: payment._id,
+            number: paymentNumber,
+            amount: paymentAmount,
+            description: `Payment ${paymentNumber} (${method.name}) against invoice ${invoice.invoiceNumber}`,
+            userId: req.user.id,
+            countDocument: false,
+            paidDelta: paymentAmount,
+            outstandingDelta: -paymentAmount,
+        });
 
+        logger.info(`Payment ${paymentNumber} of ${paymentAmount} recorded on invoice ${invoice.invoiceNumber}`);
+        res.status(201).json({
+            success: true,
+            data: { id: payment._id, paymentNumber, invoiceStatus: invoice.status },
+            message: 'Payment recorded successfully',
+        });
+    } catch (error) {
+        logger.error('Error recording payment:', error);
+        next(error);
+    }
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LOOKUPS / STATS / MISC
+// ═══════════════════════════════════════════════════════════════════════════
+
+const getPaymentMethods = async (req, res, next) => {
+    try {
+        const methods = await PaymentMethod.find({ isActive: true }).sort({ sortOrder: 1, name: 1 }).lean();
         res.json({
             success: true,
-            message: `Invoice ${invoice[0].invoice_number} sent successfully`
+            data: methods.map((m) => ({ id: m._id, name: m.name, code: m.code, type: m.type })),
         });
     } catch (error) {
         next(error);
     }
 };
 
-/**
- * Get invoice history/audit trail
- * @route GET /api/invoices/:id/history
- */
+const getInvoiceStats = async (req, res, next) => {
+    try {
+        const [result] = await Invoice.aggregate([
+            { $match: { status: { $ne: 'cancelled' } } },
+            {
+                $group: {
+                    _id: null,
+                    total: { $sum: 1 },
+                    draft: { $sum: { $cond: [{ $eq: ['$status', 'draft'] }, 1, 0] } },
+                    sent: { $sum: { $cond: [{ $eq: ['$status', 'sent'] }, 1, 0] } },
+                    partial: { $sum: { $cond: [{ $eq: ['$status', 'partial'] }, 1, 0] } },
+                    paid: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, 1, 0] } },
+                    overdue: {
+                        $sum: {
+                            $cond: [
+                                { $and: [{ $in: ['$status', ['sent', 'partial']] }, { $lt: ['$dueDate', new Date()] }] },
+                                1, 0,
+                            ],
+                        },
+                    },
+                    totalValue: { $sum: '$totalAmount' },
+                    totalCollected: { $sum: '$paidAmount' },
+                    totalOutstanding: { $sum: '$balanceAmount' },
+                },
+            },
+        ]);
+        res.json({
+            success: true,
+            data: result || {
+                total: 0, draft: 0, sent: 0, partial: 0, paid: 0, overdue: 0,
+                totalValue: 0, totalCollected: 0, totalOutstanding: 0,
+            },
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+const getQRCodeData = async (req, res, next) => {
+    try {
+        const invoice = await Invoice.findById(sanitizeId(req.params.id))
+            .populate('customer', 'firstName lastName companyName')
+            .lean();
+        if (!invoice) throw new AppError('Invoice not found', 404);
+        res.json({
+            success: true,
+            data: {
+                invoice_number: invoice.invoiceNumber,
+                customer_name: customerName(invoice.customer),
+                total_amount: invoice.totalAmount,
+                balance_amount: invoice.balanceAmount,
+                due_date: invoice.dueDate,
+                status: displayStatus(invoice),
+            },
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
 const getInvoiceHistory = async (req, res, next) => {
     try {
-        const { id } = req.params;
+        const invoice = await Invoice.findById(sanitizeId(req.params.id)).lean();
+        if (!invoice) throw new AppError('Invoice not found', 404);
 
-        const history = await query(`CALL sp_get_invoice_history(?)`, [id]);
-
-        res.json({
-            success: true,
-            data: history[0] || []
-        });
+        const payments = await Payment.find({ invoice: invoice._id }).sort({ createdAt: 1 }).lean();
+        const history = [
+            { action: `Invoice ${invoice.invoiceNumber} created`, created_at: invoice.createdAt },
+            ...payments.map((p) => ({
+                action: `Payment ${p.paymentNumber} of PKR ${Number(p.amount).toLocaleString()} recorded (${p.method?.name || 'Payment'})`,
+                created_at: p.createdAt,
+            })),
+            ...(invoice.cancelledAt ? [{ action: 'Invoice cancelled', created_at: invoice.cancelledAt }] : []),
+        ];
+        res.json({ success: true, data: history });
     } catch (error) {
         next(error);
     }
 };
-
-// ═══════════════════════════════════════════════════════════════════════════
-// EXPORTS
-// ═══════════════════════════════════════════════════════════════════════════
 
 module.exports = {
     getAllInvoices,
@@ -886,6 +754,8 @@ module.exports = {
     updateInvoice,
     deleteInvoice,
     updateInvoiceStatus,
+    sendInvoice,
+    sendInvoiceEmail, bulkInvoices,
     addInvoiceItem,
     updateInvoiceItem,
     removeInvoiceItem,
@@ -893,7 +763,5 @@ module.exports = {
     getPaymentMethods,
     getInvoiceStats,
     getQRCodeData,
-    sendInvoice,
-    getInvoiceHistory
+    getInvoiceHistory,
 };
-

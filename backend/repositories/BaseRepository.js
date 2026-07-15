@@ -1,7 +1,7 @@
 /**
  * Base Repository - Generic CRUD Operations
- * Created by LOGIXINVENTOR (PVT) Ltd.
- * www.logixinventor.com | AMS
+ * Maintained by Hussain Developer
+ * AMS ERP
  */
 
 const { query } = require('../config/database');

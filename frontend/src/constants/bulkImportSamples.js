@@ -9,10 +9,6 @@ export const BULK_IMPORT_DOWNLOAD_NAMES = {
         csv: 'ams_leads_import_template.csv',
         xlsx: 'ams_leads_import_template.xlsx'
     },
-    'vehicle-brands': {
-        csv: 'ams_vehicle_brands_import_template.csv',
-        xlsx: 'ams_vehicle_brands_import_template.xlsx'
-    },
     vehicles: {
         csv: 'ams_vehicles_import_template.csv',
         xlsx: 'ams_vehicles_import_template.xlsx'

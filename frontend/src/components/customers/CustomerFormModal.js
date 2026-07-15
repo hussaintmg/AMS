@@ -82,7 +82,7 @@ export default function CustomerFormModal({ customer, onClose, onSaved }) {
       const res = isEdit ? await updateCustomer(customer._id, payload) : await createCustomer(payload);
       if (res?.success) {
         toast.success(res.message);
-        if (onSaved) onSaved();
+        if (onSaved) onSaved(res.data?.customer || res.data || null);
         onClose();
       } else {
         toast.error(res?.message || 'Operation failed');
@@ -99,7 +99,7 @@ export default function CustomerFormModal({ customer, onClose, onSaved }) {
   const renderLabel = (text, field, quickType) => (
     <label style={LABEL_STYLE}>
       <span>{text}</span>
-      <button type="button" className="btn-link" onClick={() => setQuickCreate(quickType || field)} style={{ fontSize: '12px', padding: 0, border: 'none', background: 'none', color: 'var(--primary-600)', cursor: 'pointer', textDecoration: 'underline' }}>+ Create {text}</button>
+      <button type="button" className="label-add-link" onClick={() => setQuickCreate(quickType || field)}>+ Create {text}</button>
     </label>
   );
 

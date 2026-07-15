@@ -10,6 +10,8 @@ const StatusItem = require('../models/StatusItem.model');
 const Department = require('../models/Department.model');
 const Log = require('../models/mongo/Log.model');
 const { logFileOperation } = require('../utils/apiLogger');
+const { syncFromCustomer } = require('../utils/relationshipSync');
+const { allowedOwnerIds } = require('../utils/roleJobs');
 
 async function generateCustomerCode() {
   const last = await Customer.findOne({ customerCode: { $regex: /^CUS-/ } }).sort({ createdAt: -1 }).lean();
@@ -132,9 +134,8 @@ exports.getCustomers = async (req, res) => {
     else if (isActive === 'all') { /* no filter */ }
 
     // PART 5: Ownership — non-super-admin only sees own customers
-    if (!isSuperAdmin) {
-      filter.createdBy = user._id || user.id;
-    }
+    const customerOwnerIds = await allowedOwnerIds(user, 'customers');
+    if (customerOwnerIds !== null) filter.createdBy = { $in: customerOwnerIds };
 
     if (customerType) filter.customerType = customerType;
     if (city) filter.city = { $regex: city, $options: 'i' };
@@ -156,7 +157,7 @@ exports.getCustomers = async (req, res) => {
     }
 
     if (search) {
-      const searchRegex = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      const searchRegex = new RegExp(String(search).trim().split(/\s+/).map(part => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'i');
       filter.$or = [
         { customerCode: searchRegex },
         { firstName: searchRegex },
@@ -339,6 +340,7 @@ exports.updateCustomer = async (req, res) => {
 
     Object.assign(customer, { ...req.body, updatedBy: userId });
     await customer.save();
+    await syncFromCustomer(customer, userId, { syncStatus: req.body.isActive !== undefined });
 
     await createAuditLog(userId, 'Update Customer', 'Customers', `Customer ${customer.customerCode} updated`, req);
     logFileOperation(req, { action: 'updateCustomer', customerCode: customer.customerCode });
@@ -362,21 +364,7 @@ exports.deleteCustomer = async (req, res) => {
     customer.deletedAt = new Date();
     customer.updatedBy = userId;
     await customer.save();
-
-    // Deactivate linked user
-    if (customer.user) {
-      try {
-        const linkedUser = await User.findById(customer.user);
-        if (linkedUser) {
-          linkedUser.isActive = false;
-          linkedUser.status = 'inactive';
-          linkedUser.updatedBy = userId;
-          await linkedUser.save();
-        }
-      } catch (userErr) {
-        console.error('Failed to deactivate linked user:', userErr.message);
-      }
-    }
+    await syncFromCustomer(customer, userId, { syncStatus: true });
 
     await createAuditLog(userId, 'Deactivate Customer', 'Customers', `Customer ${customer.customerCode} deactivated`, req);
     logFileOperation(req, { action: 'deleteCustomer', customerCode: customer.customerCode });
@@ -399,21 +387,7 @@ exports.toggleCustomerStatus = async (req, res) => {
     customer.isActive = !customer.isActive;
     customer.updatedBy = userId;
     await customer.save();
-
-    // Sync linked user's isActive
-    if (customer.user) {
-      try {
-        const linkedUser = await User.findById(customer.user);
-        if (linkedUser) {
-          linkedUser.isActive = customer.isActive;
-          linkedUser.updatedBy = userId;
-          linkedUser.status = customer.isActive ? 'active' : 'inactive';
-          await linkedUser.save();
-        }
-      } catch (userErr) {
-        console.error('Failed to sync user status:', userErr.message);
-      }
-    }
+    await syncFromCustomer(customer, userId, { syncStatus: true });
 
     await createAuditLog(userId, 'Toggle Customer Status', 'Customers', `Customer ${customer.customerCode} ${customer.isActive ? 'activated' : 'deactivated'}`, req);
     logFileOperation(req, { action: 'toggleCustomerStatus', customerCode: customer.customerCode, nowActive: customer.isActive });
@@ -469,6 +443,10 @@ exports.getAllForDropdown = async (req, res) => {
 
     const mapped = customers.map((c) => ({
       ...c,
+      id: c._id,
+      customer_number: c.customerCode || '',
+      first_name: c.firstName || '',
+      last_name: c.lastName || '',
       name: [c.firstName, c.lastName].filter(Boolean).join(' '),
     }));
 

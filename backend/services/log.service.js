@@ -62,7 +62,7 @@ const buildDateRange = (filters = {}) => {
   const dateTo = filters.dateTo || filters.endDate || filters.dateTimeTo;
   const timeFrom = filters.timeFrom;
   const timeTo = filters.timeTo;
-  const zone = filters.timezone || "UTC";
+  const zone = filters.timezone || "Asia/Karachi";
 
   if (!dateFrom && !dateTo) return null;
   if ((timeFrom || timeTo) && !dateFrom && !dateTo) return null;
@@ -173,7 +173,8 @@ const buildFiltersQuery = (filters = {}) => {
   if (filters.roleName || filters.role) {
     const roleVal = (filters.roleName || filters.role).trim().toLowerCase();
     const escaped = roleVal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    query["user.role"] = new RegExp(`^${escaped}$`, "i");
+    const roleRegex = { $regex: `^${escaped}$`, $options: "i" };
+    mergeAnd(query, { $or: [{ "user.role": roleRegex }, { roleName: roleRegex }, { role: roleRegex }] });
   }
 
   if (filters.endpoint) {
@@ -501,4 +502,6 @@ module.exports = {
   deleteLog,
   getLogStats,
   getFilterOptions,
+  buildFiltersQuery,
+  addSearchFilter,
 };

@@ -10,6 +10,7 @@ const paymentSchema = new mongoose.Schema({
   paymentNumber: { type: String, trim: true },
   invoice: { type: mongoose.Schema.Types.ObjectId, ref: 'Invoice' },
   customer: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer' },
+  methodRef: { type: mongoose.Schema.Types.ObjectId, ref: 'PaymentMethod', default: null },
   method: { type: paymentMethodSchema, default: {} },
   amount: { type: Number, default: 0 },
   paymentDate: { type: Date },

@@ -686,6 +686,8 @@ router.put('/users/:id/permissions', requireSuperAdmin, controller.updateUserPer
 router.put('/roles/:id/permissions', requireSuperAdmin, controller.updateRolePermissions);
 router.put('/users/:id/logs-permissions', requireSuperAdmin, controller.updateUserLogsPermissions);
 router.put('/roles/:id/logs-permissions', requireSuperAdmin, controller.saveRoleLogsPermissions);
+router.get('/roles/:id/jobs', requireSuperAdmin, controller.getRoleJobs);
+router.put('/roles/:id/jobs', requireSuperAdmin, controller.saveRoleJobs);
 
 /**
  * @swagger
@@ -761,6 +763,10 @@ router.put('/lead-assignment-roles', requireSuperAdmin, controller.updateLeadAss
 // ── Customer Role Config ──
 router.get('/customer-role-config', requireSuperAdmin, controller.getCustomerRoleConfig);
 router.put('/customer-role-config', requireSuperAdmin, controller.saveCustomerRoleConfig);
+
+// Employee role assigned automatically when a new employee is created.
+router.get('/employee-role-config', requireSuperAdmin, controller.getEmployeeRoleConfig);
+router.put('/employee-role-config', requireSuperAdmin, controller.saveEmployeeRoleConfig);
 
 // ── System Settings (permissionMode, logPermissionMode) ──
 router.get('/settings/:key', requireSuperAdmin, controller.getSetting);

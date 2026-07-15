@@ -1,4 +1,4 @@
-const { Department, User, Log } = require('../models');
+const { Department, User, Employee, Log } = require('../models');
 const { logFileOperation } = require('../utils/apiLogger');
 const { normalizePhone } = require('../utils/phone.util');
 
@@ -22,11 +22,12 @@ const getDepartmentStats = async (req, res, next) => {
       Department.countDocuments({ parent: null }),
       Department.countDocuments({ manager: { $ne: null } }),
     ]);
-    const activeStaffResult = await User.aggregate([
-      { $match: { status: 'active', isActive: true, department: { $ne: null } } },
-      { $count: 'count' },
+    const managerIds = await Department.distinct('manager', { manager: { $ne: null } });
+    const [activeUsers, activeEmployees] = await Promise.all([
+      User.countDocuments({ status: 'active', isActive: true, department: { $ne: null }, _id: { $nin: managerIds } }),
+      Employee.countDocuments({ isDeleted: false, isActive: true, department: { $ne: null } }),
     ]);
-    const totalActiveStaff = activeStaffResult.length > 0 ? activeStaffResult[0].count : 0;
+    const totalActiveStaff = activeUsers + activeEmployees;
     res.json({
       success: true,
       data: {
@@ -67,20 +68,16 @@ const getAllDepartments = async (req, res, next) => {
       .sort({ name: 1 })
       .lean();
 
-    const staffCounts = await User.aggregate([
-      { $match: { status: 'active', isActive: true, department: { $ne: null } } },
-      { $group: { _id: '$department', count: { $sum: 1 } } },
+    const [userCounts, employeeCounts] = await Promise.all([
+      User.aggregate([{ $match: { department: { $ne: null } } }, { $group: { _id: '$department', count: { $sum: 1 } } }]),
+      Employee.aggregate([{ $match: { isDeleted: false, department: { $ne: null } } }, { $group: { _id: '$department', count: { $sum: 1 } } }]),
     ]);
     const countMap = {};
-    staffCounts.forEach(s => {
-      countMap[s._id.toString()] = s.count;
-    });
+    [...userCounts, ...employeeCounts].forEach((item) => { const key = item._id.toString(); countMap[key] = (countMap[key] || 0) + item.count; });
 
     const buildDeptOutput = (d) => {
       let staffCount = countMap[d._id.toString()] || 0;
-      if (d.manager && d.manager.department && String(d.manager.department) === String(d._id)) {
-        staffCount = Math.max(0, staffCount - 1);
-      }
+      if (d.manager && String(d.manager.department || '') === String(d._id)) staffCount = Math.max(0, staffCount - 1);
       const managerActive = d.manager && d.manager.status === 'active' && d.manager.department;
       const managerDeactivated = d.manager && (!managerActive);
       return {
@@ -159,24 +156,20 @@ const getDepartmentById = async (req, res, next) => {
 
     const managerActive = dept.manager && dept.manager.status === 'active' && dept.manager.isActive;
 
-    const staffQuery = {
-      department: dept._id,
-      status: 'active',
-      isActive: true,
-    };
-    if (dept.manager) {
-      staffQuery._id = { $ne: dept.manager._id };
-    }
-    const staff = await User.find(staffQuery)
-      .populate('role', 'name displayName')
-      .select('firstName lastName email phone status isActive designation role')
-      .sort({ firstName: 1 })
-      .lean();
+    const userQuery = { department: dept._id };
+    if (dept.manager?._id) userQuery._id = { $ne: dept.manager._id };
+    const [users, employees] = await Promise.all([
+      User.find(userQuery).populate('role', 'name displayName').select('firstName lastName email phone status isActive designation role department').sort({ firstName: 1 }).lean(),
+      Employee.find({ department: dept._id, isDeleted: false }).populate('role', 'name displayName').select('employeeCode firstName lastName email phone status isActive designation role department joiningDate').sort({ firstName: 1 }).lean(),
+    ]);
+    const staff = [
+      ...users.map((item) => ({ ...item, staffType: 'user' })),
+      ...employees.map((item) => ({ ...item, staffType: 'employee' })),
+    ].sort((a, b) => `${a.firstName || ''} ${a.lastName || ''}`.localeCompare(`${b.firstName || ''} ${b.lastName || ''}`));
 
     const staffCount = staff.length;
 
-    const totalStaffCountResult = await User.countDocuments({ department: dept._id });
-    const totalStaffCount = totalStaffCountResult;
+    const totalStaffCount = staff.length;
 
     res.json({
       success: true,

@@ -8,6 +8,7 @@ import ConfirmModal from '../components/ConfirmModal';
 import EmailDrawer from '../components/EmailDrawer';
 import useModalKeyboard from '../hooks/useModalKeyboard';
 import '../styles/serviceMasterData.css';
+import ServerPagination from '../components/ServerPagination';
 import '../styles/emailTemplates.css';
 
 const toArray = (value) => Array.isArray(value) ? value : [];
@@ -18,7 +19,7 @@ function ServiceMasterData() {
     const [loading, setLoading] = useState(false);
     const [tableData, setTableData] = useState([]);
     const [search, setSearch] = useState('');
-    const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
+  const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 1 });
 
     const [modalOpen, setModalOpen] = useState(false);
     const [modalMode, setModalMode] = useState('create');
@@ -273,35 +274,7 @@ function ServiceMasterData() {
             : <ArrowDown size={14} style={{ verticalAlign: 'middle', marginLeft: 4 }} />;
     };
 
-    const renderPagination = () => {
-        const { page, totalPages } = pagination;
-        if (totalPages <= 1) return null;
-        return (
-            <div className="pagination">
-                <button className="btn-page" disabled={page <= 1} onClick={() => paginate(page - 1)}>Previous</button>
-                <div className="page-numbers">
-                    {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
-                        let p;
-                        if (totalPages <= 7) {
-                            p = i + 1;
-                        } else if (page <= 4) {
-                            p = i + 1;
-                        } else if (page >= totalPages - 3) {
-                            p = totalPages - 6 + i;
-                        } else {
-                            p = page - 3 + i;
-                        }
-                        return (
-                            <button key={p} className={`btn-page ${p === page ? 'active' : ''}`} onClick={() => paginate(p)}>
-                                {p}
-                            </button>
-                        );
-                    })}
-                </div>
-                <button className="btn-page" disabled={page >= totalPages} onClick={() => paginate(page + 1)}>Next</button>
-            </div>
-        );
-    };
+    const renderPagination = () => <ServerPagination {...pagination} onPageChange={paginate} loading={loading} />;
 
     const filteredItems = useMemo(() => {
         let data = [...tableData];
@@ -761,7 +734,7 @@ function ServiceMasterData() {
                     <div className="action-bar">
                         <div className="search-box">
                             <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                <circle cx="11" cy="11" r="7" strokeWidth="2" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="m20 20-4-4" />
                             </svg>
                             <input type="text" placeholder="Search..." value={search} onChange={handleSearch} />
                         </div>
@@ -777,6 +750,13 @@ function ServiceMasterData() {
                         <div className="flex justify-center p-12"><div className="spinner"></div></div>
                     ) : (
                         <>
+                            {selectedIds.size > 0 && (
+                                <div className="selection-bar">
+                                    <span className="selection-count">{selectedIds.size} selected</span>
+                                    <button className="btn btn-danger btn-sm" onClick={() => setDeleteAllTarget(true)}>Delete Selected</button>
+                                    <button className="btn btn-secondary btn-sm" onClick={() => setSelectedIds(new Set())}>Deselect All</button>
+                                </div>
+                            )}
                             <div className="desktop-table">
                                 {tables[activeTab].table()}
                             </div>
@@ -784,13 +764,6 @@ function ServiceMasterData() {
                                 {tables[activeTab].cards()}
                             </div>
                             {renderPagination()}
-                            {selectedIds.size > 0 && (
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, marginTop: 12 }}>
-                                    <span style={{ fontWeight: 600, color: '#991b1b' }}>{selectedIds.size} selected</span>
-                                    <button className="btn btn-danger btn-sm" onClick={() => setDeleteAllTarget(true)}>Delete All</button>
-                                    <button className="btn btn-secondary btn-sm" onClick={() => setSelectedIds(new Set())}>Deselect All</button>
-                                </div>
-                            )}
                         </>
                     )}
                 </div>

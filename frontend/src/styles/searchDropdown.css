@@ -57,6 +57,8 @@
 .search-result-item:hover {
     background: var(--primary-50);
 }
+.search-result-item.active{background:var(--primary-50);outline:2px solid var(--primary-200);outline-offset:-2px}.search-view-all{display:block;width:100%;border:0;border-top:1px solid var(--gray-200);background:#fff;color:var(--primary-600);font-weight:600;padding:11px;cursor:pointer}.search-view-all:hover{background:var(--primary-50)}
+ .search-result-item mark{background:#fef08a;color:inherit;border-radius:2px;padding:0 1px}
 
 .search-result-item:last-child {
     border-bottom: none;

@@ -37,7 +37,7 @@ function EmployeeFormModal({ isOpen, mode, initialData, departments, roles, onCl
     if (!formData.firstName.trim()) errs.firstName = 'First name is required';
     if (!formData.lastName.trim()) errs.lastName = 'Last name is required';
     if (!formData.department) errs.department = 'Department is required';
-    if (!formData.role) errs.role = 'Role is required';
+    if (mode === 'edit' && !formData.role) errs.role = 'Role is required';
     setErrors(errs); return Object.keys(errs).length === 0;
   };
 
@@ -95,12 +95,14 @@ function EmployeeFormModal({ isOpen, mode, initialData, departments, roles, onCl
               </div>
             </div>
             <div className="form-row">
-              <div className="form-group">
-                <label>Role *</label>
-                <SearchableSelect options={roleOptions} value={formData.role}
-                  onChange={e => { setFormData(p => ({ ...p, role: e.target.value })); if (errors.role) setErrors(p => ({ ...p, role: undefined })); }} placeholder="Select role" />
-                {errors.role && <span className="field-error">{errors.role}</span>}
-              </div>
+              {mode === 'edit' && (
+                <div className="form-group">
+                  <label>Role *</label>
+                  <SearchableSelect options={roleOptions} value={formData.role}
+                    onChange={e => { setFormData(p => ({ ...p, role: e.target.value })); if (errors.role) setErrors(p => ({ ...p, role: undefined })); }} placeholder="Select role" />
+                  {errors.role && <span className="field-error">{errors.role}</span>}
+                </div>
+              )}
               <div className="form-group">
                 <label>CNIC</label>
                 <input className="form-control" name="cnic" value={formData.cnic} onChange={handleChange} />

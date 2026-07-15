@@ -65,13 +65,6 @@ router.post('/leads', authorize(...CRM_ROLES), uploadSingle('file'), bulkImportC
 
 router.post('/customers', authorize(...CRM_ROLES), uploadSingle('file'), bulkImportController.importCustomers);
 
-router.post(
-    '/vehicle-brands',
-    authorize('super_admin', 'admin', 'inventory_manager'),
-    uploadSingle('file'),
-    bulkImportController.importVehicleBrands
-);
-
 router.post('/vehicles', authorize(...INVENTORY_ROLES), uploadSingle('file'), bulkImportController.importVehicles);
 
 router.post('/parts', authorize(...INVENTORY_ROLES), uploadSingle('file'), bulkImportController.importParts);

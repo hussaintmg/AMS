@@ -11,6 +11,8 @@ router.patch('/categories/:id', authenticate, authorize('super_admin', 'admin', 
 
 router.get('/stats', authenticate, authorize(...fin), expenses.getStats);
 router.get('/', authenticate, authorize(...fin), expenses.listExpenses);
+router.patch('/bulk/deactivate', authenticate, authorize('super_admin', 'admin', 'accountant'), expenses.bulkDeactivateExpenses);
+router.delete('/bulk', authenticate, authorize(...fin), expenses.bulkDeleteExpenses);
 router.get('/:id', authenticate, authorize(...fin), expenses.getExpense);
 router.post('/', authenticate, authorize(...fin), expenses.createExpense);
 router.put('/:id', authenticate, authorize(...fin), expenses.updateExpense);

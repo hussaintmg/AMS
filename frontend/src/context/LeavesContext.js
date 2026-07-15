@@ -80,11 +80,22 @@ export function LeavesProvider({ children }) {
     } finally { setSaving(false); }
   }, []);
 
+  const bulkDeleteLeaves = useCallback(async (ids) => {
+    try { setSaving(true); const res = await leavesAPI.bulkDelete(ids); showApiSuccess(res, 'Leave requests deleted'); return { success: true };
+    } catch (err) { showApiError(err, 'Failed to delete leave requests'); return { success: false, error: err.response?.data }; }
+    finally { setSaving(false); }
+  }, []);
+  const bulkDeactivateLeaves = useCallback(async (ids) => {
+    try { setSaving(true); const res = await leavesAPI.bulkDeactivate(ids); showApiSuccess(res, 'Leave requests deactivated'); return { success: true };
+    } catch (err) { showApiError(err, 'Failed to deactivate leave requests'); return { success: false, error: err.response?.data }; }
+    finally { setSaving(false); }
+  }, []);
+
   const value = useMemo(() => ({
     leaves, employees, stats, loading, saving, error,
     setLeaves, setEmployees,
     loadLeaves, loadStats, loadReferenceData,
-    createLeave, updateLeave, deleteLeave, approveRejectLeave,
+    createLeave, updateLeave, deleteLeave, approveRejectLeave, bulkDeleteLeaves, bulkDeactivateLeaves,
   }), [leaves, employees, stats, loading, saving, error]);
 
   return <LeavesContext.Provider value={value}>{children}</LeavesContext.Provider>;

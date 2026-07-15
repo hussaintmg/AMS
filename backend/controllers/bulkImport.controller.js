@@ -33,7 +33,6 @@ const StatusItem = require('../models/StatusItem.model');
 const SystemSetting = require('../models/SystemSetting.model');
 const User = require('../models/User.model');
 const Department = require('../models/Department.model');
-const VehicleBrand = require('../models/VehicleBrand.model');
 const Vehicle = require('../models/Vehicle.model');
 const Warehouse = require('../models/Warehouse.model');
 const Part = require('../models/Part.model');
@@ -364,10 +363,6 @@ const TEMPLATE_META = {
     filename: 'ams_customers_import_template',
     headers: ['first_name', 'last_name', 'email', 'phone', 'alternate_phone', 'customer_type', 'company_name', 'source', 'type', 'status', 'description', 'assigned_to', 'department', 'address', 'city', 'state', 'country', 'zip_code']
   },
-  'vehicle-brands': {
-    filename: 'ams_vehicle_brands_import_template',
-    headers: ['name', 'description', 'country_of_origin', 'established_year', 'website', 'logo_url', 'is_active']
-  },
   vehicles: {
     filename: 'ams_vehicles_import_template',
     headers: ['vin', 'engine_number', 'make_name', 'model_name', 'variant_name', 'color_name', 'year', 'purchase_price', 'selling_price', 'status', 'condition_type', 'mileage', 'warehouse_name', 'location', 'arrival_date', 'notes']
@@ -509,20 +504,6 @@ async function buildCustomersSample() {
   ];
 }
 
-async function buildVehicleBrandsSample() {
-  const doc = await VehicleBrand.findOne().lean();
-  const d = doc || {};
-  return [
-    d.name || 'Toyota',
-    d.description || 'Japanese automobile manufacturer',
-    d.country_of_origin || 'Japan',
-    fmtNum(d.established_year) || '1937',
-    d.website || 'https://toyota.com',
-    d.logo_url || '',
-    yn(d.is_active)
-  ];
-}
-
 async function buildVehiclesSample() {
   const [doc, firstCondition] = await Promise.all([
     Vehicle.findOne().lean(),
@@ -625,7 +606,6 @@ async function buildEmployeesSample() {
 const SAMPLE_BUILDERS = {
   leads: buildLeadsSample,
   customers: buildCustomersSample,
-  'vehicle-brands': buildVehicleBrandsSample,
   vehicles: buildVehiclesSample,
   parts: buildPartsSample,
   'sales-orders': buildSalesOrdersSample,
@@ -919,75 +899,6 @@ exports.importCustomers = async (req, res, next) => {
     respond(res, rows, created, errors);
   } catch (err) {
     logger.error('importCustomers error', err);
-    handleImportError(err, next);
-  }
-};
-
-/* ═══ Vehicle brands ════════════════════════════════════════════════════ */
-
-exports.importVehicleBrands = async (req, res, next) => {
-  try {
-    if (!requireFile(req, next)) return;
-    const rows = parseRows(req, next);
-    if (!rows) return;
-
-    const userId = req.user && (req.user._id || req.user.id);
-    const errors = [];
-    let created = 0;
-    let updated = 0;
-
-    const existing = await VehicleBrand.find({ deleted_at: null }).lean();
-    const existingByName = new Map();
-    existing.forEach((b) => existingByName.set(String(b.name).toLowerCase().trim(), b));
-    const seenInFile = new Set();
-
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i];
-      const rowNum = i + 1;
-      const name = String(row.name || '').trim();
-      if (!name) {
-        errors.push({ row: rowNum, message: 'name is required.' });
-        continue;
-      }
-      const key = name.toLowerCase();
-      if (seenInFile.has(key)) {
-        errors.push({ row: rowNum, message: `Duplicate brand "${name}" in this file (skipped).` });
-        continue;
-      }
-      seenInFile.add(key);
-
-      const est = row.established_year ? toInt(row.established_year, null) : null;
-      const updateData = {
-        description: row.description || '',
-        logo_url: row.logo_url || '',
-        country_of_origin: row.country_of_origin || '',
-        established_year: Number.isFinite(est) ? est : null,
-        website: row.website || '',
-        is_active: toBool(row.is_active),
-        updated_by: userId
-      };
-
-      const existingBrand = existingByName.get(key);
-      if (existingBrand) {
-        try {
-          await VehicleBrand.findByIdAndUpdate(existingBrand._id, updateData, { runValidators: true });
-          updated += 1;
-        } catch (e) {
-          errors.push({ row: rowNum, message: e.message || 'Update failed' });
-        }
-      } else {
-        try {
-          await VehicleBrand.create({ name, ...updateData, created_by: userId });
-          created += 1;
-        } catch (e) {
-          errors.push({ row: rowNum, message: e.message || 'Create failed' });
-        }
-      }
-    }
-
-    respond(res, rows, created, errors, updated);
-  } catch (err) {
-    logger.error('importVehicleBrands error', err);
     handleImportError(err, next);
   }
 };

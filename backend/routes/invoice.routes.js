@@ -1,9 +1,9 @@
 /**
  * Invoice Routes
  * Full CRUD operations with role-based permissions
- * Created by LOGIXINVENTOR (PVT) Ltd.
- * info@logixinventor.com +92 333 3836851
- * www.logixinventor.com | AMS
+ * Maintained by Hussain Developer
+ * hussaintmerng@gmail.com | +92 319 1634446
+ * AMS ERP
  * Date: 2026-01-08
  * 
  * @swagger
@@ -16,6 +16,7 @@ const express = require('express');
 const router = express.Router();
 const { authenticate, authorize } = require('../middleware/auth');
 const invoiceController = require('../controllers/invoiceManagement.controller');
+const bulkPermission = require('../middleware/bulkSalesPermission');
 
 /**
  * @swagger
@@ -26,6 +27,7 @@ const invoiceController = require('../controllers/invoiceManagement.controller')
  *     security: [{ bearerAuth: [] }]
  */
 router.get('/stats', authenticate, invoiceController.getInvoiceStats);
+router.post('/bulk', authenticate, bulkPermission('invoices'), invoiceController.bulkInvoices);
 
 /**
  * @swagger
@@ -267,6 +269,8 @@ router.post('/:id/payments', authenticate, authorize('super_admin', 'sales_manag
  */
 router.post('/:id/send', authenticate, authorize('super_admin', 'admin', 'sales_manager', 'accountant'), invoiceController.sendInvoice);
 
+router.post('/:id/send-email', authenticate, authorize('super_admin', 'admin', 'sales_manager', 'accountant'), invoiceController.sendInvoiceEmail);
+
 /**
  * @swagger
  * /api/invoices/{id}/history:
@@ -278,4 +282,3 @@ router.post('/:id/send', authenticate, authorize('super_admin', 'admin', 'sales_
 router.get('/:id/history', authenticate, invoiceController.getInvoiceHistory);
 
 module.exports = router;
-

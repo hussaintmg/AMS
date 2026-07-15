@@ -5,6 +5,8 @@ const customerProvider = require('./providers/customerProvider');
 const leadProvider = require('./providers/leadProvider');
 const invoiceProvider = require('./providers/invoiceProvider');
 const quotationProvider = require('./providers/quotationProvider');
+const bookingProvider = require('./providers/bookingProvider');
+const salesOrderProvider = require('./providers/salesOrderProvider');
 const vehicleProvider = require('./providers/vehicleProvider');
 const serviceProvider = require('./providers/serviceProvider');
 const erpProvider = require('./providers/erpProvider');
@@ -17,6 +19,8 @@ const providers = [
   leadProvider,
   invoiceProvider,
   quotationProvider,
+  bookingProvider,
+  salesOrderProvider,
   vehicleProvider,
   serviceProvider,
   erpProvider,

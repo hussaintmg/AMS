@@ -1,8 +1,37 @@
 const Employee = require('../models/Employee.model');
 const Department = require('../models/Department.model');
+const SystemSetting = require('../models/SystemSetting.model');
 const AppError = require('../utils/AppError');
 
 const getUserId = (req) => req.user?.id || req.user?._id;
+
+const getBulkIds = (req) => {
+  const ids = Array.isArray(req.body?.ids) ? [...new Set(req.body.ids.filter(Boolean))] : [];
+  if (!ids.length) throw new AppError('Select at least one employee', 400);
+  return ids;
+};
+
+exports.bulkDeleteEmployees = async (req, res, next) => {
+  try {
+    const ids = getBulkIds(req);
+    const result = await Employee.updateMany(
+      { _id: { $in: ids }, isDeleted: false },
+      { $set: { isDeleted: true, isActive: false, updatedBy: getUserId(req) } }
+    );
+    res.json({ success: true, message: `${result.modifiedCount} employee(s) deleted`, data: { modifiedCount: result.modifiedCount } });
+  } catch (error) { next(error); }
+};
+
+exports.bulkDeactivateEmployees = async (req, res, next) => {
+  try {
+    const ids = getBulkIds(req);
+    const result = await Employee.updateMany(
+      { _id: { $in: ids }, isDeleted: false, isActive: true },
+      { $set: { isActive: false, status: 'inactive', updatedBy: getUserId(req) } }
+    );
+    res.json({ success: true, message: `${result.modifiedCount} employee(s) deactivated`, data: { modifiedCount: result.modifiedCount } });
+  } catch (error) { next(error); }
+};
 
 exports.listEmployees = async (req, res, next) => {
   try {
@@ -49,7 +78,7 @@ exports.getEmployee = async (req, res, next) => {
 
 exports.createEmployee = async (req, res, next) => {
   try {
-    const { firstName, lastName, email, phone, cnic, department, role, designation, joiningDate, salary, status } = req.body;
+    const { firstName, lastName, email, phone, cnic, department, designation, joiningDate, salary, status } = req.body;
     if (!firstName || !lastName) throw new AppError('First name and last name are required', 400);
 
     const year = new Date().getFullYear();
@@ -58,9 +87,15 @@ exports.createEmployee = async (req, res, next) => {
 
     const sanitize = (v) => (v === '' || v === undefined ? undefined : v);
 
+    const roleSetting = await SystemSetting.findOne({ key: 'employee_role_config' }).lean();
+    const configuredRoleId = roleSetting?.value?.activeRoleId;
+    if (!configuredRoleId) {
+      throw new AppError('Employee role is not configured in Server Management > Role Usage.', 400);
+    }
+
     const item = await Employee.create({
       employeeCode, firstName, lastName, email, phone, cnic,
-      department: sanitize(department), role: sanitize(role),
+      department: sanitize(department), role: configuredRoleId,
       designation, joiningDate, salary: salary || 0, status: status || 'active',
       isActive: true, createdBy: getUserId(req), updatedBy: getUserId(req),
     });

@@ -16,6 +16,7 @@ const Log = require('../models/mongo/Log.model');
 const { normalizePhone } = require('../utils/phone.util');
 const { logFileOperation } = require('../utils/apiLogger');
 const { query } = require('../config/database');
+const { allowedOwnerIds } = require('../utils/roleJobs');
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -139,9 +140,8 @@ exports.getLeads = async (req, res) => {
     else if (isActive === 'all') { /* no filter */ }
 
     // PART 5: Ownership — non-super-admin only sees own leads
-    if (!isSuperAdmin) {
-      filter.createdBy = user._id || user.id;
-    }
+    const leadOwnerIds = await allowedOwnerIds(user, 'leads');
+    if (leadOwnerIds !== null) filter.createdBy = { $in: leadOwnerIds };
 
     // PART 4: Default hide converted unless explicitly requested
     if (converted === 'true') filter.convertedToCustomer = true;
@@ -172,7 +172,7 @@ exports.getLeads = async (req, res) => {
     }
 
     if (search) {
-      const searchRegex = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      const searchRegex = new RegExp(String(search).trim().split(/\s+/).map(part => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'i');
       filter.$or = [
         { leadNo: searchRegex },
         { customerName: searchRegex },
@@ -675,7 +675,7 @@ exports.convertToCustomer = async (req, res) => {
     // Get customer role config
     const roleConfigSetting = await SystemSetting.findOne({ key: 'customer_role_config' }).lean();
     if (!roleConfigSetting || !roleConfigSetting.value || !roleConfigSetting.value.activeRoleId) {
-      return res.status(400).json({ success: false, message: 'Customer role is not configured in Server Management > Customer Config.' });
+      return res.status(400).json({ success: false, message: 'Customer role is not configured in Server Management > Role Usage.' });
     }
 
     const activeRoleId = roleConfigSetting.value.activeRoleId;

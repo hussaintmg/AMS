@@ -44,10 +44,6 @@ export const AuthProvider = ({ children }) => {
 
     useEffect(() => {
         const restoreSession = async () => {
-            localStorage.removeItem('token');
-            localStorage.removeItem('refreshToken');
-            localStorage.removeItem('user');
-
             try {
                 const response = await authAPI.getProfile();
                 const normalizedUser = normalizeUser(response.data.data);
@@ -72,6 +68,8 @@ export const AuthProvider = ({ children }) => {
         try {
             const response = await authAPI.login({ email, password });
             const payload = response.data.data;
+            if (payload.token) localStorage.setItem('token', payload.token);
+            if (payload.refreshToken) localStorage.setItem('refreshToken', payload.refreshToken);
             const meResponse = await authAPI.getProfile();
             const normalizedUser = normalizeUser({
                 ...(meResponse.data?.data || payload.user),

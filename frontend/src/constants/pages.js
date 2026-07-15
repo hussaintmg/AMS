@@ -4,7 +4,6 @@ const pages = [
   { key: 'customers', label: 'Customers', path: '/customers', module: 'crm', icon: 'Contact', group: 'CRM', isCore: false, isActive: true },
   { key: 'vehicles', label: 'Vehicles', path: '/vehicles', module: 'inventory', icon: 'Car', group: 'Inventory', isCore: false, isActive: true },
   { key: 'vehicle_master', label: 'Vehicle Master Data', path: '/vehicle-master', module: 'vehicle-master', icon: 'CarFront', group: 'Master Data', isCore: false, isActive: true },
-  { key: 'vehicle_branding', label: 'Vehicle Branding', path: '/vehicle-branding', module: 'vehicle-branding', icon: 'Badge', group: 'Inventory', isCore: false, isActive: true },
   { key: 'parts', label: 'Parts Inventory', path: '/parts', module: 'parts', icon: 'Cog', group: 'Inventory', isCore: false, isActive: true },
   { key: 'warehouses', label: 'Warehouse Management', path: '/warehouses', module: 'warehouses', icon: 'Warehouse', group: 'Master Data', isCore: false, isActive: true },
   { key: 'sales', label: 'Sales', path: '/sales/orders', module: 'sales', icon: 'ClipboardList', group: 'Sales', isCore: false, isActive: true },
@@ -27,6 +26,7 @@ const pages = [
   { key: 'order_form_upload', label: 'Order Form Upload', path: '/uploader/order-form', module: 'uploader', icon: 'UploadCloud', group: 'Uploader', isCore: false, isActive: true },
   { key: 'server_management', label: 'Server Management', path: '/server-management', module: 'server-management', icon: 'ServerCog', group: 'System', isCore: true, isActive: true },
   { key: 'email_templates', label: 'Email Templates', path: '/email', module: 'email', icon: 'Mail', group: 'Communication', isCore: false, isActive: true }
+  ,{ key: 'pdf_management', label: 'PDF Management', path: '/pdf-management', module: 'pdf', icon: 'FileDown', group: 'Communication', isCore: false, isActive: true }
 ];
 
 export default pages;

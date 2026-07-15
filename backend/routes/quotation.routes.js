@@ -1,9 +1,9 @@
 /**
  * Quotation Routes
  * Full CRUD operations with role-based permissions
- * Created by LOGIXINVENTOR (PVT) Ltd.
- * info@logixinventor.com +92 333 3836851
- * www.logixinventor.com | AMS
+ * Maintained by Hussain Developer
+ * hussaintmerng@gmail.com | +92 319 1634446
+ * AMS ERP
  * Date: 2026-01-06
  * 
  * @swagger
@@ -16,6 +16,7 @@ const express = require('express');
 const router = express.Router();
 const { authenticate, authorize } = require('../middleware/auth');
 const salesController = require('../controllers/salesManagement.controller');
+const bulkPermission = require('../middleware/bulkSalesPermission');
 
 /**
  * @swagger
@@ -26,6 +27,7 @@ const salesController = require('../controllers/salesManagement.controller');
  *     security: [{ bearerAuth: [] }]
  */
 router.get('/stats', authenticate, salesController.getQuotationStats);
+router.post('/bulk', authenticate, bulkPermission('quotations'), salesController.bulkSalesDocuments);
 
 /**
  * @swagger
@@ -88,6 +90,8 @@ router.get('/:id', authenticate, salesController.getQuotationById);
  *               validityDays: { type: integer, default: 7 }
  */
 router.post('/', authenticate, authorize('super_admin', 'sales_manager', 'sales_executive'), salesController.createQuotation);
+
+router.post('/:id/send-email', authenticate, authorize('super_admin', 'admin', 'sales_manager', 'sales_executive'), salesController.sendQuotationEmail);
 
 /**
  * @swagger

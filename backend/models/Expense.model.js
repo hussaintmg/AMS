@@ -10,6 +10,7 @@ const expenseSchema = new mongoose.Schema({
   description: { type: String },
   vendor: { type: String, trim: true },
   status: { type: String, enum: ['draft', 'submitted', 'approved', 'posted'], default: 'draft', trim: true },
+  isActive: { type: Boolean, default: true },
   isDeleted: { type: Boolean, default: false },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }

@@ -6,13 +6,13 @@ import toast from 'react-hot-toast';
 import useModalKeyboard from '../../hooks/useModalKeyboard';
 
 const LABEL_MAP = {
-  make: 'Make', model: 'Model', variant: 'Variant',
+  make: 'Brand', model: 'Model', variant: 'Variant',
   color: 'Color', category: 'Category', supplier: 'Supplier',
   condition: 'Condition'
 };
 
 const DEFAULTS = {
-  make: { name: '', country: '', logo: '', isActive: true },
+  make: { name: '', country: '', logo: '', description: '', establishedYear: '', website: '', isActive: true },
   model: { makeId: '', name: '', year: new Date().getFullYear(), bodyType: 'sedan', fuelType: 'petrol', transmission: 'automatic', engineCapacity: '', seatingCapacity: 5, isActive: true },
   variant: { modelId: '', name: '', basePrice: '', features: '', isActive: true },
   color: { name: '', hexCode: '#000000', isMetallic: false, additionalCost: 0, isActive: true },
@@ -25,7 +25,7 @@ function itemToForm(type, item) {
   if (!item) return { ...DEFAULTS[type] };
   switch (type) {
     case 'make':
-      return { name: item.name, country: item.country || '', logo: item.logo || '', isActive: item.is_active };
+      return { name: item.name, country: item.country || '', logo: item.logo || '', description: item.description || '', establishedYear: item.established_year || '', website: item.website || '', isActive: item.is_active };
     case 'model':
       return { makeId: item.make_id, name: item.name, year: item.year, bodyType: item.body_type, fuelType: item.fuel_type, transmission: item.transmission, engineCapacity: item.engine_capacity || '', seatingCapacity: item.seating_capacity || 5, isActive: item.is_active };
     case 'variant':
@@ -171,12 +171,24 @@ function MakeForm({ formData, onChange, set }) {
   return (
     <>
       <div className="form-group">
-        <label>Make Name *</label>
+        <label>Brand Name *</label>
         <input type="text" name="name" value={formData.name || ''} onChange={onChange} required placeholder="e.g., Toyota, Honda" />
       </div>
       <div className="form-group">
-        <label>Country</label>
+        <label>Description</label>
+        <textarea name="description" value={formData.description || ''} onChange={onChange} rows={2} placeholder="Short description of the brand" />
+      </div>
+      <div className="form-group">
+        <label>Country of Origin</label>
         <input type="text" name="country" value={formData.country || ''} onChange={onChange} placeholder="e.g., Japan, USA" />
+      </div>
+      <div className="form-group">
+        <label>Established Year</label>
+        <input type="number" name="establishedYear" value={formData.establishedYear || ''} onChange={onChange} placeholder="e.g., 1937" min="1800" max={new Date().getFullYear()} />
+      </div>
+      <div className="form-group">
+        <label>Website</label>
+        <input type="text" name="website" value={formData.website || ''} onChange={onChange} placeholder="https://..." />
       </div>
       <div className="form-group">
         <label>Logo URL</label>
@@ -197,9 +209,9 @@ function ModelForm({ formData, onChange, set, makes, onQuickCreate }) {
     <>
       <div className="form-row">
         <div className="form-group">
-          <label style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>Make * <a className="label-add-link" onClick={onQuickCreate} title="Create Make">+ Make</a></label>
+          <label style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>Brand * <a className="label-add-link" onClick={onQuickCreate} title="Create Brand">+ Brand</a></label>
           <SearchableSelect name="makeId" value={formData.makeId || ''} onChange={onChange} required>
-            <option value="">Select Make</option>
+            <option value="">Select Brand</option>
             {makes.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
           </SearchableSelect>
         </div>
@@ -274,12 +286,12 @@ function VariantForm({ formData, onChange, set, makes, models, variantMakeId, se
     <>
       <div className="form-row">
         <div className="form-group">
-          <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>Make * <a className="label-add-link" onClick={onQuickCreateMake} title="Create Make">+ Make</a></label>
+          <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>Brand * <a className="label-add-link" onClick={onQuickCreateMake} title="Create Brand">+ Brand</a></label>
           <SearchableSelect
             value={variantMakeId}
             onChange={(e) => { setVariantMakeId(e.target.value); set('modelId', ''); }}
           >
-            <option value="">Select Make</option>
+            <option value="">Select Brand</option>
             {makes.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
           </SearchableSelect>
         </div>

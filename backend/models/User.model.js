@@ -197,6 +197,10 @@ const userSchema = new mongoose.Schema(
       },
       default: {},
     },
+    notificationPreferences: {
+      type: [{ module: { type: String, required: true }, enabled: { type: Boolean, default: true } }],
+      default: [],
+    },
     customPermissions: {
       type: [customPermissionSchema],
       default: [],

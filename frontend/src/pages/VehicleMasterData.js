@@ -1,9 +1,9 @@
 /**
  * Vehicle Master Data Management Page
  * Full CRUD operations for makes, models, variants, colors, and categories
- * Created by LOGIXINVENTOR (PVT) Ltd.
- * info@logixinventor.com +92 333 3836851
- * www.logixinventor.com | AMS
+ * Maintained by Hussain Developer
+ * hussaintmerng@gmail.com | +92 319 1634446
+ * AMS ERP
  * Date: 2026-01-08
  * Updated: 2026-04-05 - Added Part Categories tab
  */
@@ -319,7 +319,7 @@ const VehicleMasterData = () => {
 
     const getTabLabel = () => {
         switch(activeTab) {
-            case 'makes': return 'Make';
+            case 'makes': return 'Brand';
             case 'models': return 'Model';
             case 'variants': return 'Variant';
             case 'colors': return 'Color';
@@ -350,38 +350,47 @@ const VehicleMasterData = () => {
             : <ArrowDown size={14} style={{ verticalAlign: 'middle', marginLeft: 4 }} />;
     };
 
+    const handleToggleActive = async (item) => {
+        const type = activeTab;
+        const id = item.id || item._id;
+        try {
+            const response = await vehicleMasterAPI.toggleActive(type, id);
+            const isActive = response?.data?.data?.is_active ?? !item.is_active;
+            const setters = { makes: setMakes, models: setModels, variants: setVariants, colors: setColors, categories: setCategories, suppliers: setSuppliers, conditions: setConditions };
+            setters[type](items => items.map(entry => (entry.id || entry._id) === id ? { ...entry, is_active: isActive } : entry));
+            toast.success(`Status ${isActive ? 'activated' : 'deactivated'}`);
+            fetchStats();
+        } catch (err) {
+            setErrorPopup(err.response?.data || { message: 'Failed to update status' });
+        }
+    };
+
+    const renderStatus = (item) => (
+        <span
+            className={`status-capsule ${item.is_active ? 'active' : ''}`}
+            role="switch"
+            aria-checked={Boolean(item.is_active)}
+            title={item.is_active ? 'Deactivate' : 'Activate'}
+            onClick={(e) => { e.stopPropagation(); handleToggleActive(item); }}
+        ><span className="capsule-circle" /></span>
+    );
+
     // ═══════════════════════════════════════════════════════════════════════
     // RENDER FUNCTIONS
     // ═══════════════════════════════════════════════════════════════════════
 
     const renderMakesTable = () => (
-        <table>
+        <table className="data-table">
             <thead>
                 <tr>
                     <th style={{ width: 40 }}><input type="checkbox" checked={selectedIds.size === filteredItems.length && filteredItems.length > 0} onChange={toggleSelectAll} /></th>
-                    <th className="sortable" onClick={() => handleSort('name')}>Name <SortIcon field="name" /></th>
+                    <th className="sortable" onClick={() => handleSort('name')}>Brand Name <SortIcon field="name" /></th>
                     <th>Logo</th>
                     <th className="sortable" onClick={() => handleSort('country')}>Country <SortIcon field="country" /></th>
                     <th className="sortable" onClick={() => handleSort('model_count')}>Models <SortIcon field="model_count" /></th>
                     <th className="sortable" onClick={() => handleSort('vehicle_count')}>Vehicles <SortIcon field="vehicle_count" /></th>
                     <th className="sortable" onClick={() => handleSort('is_active')}>Status <SortIcon field="is_active" /></th>
                     <th>Actions</th>
-                </tr>
-                <tr className="filter-row">
-                    <th></th>
-                    <th><input type="text" className="form-input filter-input" placeholder="Filter name..." value={nameFilter} onChange={(e) => setNameFilter(e.target.value)} onClick={(e) => e.stopPropagation()} /></th>
-                    <th></th>
-                    <th><input type="text" className="form-input filter-input" placeholder="Filter country..." value={countryFilter} onChange={(e) => setCountryFilter(e.target.value)} onClick={(e) => e.stopPropagation()} /></th>
-                    <th><input type="number" className="form-input filter-input" placeholder="Models..." value={modelCountFilter} onChange={(e) => setModelCountFilter(e.target.value)} onClick={(e) => e.stopPropagation()} /></th>
-                    <th><input type="number" className="form-input filter-input" placeholder="Vehicles..." value={vehicleCountFilter} onChange={(e) => setVehicleCountFilter(e.target.value)} onClick={(e) => e.stopPropagation()} /></th>
-                    <th>
-                        <select className="form-input filter-input" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} onClick={(e) => e.stopPropagation()}>
-                            <option value="all">All</option>
-                            <option value="active">Active</option>
-                            <option value="inactive">Inactive</option>
-                        </select>
-                    </th>
-                    <th></th>
                 </tr>
             </thead>
             <tbody>
@@ -404,11 +413,7 @@ const VehicleMasterData = () => {
                         <td>{make.country || '-'}</td>
                         <td>{make.model_count || 0}</td>
                         <td>{make.vehicle_count || 0}</td>
-                        <td>
-                            <span className={`badge ${make.is_active ? 'badge-success' : 'badge-secondary'}`}>
-                                {make.is_active ? 'Active' : 'Inactive'}
-                            </span>
-                        </td>
+                        <td>{renderStatus(make)}</td>
                         <td onClick={(e) => e.stopPropagation()}>
                             <ActionButtons
                                 onEdit={() => openModal('edit', make)}
@@ -429,56 +434,20 @@ const VehicleMasterData = () => {
     const TRANSMISSION_TYPES = ['Manual', 'Automatic', 'CVT', 'AMT', 'DCT'];
 
     const renderModelsTable = () => (
-        <table>
+        <table className="data-table">
             <thead>
                 <tr>
                     <th style={{ width: 40 }}><input type="checkbox" checked={selectedIds.size === filteredItems.length && filteredItems.length > 0} onChange={toggleSelectAll} /></th>
-                    <th className="sortable" onClick={() => handleSort('make_name')}>Make <SortIcon field="make_name" /></th>
+                    <th className="sortable" onClick={() => handleSort('make_name')}>Brand <SortIcon field="make_name" /></th>
                     <th className="sortable" onClick={() => handleSort('name')}>Model <SortIcon field="name" /></th>
                     <th className="sortable" onClick={() => handleSort('year')}>Year <SortIcon field="year" /></th>
                     <th className="sortable" onClick={() => handleSort('body_type')}>Body Type <SortIcon field="body_type" /></th>
                     <th className="sortable" onClick={() => handleSort('fuel_type')}>Fuel <SortIcon field="fuel_type" /></th>
                     <th className="sortable" onClick={() => handleSort('transmission')}>Transmission <SortIcon field="transmission" /></th>
                     <th className="sortable" onClick={() => handleSort('variant_count')}>Variants <SortIcon field="variant_count" /></th>
+                    <th className="sortable" onClick={() => handleSort('vehicle_count')}>Vehicles <SortIcon field="vehicle_count" /></th>
                     <th className="sortable" onClick={() => handleSort('is_active')}>Status <SortIcon field="is_active" /></th>
                     <th>Actions</th>
-                </tr>
-                <tr className="filter-row">
-                    <th>
-                        <select className="form-input filter-input" value={makeFilter} onChange={(e) => setMakeFilter(e.target.value)} onClick={(e) => e.stopPropagation()}>
-                            <option value="">All Makes</option>
-                            {makes.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-                        </select>
-                    </th>
-                    <th><input type="text" className="form-input filter-input" placeholder="Filter model..." value={nameFilter} onChange={(e) => setNameFilter(e.target.value)} onClick={(e) => e.stopPropagation()} /></th>
-                    <th><input type="text" className="form-input filter-input" placeholder="Filter year..." value={yearFilter} onChange={(e) => setYearFilter(e.target.value)} onClick={(e) => e.stopPropagation()} /></th>
-                    <th>
-                        <select className="form-input filter-input" value={bodyTypeFilter} onChange={(e) => setBodyTypeFilter(e.target.value)} onClick={(e) => e.stopPropagation()}>
-                            <option value="">All</option>
-                            {BODY_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                        </select>
-                    </th>
-                    <th>
-                        <select className="form-input filter-input" value={fuelFilter} onChange={(e) => setFuelFilter(e.target.value)} onClick={(e) => e.stopPropagation()}>
-                            <option value="">All</option>
-                            {FUEL_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                        </select>
-                    </th>
-                    <th>
-                        <select className="form-input filter-input" value={transmissionFilter} onChange={(e) => setTransmissionFilter(e.target.value)} onClick={(e) => e.stopPropagation()}>
-                            <option value="">All</option>
-                            {TRANSMISSION_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                        </select>
-                    </th>
-                    <th><input type="number" className="form-input filter-input" placeholder="Variants..." value={variantCountFilter} onChange={(e) => setVariantCountFilter(e.target.value)} onClick={(e) => e.stopPropagation()} /></th>
-                    <th>
-                        <select className="form-input filter-input" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} onClick={(e) => e.stopPropagation()}>
-                            <option value="all">All</option>
-                            <option value="active">Active</option>
-                            <option value="inactive">Inactive</option>
-                        </select>
-                    </th>
-                    <th></th>
                 </tr>
             </thead>
             <tbody>
@@ -492,11 +461,8 @@ const VehicleMasterData = () => {
                         <td>{model.fuel_type}</td>
                         <td>{model.transmission}</td>
                         <td>{model.variant_count || 0}</td>
-                        <td>
-                            <span className={`badge ${model.is_active ? 'badge-success' : 'badge-secondary'}`}>
-                                {model.is_active ? 'Active' : 'Inactive'}
-                            </span>
-                        </td>
+                        <td>{model.vehicle_count || 0}</td>
+                        <td>{renderStatus(model)}</td>
                         <td onClick={(e) => e.stopPropagation()}>
                             <ActionButtons
                                 onEdit={() => openModal('edit', model)}
@@ -513,45 +479,17 @@ const VehicleMasterData = () => {
     );
 
     const renderVariantsTable = () => (
-        <table>
+        <table className="data-table">
             <thead>
                 <tr>
                     <th style={{ width: 40 }}><input type="checkbox" checked={selectedIds.size === filteredItems.length && filteredItems.length > 0} onChange={toggleSelectAll} /></th>
-                    <th className="sortable" onClick={() => handleSort('make_name')}>Make <SortIcon field="make_name" /></th>
+                    <th className="sortable" onClick={() => handleSort('make_name')}>Brand <SortIcon field="make_name" /></th>
                     <th className="sortable" onClick={() => handleSort('model_name')}>Model <SortIcon field="model_name" /></th>
                     <th className="sortable" onClick={() => handleSort('name')}>Variant <SortIcon field="name" /></th>
                     <th className="sortable" onClick={() => handleSort('base_price')}>Base Price <SortIcon field="base_price" /></th>
                     <th className="sortable" onClick={() => handleSort('vehicle_count')}>Vehicles <SortIcon field="vehicle_count" /></th>
                     <th className="sortable" onClick={() => handleSort('is_active')}>Status <SortIcon field="is_active" /></th>
                     <th>Actions</th>
-                </tr>
-                <tr className="filter-row">
-                    <th></th>
-                    <th>
-                        <select className="form-input filter-input" value={makeFilter} onChange={(e) => { setMakeFilter(e.target.value); setModelFilter(''); }} onClick={(e) => e.stopPropagation()}>
-                            <option value="">All Makes</option>
-                            {makes.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-                        </select>
-                    </th>
-                    <th>
-                        <select className="form-input filter-input" value={modelFilter} onChange={(e) => setModelFilter(e.target.value)} onClick={(e) => e.stopPropagation()}>
-                            <option value="">All Models</option>
-                            {models.filter(m => !makeFilter || String(m.make_id) === String(makeFilter)).map(m => (
-                                <option key={m.id} value={m.id}>{m.name}</option>
-                            ))}
-                        </select>
-                    </th>
-                    <th><input type="text" className="form-input filter-input" placeholder="Filter variant..." value={nameFilter} onChange={(e) => setNameFilter(e.target.value)} onClick={(e) => e.stopPropagation()} /></th>
-                    <th><input type="number" className="form-input filter-input" placeholder="Base price..." value={basePriceFilter} onChange={(e) => setBasePriceFilter(e.target.value)} onClick={(e) => e.stopPropagation()} /></th>
-                    <th><input type="number" className="form-input filter-input" placeholder="Vehicles..." value={vehicleCountFilter} onChange={(e) => setVehicleCountFilter(e.target.value)} onClick={(e) => e.stopPropagation()} /></th>
-                    <th>
-                        <select className="form-input filter-input" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} onClick={(e) => e.stopPropagation()}>
-                            <option value="all">All</option>
-                            <option value="active">Active</option>
-                            <option value="inactive">Inactive</option>
-                        </select>
-                    </th>
-                    <th></th>
                 </tr>
             </thead>
             <tbody>
@@ -563,11 +501,7 @@ const VehicleMasterData = () => {
                         <td><strong>{variant.name}</strong></td>
                         <td>PKR {Number(variant.base_price || 0).toLocaleString()}</td>
                         <td>{variant.vehicle_count || 0}</td>
-                        <td>
-                            <span className={`badge ${variant.is_active ? 'badge-success' : 'badge-secondary'}`}>
-                                {variant.is_active ? 'Active' : 'Inactive'}
-                            </span>
-                        </td>
+                        <td>{renderStatus(variant)}</td>
                         <td onClick={(e) => e.stopPropagation()}>
                             <ActionButtons
                                 onEdit={() => openModal('edit', variant)}
@@ -584,7 +518,7 @@ const VehicleMasterData = () => {
     );
 
     const renderColorsTable = () => (
-        <table>
+        <table className="data-table">
             <thead>
                 <tr>
                     <th style={{ width: 40 }}><input type="checkbox" checked={selectedIds.size === filteredItems.length && filteredItems.length > 0} onChange={toggleSelectAll} /></th>
@@ -595,28 +529,6 @@ const VehicleMasterData = () => {
                     <th className="sortable" onClick={() => handleSort('vehicle_count')}>Vehicles <SortIcon field="vehicle_count" /></th>
                     <th className="sortable" onClick={() => handleSort('is_active')}>Status <SortIcon field="is_active" /></th>
                     <th>Actions</th>
-                </tr>
-                <tr className="filter-row">
-                    <th></th>
-                    <th><input type="text" className="form-input filter-input" placeholder="Filter color..." value={nameFilter} onChange={(e) => setNameFilter(e.target.value)} onClick={(e) => e.stopPropagation()} /></th>
-                    <th><input type="text" className="form-input filter-input" placeholder="Hex..." value={hexFilter} onChange={(e) => setHexFilter(e.target.value)} onClick={(e) => e.stopPropagation()} /></th>
-                    <th>
-                        <select className="form-input filter-input" value={metallicFilter} onChange={(e) => setMetallicFilter(e.target.value)} onClick={(e) => e.stopPropagation()}>
-                            <option value="all">All</option>
-                            <option value="yes">Yes</option>
-                            <option value="no">No</option>
-                        </select>
-                    </th>
-                    <th><input type="number" className="form-input filter-input" placeholder="Add. cost..." value={additionalCostFilter} onChange={(e) => setAdditionalCostFilter(e.target.value)} onClick={(e) => e.stopPropagation()} /></th>
-                    <th><input type="number" className="form-input filter-input" placeholder="Vehicles..." value={vehicleCountFilter} onChange={(e) => setVehicleCountFilter(e.target.value)} onClick={(e) => e.stopPropagation()} /></th>
-                    <th>
-                        <select className="form-input filter-input" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} onClick={(e) => e.stopPropagation()}>
-                            <option value="all">All</option>
-                            <option value="active">Active</option>
-                            <option value="inactive">Inactive</option>
-                        </select>
-                    </th>
-                    <th></th>
                 </tr>
             </thead>
             <tbody>
@@ -634,11 +546,7 @@ const VehicleMasterData = () => {
                         <td>{color.is_metallic ? 'Yes' : 'No'}</td>
                         <td>PKR {Number(color.additional_cost || 0).toLocaleString()}</td>
                         <td>{color.vehicle_count || 0}</td>
-                        <td>
-                            <span className={`badge ${color.is_active ? 'badge-success' : 'badge-secondary'}`}>
-                                {color.is_active ? 'Active' : 'Inactive'}
-                            </span>
-                        </td>
+                        <td>{renderStatus(color)}</td>
                         <td onClick={(e) => e.stopPropagation()}>
                             <ActionButtons
                                 onEdit={() => openModal('edit', color)}
@@ -655,7 +563,7 @@ const VehicleMasterData = () => {
     );
 
     const renderCategoriesTable = () => (
-        <table>
+        <table className="data-table">
             <thead>
                 <tr>
                     <th style={{ width: 40 }}><input type="checkbox" checked={selectedIds.size === filteredItems.length && filteredItems.length > 0} onChange={toggleSelectAll} /></th>
@@ -667,22 +575,6 @@ const VehicleMasterData = () => {
                     <th className="sortable" onClick={() => handleSort('is_active')}>Status <SortIcon field="is_active" /></th>
                     <th>Actions</th>
                 </tr>
-                <tr className="filter-row">
-                    <th></th>
-                    <th><input type="text" className="form-input filter-input" placeholder="Filter name..." value={nameFilter} onChange={(e) => setNameFilter(e.target.value)} onClick={(e) => e.stopPropagation()} /></th>
-                    <th><input type="text" className="form-input filter-input" placeholder="Filter desc..." value={descriptionFilter} onChange={(e) => setDescriptionFilter(e.target.value)} onClick={(e) => e.stopPropagation()} /></th>
-                    <th><input type="text" className="form-input filter-input" placeholder="Filter parent..." value={parentFilter} onChange={(e) => setParentFilter(e.target.value)} onClick={(e) => e.stopPropagation()} /></th>
-                    <th><input type="number" className="form-input filter-input" placeholder="Parts..." value={partsCountFilter} onChange={(e) => setPartsCountFilter(e.target.value)} onClick={(e) => e.stopPropagation()} /></th>
-                    <th><input type="number" className="form-input filter-input" placeholder="Sub-cats..." value={subCategoryCountFilter} onChange={(e) => setSubCategoryCountFilter(e.target.value)} onClick={(e) => e.stopPropagation()} /></th>
-                    <th>
-                        <select className="form-input filter-input" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} onClick={(e) => e.stopPropagation()}>
-                            <option value="all">All</option>
-                            <option value="active">Active</option>
-                            <option value="inactive">Inactive</option>
-                        </select>
-                    </th>
-                    <th></th>
-                </tr>
             </thead>
             <tbody>
                 {filteredItems.map(cat => (
@@ -693,11 +585,7 @@ const VehicleMasterData = () => {
                         <td>{cat.parent_name || <span className="badge badge-info">Root</span>}</td>
                         <td>{cat.parts_count || 0}</td>
                         <td>{cat.sub_category_count || 0}</td>
-                        <td>
-                            <span className={`badge ${cat.is_active ? 'badge-success' : 'badge-secondary'}`}>
-                                {cat.is_active ? 'Active' : 'Inactive'}
-                            </span>
-                        </td>
+                        <td>{renderStatus(cat)}</td>
                         <td onClick={(e) => e.stopPropagation()}>
                             <ActionButtons
                                 onEdit={() => openModal('edit', cat)}
@@ -716,7 +604,7 @@ const VehicleMasterData = () => {
     const SUPPLIER_TYPES = ['local', 'international', 'manufacturer', 'distributor'];
 
     const renderSuppliersTable = () => (
-        <table>
+        <table className="data-table">
             <thead>
                 <tr>
                     <th style={{ width: 40 }}><input type="checkbox" checked={selectedIds.size === filteredItems.length && filteredItems.length > 0} onChange={toggleSelectAll} /></th>
@@ -728,28 +616,6 @@ const VehicleMasterData = () => {
                     <th>Parts/POs</th>
                     <th className="sortable" onClick={() => handleSort('is_active')}>Status <SortIcon field="is_active" /></th>
                     <th>Actions</th>
-                </tr>
-                <tr className="filter-row">
-                    <th></th>
-                    <th><input type="text" className="form-input filter-input" placeholder="Filter code..." value={codeFilter} onChange={(e) => setCodeFilter(e.target.value)} onClick={(e) => e.stopPropagation()} /></th>
-                    <th><input type="text" className="form-input filter-input" placeholder="Filter name..." value={nameFilter} onChange={(e) => setNameFilter(e.target.value)} onClick={(e) => e.stopPropagation()} /></th>
-                    <th>
-                        <select className="form-input filter-input" value={supplierTypeFilter} onChange={(e) => setSupplierTypeFilter(e.target.value)} onClick={(e) => e.stopPropagation()}>
-                            <option value="">All</option>
-                            {SUPPLIER_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                        </select>
-                    </th>
-                    <th><input type="text" className="form-input filter-input" placeholder="Filter contact..." value={contactFilter} onChange={(e) => setContactFilter(e.target.value)} onClick={(e) => e.stopPropagation()} /></th>
-                    <th><input type="text" className="form-input filter-input" placeholder="Filter city..." value={supplierCityFilter} onChange={(e) => setSupplierCityFilter(e.target.value)} onClick={(e) => e.stopPropagation()} /></th>
-                    <th><input type="number" className="form-input filter-input" placeholder="Parts/POs..." value={partsPoFilter} onChange={(e) => setPartsPoFilter(e.target.value)} onClick={(e) => e.stopPropagation()} /></th>
-                    <th>
-                        <select className="form-input filter-input" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} onClick={(e) => e.stopPropagation()}>
-                            <option value="all">All</option>
-                            <option value="active">Active</option>
-                            <option value="inactive">Inactive</option>
-                        </select>
-                    </th>
-                    <th></th>
                 </tr>
             </thead>
             <tbody>
@@ -773,11 +639,7 @@ const VehicleMasterData = () => {
                                 <span>POs: {sup.po_count}</span>
                             </div>
                         </td>
-                        <td>
-                            <span className={`badge ${sup.is_active ? 'badge-success' : 'badge-secondary'}`}>
-                                {sup.is_active ? 'Active' : 'Inactive'}
-                            </span>
-                        </td>
+                        <td>{renderStatus(sup)}</td>
                         <td onClick={(e) => e.stopPropagation()}>
                             <ActionButtons
                                 onEdit={() => openModal('edit', sup)}
@@ -794,7 +656,7 @@ const VehicleMasterData = () => {
     );
 
     const renderConditionsTable = () => (
-        <table>
+        <table className="data-table">
             <thead>
                 <tr>
                     <th style={{ width: 40 }}><input type="checkbox" checked={selectedIds.size === filteredItems.length && filteredItems.length > 0} onChange={toggleSelectAll} /></th>
@@ -803,19 +665,6 @@ const VehicleMasterData = () => {
                     <th className="sortable" onClick={() => handleSort('is_active')}>Status <SortIcon field="is_active" /></th>
                     <th>Actions</th>
                 </tr>
-                <tr className="filter-row">
-                    <th></th>
-                    <th><input type="text" className="form-input filter-input" placeholder="Filter name..." value={nameFilter} onChange={(e) => setNameFilter(e.target.value)} onClick={(e) => e.stopPropagation()} /></th>
-                    <th><input type="text" className="form-input filter-input" placeholder="Filter description..." value={descriptionFilter} onChange={(e) => setDescriptionFilter(e.target.value)} onClick={(e) => e.stopPropagation()} /></th>
-                    <th>
-                        <select className="form-input filter-input" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} onClick={(e) => e.stopPropagation()}>
-                            <option value="all">All</option>
-                            <option value="active">Active</option>
-                            <option value="inactive">Inactive</option>
-                        </select>
-                    </th>
-                    <th></th>
-                </tr>
             </thead>
             <tbody>
                 {filteredItems.map(cond => (
@@ -823,11 +672,7 @@ const VehicleMasterData = () => {
                         <td style={{ width: 40 }} onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selectedIds.has(cond.id)} onChange={() => toggleSelect(cond.id)} /></td>
                         <td><strong>{cond.name}</strong></td>
                         <td>{cond.description || '-'}</td>
-                        <td>
-                            <span className={`badge ${cond.is_active ? 'badge-success' : 'badge-secondary'}`}>
-                                {cond.is_active ? 'Active' : 'Inactive'}
-                            </span>
-                        </td>
+                        <td>{renderStatus(cond)}</td>
                         <td onClick={(e) => e.stopPropagation()}>
                             <ActionButtons
                                 onEdit={() => openModal('edit', cond)}
@@ -884,6 +729,7 @@ const VehicleMasterData = () => {
                         <div className="data-card-row"><span className="row-icon">⛽</span><span className="row-label">Fuel</span><span className="row-value">{model.fuel_type || '-'}</span></div>
                         <div className="data-card-row"><span className="row-icon">⚙️</span><span className="row-label">Trans</span><span className="row-value">{model.transmission || '-'}</span></div>
                         <div className="data-card-row"><span className="row-icon">📋</span><span className="row-label">Variants</span><span className="row-value">{model.variant_count || 0}</span></div>
+                        <div className="data-card-row"><span className="row-icon">🚙</span><span className="row-label">Vehicles</span><span className="row-value">{model.vehicle_count || 0}</span></div>
                     </div>
                     <div className="data-card-footer" onClick={e => e.stopPropagation()}>
                         <ActionButtons onEdit={() => openModal('edit', model)} onDelete={() => setDeleteTarget(model)} title={model.name} showEdit showDelete />
@@ -1051,6 +897,7 @@ const VehicleMasterData = () => {
             if (fuelFilter) data = data.filter(m => term(m.fuel_type) === term(fuelFilter));
             if (transmissionFilter) data = data.filter(m => term(m.transmission) === term(transmissionFilter));
             if (variantCountFilter) data = data.filter(m => term(m.variant_count).includes(term(variantCountFilter)));
+            if (vehicleCountFilter) data = data.filter(m => term(m.vehicle_count).includes(term(vehicleCountFilter)));
             if (statusFilter !== 'all') data = data.filter(m => m.is_active === (statusFilter === 'active'));
         } else if (activeTab === 'variants') {
             if (makeFilter) data = data.filter(v => String(v.make_id) === String(makeFilter));
@@ -1123,11 +970,11 @@ const VehicleMasterData = () => {
 
         switch(activeTab) {
             case 'makes':
-                return (<><Detail label="Name" value={item.name} /><Detail label="Logo" value={item.logo ? <img className="make-logo make-logo-drawer" src={item.logo} alt={`${item.name} logo`} /> : '-'} /><Detail label="Country" value={item.country} /><Detail label="Models" value={item.model_count} /><Detail label="Vehicles" value={item.vehicle_count} /><Detail label="Status" value={statusBadge(item.is_active)} /></>);
+                return (<><Detail label="Brand Name" value={item.name} /><Detail label="Logo" value={item.logo ? <img className="make-logo make-logo-drawer" src={item.logo} alt={`${item.name} logo`} /> : '-'} /><Detail label="Description" value={item.description || '-'} /><Detail label="Country of Origin" value={item.country || '-'} /><Detail label="Established Year" value={item.established_year || '-'} /><Detail label="Website" value={item.website ? <a href={item.website} target="_blank" rel="noreferrer">{item.website}</a> : '-'} /><Detail label="Models" value={item.model_count} /><Detail label="Vehicles" value={item.vehicle_count} /><Detail label="Status" value={statusBadge(item.is_active)} /></>);
             case 'models':
-                return (<><Detail label="Make" value={item.make_name} /><Detail label="Model" value={item.name} /><Detail label="Year" value={item.year} /><Detail label="Body Type" value={item.body_type} /><Detail label="Fuel" value={item.fuel_type} /><Detail label="Transmission" value={item.transmission} /><Detail label="Variants" value={item.variant_count} /><Detail label="Status" value={statusBadge(item.is_active)} /></>);
+                return (<><Detail label="Brand" value={item.make_name} /><Detail label="Model" value={item.name} /><Detail label="Year" value={item.year} /><Detail label="Body Type" value={item.body_type} /><Detail label="Fuel" value={item.fuel_type} /><Detail label="Transmission" value={item.transmission} /><Detail label="Variants" value={item.variant_count} /><Detail label="Vehicles" value={item.vehicle_count} /><Detail label="Status" value={statusBadge(item.is_active)} /></>);
             case 'variants':
-                return (<><Detail label="Make" value={item.make_name} /><Detail label="Model" value={item.model_name} /><Detail label="Variant" value={item.name} /><Detail label="Base Price" value={`PKR ${Number(item.base_price || 0).toLocaleString()}`} /><Detail label="Vehicles" value={item.vehicle_count} /><Detail label="Status" value={statusBadge(item.is_active)} /></>);
+                return (<><Detail label="Brand" value={item.make_name} /><Detail label="Model" value={item.model_name} /><Detail label="Variant" value={item.name} /><Detail label="Base Price" value={`PKR ${Number(item.base_price || 0).toLocaleString()}`} /><Detail label="Vehicles" value={item.vehicle_count} /><Detail label="Status" value={statusBadge(item.is_active)} /></>);
             case 'colors':
                 return (<><Detail label="Color" value={item.name} /><Detail label="Hex" value={item.hex_code} /><Detail label="Metallic" value={item.is_metallic ? 'Yes' : 'No'} /><Detail label="Additional Cost" value={`PKR ${Number(item.additional_cost || 0).toLocaleString()}`} /><Detail label="Vehicles" value={item.vehicle_count} /><Detail label="Status" value={statusBadge(item.is_active)} /></>);
             case 'categories':
@@ -1162,11 +1009,11 @@ const VehicleMasterData = () => {
 
             {/* Stats Cards */}
             <div className="stats-grid stats-grid-7">
-                <div className={`stat-card ${activeTab === 'makes' ? 'active' : ''}`} onClick={() => setActiveTab('makes')}>
+                <div className={`stat-card ${activeTab === 'makes' ? 'active' : ''}`} onClick={() => setActiveTab('makes')} data-section="brands">
                     <div className="stat-icon">🏭</div>
                     <div className="stat-content">
                         <span className="stat-value">{stats.total_makes || 0}</span>
-                        <span className="stat-label">Makes</span>
+                        <span className="stat-label">Brands</span>
                     </div>
                 </div>
                 <div className={`stat-card ${activeTab === 'models' ? 'active' : ''}`} onClick={() => setActiveTab('models')}>
@@ -1215,10 +1062,11 @@ const VehicleMasterData = () => {
 
             <ErrorPopup error={errorPopup} onClose={() => setErrorPopup(null)} />
 
+            <div className="vehicle-master-content-card">
             {/* Tabs */}
             <div className="tabs-container">
                 <div className="tabs">
-                    <button className={`tab ${activeTab === 'makes' ? 'active' : ''}`} onClick={() => handleTabChange('makes')}>Makes</button>
+                    <button className={`tab ${activeTab === 'makes' ? 'active' : ''}`} onClick={() => handleTabChange('makes')}>Brands</button>
                     <button className={`tab ${activeTab === 'models' ? 'active' : ''}`} onClick={() => handleTabChange('models')}>Models</button>
                     <button className={`tab ${activeTab === 'variants' ? 'active' : ''}`} onClick={() => handleTabChange('variants')}>Variants</button>
                     <button className={`tab ${activeTab === 'colors' ? 'active' : ''}`} onClick={() => handleTabChange('colors')}>Colors</button>
@@ -1232,8 +1080,8 @@ const VehicleMasterData = () => {
 
             {/* Bulk Delete Bar */}
             {selectedIds.size > 0 && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, marginBottom: 12 }}>
-                    <span style={{ fontWeight: 600, color: '#991b1b' }}>{selectedIds.size} selected</span>
+                <div className="selection-bar">
+                    <span className="selection-count">{selectedIds.size} selected</span>
                     <button className="btn btn-danger btn-sm" onClick={() => setDeleteAllTarget(true)}>Delete Selected</button>
                     <button className="btn btn-secondary btn-sm" onClick={() => setSelectedIds(new Set())}>Deselect All</button>
                 </div>
@@ -1269,6 +1117,7 @@ const VehicleMasterData = () => {
                         {activeTab === 'conditions' && <><div className="desktop-table desktop-only">{renderConditionsTable()}</div><div className="mobile-only">{renderConditionsCards()}</div></>}
                     </>
                 )}
+            </div>
             </div>
 
             {/* Modal */}

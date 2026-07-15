@@ -15,6 +15,7 @@ const { normalizeLogPermissionsConfig } = require('../utils/logPermissionResolve
 const { logFileOperation } = require('../utils/apiLogger');
 const { getPublicFileUrl } = require('../utils/url');
 const Log = require('../models/mongo/Log.model');
+const { syncFromUser } = require('../utils/relationshipSync');
 
 const uploadRoot = path.join(__dirname, '..', 'uploads', 'branding');
 const DEFAULT_PAGE_ICON = 'FileText';
@@ -791,6 +792,98 @@ exports.saveCustomerRoleConfig = async (req, res, next) => {
   }
 };
 
+exports.getEmployeeRoleConfig = async (_req, res, next) => {
+  try {
+    const setting = await SystemSetting.findOne({ key: 'employee_role_config' }).lean();
+    res.json({ success: true, data: setting?.value || { activeRoleId: null, updatedAt: null, updatedBy: null } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.saveEmployeeRoleConfig = async (req, res, next) => {
+  try {
+    const userId = getUserId(req);
+    const { activeRoleId } = req.body;
+    if (!activeRoleId) {
+      return res.status(400).json({ success: false, message: 'activeRoleId is required' });
+    }
+    const role = await Role.findById(activeRoleId).select('_id name').lean();
+    if (!role || role.name === 'super_admin') {
+      return res.status(400).json({ success: false, message: 'Select a valid employee role' });
+    }
+    const config = { activeRoleId, updatedAt: new Date(), updatedBy: userId };
+    await SystemSetting.findOneAndUpdate(
+      { key: 'employee_role_config' },
+      { $set: { key: 'employee_role_config', value: config, category: 'employees', description: 'Role assigned to newly created employees' } },
+      { upsert: true, returnDocument: 'after' },
+    );
+    await createAuditLog(userId, 'Update Employee Role Config', 'Server Management', `Employee role config saved (role: ${activeRoleId})`, req);
+    logFileOperation(req, { action: 'saveEmployeeRoleConfig', activeRoleId });
+    res.json({ success: true, message: 'Employee role config saved', data: config });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.getRoleJobs = async (req, res, next) => {
+  try {
+    const role = await Role.findById(req.params.id)
+      .select('name displayName permissions jobs')
+      .populate('jobs.dataScope.roles', 'name displayName')
+      .populate('jobs.dataScope.users', 'firstName lastName email')
+      .lean();
+    if (!role) throw new AppError('Role not found', 404);
+    res.json({ success: true, data: { role, jobs: role.jobs || [] } });
+  } catch (error) { next(error); }
+};
+
+exports.saveRoleJobs = async (req, res, next) => {
+  try {
+    const role = await Role.findById(req.params.id);
+    if (!role) throw new AppError('Role not found', 404);
+    if (role.name === 'super_admin') throw new AppError('Super admin always has full access', 403);
+    const resourceMap = {
+      sales: [
+        { pageKey: 'quotations', module: 'quotations' }, { pageKey: 'bookings', module: 'bookings' },
+        { pageKey: 'sales_orders', module: 'sales_orders' }, { pageKey: 'invoices', module: 'invoices' },
+      ],
+    };
+    const allowedPages = new Map();
+    (role.permissions || []).filter((item) => item.canView && item.isActive !== false).forEach((item) => {
+      const resources = resourceMap[item.pageKey] || [{ pageKey: item.pageKey, module: item.module || item.pageKey }];
+      resources.forEach((resource) => allowedPages.set(resource.pageKey, resource));
+    });
+    const incoming = Array.isArray(req.body.jobs) ? req.body.jobs : [];
+    role.jobs = incoming.filter((job) => allowedPages.has(job.pageKey)).map((job) => {
+      const page = allowedPages.get(job.pageKey);
+      const mode = ['own', 'selected_roles', 'selected_users', 'all'].includes(job.dataScope?.mode) ? job.dataScope.mode : 'own';
+      return {
+        pageKey: job.pageKey,
+        module: page.module || job.module || job.pageKey,
+        actions: {
+          view: true,
+          create: job.actions?.create === true,
+          edit: job.actions?.edit === true,
+          delete: job.actions?.delete === true,
+          sendEmail: job.actions?.sendEmail === true,
+          downloadPdf: job.actions?.downloadPdf === true,
+          export: job.actions?.export === true,
+        },
+        dataScope: {
+          mode,
+          roles: mode === 'selected_roles' ? (job.dataScope?.roles || []) : [],
+          users: mode === 'selected_users' ? (job.dataScope?.users || []) : [],
+        }
+      };
+    });
+    role.updatedBy = getUserId(req); await role.save();
+    const updated = await Role.findById(role._id).select('name displayName permissions jobs');
+    await createAuditLog(getUserId(req), 'Update Role Jobs', 'Server Management', `Role jobs saved for ${role.name}`, req);
+    res.json({ success: true, message: 'Role jobs saved', data: { role: updated, jobs: updated.jobs } });
+  } catch (error) { next(error); }
+};
+
 exports.updateUserLogsPermissions = async (req, res, next) => {
   try {
     const userId = req.params.id;
@@ -886,6 +979,7 @@ exports.updateUser = async (req, res, next) => {
     user.updatedBy = getUserId(req);
 
     await user.save();
+    await syncFromUser(user, getUserId(req));
 
     const populated = await User.findById(user._id)
       .select("email firstName lastName phone role department designation logPermissionSource logsPermissions createdAt updatedBy createdBy")

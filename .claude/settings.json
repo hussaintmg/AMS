@@ -3,7 +3,12 @@
     "allow": [
       "Bash(xargs grep -ohE -- '--[a-zA-Z0-9-]+\\\\s*:')",
       "Bash(xargs grep -ohE 'var\\\\\\(--[a-zA-Z0-9-]+')",
-      "Bash(node -e ' *)"
+      "Bash(node -e ' *)",
+      "Bash(node -c controllers/vehicleMaster.controller.js)",
+      "Bash(node -c controllers/leadMaster.controller.js)",
+      "Bash(python -c ' *)",
+      "Bash(NODE_ENV=development node -e ' *)",
+      "Bash(tasklist //FI \"IMAGENAME eq mongod.exe\")"
     ]
   }
 }

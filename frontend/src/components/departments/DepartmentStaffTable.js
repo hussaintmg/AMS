@@ -27,6 +27,7 @@ function DepartmentStaffTable({ staff = [], onEdit, onToggleStatus, onRemove }) 
               const fullName = `${user.firstName || user.first_name || ''} ${user.lastName || user.last_name || ''}`.trim() || user.email;
               const roleName = user.role?.displayName || user.role?.name || '-';
               const statusText = user.status || (user.isActive ? 'active' : 'inactive');
+              const isEmployee = user.staffType === 'employee';
               return (
                 <tr key={uid}>
                   <td>
@@ -36,6 +37,7 @@ function DepartmentStaffTable({ staff = [], onEdit, onToggleStatus, onRemove }) 
                       </div>
                       <div className="user-info">
                         <span className="user-name">{fullName}</span>
+                        <small style={{ color: '#64748b' }}>{isEmployee ? `Employee${user.employeeCode ? ` · ${user.employeeCode}` : ''}` : 'User'}</small>
                       </div>
                     </div>
                   </td>
@@ -48,7 +50,7 @@ function DepartmentStaffTable({ staff = [], onEdit, onToggleStatus, onRemove }) 
                     </span>
                   </td>
                   <td>
-                    <ActionButtons
+                    {isEmployee ? <span style={{ color: '#94a3b8', fontSize: 12 }}>Read only</span> : <ActionButtons
                       onEdit={() => onEdit?.(user)}
                       onToggle={() => onToggleStatus?.(uid)}
                       onDelete={() => onRemove?.(user)}
@@ -59,7 +61,7 @@ function DepartmentStaffTable({ staff = [], onEdit, onToggleStatus, onRemove }) 
                       showDelete
                       deleteTitle="Remove from department"
                       toggleIconOnly
-                    />
+                    />}
                   </td>
                 </tr>
               );
@@ -75,12 +77,13 @@ function DepartmentStaffTable({ staff = [], onEdit, onToggleStatus, onRemove }) 
           const fullName = `${user.firstName || user.first_name || ''} ${user.lastName || user.last_name || ''}`.trim() || user.email;
           const roleName = user.role?.displayName || user.role?.name || '-';
           const statusText = user.status || (user.isActive ? 'active' : 'inactive');
+          const isEmployee = user.staffType === 'employee';
           return (
             <div key={uid} className="user-card" style={{ padding: 12 }}>
               <div className="user-card-header" style={{ marginBottom: 8 }}>
                 <div className="user-card-title">
                   <span className="user-card-name" style={{ fontSize: 14 }}>{fullName}</span>
-                  <span className="user-card-role" style={{ fontSize: 12 }}>{roleName.replace(/_/g, ' ')}</span>
+                  <span className="user-card-role" style={{ fontSize: 12 }}>{isEmployee ? 'Employee' : 'User'} · {roleName.replace(/_/g, ' ')}</span>
                 </div>
                 <span className={`status-badge ${statusText === 'active' ? 'status-active' : 'status-inactive'}`} style={{ fontSize: 11 }}>
                   {statusText.charAt(0).toUpperCase() + statusText.slice(1)}
@@ -97,7 +100,7 @@ function DepartmentStaffTable({ staff = [], onEdit, onToggleStatus, onRemove }) 
                 </div>
               </div>
               <div className="user-card-actions" style={{ marginTop: 8 }}>
-                <ActionButtons
+                {isEmployee ? <span style={{ color: '#94a3b8', fontSize: 12 }}>Read only</span> : <ActionButtons
                   onEdit={() => onEdit?.(user)}
                   onToggle={() => onToggleStatus?.(uid)}
                   onDelete={() => onRemove?.(user)}
@@ -108,7 +111,7 @@ function DepartmentStaffTable({ staff = [], onEdit, onToggleStatus, onRemove }) 
                   showDelete
                   deleteTitle="Remove from department"
                   toggleIconOnly
-                />
+                />}
               </div>
             </div>
           );

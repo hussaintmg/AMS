@@ -3,6 +3,7 @@ const { User, Role, Department, Log } = require('../models');
 const { logFileOperation } = require('../utils/apiLogger');
 const { normalizePhone } = require('../utils/phone.util');
 const logger = require('../utils/logger');
+const { syncFromUser } = require('../utils/relationshipSync');
 /**
  * @swagger
  * /admin/users/stats:
@@ -314,6 +315,7 @@ const updateUser = async (req, res, next) => {
     if (password) user.password = password;
     user.updatedBy = req.user?.id || req.user?._id;
     await user.save();
+    await syncFromUser(user, req.user?.id || req.user?._id);
 
     const populated = await User.findById(user._id)
       .select('email firstName lastName phone role status department isActive createdAt')
@@ -370,6 +372,7 @@ const deleteUser = async (req, res, next) => {
     user.isActive = false;
     user.updatedBy = req.user?.id || req.user?._id;
     await user.save();
+    await syncFromUser(user, req.user?.id || req.user?._id);
 
     await Log.create({
       endpoint: `/admin/users/${req.params.id}`,
@@ -415,8 +418,10 @@ const toggleUserStatus = async (req, res, next) => {
       return res.status(403).json({ success: false, message: 'Super admin cannot be deactivated' });
     }
     user.status = user.status === 'active' ? 'inactive' : 'active';
+    user.isActive = user.status === 'active';
     user.updatedBy = req.user?.id || req.user?._id;
     await user.save();
+    await syncFromUser(user, req.user?.id || req.user?._id);
 
     await Log.create({
       endpoint: `/admin/users/${req.params.id}/status`,
@@ -443,6 +448,7 @@ const assignRole = async (req, res, next) => {
     user.role = req.body.roleId;
     user.updatedBy = req.user?.id || req.user?._id;
     await user.save();
+    await syncFromUser(user, req.user?.id || req.user?._id);
     res.json({ success: true, message: 'Role assigned' });
   } catch (error) {
     next(error);
@@ -470,6 +476,7 @@ const assignDepartment = async (req, res, next) => {
 
     user.updatedBy = req.user?.id || req.user?._id;
     await user.save();
+    await syncFromUser(user, req.user?.id || req.user?._id);
     res.json({ success: true, message: 'Department assigned' });
   } catch (error) {
     next(error);
@@ -483,6 +490,7 @@ const removeDepartment = async (req, res, next) => {
     user.department = null;
     user.updatedBy = req.user?.id || req.user?._id;
     await user.save();
+    await syncFromUser(user, req.user?.id || req.user?._id);
     res.json({ success: true, message: 'Department removed' });
   } catch (error) {
     next(error);

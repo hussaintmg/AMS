@@ -1,7 +1,7 @@
 /**
  * Custom Application Error Class
  * Extends Error with status code for HTTP responses
- * Created by LOGIXINVENTOR (PVT) Ltd.
+ * Maintained by Hussain Developer
  */
 
 class AppError extends Error {

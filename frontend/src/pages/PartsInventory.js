@@ -1,1164 +1,1328 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
-import { partsAPI, vehicleMasterAPI } from '../services/api';
-import toast from 'react-hot-toast';
-import { Package, Search, Plus, Upload } from 'lucide-react';
-import ErrorPopup from '../components/ErrorPopup';
-import ActionButtons from '../components/ActionButtons';
-import SearchableSelect from '../components/SearchableSelect';
-import DataTable from '../components/DataTable';
-import ConfirmModal from '../components/ConfirmModal';
-import BulkUploadModal from '../components/BulkUploadModal';
-import useModalKeyboard from '../hooks/useModalKeyboard';
-import CategoryFormModal from './parts/CategoryFormModal';
-import SupplierFormModal from './parts/SupplierFormModal';
-import '../styles/partsInventory.css';
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import { useSearchParams } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
+import { partsAPI, vehicleMasterAPI } from "../services/api";
+import toast from "react-hot-toast";
+import { Package, Search, Plus, Upload } from "lucide-react";
+import ErrorPopup from "../components/ErrorPopup";
+import ActionButtons from "../components/ActionButtons";
+import SearchableSelect from "../components/SearchableSelect";
+import DataTable from "../components/DataTable";
+import ConfirmModal from "../components/ConfirmModal";
+import BulkUploadModal from "../components/BulkUploadModal";
+import useModalKeyboard from "../hooks/useModalKeyboard";
+import CategoryFormModal from "./parts/CategoryFormModal";
+import SupplierFormModal from "./parts/SupplierFormModal";
+import "../styles/partsInventory.css";
 
 const PartsInventory = () => {
-    const { user: currentUser } = useAuth();
+  const { user: currentUser } = useAuth();
 
-    // State
-    const [parts, setParts] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [errorPopup, setErrorPopup] = useState(null);
-    const [stats, setStats] = useState({});
+  // State
+  const [parts, setParts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [errorPopup, setErrorPopup] = useState(null);
+  const [stats, setStats] = useState({});
 
-    // Tabs
-    const [activeTab, setActiveTab] = useState('all');
+  // Tabs
+  const [activeTab, setActiveTab] = useState("all");
 
-    // Pagination & filtering
-    const [page, setPage] = useState(1);
-    const [limit] = useState(15);
-    const [totalPages, setTotalPages] = useState(1);
-    const [total, setTotal] = useState(0);
-    const [searchParams] = useSearchParams();
-    const urlSearch = searchParams.get('search') || '';
+  // Pagination & filtering
+  const [page, setPage] = useState(1);
+  const [limit] = useState(20);
+  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [searchParams] = useSearchParams();
+  const urlSearch = searchParams.get("search") || "";
 
-    const [search, setSearch] = useState(urlSearch);
-    const [categoryFilter, setCategoryFilter] = useState('');
-    const [stockFilter, setStockFilter] = useState('');
+  const [search, setSearch] = useState(urlSearch);
+  const [categoryFilter, setCategoryFilter] = useState("");
+  const [stockFilter, setStockFilter] = useState("");
 
-    // Modal states
-    const [showModal, setShowModal] = useState(false);
-    const [modalMode, setModalMode] = useState('create');
-    const [selectedPart, setSelectedPart] = useState(null);
-    const [showStockModal, setShowStockModal] = useState(false);
-    const stockFormRef = useRef(null);
-    const [showCategoryModal, setShowCategoryModal] = useState(false);
-    const [showSupplierModal, setShowSupplierModal] = useState(false);
-    const [showConfirmDelete, setShowConfirmDelete] = useState(false);
-    const [deleteTarget, setDeleteTarget] = useState(null);
-    const [showBulkUpload, setShowBulkUpload] = useState(false);
-    const [selectedIds, setSelectedIds] = useState(new Set());
-    const [deleteAllTarget, setDeleteAllTarget] = useState(null);
-    const [deletingAll, setDeletingAll] = useState(false);
+  // Modal states
+  const [showModal, setShowModal] = useState(false);
+  const [modalMode, setModalMode] = useState("create");
+  const [selectedPart, setSelectedPart] = useState(null);
+  const [showStockModal, setShowStockModal] = useState(false);
+  const stockFormRef = useRef(null);
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [showSupplierModal, setShowSupplierModal] = useState(false);
+  const [showConfirmDelete, setShowConfirmDelete] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [showBulkUpload, setShowBulkUpload] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [deleteAllTarget, setDeleteAllTarget] = useState(null);
+  const [deletingAll, setDeletingAll] = useState(false);
 
-    const toggleSelect = (id) => {
-      setSelectedIds(prev => {
-        const next = new Set(prev);
-        if (next.has(id)) next.delete(id); else next.add(id);
-        return next;
-      });
-    };
+  const toggleSelect = (id) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
-    const toggleSelectAll = () => {
-      setSelectedIds(prev => prev.size === parts.length ? new Set() : new Set(parts.map(p => p.id)));
-    };
+  const toggleSelectAll = () => {
+    setSelectedIds((prev) =>
+      prev.size === parts.length ? new Set() : new Set(parts.map((p) => p.id)),
+    );
+  };
 
-    const handleBulkDelete = async () => {
-      setDeletingAll(true);
-      try {
-        const ids = Array.from(selectedIds);
-        for (const id of ids) {
-          await partsAPI.delete(id);
-        }
-        toast.success(`${ids.length} part(s) deleted`);
-        setSelectedIds(new Set());
-        setDeleteAllTarget(null);
-        fetchParts();
-        fetchReferenceData();
-      } catch (err) {
-        setErrorPopup(err.response?.data || { message: 'Failed to delete parts' });
-      } finally {
-        setDeletingAll(false);
+  const handleBulkDelete = async () => {
+    setDeletingAll(true);
+    try {
+      const ids = Array.from(selectedIds);
+      for (const id of ids) {
+        await partsAPI.delete(id);
       }
-    };
+      toast.success(`${ids.length} part(s) deleted`);
+      setSelectedIds(new Set());
+      setDeleteAllTarget(null);
+      fetchParts();
+      fetchReferenceData();
+    } catch (err) {
+      setErrorPopup(
+        err.response?.data || { message: "Failed to delete parts" },
+      );
+    } finally {
+      setDeletingAll(false);
+    }
+  };
 
-    // Reference data
-    const [categories, setCategories] = useState([]);
-    const [suppliers, setSuppliers] = useState([]);
+  // Reference data
+  const [categories, setCategories] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
 
-    // Form data
-    const [formData, setFormData] = useState({
-        partNumber: '',
-        name: '',
-        categoryId: '',
-        description: '',
-        brand: '',
-        sourceType: 'manufacturer',
-        supplierId: '',
-        unit: 'piece',
-        purchasePrice: '',
-        sellingPrice: '',
+  // Form data
+  const [formData, setFormData] = useState({
+    partNumber: "",
+    name: "",
+    categoryId: "",
+    description: "",
+    brand: "",
+    sourceType: "manufacturer",
+    supplierId: "",
+    unit: "piece",
+    purchasePrice: "",
+    sellingPrice: "",
+    currentStock: 0,
+    minimumStock: 5,
+    maximumStock: 100,
+    reorderLevel: 10,
+    warehouseId: "",
+    binLocation: "",
+  });
+
+  // Stock adjustment form
+  const [stockForm, setStockForm] = useState({
+    adjustmentType: "increase",
+    quantity: "",
+    reason: "",
+  });
+
+  // Fetch parts
+  const fetchParts = useCallback(async () => {
+    try {
+      setLoading(true);
+      const params = {
+        page,
+        limit,
+        ...(search && { search }),
+        ...(activeTab !== "all" && { sourceType: activeTab }),
+        ...(categoryFilter && { categoryId: categoryFilter }),
+        ...(stockFilter && { stockStatus: stockFilter }),
+      };
+
+      const response = await partsAPI.getAll(params);
+      const responseData = response?.data?.data || {};
+      setParts(responseData.parts || []);
+      setTotalPages(responseData.pagination?.totalPages || 1);
+      setTotal(responseData.pagination?.total || 0);
+    } catch (err) {
+      console.error("Error fetching parts:", err);
+      toast.error("Failed to load parts");
+      setParts([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [page, limit, search, activeTab, categoryFilter, stockFilter]);
+
+  // Fetch reference data
+  const fetchReferenceData = useCallback(async () => {
+    try {
+      const [categoriesRes, suppliersRes, statsRes] = await Promise.all([
+        partsAPI.getCategories(),
+        partsAPI.getSuppliers(),
+        partsAPI.getStats(),
+      ]);
+
+      setCategories(categoriesRes?.data?.data || []);
+      setSuppliers(suppliersRes?.data?.data || []);
+      setStats(statsRes?.data?.data || {});
+    } catch (err) {
+      console.error("Error fetching reference data:", err);
+      setCategories([]);
+      setSuppliers([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchParts();
+    fetchReferenceData();
+  }, [fetchParts, fetchReferenceData]);
+
+  // Update search if URL search param changes
+  useEffect(() => {
+    if (urlSearch) {
+      setSearch(urlSearch);
+    }
+  }, [urlSearch]);
+
+  // Debounce search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setPage(1);
+      fetchParts();
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  // Tab change
+  const handleTabChange = (tab) => {
+    setActiveTab(tab);
+    setPage(1);
+  };
+
+  // Handle form input change
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  // Handle stock form change
+  const handleStockFormChange = (e) => {
+    const { name, value } = e.target;
+    setStockForm((prev) => ({ ...prev, [name]: value }));
+  };
+
+  // Open modal
+  const openModal = (mode, part = null) => {
+    setModalMode(mode);
+    setSelectedPart(part);
+
+    if (mode === "create") {
+      setFormData({
+        partNumber: "",
+        name: "",
+        categoryId: "",
+        description: "",
+        brand: "",
+        sourceType: activeTab !== "all" ? activeTab : "manufacturer",
+        supplierId: "",
+        unit: "piece",
+        purchasePrice: "",
+        sellingPrice: "",
         currentStock: 0,
         minimumStock: 5,
         maximumStock: 100,
         reorderLevel: 10,
-        warehouseId: '',
-        binLocation: ''
+        warehouseId: "",
+        binLocation: "",
+      });
+    } else if (part) {
+      setFormData({
+        partNumber: part.part_number,
+        name: part.name,
+        categoryId: part.category_id || "",
+        description: part.description || "",
+        brand: part.brand || "",
+        sourceType: part.source_type,
+        supplierId: part.supplier_id || "",
+        unit: part.unit,
+        purchasePrice: part.purchase_price,
+        sellingPrice: part.selling_price,
+        currentStock: part.current_stock,
+        minimumStock: part.minimum_stock,
+        maximumStock: part.maximum_stock,
+        reorderLevel: part.reorder_level,
+        warehouseId: part.warehouse_id || "",
+        binLocation: part.bin_location || "",
+      });
+    }
+
+    setShowModal(true);
+  };
+
+  // Close modal
+  const closeModal = () => {
+    setShowModal(false);
+    setSelectedPart(null);
+  };
+
+  // Open stock adjustment modal
+  const openStockModal = (part) => {
+    setSelectedPart(part);
+    setStockForm({
+      adjustmentType: "increase",
+      quantity: "",
+      reason: "",
     });
+    setShowStockModal(true);
+  };
 
-    // Stock adjustment form
-    const [stockForm, setStockForm] = useState({
-        adjustmentType: 'increase',
-        quantity: '',
-        reason: ''
-    });
+  // Close stock modal
+  const closeStockModal = () => {
+    setShowStockModal(false);
+    setSelectedPart(null);
+  };
 
-    // Fetch parts
-    const fetchParts = useCallback(async () => {
-        try {
-            setLoading(true);
-            const params = {
-                page,
-                limit,
-                ...(search && { search }),
-                ...(activeTab !== 'all' && { sourceType: activeTab }),
-                ...(categoryFilter && { categoryId: categoryFilter }),
-                ...(stockFilter && { stockStatus: stockFilter })
-            };
+  useModalKeyboard(showStockModal, closeStockModal, () =>
+    stockFormRef.current?.requestSubmit(),
+  );
 
-            const response = await partsAPI.getAll(params);
-            const responseData = response?.data?.data || {};
-            setParts(responseData.parts || []);
-            setTotalPages(responseData.pagination?.totalPages || 1);
-            setTotal(responseData.pagination?.total || 0);
-        } catch (err) {
-            console.error('Error fetching parts:', err);
-            toast.error('Failed to load parts');
-            setParts([]);
-        } finally {
-            setLoading(false);
-        }
-    }, [page, limit, search, activeTab, categoryFilter, stockFilter]);
+  // Part form submit handler
+  const handlePartFormSubmit = (e) => {
+    if (e) e.preventDefault();
+    if (modalMode === "create") {
+      handleCreatePart(e);
+    } else {
+      handleUpdatePart(e);
+    }
+  };
 
-    // Fetch reference data
-    const fetchReferenceData = useCallback(async () => {
-        try {
-            const [categoriesRes, suppliersRes, statsRes] = await Promise.all([
-                partsAPI.getCategories(),
-                partsAPI.getSuppliers(),
-                partsAPI.getStats()
-            ]);
+  // Create part
+  const handleCreatePart = async (e) => {
+    if (e) e.preventDefault();
+    try {
+      await partsAPI.create(formData);
+      toast.success("Part created successfully!");
+      closeModal();
+      fetchParts();
+      fetchReferenceData();
+    } catch (err) {
+      console.error("Error creating part:", err);
+      setErrorPopup(err.response?.data || { message: "Failed to create part" });
+    }
+  };
 
-            setCategories(categoriesRes?.data?.data || []);
-            setSuppliers(suppliersRes?.data?.data || []);
-            setStats(statsRes?.data?.data || {});
-        } catch (err) {
-            console.error('Error fetching reference data:', err);
-            setCategories([]);
-            setSuppliers([]);
-        }
-    }, []);
+  // Update part
+  const handleUpdatePart = async (e) => {
+    if (e) e.preventDefault();
+    try {
+      await partsAPI.update(selectedPart.id, formData);
+      toast.success("Part updated successfully!");
+      closeModal();
+      fetchParts();
+    } catch (err) {
+      console.error("Error updating part:", err);
+      setErrorPopup(err.response?.data || { message: "Failed to update part" });
+    }
+  };
 
-    useEffect(() => {
-        fetchParts();
-        fetchReferenceData();
-    }, [fetchParts, fetchReferenceData]);
+  // Confirm delete
+  const openDeleteConfirm = (part) => {
+    setDeleteTarget(part);
+    setShowConfirmDelete(true);
+  };
 
-    // Update search if URL search param changes
-    useEffect(() => {
-        if (urlSearch) {
-            setSearch(urlSearch);
-        }
-    }, [urlSearch]);
+  // Execute delete
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return;
+    try {
+      await partsAPI.delete(deleteTarget.id);
+      toast.success("Part deleted successfully!");
+      setShowConfirmDelete(false);
+      setDeleteTarget(null);
+      fetchParts();
+      fetchReferenceData();
+    } catch (err) {
+      console.error("Error deleting part:", err);
+      setErrorPopup(err.response?.data || { message: "Failed to delete part" });
+      setShowConfirmDelete(false);
+      setDeleteTarget(null);
+    }
+  };
 
-    // Debounce search
-    useEffect(() => {
-        const timer = setTimeout(() => {
-            setPage(1);
-            fetchParts();
-        }, 300);
-        return () => clearTimeout(timer);
-    }, [search]);
+  // Quick-create: category
+  const handleCategoryCreated = (newCat) => {
+    fetchReferenceData();
+    setFormData((prev) => ({ ...prev, categoryId: String(newCat.id) }));
+  };
 
-    // Tab change
-    const handleTabChange = (tab) => {
-        setActiveTab(tab);
-        setPage(1);
+  // Quick-create: supplier
+  const handleSupplierCreated = (newSup) => {
+    fetchReferenceData();
+    setFormData((prev) => ({ ...prev, supplierId: String(newSup.id) }));
+  };
+
+  // Adjust stock
+  const handleAdjustStock = async (e) => {
+    e.preventDefault();
+    try {
+      await partsAPI.adjustStock(selectedPart.id, stockForm);
+      toast.success("Stock adjusted successfully!");
+      closeStockModal();
+      fetchParts();
+      fetchReferenceData();
+    } catch (err) {
+      console.error("Error adjusting stock:", err);
+      setErrorPopup(
+        err.response?.data || { message: "Failed to adjust stock" },
+      );
+    }
+  };
+
+  useModalKeyboard(showModal, closeModal, handlePartFormSubmit);
+
+  // Get stock status badge
+  const getStockStatusBadge = (stock) => {
+    console.log("Stock quantity:", stock);
+
+    const quantity = Number(stock);
+
+    if (isNaN(quantity)) {
+      return {
+        class: "badge-secondary",
+        text: "Unknown",
+      };
+    }
+
+    if (quantity <= 0) {
+      return {
+        class: "badge-danger",
+        text: "Out of Stock",
+      };
+    }
+
+    if (quantity <= 10) {
+      return {
+        class: "badge-warning",
+        text: "Low Stock",
+      };
+    }
+
+    if (quantity <= 100) {
+      return {
+        class: "badge-success",
+        text: "In Stock",
+      };
+    }
+
+    return {
+      class: "badge-info",
+      text: "Overstocked",
     };
+  };
 
-    // Handle form input change
-    const handleInputChange = (e) => {
-        const { name, value } = e.target;
-        setFormData(prev => ({ ...prev, [name]: value }));
-    };
+  // Get source type badge
+  const getSourceTypeBadge = (sourceType) => {
+    return sourceType === "manufacturer"
+      ? { class: "badge-primary", text: "Manufacturer" }
+      : { class: "badge-purple", text: "3rd Party" };
+  };
 
-    // Handle stock form change
-    const handleStockFormChange = (e) => {
-        const { name, value } = e.target;
-        setStockForm(prev => ({ ...prev, [name]: value }));
-    };
+  // Format currency
+  const formatCurrency = (amount) => {
+    return `PKR ${Number(amount).toLocaleString()}`;
+  };
 
-    // Open modal
-    const openModal = (mode, part = null) => {
-        setModalMode(mode);
-        setSelectedPart(part);
+  const showHelp = (message) => {
+    toast(message, { duration: 3000 });
+  };
 
-        if (mode === 'create') {
-            setFormData({
-                partNumber: '',
-                name: '',
-                categoryId: '',
-                description: '',
-                brand: '',
-                sourceType: activeTab !== 'all' ? activeTab : 'manufacturer',
-                supplierId: '',
-                unit: 'piece',
-                purchasePrice: '',
-                sellingPrice: '',
-                currentStock: 0,
-                minimumStock: 5,
-                maximumStock: 100,
-                reorderLevel: 10,
-                warehouseId: '',
-                binLocation: ''
-            });
-        } else if (part) {
-            setFormData({
-                partNumber: part.part_number,
-                name: part.name,
-                categoryId: part.category_id || '',
-                description: part.description || '',
-                brand: part.brand || '',
-                sourceType: part.source_type,
-                supplierId: part.supplier_id || '',
-                unit: part.unit,
-                purchasePrice: part.purchase_price,
-                sellingPrice: part.selling_price,
-                currentStock: part.current_stock,
-                minimumStock: part.minimum_stock,
-                maximumStock: part.maximum_stock,
-                reorderLevel: part.reorder_level,
-                warehouseId: part.warehouse_id || '',
-                binLocation: part.bin_location || ''
-            });
-        }
+  const InfoLabel = ({ label, help }) => (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+      <span>{label}</span>
+      {help ? (
+        <button
+          type="button"
+          onClick={() => showHelp(help)}
+          aria-label={`Help: ${label}`}
+          title="Help"
+          style={{
+            width: 18,
+            height: 18,
+            borderRadius: 999,
+            border: "1px solid #cbd5e1",
+            background: "#fff",
+            color: "#475569",
+            fontSize: 12,
+            lineHeight: "16px",
+            cursor: "pointer",
+            padding: 0,
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          i
+        </button>
+      ) : null}
+    </span>
+  );
 
-        setShowModal(true);
-    };
+  const toNumber = (v, fallback = 0) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : fallback;
+  };
 
-    // Close modal
-    const closeModal = () => {
-        setShowModal(false);
-        setSelectedPart(null);
-    };
-
-    // Open stock adjustment modal
-    const openStockModal = (part) => {
-        setSelectedPart(part);
-        setStockForm({
-            adjustmentType: 'increase',
-            quantity: '',
-            reason: ''
-        });
-        setShowStockModal(true);
-    };
-
-    // Close stock modal
-    const closeStockModal = () => {
-        setShowStockModal(false);
-        setSelectedPart(null);
-    };
-
-    useModalKeyboard(showStockModal, closeStockModal, () => stockFormRef.current?.requestSubmit());
-
-    // Part form submit handler
-    const handlePartFormSubmit = (e) => {
-        if (e) e.preventDefault();
-        if (modalMode === 'create') {
-            handleCreatePart(e);
-        } else {
-            handleUpdatePart(e);
-        }
-    };
-
-    // Create part
-    const handleCreatePart = async (e) => {
-        if (e) e.preventDefault();
-        try {
-            await partsAPI.create(formData);
-            toast.success('Part created successfully!');
-            closeModal();
-            fetchParts();
-            fetchReferenceData();
-        } catch (err) {
-            console.error('Error creating part:', err);
-            setErrorPopup(err.response?.data || { message: 'Failed to create part' });
-        }
-    };
-
-    // Update part
-    const handleUpdatePart = async (e) => {
-        if (e) e.preventDefault();
-        try {
-            await partsAPI.update(selectedPart.id, formData);
-            toast.success('Part updated successfully!');
-            closeModal();
-            fetchParts();
-        } catch (err) {
-            console.error('Error updating part:', err);
-            setErrorPopup(err.response?.data || { message: 'Failed to update part' });
-        }
-    };
-
-    // Confirm delete
-    const openDeleteConfirm = (part) => {
-        setDeleteTarget(part);
-        setShowConfirmDelete(true);
-    };
-
-    // Execute delete
-    const handleConfirmDelete = async () => {
-        if (!deleteTarget) return;
-        try {
-            await partsAPI.delete(deleteTarget.id);
-            toast.success('Part deleted successfully!');
-            setShowConfirmDelete(false);
-            setDeleteTarget(null);
-            fetchParts();
-            fetchReferenceData();
-        } catch (err) {
-            console.error('Error deleting part:', err);
-            setErrorPopup(err.response?.data || { message: 'Failed to delete part' });
-            setShowConfirmDelete(false);
-            setDeleteTarget(null);
-        }
-    };
-
-    // Quick-create: category
-    const handleCategoryCreated = (newCat) => {
-        fetchReferenceData();
-        setFormData(prev => ({ ...prev, categoryId: String(newCat.id) }));
-    };
-
-    // Quick-create: supplier
-    const handleSupplierCreated = (newSup) => {
-        fetchReferenceData();
-        setFormData(prev => ({ ...prev, supplierId: String(newSup.id) }));
-    };
-
-    // Adjust stock
-    const handleAdjustStock = async (e) => {
-        e.preventDefault();
-        try {
-            await partsAPI.adjustStock(selectedPart.id, stockForm);
-            toast.success('Stock adjusted successfully!');
-            closeStockModal();
-            fetchParts();
-            fetchReferenceData();
-        } catch (err) {
-            console.error('Error adjusting stock:', err);
-            setErrorPopup(err.response?.data || { message: 'Failed to adjust stock' });
-        }
-    };
-
-    useModalKeyboard(showModal, closeModal, handlePartFormSubmit);
-
-    // Get stock status badge
-    const getStockStatusBadge = (stockStatus) => {
-        const badges = {
-            'out_of_stock': { class: 'badge-danger', text: 'Out of Stock' },
-            'low_stock': { class: 'badge-warning', text: 'Low Stock' },
-            'normal': { class: 'badge-success', text: 'Normal' },
-            'overstocked': { class: 'badge-info', text: 'Overstocked' }
-        };
-        return badges[stockStatus] || { class: 'badge-secondary', text: stockStatus };
-    };
-
-    // Get source type badge
-    const getSourceTypeBadge = (sourceType) => {
-        return sourceType === 'manufacturer'
-            ? { class: 'badge-primary', text: 'Manufacturer' }
-            : { class: 'badge-purple', text: '3rd Party' };
-    };
-
-    // Format currency
-    const formatCurrency = (amount) => {
-        return `PKR ${Number(amount).toLocaleString()}`;
-    };
-
-    const showHelp = (message) => {
-        toast(message, { duration: 3000 });
-    };
-
-    const InfoLabel = ({ label, help }) => (
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-            <span>{label}</span>
-            {help ? (
-                <button
-                    type="button"
-                    onClick={() => showHelp(help)}
-                    aria-label={`Help: ${label}`}
-                    title="Help"
-                    style={{
-                        width: 18,
-                        height: 18,
-                        borderRadius: 999,
-                        border: '1px solid #cbd5e1',
-                        background: '#fff',
-                        color: '#475569',
-                        fontSize: 12,
-                        lineHeight: '16px',
-                        cursor: 'pointer',
-                        padding: 0,
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center'
-                    }}
-                >
-                    i
-                </button>
-            ) : null}
-        </span>
-    );
-
-    const toNumber = (v, fallback = 0) => {
-        const n = Number(v);
-        return Number.isFinite(n) ? n : fallback;
-    };
-
-    const partsColumns = [
-        {
-          header: <input type="checkbox" checked={selectedIds.size === parts.length && parts.length > 0} onChange={toggleSelectAll} />,
-          accessor: '_checkbox',
-          style: { width: 40 },
-          render: (row) => (
-            <input type="checkbox" checked={selectedIds.has(row.id)} onChange={() => toggleSelect(row.id)} onClick={(e) => e.stopPropagation()} />
-          ),
-          hideOnMobile: true
-        },
-        {
-            header: 'Part #',
-            accessor: 'part_number',
-            render: (row) => <strong className="part-number">{row.part_number}</strong>
-        },
-        {
-            header: 'Name', accessor: 'name',
-            render: (row) => (
-                <div className="part-info">
-                    <span className="part-name">{row.name}</span>
-                    {row.brand && <span className="part-brand">{row.brand}</span>}
-                </div>
-            )
-        },
-        {
-            header: 'Source', accessor: 'source_type',
-            render: (row) => {
-                const badge = getSourceTypeBadge(row.source_type);
-                return <span className={`badge ${badge.class}`}>{badge.text}</span>;
-            }
-        },
-        { header: 'Category', accessor: 'category_name' },
-        {
-            header: 'Stock', accessor: 'current_stock',
-            render: (row) => <><span className="stock-qty">{row.current_stock}</span><span className="stock-unit"> {row.unit}</span></>
-        },
-        {
-            header: 'Status', accessor: 'stock_status',
-            render: (row) => {
-                const badge = getStockStatusBadge(row.stock_status);
-                return <span className={`badge ${badge.class}`}>{badge.text}</span>;
-            }
-        },
-        {
-            header: 'Purchase Price', accessor: 'purchase_price',
-            render: (row) => <span className="price-cell">{formatCurrency(row.purchase_price)}</span>
-        },
-        {
-            header: 'Selling Price', accessor: 'selling_price',
-            render: (row) => <span className="price-cell">{formatCurrency(row.selling_price)}</span>
-        },
-        {
-            header: 'Actions',
-            accessor: 'actions',
-            style: { width: '120px' },
-            render: (row) => (
-                <div className="action-group" onClick={(e) => e.stopPropagation()}>
-                    <button className="btn-icon btn-adjust" onClick={() => openStockModal(row)} title="Adjust Stock">
-                        <Package size={16} />
-                    </button>
-                    <ActionButtons
-                        onEdit={() => openModal('edit', row)}
-                        onDelete={() => openDeleteConfirm(row)}
-                        title={row.part_number}
-                        showEdit
-                        showDelete
-                    />
-                </div>
-            ),
-            hideOnMobile: true
-        },
-    ];
-
-    return (
-        <div className="parts-inventory-page">
-            {/* Page Header */}
-            <div className="page-header">
-                <div className="header-content">
-                    <h1>Parts Inventory</h1>
-                    <p className="subtitle">Manage vehicle parts from manufacturers and third-party suppliers</p>
-                </div>
-                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                    <button
-                        type="button"
-                        className="btn btn-secondary btn-create"
-                        onClick={() => setShowBulkUpload(true)}
-                        title="Bulk upload parts (CSV / XLSX)"
-                    >
-                        <Upload size={18} style={{ marginRight: 6 }} />
-                        Upload
-                    </button>
-                    <button className="btn btn-primary btn-create" onClick={() => openModal('create')}>
-                        <Plus size={18} />
-                        <span>Add Part</span>
-                    </button>
-                </div>
-            </div>
-
-            {/* Stats Cards */}
-            <div className="stats-grid">
-                <div className="stat-card stat-total">
-                    <div className="stat-icon">
-                        <Package size={24} style={{ color: '#3b82f6' }} />
-                    </div>
-                    <div className="stat-content">
-                        <span className="stat-value">{stats.total_parts || 0}</span>
-                        <span className="stat-label">Total Parts</span>
-                    </div>
-                </div>
-                <div className="stat-card stat-manufacturer">
-                    <div className="stat-icon">
-                        <Package size={24} style={{ color: '#22c55e' }} />
-                    </div>
-                    <div className="stat-content">
-                        <span className="stat-value">{stats.manufacturer_parts || 0}</span>
-                        <span className="stat-label">Manufacturer</span>
-                    </div>
-                </div>
-                <div className="stat-card stat-third-party">
-                    <div className="stat-icon">
-                        <Package size={24} style={{ color: '#8b5cf6' }} />
-                    </div>
-                    <div className="stat-content">
-                        <span className="stat-value">{stats.third_party_parts || 0}</span>
-                        <span className="stat-label">3rd Party</span>
-                    </div>
-                </div>
-                <div className="stat-card stat-low-stock">
-                    <div className="stat-icon">
-                        <Package size={24} style={{ color: '#eab308' }} />
-                    </div>
-                    <div className="stat-content">
-                        <span className="stat-value">{stats.low_stock_count || 0}</span>
-                        <span className="stat-label">Low Stock</span>
-                    </div>
-                </div>
-                <div className="stat-card stat-value">
-                    <div className="stat-icon">
-                        <Package size={24} style={{ color: '#059669' }} />
-                    </div>
-                    <div className="stat-content">
-                        <span className="stat-value">{formatCurrency(stats.total_inventory_value || 0)}</span>
-                        <span className="stat-label">Inventory Value</span>
-                    </div>
-                </div>
-            </div>
-
-            <ErrorPopup error={errorPopup} onClose={() => setErrorPopup(null)} />
-
-            {/* Tabs */}
-            <div className="tabs-container">
-                <button
-                    className={`tab-btn ${activeTab === 'all' ? 'active' : ''}`}
-                    onClick={() => handleTabChange('all')}
-                >
-                    All Parts
-                </button>
-                <button
-                    className={`tab-btn ${activeTab === 'manufacturer' ? 'active' : ''}`}
-                    onClick={() => handleTabChange('manufacturer')}
-                >
-                    Manufacturer Parts
-                </button>
-                <button
-                    className={`tab-btn ${activeTab === 'third_party' ? 'active' : ''}`}
-                    onClick={() => handleTabChange('third_party')}
-                >
-                    3rd Party Parts
-                </button>
-            </div>
-
-            {/* Filters */}
-            <div className="filters-bar">
-                <div className="search-box">
-                    <span className="search-icon">
-                        <Search size={18} style={{ color: '#9ca3af' }} />
-                    </span>
-                    <input
-                        type="text"
-                        placeholder="Search by part number, name, brand..."
-                        value={search}
-                        onChange={(e) => setSearch(e.target.value)}
-                        className="search-input"
-                    />
-                </div>
-
-                <SearchableSelect
-                    value={categoryFilter}
-                    onChange={(e) => { setCategoryFilter(e.target.value); setPage(1); }}
-                    className="filter-select"
-                >
-                    <option value="">All Categories</option>
-                    {categories.map(cat => (
-                        <option key={cat.id} value={cat.id}>{cat.name}</option>
-                    ))}
-                </SearchableSelect>
-
-                <SearchableSelect
-                    value={stockFilter}
-                    onChange={(e) => { setStockFilter(e.target.value); setPage(1); }}
-                    className="filter-select"
-                >
-                    <option value="">All Stock</option>
-                    <option value="low">Low Stock</option>
-                    <option value="out">Out of Stock</option>
-                    <option value="normal">Normal</option>
-                </SearchableSelect>
-
-                {(search || categoryFilter || stockFilter) && (
-                    <button
-                        type="button"
-                        className="btn btn-sm btn-outline filter-reset-btn"
-                        onClick={() => { setSearch(''); setCategoryFilter(''); setStockFilter(''); setPage(1); }}
-                        title="Reset all filters"
-                    >
-                        Reset
-                    </button>
-                )}
-
-                <span className="results-count">{total} parts found</span>
-            </div>
-
-            {/* Parts Table */}
-            <DataTable
-                columns={partsColumns}
-                data={parts}
-                loading={loading}
-                pagination={{ page, totalPages }}
-                onPageChange={(p) => setPage(p)}
-                onRowClick={(row) => openModal('edit', row)}
-                rowClassName={(row) => row.stock_status === 'out_of_stock' ? 'row-warning' : ''}
-            />
-
-            {/* Bulk Delete Bar */}
-            {selectedIds.size > 0 && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, marginBottom: 12 }}>
-                <span style={{ fontWeight: 600, color: '#991b1b' }}>{selectedIds.size} selected</span>
-                <button className="btn btn-danger btn-sm" onClick={() => setDeleteAllTarget(true)}>Delete All</button>
-                <button className="btn btn-secondary btn-sm" onClick={() => setSelectedIds(new Set())}>Deselect All</button>
-              </div>
-            )}
-
-            {deleteAllTarget && (
-              <ConfirmModal
-                isOpen={true}
-                title="Delete Selected Parts"
-                message={`Are you sure you want to delete ${selectedIds.size} part(s)?`}
-                confirmText={deletingAll ? 'Deleting...' : 'Delete All'}
-                cancelText="Cancel"
-                type="danger"
-                onConfirm={handleBulkDelete}
-                onCancel={() => setDeleteAllTarget(null)}
-              />
-            )}
-
-            {/* Create/Edit Modal */}
-            {showModal && (
-                <div className="modal-overlay" onClick={closeModal}>
-                    <div className="modal-content modal-lg" onClick={e => e.stopPropagation()}>
-                        <div className="modal-header">
-                            <h2>{modalMode === 'create' ? 'Add New Part' : 'Edit Part'}</h2>
-                            <button className="modal-close" onClick={closeModal}>×</button>
-                        </div>
-
-                        <form onSubmit={handlePartFormSubmit}>
-                            <div className="modal-body">
-                                <div className="form-section">
-                                    <h3>Part Information</h3>
-                                    <div className="form-row">
-                                        <div className="form-group">
-                                            <label>
-                                                <InfoLabel
-                                                    label="Part Number *"
-                                                    help="Unique identifier for this part (e.g., OEM-TOY-001)."
-                                                />
-                                            </label>
-                                            <input
-                                                type="text"
-                                                name="partNumber"
-                                                className="form-input"
-                                                value={formData.partNumber}
-                                                onChange={handleInputChange}
-                                                required
-                                                placeholder="e.g., OEM-TOY-001"
-                                            />
-                                        </div>
-                                        <div className="form-group">
-                                            <label>
-                                                <InfoLabel
-                                                    label="Name *"
-                                                    help="Human-friendly name of the part (e.g., Oil Filter)."
-                                                />
-                                            </label>
-                                            <input
-                                                type="text"
-                                                name="name"
-                                                className="form-input"
-                                                value={formData.name}
-                                                onChange={handleInputChange}
-                                                required
-                                                placeholder="Part name"
-                                            />
-                                        </div>
-                                    </div>
-                                    <div className="form-row">
-                                        <div className="form-group">
-                                            <label>
-                                                <InfoLabel
-                                                    label="Source Type *"
-                                                    help="Manufacturer = OEM. 3rd Party = aftermarket supplier."
-                                                />
-                                            </label>
-                                            <SearchableSelect
-                                                name="sourceType"
-                                                value={formData.sourceType}
-                                                onChange={handleInputChange}
-                                                required
-                                            >
-                                                <option value="manufacturer">Manufacturer (OEM)</option>
-                                                <option value="third_party">3rd Party</option>
-                                            </SearchableSelect>
-                                        </div>
-                                        <div className="form-group">
-                                            <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                                <InfoLabel
-                                                    label="Category"
-                                                    help="Optional grouping for reporting and filtering (e.g., Engine, Electrical)."
-                                                />
-                                                <button
-                                                    type="button"
-                                                    className="btn btn-sm btn-outline"
-                                                    onClick={() => setShowCategoryModal(true)}
-                                                >
-                                                    + Create Category
-                                                </button>
-                                            </label>
-                                            <SearchableSelect
-                                                name="categoryId"
-                                                value={formData.categoryId}
-                                                onChange={handleInputChange}
-                                                options={categories}
-                                                placeholder="Select Category"
-                                                labelField="name"
-                                                valueField="id"
-                                            />
-                                        </div>
-                                    </div>
-                                    <div className="form-row">
-                                        <div className="form-group">
-                                            <label>
-                                                <InfoLabel
-                                                    label="Brand"
-                                                    help="Brand/manufacturer name printed on the part (optional)."
-                                                />
-                                            </label>
-                                            <input
-                                                type="text"
-                                                name="brand"
-                                                className="form-input"
-                                                value={formData.brand}
-                                                onChange={handleInputChange}
-                                                placeholder="Brand name"
-                                            />
-                                        </div>
-                                        <div className="form-group">
-                                            <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                                <InfoLabel
-                                                    label="Supplier"
-                                                    help="Supplier you purchase this part from (optional)."
-                                                />
-                                                <button
-                                                    type="button"
-                                                    className="btn btn-sm btn-outline"
-                                                    onClick={() => setShowSupplierModal(true)}
-                                                >
-                                                    + Create Supplier
-                                                </button>
-                                            </label>
-                                            <SearchableSelect
-                                                name="supplierId"
-                                                value={formData.supplierId}
-                                                onChange={handleInputChange}
-                                            >
-                                                <option value="">Select Supplier</option>
-                                                {suppliers.map(sup => (
-                                                    <option key={sup.id} value={sup.id}>{sup.name}</option>
-                                                ))}
-                                            </SearchableSelect>
-                                        </div>
-                                    </div>
-                                    <div className="form-row">
-                                        <div className="form-group full-width">
-                                            <label>
-                                                <InfoLabel
-                                                    label="Description"
-                                                    help="Optional notes/specs to help staff identify the exact part."
-                                                />
-                                            </label>
-                                            <textarea
-                                                name="description"
-                                                className="form-input"
-                                                value={formData.description}
-                                                onChange={handleInputChange}
-                                                placeholder="Part description..."
-                                                rows={2}
-                                            />
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="form-section">
-                                    <h3>Pricing</h3>
-                                    <div className="form-row">
-                                        <div className="form-group">
-                                            <label>
-                                                <InfoLabel
-                                                    label="Purchase Price (PKR) *"
-                                                    help="Your cost price (used for inventory valuation and profit calculation)."
-                                                />
-                                            </label>
-                                            <input
-                                                type="number"
-                                                name="purchasePrice"
-                                                className="form-input"
-                                                value={formData.purchasePrice}
-                                                onChange={handleInputChange}
-                                                required
-                                                min={0}
-                                            />
-                                        </div>
-                                        <div className="form-group">
-                                            <label>
-                                                <InfoLabel
-                                                    label="Selling Price (PKR) *"
-                                                    help="Default selling price for invoices/job cards."
-                                                />
-                                            </label>
-                                            <input
-                                                type="number"
-                                                name="sellingPrice"
-                                                className="form-input"
-                                                value={formData.sellingPrice}
-                                                onChange={handleInputChange}
-                                                required
-                                                min={0}
-                                            />
-                                        </div>
-                                        <div className="form-group">
-                                            <label>
-                                                <InfoLabel
-                                                    label="Unit"
-                                                    help="How this part is counted (piece/set/pair/liter/kg)."
-                                                />
-                                            </label>
-                                            <SearchableSelect
-                                                name="unit"
-                                                value={formData.unit}
-                                                onChange={handleInputChange}
-                                            >
-                                                <option value="piece">Piece</option>
-                                                <option value="set">Set</option>
-                                                <option value="pair">Pair</option>
-                                                <option value="liter">Liter</option>
-                                                <option value="kg">Kilogram</option>
-                                            </SearchableSelect>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="form-section">
-                                    <h3>Stock Levels</h3>
-                                    <div className="form-row">
-                                        {modalMode === 'create' && (
-                                            <div className="form-group">
-                                                <label>
-                                                    <InfoLabel
-                                                        label="Initial Stock"
-                                                        help="Starting quantity when you add this part."
-                                                    />
-                                                </label>
-                                                <input
-                                                    type="number"
-                                                    name="currentStock"
-                                                    className="form-input"
-                                                    value={formData.currentStock}
-                                                    onChange={handleInputChange}
-                                                    min={0}
-                                                />
-                                            </div>
-                                        )}
-                                        <div className="form-group">
-                                            <label>
-                                                <InfoLabel
-                                                    label="Total Inventory"
-                                                    help="Read-only preview of current total stock. Updates in real time as you change stock quantity."
-                                                />
-                                            </label>
-                                            <input
-                                                type="number"
-                                                value={toNumber(formData.currentStock, 0)}
-                                                disabled
-                                                style={{ background: '#f8fafc' }}
-                                            />
-                                        </div>
-                                        <div className="form-group">
-                                            <label>
-                                                <InfoLabel
-                                                    label="Minimum Stock"
-                                                    help="When stock goes below this, it will show as Low Stock."
-                                                />
-                                            </label>
-                                            <input
-                                                type="number"
-                                                name="minimumStock"
-                                                className="form-input"
-                                                value={formData.minimumStock}
-                                                onChange={handleInputChange}
-                                                min={0}
-                                            />
-                                        </div>
-                                        <div className="form-group">
-                                            <label>
-                                                <InfoLabel
-                                                    label="Maximum Stock"
-                                                    help="Target maximum quantity (helps prevent overstocking)."
-                                                />
-                                            </label>
-                                            <input
-                                                type="number"
-                                                name="maximumStock"
-                                                className="form-input"
-                                                value={formData.maximumStock}
-                                                onChange={handleInputChange}
-                                                min={0}
-                                            />
-                                        </div>
-                                        <div className="form-group">
-                                            <label>
-                                                <InfoLabel
-                                                    label="Reorder Level"
-                                                    help="When stock reaches this level, consider reordering."
-                                                />
-                                            </label>
-                                            <input
-                                                type="number"
-                                                name="reorderLevel"
-                                                className="form-input"
-                                                value={formData.reorderLevel}
-                                                onChange={handleInputChange}
-                                                min={0}
-                                            />
-                                        </div>
-                                    </div>
-                                    <div className="form-row">
-                                        <div className="form-group">
-                                            <label>
-                                                <InfoLabel
-                                                    label="Bin Location"
-                                                    help="Optional warehouse shelf/bin location (e.g., A1-S2-R3)."
-                                                />
-                                            </label>
-                                            <input
-                                                type="text"
-                                                name="binLocation"
-                                                className="form-input"
-                                                value={formData.binLocation}
-                                                onChange={handleInputChange}
-                                                placeholder="e.g., A1-S2-R3"
-                                            />
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="modal-footer">
-                                <button type="button" className="btn btn-secondary" onClick={closeModal}>
-                                    Cancel
-                                </button>
-                                <button type="submit" className="btn btn-primary">
-                                    {modalMode === 'create' ? 'Add Part' : 'Save Changes'}
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
-
-            {/* Stock Adjustment Modal */}
-            {showStockModal && selectedPart && (
-                <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) closeStockModal(); }}>
-                    <div className="modal-content modal-sm" onClick={e => e.stopPropagation()}>
-                        <div className="modal-header">
-                            <h2>Adjust Stock</h2>
-                            <button className="modal-close" onClick={closeStockModal}>×</button>
-                        </div>
-
-                        <form ref={stockFormRef} onSubmit={handleAdjustStock}>
-                            <div className="modal-body">
-                                <div className="stock-info">
-                                    <p><strong>{selectedPart.name}</strong></p>
-                                    <p>Current Stock: <span className="stock-value">{selectedPart.current_stock} {selectedPart.unit}</span></p>
-                                </div>
-
-                                <div className="form-group">
-                                    <label>
-                                        <InfoLabel
-                                            label="Adjustment Type *"
-                                            help="Increase adds stock, Decrease subtracts stock, Set overwrites stock to an exact value."
-                                        />
-                                    </label>
-                                    <SearchableSelect
-                                        name="adjustmentType"
-                                        value={stockForm.adjustmentType}
-                                        onChange={handleStockFormChange}
-                                        required
-                                    >
-                                        <option value="increase">Increase (+)</option>
-                                        <option value="decrease">Decrease (-)</option>
-                                        <option value="set">Set to Exact Value</option>
-                                    </SearchableSelect>
-                                </div>
-
-                                <div className="form-group">
-                                    <label>
-                                        <InfoLabel
-                                            label="Quantity *"
-                                            help="Enter quantity to increase/decrease, or the exact quantity when using Set."
-                                        />
-                                    </label>
-                                    <input
-                                        type="number"
-                                        name="quantity"
-                                        className="form-input"
-                                        value={stockForm.quantity}
-                                        onChange={handleStockFormChange}
-                                        required
-                                        min={1}
-                                        placeholder="Enter quantity"
-                                    />
-                                </div>
-
-                                <div className="form-group">
-                                    <label>
-                                        <InfoLabel
-                                            label="New Total Inventory"
-                                            help="Live preview of the resulting stock after this adjustment."
-                                        />
-                                    </label>
-                                    <input
-                                        type="number"
-                                        disabled
-                                        style={{ background: '#f8fafc' }}
-                                        value={(() => {
-                                            const current = toNumber(selectedPart.current_stock, 0);
-                                            const qty = toNumber(stockForm.quantity, 0);
-                                            if (stockForm.adjustmentType === 'increase') return current + qty;
-                                            if (stockForm.adjustmentType === 'decrease') return Math.max(0, current - qty);
-                                            if (stockForm.adjustmentType === 'set') return Math.max(0, qty);
-                                            return current;
-                                        })()}
-                                    />
-                                </div>
-
-                                <div className="form-group">
-                                    <label>
-                                        <InfoLabel
-                                            label="Reason"
-                                            help="Optional note for auditing (e.g., Purchase received, Damaged, Stock count)."
-                                        />
-                                    </label>
-                                    <textarea
-                                        name="reason"
-                                        value={stockForm.reason}
-                                        onChange={handleStockFormChange}
-                                        placeholder="Reason for adjustment..."
-                                        rows={2}
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="modal-footer">
-                                <button type="button" className="btn btn-secondary" onClick={closeStockModal}>
-                                    Cancel
-                                </button>
-                                <button type="submit" className="btn btn-primary">
-                                    Update Stock
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
-
-            {/* Category Quick-Create Modal */}
-            <CategoryFormModal
-                isOpen={showCategoryModal}
-                onClose={() => setShowCategoryModal(false)}
-                onCategoryCreated={handleCategoryCreated}
-            />
-
-            {/* Bulk Upload */}
-            <BulkUploadModal
-                isOpen={showBulkUpload}
-                onClose={() => setShowBulkUpload(false)}
-                title="Bulk upload parts"
-                description="Import parts from CSV or XLSX using the template. Required columns: part_number, name, purchase_price, selling_price."
-                templateType="parts"
-                onCompleted={() => fetchParts()}
-            />
-
-            {/* Supplier Quick-Create Modal */}
-            <SupplierFormModal
-                isOpen={showSupplierModal}
-                onClose={() => setShowSupplierModal(false)}
-                onSupplierCreated={handleSupplierCreated}
-            />
-
-            {/* Confirm Delete Modal */}
-            <ConfirmModal
-                isOpen={showConfirmDelete}
-                title="Delete Part"
-                message={`Are you sure you want to delete part "${deleteTarget?.part_number}"?`}
-                onConfirm={handleConfirmDelete}
-                onCancel={() => { setShowConfirmDelete(false); setDeleteTarget(null); }}
-                confirmText="Delete"
-                cancelText="Cancel"
-                type="danger"
-            />
+  const partsColumns = [
+    {
+      header: (
+        <input
+          type="checkbox"
+          checked={selectedIds.size === parts.length && parts.length > 0}
+          onChange={toggleSelectAll}
+        />
+      ),
+      accessor: "_checkbox",
+      style: { width: 40 },
+      render: (row) => (
+        <input
+          type="checkbox"
+          checked={selectedIds.has(row.id)}
+          onChange={() => toggleSelect(row.id)}
+          onClick={(e) => e.stopPropagation()}
+        />
+      ),
+      hideOnMobile: true,
+    },
+    {
+      header: "Part #",
+      accessor: "part_number",
+      render: (row) => (
+        <strong className="part-number">{row.part_number}</strong>
+      ),
+    },
+    {
+      header: "Name",
+      accessor: "name",
+      render: (row) => (
+        <div className="part-info">
+          <span className="part-name">{row.name}</span>
+          {row.brand && <span className="part-brand">{row.brand}</span>}
         </div>
-    );
+      ),
+    },
+    {
+      header: "Source",
+      accessor: "source_type",
+      render: (row) => {
+        const badge = getSourceTypeBadge(row.source_type);
+        return <span className={`badge ${badge.class}`}>{badge.text}</span>;
+      },
+    },
+    { header: "Category", accessor: "category_name" },
+    {
+      header: "Stock",
+      accessor: "current_stock",
+      render: (row) => (
+        <>
+          <span className="stock-qty">{row.current_stock}</span>
+          <span className="stock-unit"> {row.unit}</span>
+        </>
+      ),
+    },
+    {
+      header: "Status",
+      accessor: "stock_status",
+      render: (row) => {
+        const badge = getStockStatusBadge(row.current_stock);
+        return <span className={`badge ${badge.class}`}>{badge.text}</span>;
+      },
+    },
+    {
+      header: "Purchase Price",
+      accessor: "purchase_price",
+      render: (row) => (
+        <span className="price-cell">{formatCurrency(row.purchase_price)}</span>
+      ),
+    },
+    {
+      header: "Selling Price",
+      accessor: "selling_price",
+      render: (row) => (
+        <span className="price-cell">{formatCurrency(row.selling_price)}</span>
+      ),
+    },
+    {
+      header: "Actions",
+      accessor: "actions",
+      style: { width: "120px" },
+      render: (row) => (
+        <div className="action-group" onClick={(e) => e.stopPropagation()}>
+          <button
+            className="btn-icon btn-adjust"
+            onClick={() => openStockModal(row)}
+            title="Adjust Stock"
+          >
+            <Package size={16} />
+          </button>
+          <ActionButtons
+            onEdit={() => openModal("edit", row)}
+            onDelete={() => openDeleteConfirm(row)}
+            title={row.part_number}
+            showEdit
+            showDelete
+          />
+        </div>
+      ),
+      hideOnMobile: true,
+    },
+  ];
+
+  return (
+    <div className="parts-inventory-page">
+      {/* Page Header */}
+      <div className="page-header">
+        <div className="header-content">
+          <h1>Parts Inventory</h1>
+          <p className="subtitle">
+            Manage vehicle parts from manufacturers and third-party suppliers
+          </p>
+        </div>
+        <div
+          style={{
+            display: "flex",
+            gap: "0.5rem",
+            flexWrap: "wrap",
+            alignItems: "center",
+          }}
+        >
+          <button
+            type="button"
+            className="btn btn-secondary btn-create"
+            onClick={() => setShowBulkUpload(true)}
+            title="Bulk upload parts (CSV / XLSX)"
+          >
+            <Upload size={18} style={{ marginRight: 6 }} />
+            Upload
+          </button>
+          <button
+            className="btn btn-primary btn-create"
+            onClick={() => openModal("create")}
+          >
+            <Plus size={18} />
+            <span>Add Part</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Stats Cards */}
+      <div className="stats-grid">
+        <div className="stat-card stat-total">
+          <div className="stat-icon">
+            <Package size={24} style={{ color: "#3b82f6" }} />
+          </div>
+          <div className="stat-content">
+            <span className="stat-value">{stats.total_parts || 0}</span>
+            <span className="stat-label">Total Parts</span>
+          </div>
+        </div>
+        <div className="stat-card stat-manufacturer">
+          <div className="stat-icon">
+            <Package size={24} style={{ color: "#22c55e" }} />
+          </div>
+          <div className="stat-content">
+            <span className="stat-value">{stats.manufacturer_parts || 0}</span>
+            <span className="stat-label">Manufacturer</span>
+          </div>
+        </div>
+        <div className="stat-card stat-third-party">
+          <div className="stat-icon">
+            <Package size={24} style={{ color: "#8b5cf6" }} />
+          </div>
+          <div className="stat-content">
+            <span className="stat-value">{stats.third_party_parts || 0}</span>
+            <span className="stat-label">3rd Party</span>
+          </div>
+        </div>
+        <div className="stat-card stat-low-stock">
+          <div className="stat-icon">
+            <Package size={24} style={{ color: "#eab308" }} />
+          </div>
+          <div className="stat-content">
+            <span className="stat-value">{stats.low_stock_count || 0}</span>
+            <span className="stat-label">Low Stock</span>
+          </div>
+        </div>
+        <div className="stat-card stat-value">
+          <div className="stat-icon">
+            <Package size={24} style={{ color: "#059669" }} />
+          </div>
+          <div className="stat-content">
+            <span className="stat-value">
+              {formatCurrency(stats.total_inventory_value || 0)}
+            </span>
+            <span className="stat-label">Inventory Value</span>
+          </div>
+        </div>
+      </div>
+
+      <ErrorPopup error={errorPopup} onClose={() => setErrorPopup(null)} />
+
+      {/* Tabs */}
+      <div className="tabs-container">
+        <button
+          className={`tab-btn ${activeTab === "all" ? "active" : ""}`}
+          onClick={() => handleTabChange("all")}
+        >
+          All Parts
+        </button>
+        <button
+          className={`tab-btn ${activeTab === "manufacturer" ? "active" : ""}`}
+          onClick={() => handleTabChange("manufacturer")}
+        >
+          Manufacturer Parts
+        </button>
+        <button
+          className={`tab-btn ${activeTab === "third_party" ? "active" : ""}`}
+          onClick={() => handleTabChange("third_party")}
+        >
+          3rd Party Parts
+        </button>
+      </div>
+
+      {/* Filters */}
+      <div className="filters-bar filters-grid">
+        <div className="filter-field filter-field-search">
+          <label>Search</label>
+          <div className="search-box">
+          <span className="search-icon">
+            <Search size={18} style={{ color: "#9ca3af" }} />
+          </span>
+          <input
+            type="text"
+            placeholder="Search by part number, name, brand..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="search-input"
+          />
+          </div>
+        </div>
+
+        <div className="filter-field"><label>Category</label><SearchableSelect
+          value={categoryFilter}
+          onChange={(e) => {
+            setCategoryFilter(e.target.value);
+            setPage(1);
+          }}
+          className="filter-select"
+        >
+          <option value="">All Categories</option>
+          {categories.map((cat) => (
+            <option key={cat.id} value={cat.id}>
+              {cat.name}
+            </option>
+          ))}
+        </SearchableSelect></div>
+
+        <div className="filter-field"><label>Stock</label><SearchableSelect
+          value={stockFilter}
+          onChange={(e) => {
+            setStockFilter(e.target.value);
+            setPage(1);
+          }}
+          className="filter-select"
+        >
+          <option value="">All Stock</option>
+          <option value="low">Low Stock</option>
+          <option value="out">Out of Stock</option>
+          <option value="normal">Normal</option>
+        </SearchableSelect></div>
+
+        <div className="filter-field filter-field-actions">
+        {(search || categoryFilter || stockFilter) && (
+          <button
+            type="button"
+            className="btn btn-sm btn-outline filter-reset-btn"
+            onClick={() => {
+              setSearch("");
+              setCategoryFilter("");
+              setStockFilter("");
+              setPage(1);
+            }}
+            title="Reset all filters"
+          >
+            Reset
+          </button>
+        )}
+
+        <span className="results-count">{total} parts found</span>
+        </div>
+      </div>
+
+      {/* Bulk Delete Bar */}
+      {selectedIds.size > 0 && (
+        <div className="selection-bar">
+          <span className="selection-count">{selectedIds.size} selected</span>
+          <button
+            className="btn btn-danger btn-sm"
+            onClick={() => setDeleteAllTarget(true)}
+          >
+            Delete Selected
+          </button>
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={() => setSelectedIds(new Set())}
+          >
+            Deselect All
+          </button>
+        </div>
+      )}
+
+      {/* Parts Table */}
+      <DataTable
+        columns={partsColumns}
+        data={parts}
+        loading={loading}
+        pagination={{ page, totalPages, total, limit }}
+        onPageChange={(p) => setPage(p)}
+        onRowClick={(row) => openModal("edit", row)}
+        rowClassName={(row) =>
+          row.stock_status === "out_of_stock" ? "row-warning" : ""
+        }
+      />
+
+      {deleteAllTarget && (
+        <ConfirmModal
+          isOpen={true}
+          title="Delete Selected Parts"
+          message={`Are you sure you want to delete ${selectedIds.size} part(s)?`}
+          confirmText={deletingAll ? "Deleting..." : "Delete All"}
+          cancelText="Cancel"
+          type="danger"
+          onConfirm={handleBulkDelete}
+          onCancel={() => setDeleteAllTarget(null)}
+        />
+      )}
+
+      {/* Create/Edit Modal */}
+      {showModal && (
+        <div className="modal-overlay" onClick={closeModal}>
+          <div
+            className="modal-content modal-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal-header">
+              <h2>{modalMode === "create" ? "Add New Part" : "Edit Part"}</h2>
+              <button className="modal-close" onClick={closeModal}>
+                ×
+              </button>
+            </div>
+
+            <form onSubmit={handlePartFormSubmit}>
+              <div className="modal-body">
+                <div className="form-section">
+                  <h3>Part Information</h3>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>
+                        <InfoLabel
+                          label="Part Number *"
+                          help="Unique identifier for this part (e.g., OEM-TOY-001)."
+                        />
+                      </label>
+                      <input
+                        type="text"
+                        name="partNumber"
+                        className="form-input"
+                        value={formData.partNumber}
+                        onChange={handleInputChange}
+                        required
+                        placeholder="e.g., OEM-TOY-001"
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>
+                        <InfoLabel
+                          label="Name *"
+                          help="Human-friendly name of the part (e.g., Oil Filter)."
+                        />
+                      </label>
+                      <input
+                        type="text"
+                        name="name"
+                        className="form-input"
+                        value={formData.name}
+                        onChange={handleInputChange}
+                        required
+                        placeholder="Part name"
+                      />
+                    </div>
+                  </div>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>
+                        <InfoLabel
+                          label="Source Type *"
+                          help="Manufacturer = OEM. 3rd Party = aftermarket supplier."
+                        />
+                      </label>
+                      <SearchableSelect
+                        name="sourceType"
+                        value={formData.sourceType}
+                        onChange={handleInputChange}
+                        required
+                      >
+                        <option value="manufacturer">Manufacturer (OEM)</option>
+                        <option value="third_party">3rd Party</option>
+                      </SearchableSelect>
+                    </div>
+                    <div className="form-group">
+                      <label
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                        }}
+                      >
+                        <InfoLabel
+                          label="Category"
+                          help="Optional grouping for reporting and filtering (e.g., Engine, Electrical)."
+                        />
+                        <button
+                          type="button"
+                          className="label-add-link"
+                          onClick={() => setShowCategoryModal(true)}
+                        >
+                          + Create Category
+                        </button>
+                      </label>
+                      <SearchableSelect
+                        name="categoryId"
+                        value={formData.categoryId}
+                        onChange={handleInputChange}
+                        options={categories}
+                        placeholder="Select Category"
+                        labelField="name"
+                        valueField="id"
+                      />
+                    </div>
+                  </div>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>
+                        <InfoLabel
+                          label="Brand"
+                          help="Brand/manufacturer name printed on the part (optional)."
+                        />
+                      </label>
+                      <input
+                        type="text"
+                        name="brand"
+                        className="form-input"
+                        value={formData.brand}
+                        onChange={handleInputChange}
+                        placeholder="Brand name"
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                        }}
+                      >
+                        <InfoLabel
+                          label="Supplier"
+                          help="Supplier you purchase this part from (optional)."
+                        />
+                        <button
+                          type="button"
+                          className="label-add-link"
+                          onClick={() => setShowSupplierModal(true)}
+                        >
+                          + Create Supplier
+                        </button>
+                      </label>
+                      <SearchableSelect
+                        name="supplierId"
+                        value={formData.supplierId}
+                        onChange={handleInputChange}
+                      >
+                        <option value="">Select Supplier</option>
+                        {suppliers.map((sup) => (
+                          <option key={sup.id} value={sup.id}>
+                            {sup.name}
+                          </option>
+                        ))}
+                      </SearchableSelect>
+                    </div>
+                  </div>
+                  <div className="form-row">
+                    <div className="form-group full-width">
+                      <label>
+                        <InfoLabel
+                          label="Description"
+                          help="Optional notes/specs to help staff identify the exact part."
+                        />
+                      </label>
+                      <textarea
+                        name="description"
+                        className="form-input"
+                        value={formData.description}
+                        onChange={handleInputChange}
+                        placeholder="Part description..."
+                        rows={2}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="form-section">
+                  <h3>Pricing</h3>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>
+                        <InfoLabel
+                          label="Purchase Price (PKR) *"
+                          help="Your cost price (used for inventory valuation and profit calculation)."
+                        />
+                      </label>
+                      <input
+                        type="number"
+                        name="purchasePrice"
+                        className="form-input"
+                        value={formData.purchasePrice}
+                        onChange={handleInputChange}
+                        required
+                        min={0}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>
+                        <InfoLabel
+                          label="Selling Price (PKR) *"
+                          help="Default selling price for invoices/job cards."
+                        />
+                      </label>
+                      <input
+                        type="number"
+                        name="sellingPrice"
+                        className="form-input"
+                        value={formData.sellingPrice}
+                        onChange={handleInputChange}
+                        required
+                        min={0}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>
+                        <InfoLabel
+                          label="Unit"
+                          help="How this part is counted (piece/set/pair/liter/kg)."
+                        />
+                      </label>
+                      <SearchableSelect
+                        name="unit"
+                        value={formData.unit}
+                        onChange={handleInputChange}
+                      >
+                        <option value="piece">Piece</option>
+                        <option value="set">Set</option>
+                        <option value="pair">Pair</option>
+                        <option value="liter">Liter</option>
+                        <option value="kg">Kilogram</option>
+                      </SearchableSelect>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="form-section">
+                  <h3>Stock Levels</h3>
+                  <div className="form-row">
+                    {modalMode === "create" && (
+                      <div className="form-group">
+                        <label>
+                          <InfoLabel
+                            label="Initial Stock"
+                            help="Starting quantity when you add this part."
+                          />
+                        </label>
+                        <input
+                          type="number"
+                          name="currentStock"
+                          className="form-input"
+                          value={formData.currentStock}
+                          onChange={handleInputChange}
+                          min={0}
+                        />
+                      </div>
+                    )}
+                    <div className="form-group">
+                      <label>
+                        <InfoLabel
+                          label="Total Inventory"
+                          help="Read-only preview of current total stock. Updates in real time as you change stock quantity."
+                        />
+                      </label>
+                      <input
+                        type="number"
+                        value={toNumber(formData.currentStock, 0)}
+                        disabled
+                        style={{ background: "#f8fafc" }}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>
+                        <InfoLabel
+                          label="Minimum Stock"
+                          help="When stock goes below this, it will show as Low Stock."
+                        />
+                      </label>
+                      <input
+                        type="number"
+                        name="minimumStock"
+                        className="form-input"
+                        value={formData.minimumStock}
+                        onChange={handleInputChange}
+                        min={0}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>
+                        <InfoLabel
+                          label="Maximum Stock"
+                          help="Target maximum quantity (helps prevent overstocking)."
+                        />
+                      </label>
+                      <input
+                        type="number"
+                        name="maximumStock"
+                        className="form-input"
+                        value={formData.maximumStock}
+                        onChange={handleInputChange}
+                        min={0}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>
+                        <InfoLabel
+                          label="Reorder Level"
+                          help="When stock reaches this level, consider reordering."
+                        />
+                      </label>
+                      <input
+                        type="number"
+                        name="reorderLevel"
+                        className="form-input"
+                        value={formData.reorderLevel}
+                        onChange={handleInputChange}
+                        min={0}
+                      />
+                    </div>
+                  </div>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>
+                        <InfoLabel
+                          label="Bin Location"
+                          help="Optional warehouse shelf/bin location (e.g., A1-S2-R3)."
+                        />
+                      </label>
+                      <input
+                        type="text"
+                        name="binLocation"
+                        className="form-input"
+                        value={formData.binLocation}
+                        onChange={handleInputChange}
+                        placeholder="e.g., A1-S2-R3"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="modal-footer">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={closeModal}
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary">
+                  {modalMode === "create" ? "Add Part" : "Save Changes"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Stock Adjustment Modal */}
+      {showStockModal && selectedPart && (
+        <div
+          className="modal-overlay"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) closeStockModal();
+          }}
+        >
+          <div
+            className="modal-content modal-sm"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal-header">
+              <h2>Adjust Stock</h2>
+              <button className="modal-close" onClick={closeStockModal}>
+                ×
+              </button>
+            </div>
+
+            <form ref={stockFormRef} onSubmit={handleAdjustStock}>
+              <div className="modal-body">
+                <div className="stock-info">
+                  <p>
+                    <strong>{selectedPart.name}</strong>
+                  </p>
+                  <p>
+                    Current Stock:{" "}
+                    <span className="stock-value">
+                      {selectedPart.current_stock} {selectedPart.unit}
+                    </span>
+                  </p>
+                </div>
+
+                <div className="form-group">
+                  <label>
+                    <InfoLabel
+                      label="Adjustment Type *"
+                      help="Increase adds stock, Decrease subtracts stock, Set overwrites stock to an exact value."
+                    />
+                  </label>
+                  <SearchableSelect
+                    name="adjustmentType"
+                    value={stockForm.adjustmentType}
+                    onChange={handleStockFormChange}
+                    required
+                  >
+                    <option value="increase">Increase (+)</option>
+                    <option value="decrease">Decrease (-)</option>
+                    <option value="set">Set to Exact Value</option>
+                  </SearchableSelect>
+                </div>
+
+                <div className="form-group">
+                  <label>
+                    <InfoLabel
+                      label="Quantity *"
+                      help="Enter quantity to increase/decrease, or the exact quantity when using Set."
+                    />
+                  </label>
+                  <input
+                    type="number"
+                    name="quantity"
+                    className="form-input"
+                    value={stockForm.quantity}
+                    onChange={handleStockFormChange}
+                    required
+                    min={1}
+                    placeholder="Enter quantity"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>
+                    <InfoLabel
+                      label="New Total Inventory"
+                      help="Live preview of the resulting stock after this adjustment."
+                    />
+                  </label>
+                  <input
+                    type="number"
+                    disabled
+                    style={{ background: "#f8fafc" }}
+                    value={(() => {
+                      const current = toNumber(selectedPart.current_stock, 0);
+                      const qty = toNumber(stockForm.quantity, 0);
+                      if (stockForm.adjustmentType === "increase")
+                        return current + qty;
+                      if (stockForm.adjustmentType === "decrease")
+                        return Math.max(0, current - qty);
+                      if (stockForm.adjustmentType === "set")
+                        return Math.max(0, qty);
+                      return current;
+                    })()}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>
+                    <InfoLabel
+                      label="Reason"
+                      help="Optional note for auditing (e.g., Purchase received, Damaged, Stock count)."
+                    />
+                  </label>
+                  <textarea
+                    name="reason"
+                    value={stockForm.reason}
+                    onChange={handleStockFormChange}
+                    placeholder="Reason for adjustment..."
+                    rows={2}
+                  />
+                </div>
+              </div>
+
+              <div className="modal-footer">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={closeStockModal}
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary">
+                  Update Stock
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Category Quick-Create Modal */}
+      <CategoryFormModal
+        isOpen={showCategoryModal}
+        onClose={() => setShowCategoryModal(false)}
+        onCategoryCreated={handleCategoryCreated}
+      />
+
+      {/* Bulk Upload */}
+      <BulkUploadModal
+        isOpen={showBulkUpload}
+        onClose={() => setShowBulkUpload(false)}
+        title="Bulk upload parts"
+        description="Import parts from CSV or XLSX using the template. Required columns: part_number, name, purchase_price, selling_price."
+        templateType="parts"
+        onCompleted={() => fetchParts()}
+      />
+
+      {/* Supplier Quick-Create Modal */}
+      <SupplierFormModal
+        isOpen={showSupplierModal}
+        onClose={() => setShowSupplierModal(false)}
+        onSupplierCreated={handleSupplierCreated}
+      />
+
+      {/* Confirm Delete Modal */}
+      <ConfirmModal
+        isOpen={showConfirmDelete}
+        title="Delete Part"
+        message={`Are you sure you want to delete part "${deleteTarget?.part_number}"?`}
+        onConfirm={handleConfirmDelete}
+        onCancel={() => {
+          setShowConfirmDelete(false);
+          setDeleteTarget(null);
+        }}
+        confirmText="Delete"
+        cancelText="Cancel"
+        type="danger"
+      />
+    </div>
+  );
 };
 
 export default PartsInventory;

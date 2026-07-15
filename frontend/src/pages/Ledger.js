@@ -1,240 +1,110 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { BookOpen, Plus, Search, RotateCcw, Download, ArrowDownLeft, ArrowUpRight, Scale, WalletCards } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import { useLedger } from '../context/LedgerContext';
-import toast from 'react-hot-toast';
+import { ledgerAPI } from '../services/api';
 import ErrorPopup from '../components/ErrorPopup';
 import LedgerDrawer from './LedgerDrawer';
+import ServerPagination from '../components/ServerPagination';
 import { exportReportCsv, exportReportXlsx, exportReportPdf } from '../utils/reportsExport';
 import '../styles/userManagement.css';
+import '../styles/ledger.css';
 
-const Ledger = () => {
-  const { user: currentUser } = useAuth();
-  const {
-    entries, stats,
-    loading: ctxLoading,
-    loadEntries, loadStats,
-    setEntries,
-  } = useLedger();
+const emptyEntry = () => ({ transactionDate: new Date().toISOString().slice(0, 10), debitAccount: '', creditAccount: '', amount: '', description: '' });
+const money = (value) => `PKR ${Number(value || 0).toLocaleString()}`;
+
+export default function Ledger() {
+  const { user } = useAuth();
+  const { entries, loadEntries, loadStats, setEntries } = useLedger();
+  const [searchParams] = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [errorPopup, setErrorPopup] = useState(null);
-
   const [page, setPage] = useState(1);
-  const [limit] = useState(50);
-  const [totalPages, setTotalPages] = useState(1);
-  const [total, setTotal] = useState(0);
-  const [searchParams] = useSearchParams();
-  const urlSearch = searchParams.get('search') || '';
-
-  const [search, setSearch] = useState(urlSearch);
-  const [referenceType, setReferenceType] = useState('');
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
-
+  const [pagination, setPagination] = useState({ total: 0, pages: 1, limit: 20 });
+  const [summary, setSummary] = useState({ openingBalance: 0, totalDebit: 0, totalCredit: 0, closingBalance: 0 });
+  const [accounts, setAccounts] = useState([]);
   const [drawerEntry, setDrawerEntry] = useState(null);
-
-  const [committedFilters, setCommittedFilters] = useState({ search: '', referenceType: '', from: '', to: '' });
+  const [showEntryModal, setShowEntryModal] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [entryForm, setEntryForm] = useState(emptyEntry);
+  const [filters, setFilters] = useState({ search: searchParams.get('search') || '', account: '', referenceType: '', from: '', to: '' });
+  const [applied, setApplied] = useState(filters);
 
   const fetchEntries = useCallback(async () => {
+    setLoading(true);
     try {
-      setLoading(true);
-      const params = { page, limit, ...(committedFilters.search && { search: committedFilters.search }), ...(committedFilters.referenceType && { referenceType: committedFilters.referenceType }), ...(committedFilters.from && { from: committedFilters.from }), ...(committedFilters.to && { to: committedFilters.to }) };
-      const response = await loadEntries(params);
-      if (response) {
-        const list = response.entries || [];
-        setEntries(list);
-        setTotalPages(Math.ceil(response.pagination?.total / limit) || 1);
-        setTotal(response.pagination?.total || 0);
-      }
-    } catch (err) {
-      toast.error('Failed to load ledger');
-    } finally {
-      setLoading(false);
-    }
-  }, [page, limit, committedFilters, loadEntries, setEntries]);
+      const response = await loadEntries({ page, limit: pagination.limit, ...Object.fromEntries(Object.entries(applied).filter(([, value]) => value)) });
+      setEntries(response.entries || []);
+      setSummary(response.summary || {});
+      const total = response.pagination?.total || 0;
+      setPagination((prev) => ({ ...prev, total, pages: Math.max(1, Math.ceil(total / prev.limit)) }));
+    } catch { toast.error('Failed to load ledger'); }
+    finally { setLoading(false); }
+  }, [page, pagination.limit, applied, loadEntries, setEntries]);
 
-  useEffect(() => { if (currentUser) { fetchEntries(); loadStats(); } }, [currentUser, fetchEntries, loadStats]);
+  useEffect(() => { if (user) fetchEntries(); }, [user, fetchEntries]);
+  useEffect(() => { if (!user) return; ledgerAPI.getAccounts().then((res) => setAccounts(res.data?.data?.accounts || [])).catch(() => {}); }, [user]);
 
-  useEffect(() => { if (urlSearch) setSearch(urlSearch); }, [urlSearch]);
-
-  useEffect(() => {
-    if (!currentUser) return;
-    const timer = setTimeout(() => { setPage(1); }, 300);
-    return () => clearTimeout(timer);
-  }, [currentUser, committedFilters]);
-
-  const applyFilters = () => {
-    setCommittedFilters({ search, referenceType, from, to });
-    setPage(1);
+  const applyFilters = (e) => { e?.preventDefault(); setPage(1); setApplied(filters); };
+  const resetFilters = () => { const next = { search: '', account: '', referenceType: '', from: '', to: '' }; setFilters(next); setApplied(next); setPage(1); };
+  const postEntry = async (e) => {
+    e.preventDefault(); setSaving(true);
+    try {
+      await ledgerAPI.create(entryForm);
+      toast.success('Journal entry posted'); setShowEntryModal(false); setEntryForm(emptyEntry());
+      await Promise.all([fetchEntries(), loadStats()]);
+      const res = await ledgerAPI.getAccounts(); setAccounts(res.data?.data?.accounts || []);
+    } catch (err) { setErrorPopup(err.response?.data || { message: 'Failed to post journal entry' }); }
+    finally { setSaving(false); }
   };
 
-  const exportRows = entries.map(r => ({
-    transaction_date: r.transactionDate,
-    account: r.account, debit: r.debit, credit: r.credit,
-    reference_type: r.referenceType, reference_id: r.referenceId,
-    description: r.description,
-  }));
+  const exportRows = useMemo(() => entries.map((row) => ({ date: row.transactionDate ? new Date(row.transactionDate).toLocaleDateString('en-GB') : '', account: row.account, reference: `${row.referenceType || ''} ${row.referenceId || ''}`.trim(), description: row.description, debit: row.debit || 0, credit: row.credit || 0, running_balance: row.runningBalance || 0 })), [entries]);
+  const exportMeta = { generatedBy: [user?.firstName, user?.lastName].filter(Boolean).join(' ') || 'User', filters: applied };
+  const doExport = (type) => { const args = { rows: exportRows, reportName: 'General Ledger', meta: exportMeta }; if (type === 'csv') exportReportCsv(args); else if (type === 'xlsx') exportReportXlsx(args); else exportReportPdf(args); toast.success(`${type.toUpperCase()} downloaded`); };
 
-  const meta = { generatedBy: currentUser ? `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim() : 'User' };
+  return <div className="ledger-page">
+    <header className="ledger-header"><div><h1>General Ledger</h1><p>Review account movements and post manual journal entries.</p></div><div className="ledger-header-actions"><div className="ledger-export-menu"><button className="btn btn-secondary"><Download size={17}/> Export</button><div><button onClick={() => doExport('csv')}>CSV</button><button onClick={() => doExport('xlsx')}>XLSX</button><button onClick={() => doExport('pdf')}>PDF</button></div></div><button className="btn btn-primary" onClick={() => setShowEntryModal(true)}><Plus size={17}/> Journal Entry</button></div></header>
 
-  return (
-    <div className="user-management-page">
-      <div className="page-header">
-        <div className="header-content">
-          <h1>Ledger</h1>
-          <p className="subtitle">Financial transactions summary</p>
+    <form className="ledger-filters" onSubmit={applyFilters}>
+      <div className="ledger-search"><Search size={17}/><input value={filters.search} onChange={(e) => setFilters({...filters, search:e.target.value})} placeholder="Search reference, account or description"/></div>
+      <select value={filters.account} onChange={(e) => setFilters({...filters,account:e.target.value})}><option value="">All accounts</option>{accounts.map((account) => <option key={account}>{account}</option>)}</select>
+      <select value={filters.referenceType} onChange={(e) => setFilters({...filters,referenceType:e.target.value})}><option value="">All sources</option><option value="expense">Expense</option><option value="salary">Salary</option><option value="leave">Leave</option><option value="manual">Manual journal</option></select>
+      <input type="date" value={filters.from} aria-label="From date" onChange={(e) => setFilters({...filters,from:e.target.value})}/><input type="date" value={filters.to} aria-label="To date" onChange={(e) => setFilters({...filters,to:e.target.value})}/>
+      <button className="btn btn-primary" type="submit">Apply</button><button className="ledger-reset" type="button" title="Reset filters" onClick={resetFilters}><RotateCcw size={17}/></button>
+    </form>
+
+    <section className="ledger-summary">
+      <article><span className="ledger-summary-icon opening"><WalletCards size={19}/></span><div><small>Opening Balance</small><strong>{money(summary.openingBalance)}</strong></div></article>
+      <article><span className="ledger-summary-icon debit"><ArrowDownLeft size={19}/></span><div><small>Period Debit</small><strong>{money(summary.totalDebit)}</strong></div></article>
+      <article><span className="ledger-summary-icon credit"><ArrowUpRight size={19}/></span><div><small>Period Credit</small><strong>{money(summary.totalCredit)}</strong></div></article>
+      <article><span className="ledger-summary-icon balance"><Scale size={19}/></span><div><small>Closing Balance</small><strong>{money(summary.closingBalance)}</strong></div></article>
+    </section>
+
+    <ErrorPopup error={errorPopup} onClose={() => setErrorPopup(null)}/>
+    <section className="ledger-table-shell">
+      <div className="ledger-table-title"><div><BookOpen size={18}/><strong>Transactions</strong></div><span>{pagination.total} entries</span></div>
+      {loading ? <div className="ledger-state"><div className="spinner"/>Loading transactions...</div> : entries.length === 0 ? <div className="ledger-state"><BookOpen size={36}/><strong>No ledger entries</strong><span>Adjust the filters or post a journal entry.</span></div> : <>
+        <div className="desktop-only ledger-table-scroll"><table className="data-table ledger-table"><thead><tr><th>Date</th><th>Reference</th><th>Account</th><th>Description</th><th className="amount">Debit</th><th className="amount">Credit</th><th className="amount">Balance</th></tr></thead><tbody>{entries.map((entry) => <tr key={entry._id || entry.id} onClick={() => setDrawerEntry(entry)}><td>{entry.transactionDate ? new Date(entry.transactionDate).toLocaleDateString('en-GB') : '-'}</td><td><span className={`ledger-source ${entry.referenceType || 'manual'}`}>{entry.referenceType || 'manual'}</span><small>{entry.referenceId || '-'}</small></td><td><strong>{entry.account || '-'}</strong></td><td>{entry.description || '-'}</td><td className="amount debit-text">{entry.debit ? money(entry.debit) : '-'}</td><td className="amount credit-text">{entry.credit ? money(entry.credit) : '-'}</td><td className="amount"><strong>{money(entry.runningBalance)}</strong></td></tr>)}</tbody></table></div>
+        <div className="mobile-only ledger-mobile-list">{entries.map((entry) => <article key={entry._id || entry.id} onClick={() => setDrawerEntry(entry)}><header><strong>{entry.account}</strong><span>{entry.transactionDate ? new Date(entry.transactionDate).toLocaleDateString('en-GB') : '-'}</span></header><p>{entry.description}</p><div><span>Debit <b className="debit-text">{money(entry.debit)}</b></span><span>Credit <b className="credit-text">{money(entry.credit)}</b></span><span>Balance <b>{money(entry.runningBalance)}</b></span></div></article>)}</div>
+      </>}
+    </section>
+    <ServerPagination page={page} totalPages={pagination.pages} total={pagination.total} limit={pagination.limit} onPageChange={setPage} loading={loading}/>
+    <LedgerDrawer isOpen={Boolean(drawerEntry)} onClose={() => setDrawerEntry(null)} entry={drawerEntry}/>
+
+    {showEntryModal && <div className="modal-overlay" onClick={() => setShowEntryModal(false)}>
+      <form className="modal-content ledger-entry-modal" onSubmit={postEntry} onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header"><div><h3>Post Journal Entry</h3><p>Post an equal debit and credit under one journal reference.</p></div><button type="button" className="modal-close" onClick={() => setShowEntryModal(false)}>x</button></div>
+        <div className="modal-body">
+          <div className="form-row"><div className="form-group"><label>Transaction Date *</label><input type="date" required value={entryForm.transactionDate} onChange={(e) => setEntryForm({...entryForm,transactionDate:e.target.value})}/></div><div className="form-group"><label>Amount (PKR) *</label><input type="number" required min="0.01" step="0.01" value={entryForm.amount} onChange={(e) => setEntryForm({...entryForm,amount:e.target.value})} placeholder="0.00"/></div></div>
+          <datalist id="ledger-accounts">{accounts.map((account) => <option key={account} value={account}/>)}</datalist>
+          <div className="form-row"><div className="form-group"><label>Debit Account *</label><input required list="ledger-accounts" value={entryForm.debitAccount} onChange={(e) => setEntryForm({...entryForm,debitAccount:e.target.value})} placeholder="e.g. Expense"/></div><div className="form-group"><label>Credit Account *</label><input required list="ledger-accounts" value={entryForm.creditAccount} onChange={(e) => setEntryForm({...entryForm,creditAccount:e.target.value})} placeholder="e.g. Cash"/></div></div>
+          <div className="ledger-journal-check"><span>Debit {money(entryForm.amount)}</span><span>Credit {money(entryForm.amount)}</span><strong>Balanced</strong></div>
+          <div className="form-group"><label>Description *</label><textarea required rows="3" value={entryForm.description} onChange={(e) => setEntryForm({...entryForm,description:e.target.value})} placeholder="Purpose of this journal entry"/></div>
         </div>
-        <div className="header-actions" style={{ flexWrap: 'wrap', gap: '0.5rem' }}>
-          <input type="date" className="form-control" value={from} onChange={(e) => setFrom(e.target.value)} style={{ width: 140 }} />
-          <input type="date" className="form-control" value={to} onChange={(e) => setTo(e.target.value)} style={{ width: 140 }} />
-          <select className="form-control" value={referenceType} onChange={(e) => setReferenceType(e.target.value)} style={{ width: 120 }}>
-            <option value="">All Types</option>
-            <option value="expense">Expense</option>
-            <option value="salary">Salary</option>
-            <option value="manual">Manual</option>
-          </select>
-          <input className="form-control" placeholder="Search..." value={search}
-            onChange={(e) => setSearch(e.target.value)} style={{ minWidth: 160 }} />
-          <button className="btn btn-primary" onClick={applyFilters}>Apply</button>
-          <button className="btn btn-secondary" onClick={() => { exportReportCsv({ rows: exportRows, reportName: 'Ledger', meta }); toast.success('CSV downloaded'); }}>CSV</button>
-          <button className="btn btn-secondary" onClick={() => { exportReportXlsx({ rows: exportRows, reportName: 'Ledger', meta }); toast.success('XLSX downloaded'); }}>XLSX</button>
-        </div>
-      </div>
-
-      <div className="stats-grid">
-        <div className="stat-card stat-total">
-          <div className="stat-icon">📊</div>
-          <div className="stat-content">
-            <span className="stat-value">{stats.total || 0}</span>
-            <span className="stat-label">Total Entries</span>
-          </div>
-        </div>
-        <div className="stat-card" style={{ borderLeft: '4px solid #ef4444' }}>
-          <div className="stat-icon">💳</div>
-          <div className="stat-content">
-            <span className="stat-value">{Number(stats.totalDebit || 0).toLocaleString()}</span>
-            <span className="stat-label">Total Debit</span>
-          </div>
-        </div>
-        <div className="stat-card" style={{ borderLeft: '4px solid #22c55e' }}>
-          <div className="stat-icon">🏦</div>
-          <div className="stat-content">
-            <span className="stat-value">{Number(stats.totalCredit || 0).toLocaleString()}</span>
-            <span className="stat-label">Total Credit</span>
-          </div>
-        </div>
-        <div className="stat-card" style={{ borderLeft: '4px solid #3b82f6' }}>
-          <div className="stat-icon">⚖️</div>
-          <div className="stat-content">
-            <span className="stat-value">{Number(stats.balance || 0).toLocaleString()}</span>
-            <span className="stat-label">Balance</span>
-          </div>
-        </div>
-      </div>
-
-      <ErrorPopup error={errorPopup} onClose={() => setErrorPopup(null)} />
-
-      <div className="table-container desktop-only">
-        {loading ? (
-          <div className="loading-state"><div className="spinner"></div><p>Loading ledger...</p></div>
-        ) : entries.length === 0 ? (
-          <div className="empty-state">
-            <div className="empty-icon">📒</div>
-            <h3>No Ledger Entries Found</h3>
-            <p>No entries match your filter criteria.</p>
-          </div>
-        ) : (
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Account</th>
-                <th>Debit</th>
-                <th>Credit</th>
-                <th>Reference</th>
-                <th>Description</th>
-              </tr>
-            </thead>
-            <tbody>
-              {entries.map(entry => {
-                const id = entry._id || entry.id;
-                return (
-                  <tr key={id} onClick={() => setDrawerEntry(entry)} style={{ cursor: 'pointer' }}>
-                    <td>{entry.transactionDate ? new Date(entry.transactionDate).toLocaleDateString('en-GB') : '-'}</td>
-                    <td><code>{entry.account || '-'}</code></td>
-                    <td style={{ color: entry.debit ? '#dc2626' : 'inherit' }}>{entry.debit ? Number(entry.debit).toLocaleString() : '-'}</td>
-                    <td style={{ color: entry.credit ? '#16a34a' : 'inherit' }}>{entry.credit ? Number(entry.credit).toLocaleString() : '-'}</td>
-                    <td>{entry.referenceType ? `${entry.referenceType}#${entry.referenceId || ''}` : '-'}</td>
-                    <td>{entry.description || '-'}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
-      </div>
-
-      <div className="mobile-cards-container mobile-only">
-        {loading ? (
-          <div className="loading-state"><div className="spinner"></div><p>Loading ledger...</p></div>
-        ) : entries.length === 0 ? (
-          <div className="empty-state"><div className="empty-icon">📒</div><h3>No Ledger Entries Found</h3></div>
-        ) : (
-          <div className="users-cards-grid">
-            {entries.map(entry => {
-              const id = entry._id || entry.id;
-              return (
-                <div key={id} className="user-card" onClick={() => setDrawerEntry(entry)}>
-                  <div className="user-card-header">
-                    <div className="user-card-title">
-                      <span className="user-card-name">{entry.account || '-'}</span>
-                      <span className="user-card-role">{entry.referenceType || '-'}</span>
-                    </div>
-                  </div>
-                  <div className="user-card-body">
-                    <div className="user-card-field">
-                      <span className="field-label">Date</span>
-                      <span className="field-value">{entry.transactionDate ? new Date(entry.transactionDate).toLocaleDateString('en-GB') : '-'}</span>
-                    </div>
-                    <div className="user-card-field">
-                      <span className="field-label">Debit</span>
-                      <span className="field-value">{entry.debit ? Number(entry.debit).toLocaleString() : '0'}</span>
-                    </div>
-                    <div className="user-card-field">
-                      <span className="field-label">Credit</span>
-                      <span className="field-value">{entry.credit ? Number(entry.credit).toLocaleString() : '0'}</span>
-                    </div>
-                    <div className="user-card-field">
-                      <span className="field-label">Description</span>
-                      <span className="field-value">{entry.description || '-'}</span>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {totalPages > 1 && (
-        <div className="pagination">
-          <button className="btn-page" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>← Previous</button>
-          <div className="page-numbers">
-            {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-              let pn; if (totalPages <= 5) pn = i + 1;
-              else if (page <= 3) pn = i + 1;
-              else if (page >= totalPages - 2) pn = totalPages - 4 + i;
-              else pn = page - 2 + i;
-              return <button key={pn} className={`btn-page ${page === pn ? 'active' : ''}`} onClick={() => setPage(pn)}>{pn}</button>;
-            })}
-          </div>
-          <button className="btn-page" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>Next →</button>
-        </div>
-      )}
-
-      <LedgerDrawer isOpen={!!drawerEntry} onClose={() => setDrawerEntry(null)} entry={drawerEntry} />
-    </div>
-  );
-};
-
-export default Ledger;
+        <div className="modal-footer"><button type="button" className="btn btn-secondary" onClick={() => setShowEntryModal(false)}>Cancel</button><button className="btn btn-primary" disabled={saving}>{saving?'Posting...':'Post Entry'}</button></div>
+      </form>
+    </div>}
+  </div>;
+}

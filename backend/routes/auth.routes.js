@@ -305,12 +305,16 @@ router.post('/login', async (req, res, next) => {
     const logPermissionSettings = await getPermissionSettings();
     const effectivePagePermissions = resolvePagePermissions(user);
 
+    // Only mark the cookie Secure when the current request is actually HTTPS.
+    // This keeps local HTTP development (including the CRA proxy) authenticated
+    // even when the server is started with production environment variables.
+    const isHttps = req.secure || req.get('x-forwarded-proto') === 'https';
     res.cookie('token', token, {
-      httpOnly: process.env.NODE_ENV === 'production',
-      secure: process.env.NODE_ENV === 'production',
+      httpOnly: true,
+      secure: isHttps,
       path: '/',
       maxAge: 7 * 24 * 60 * 60 * 1000,
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
+      sameSite: isHttps ? 'none' : 'lax'
     });
 
     res.json({
@@ -328,7 +332,8 @@ router.post('/login', async (req, res, next) => {
             name: user.role.name,
             displayName: user.role.displayName,
             permissions: user.role.permissions || [],
-            logsPermissions: user.role.logsPermissions || []
+            logsPermissions: user.role.logsPermissions || [],
+            jobs: user.role.jobs || []
           } : null,
           customPermissions: user.customPermissions || [],
           permissions: effectivePagePermissions,
@@ -609,7 +614,8 @@ router.get('/me', authenticate, async (req, res) => {
         name: roleObj.name,
         displayName: roleObj.displayName,
         permissions: roleObj.permissions || [],
-        logsPermissions: roleObj.logsPermissions || []
+        logsPermissions: roleObj.logsPermissions || [],
+        jobs: roleObj.jobs || []
       } : req.user.role_name,
       customPermissions: req.user.customPermissions || [],
       permissions: req.user.pagePermissions,

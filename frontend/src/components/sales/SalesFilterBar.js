@@ -1,14 +1,11 @@
-import React, { useState } from 'react';
+import React from 'react';
 import SearchableSelect from '../../components/SearchableSelect';
 import {
-    FunnelIcon,
     MagnifyingGlassIcon,
     XMarkIcon,
     ArrowPathIcon,
-    ChevronDownIcon,
-    ChevronUpIcon,
-    CalendarIcon
 } from '@heroicons/react/24/outline';
+import '../../styles/sales-filter.css';
 
 function SalesFilterBar({
     filters,
@@ -22,8 +19,6 @@ function SalesFilterBar({
     showDateFilter = true,
     customFilters = null
 }) {
-    const [showAdvanced, setShowAdvanced] = useState(false);
-
     const getActiveCount = () => {
         let count = 0;
         if (filters.status) count++;
@@ -35,10 +30,10 @@ function SalesFilterBar({
     };
 
     return (
-        <div className="filter-bar card" style={{ marginBottom: '1.5rem', padding: '1rem 1.5rem' }}>
-            <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
+        <div className="filter-bar card sales-filter-bar" style={{ marginBottom: '1.5rem', padding: '1rem 1.5rem' }}>
+            <div className="sales-filter-toolbar" style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
                 {/* Search Input */}
-                <div className="search-input-wrapper" style={{ flex: '1', minWidth: '250px', maxWidth: '400px' }}>
+                <div className="search-input-wrapper" style={{ flex: '2 1 320px', minWidth: '280px', maxWidth: 'none' }}>
                     <div style={{ position: 'relative' }}>
                         <MagnifyingGlassIcon
                             style={{
@@ -79,52 +74,6 @@ function SalesFilterBar({
                     </div>
                 </div>
 
-                {/* Status Filter */}
-                {statusOptions.length > 0 && (
-                    <SearchableSelect
-                        className="form-select"
-                        value={filters.status}
-                        onChange={(e) => onFilterChange('status', e.target.value)}
-                        style={{ width: 'auto', minWidth: '140px' }}
-                    >
-                        <option value="">All Statuses</option>
-                        {statusOptions.map(s => (
-                            <option key={s.value} value={s.value}>{s.label}</option>
-                        ))}
-                    </SearchableSelect>
-                )}
-
-                {/* Advanced Toggle */}
-                <button
-                    className={`btn ${showAdvanced ? 'btn-primary' : 'btn-secondary'}`}
-                    onClick={() => setShowAdvanced(!showAdvanced)}
-                    style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
-                >
-                    <FunnelIcon style={{ width: '1rem', height: '1rem' }} />
-                    Filters
-                    {getActiveCount() > 0 && (
-                        <span style={{
-                            background: 'var(--primary-500)',
-                            color: 'white',
-                            borderRadius: '50%',
-                            width: '1.25rem',
-                            height: '1.25rem',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: '0.75rem',
-                            fontWeight: '600'
-                        }}>
-                            {getActiveCount()}
-                        </span>
-                    )}
-                    {showAdvanced ? (
-                        <ChevronUpIcon style={{ width: '1rem', height: '1rem' }} />
-                    ) : (
-                        <ChevronDownIcon style={{ width: '1rem', height: '1rem' }} />
-                    )}
-                </button>
-
                 {/* Clear */}
                 {getActiveCount() > 0 && (
                     <button
@@ -155,19 +104,33 @@ function SalesFilterBar({
                 </button>
             </div>
 
-            {/* Advanced Panel */}
-            {showAdvanced && (
-                <div
-                    className="advanced-filters-panel"
-                    style={{
+            {/* All filter options remain visible and share the available width. */}
+            <div
+                className="advanced-filters-panel sales-filter-options"
+                style={{
                         marginTop: '1rem',
                         paddingTop: '1rem',
                         borderTop: '1px solid var(--gray-200)',
                         display: 'grid',
-                        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                        gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
                         gap: '1rem'
                     }}
                 >
+                    {statusOptions.length > 0 && (
+                        <div className="form-group" style={{ marginBottom: 0 }}>
+                            <label className="form-label">Status</label>
+                            <SearchableSelect
+                                className="form-select"
+                                value={filters.status}
+                                onChange={(e) => onFilterChange('status', e.target.value)}
+                            >
+                                <option value="">All Statuses</option>
+                                {statusOptions.map(s => (
+                                    <option key={s.value} value={s.value}>{s.label}</option>
+                                ))}
+                            </SearchableSelect>
+                        </div>
+                    )}
                     {showCustomerFilter && (
                         <div className="form-group" style={{ marginBottom: 0 }}>
                             <label className="form-label">Customer</label>
@@ -209,11 +172,10 @@ function SalesFilterBar({
 
                     {customFilters}
                 </div>
-            )}
 
             {/* Filter Chips */}
             {getActiveCount() > 0 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '1rem', paddingTop: '1rem', borderTop: showAdvanced ? 'none' : '1px solid var(--gray-200)' }}>
+                <div className="sales-filter-chips" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--gray-200)' }}>
                     {filters.status && (
                         <div className="badge badge-secondary" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                             Status: {filters.status}

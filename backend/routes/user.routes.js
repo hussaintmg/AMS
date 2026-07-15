@@ -1,7 +1,7 @@
 /**
  * User Routes
- * Created by LOGIXINVENTOR (PVT) Ltd.
- * www.logixinventor.com | AMS
+ * Maintained by Hussain Developer
+ * AMS ERP
  */
 
 const express = require('express');

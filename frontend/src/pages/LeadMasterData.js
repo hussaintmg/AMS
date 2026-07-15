@@ -52,6 +52,7 @@ const styles = `
 .lead-master-card-title { font-weight: 800; color: var(--text-primary); }
 .lead-master-card-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 0.625rem; font-size: 0.8125rem; color: var(--text-secondary); }
 .lead-master-card-meta strong { display: block; color: var(--text-primary); font-size: 0.75rem; text-transform: uppercase; margin-bottom: 0.125rem; }
+.lead-master-card-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--border-light); }
 .data-table { width: 100%; border-collapse: collapse; }
 .data-table th { text-align: left; padding: 0.75rem 1rem; background: var(--bg-secondary); color: var(--text-secondary); font-weight: 600; font-size: 0.8125rem; text-transform: uppercase; user-select: none; }
 .data-table th.sortable { cursor: pointer; }
@@ -104,12 +105,6 @@ const TAB_CONFIG = [
   { key: 'cities', label: 'Cities', icon: MapPin },
 ];
 
-const LEAD_TYPE_MAPPING_OPTIONS = [
-  { value: 'parts', label: 'Parts' },
-  { value: 'vehicles', label: 'Vehicles' },
-  { value: 'services', label: 'Services' },
-];
-
 const PAGE_SIZE = 10;
 
 function LeadMasterData() {
@@ -125,11 +120,6 @@ function LeadMasterData() {
   const [statusFilter, setStatusFilter] = useState('all');
 
   const [categoryFilter, setCategoryFilter] = useState('');
-  const [mappingFilter, setMappingFilter] = useState('');
-  const [descriptionFilter, setDescriptionFilter] = useState('');
-  const [levelFilter, setLevelFilter] = useState('');
-  const [sortOrderFilter, setSortOrderFilter] = useState('');
-  const [leadCountFilter, setLeadCountFilter] = useState('');
   const [page, setPage] = useState(1);
   const [sortField, setSortField] = useState('sortOrder');
   const [sortDir, setSortDir] = useState('asc');
@@ -196,7 +186,7 @@ function LeadMasterData() {
 
   useEffect(() => { loadStats(); }, [loadStats]);
   useEffect(() => { loadItems(); }, [loadItems]);
-  useEffect(() => { setPage(1); setSelectedIds(new Set()); setDeleteAllTarget(false); }, [activeTab, searchQuery, statusFilter, categoryFilter, mappingFilter, sortField, sortDir]);
+  useEffect(() => { setPage(1); setSelectedIds(new Set()); setDeleteAllTarget(false); }, [activeTab, searchQuery, statusFilter, categoryFilter, sortField, sortDir]);
 
   const handleToggleActive = async (item) => {
     try {
@@ -295,12 +285,7 @@ function LeadMasterData() {
       if (statusFilter === 'active' && !item.isActive) return false;
       if (statusFilter === 'inactive' && item.isActive) return false;
       if (activeTab === 'types' && categoryFilter && item.category !== categoryFilter) return false;
-      if (activeTab === 'types' && mappingFilter && !(item.portalModules || []).includes(mappingFilter)) return false;
       if (searchQuery && !term(item.name).includes(term(searchQuery))) return false;
-      if (descriptionFilter && !term(item.description).includes(term(descriptionFilter))) return false;
-      if (levelFilter && !term(item.level).includes(term(levelFilter))) return false;
-      if (sortOrderFilter && !String(item.sortOrder ?? '').includes(sortOrderFilter)) return false;
-      if (leadCountFilter && !String(item.lead_count ?? '').includes(leadCountFilter)) return false;
       return true;
     });
     f.sort((a, b) => {
@@ -312,7 +297,7 @@ function LeadMasterData() {
       return sortDir === 'asc' ? cmp : -cmp;
     });
     return f;
-  }, [activeTab, categoryFilter, items, mappingFilter, sortDir, sortField, statusFilter, searchQuery, descriptionFilter, levelFilter, sortOrderFilter, leadCountFilter]);
+  }, [activeTab, categoryFilter, items, sortDir, sortField, statusFilter, searchQuery]);
 
   const totalPages = Math.max(1, Math.ceil(filteredItems.length / PAGE_SIZE));
   const pageItems = useMemo(() => {
@@ -372,53 +357,6 @@ function LeadMasterData() {
                   </th>
                 ))}
               </tr>
-              <tr className="filter-row">
-                {columns.map((c) => (
-                  <th key={`filter-${c.key}`}>
-                    {c.key === 'actions' ? null : c.key === 'isActive' ? (
-                      <select className="form-input filter-input" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} onClick={(e) => e.stopPropagation()}>
-                        <option value="all">All</option>
-                        <option value="active">Active</option>
-                        <option value="inactive">Inactive</option>
-                      </select>
-                    ) : c.key === 'name' ? (
-                      <input
-                        type="text"
-                        className="form-input filter-input"
-                        placeholder={`Search ${activeTab}...`}
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                    ) : c.key === 'category' ? (
-                      <select className="form-input filter-input" value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} onClick={(e) => e.stopPropagation()}>
-                        <option value="">All</option>
-                        <option value="vehicle">Vehicle</option>
-                        <option value="service">Service</option>
-                        <option value="parts">Parts</option>
-                        <option value="general">General</option>
-                        <option value="corporate">Corporate</option>
-                        <option value="other">Other</option>
-                      </select>
-                    ) : c.key === 'portalModules' ? (
-                      <select className="form-input filter-input" value={mappingFilter} onChange={(e) => setMappingFilter(e.target.value)} onClick={(e) => e.stopPropagation()}>
-                        <option value="">All</option>
-                        {LEAD_TYPE_MAPPING_OPTIONS.map((opt) => (
-                          <option key={opt.value} value={opt.value}>{opt.label}</option>
-                        ))}
-                      </select>
-                    ) : c.key === 'description' ? (
-                      <input type="text" className="form-input filter-input" placeholder="Filter desc..." value={descriptionFilter} onChange={(e) => setDescriptionFilter(e.target.value)} onClick={(e) => e.stopPropagation()} />
-                    ) : c.key === 'level' ? (
-                      <input type="text" className="form-input filter-input" placeholder="Filter level..." value={levelFilter} onChange={(e) => setLevelFilter(e.target.value)} onClick={(e) => e.stopPropagation()} />
-                    ) : c.key === 'sortOrder' ? (
-                      <input type="text" className="form-input filter-input" placeholder="Filter order..." value={sortOrderFilter} onChange={(e) => setSortOrderFilter(e.target.value)} onClick={(e) => e.stopPropagation()} />
-                    ) : c.key === 'lead_count' ? (
-                      <input type="text" className="form-input filter-input" placeholder="Filter leads..." value={leadCountFilter} onChange={(e) => setLeadCountFilter(e.target.value)} onClick={(e) => e.stopPropagation()} />
-                    ) : null}
-                  </th>
-                ))}
-              </tr>
             </thead>
             <tbody>
               {loading ? (
@@ -458,6 +396,10 @@ function LeadMasterData() {
                     {activeTab !== 'cities' && <div><strong>Description</strong>{item.description || '-'}</div>}
                     {isPrioritiesType && <div><strong>Level</strong>{item.level ?? '-'}</div>}
                     <div><strong>Leads</strong>{item.lead_count ?? '-'}</div>
+                  </div>
+                  <div className="lead-master-card-actions actions-cell" onClick={(e) => e.stopPropagation()}>
+                    <button className="btn-icon edit" title="Edit" onClick={() => setDrawerItem(item)}><Pencil size={16} /></button>
+                    <button className="btn-icon delete" title="Delete" onClick={() => setDeleteItem(item)}><Trash2 size={16} /></button>
                   </div>
                 </div>
               ))}
@@ -502,14 +444,42 @@ function LeadMasterData() {
               </button>
             </div>
           </div>
-          {renderTable()}
+          <div className="lead-master-filter-bar">
+            <div className="lead-master-filter-group lead-master-filter-search">
+              <label>Search</label>
+              <input type="text" className="filter-input" placeholder={`Search ${activeTab}...`} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+            </div>
+            <div className="lead-master-filter-group">
+              <label>Status</label>
+              <select className="filter-input" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+                <option value="all">All</option>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </select>
+            </div>
+            {activeTab === 'types' && (
+              <div className="lead-master-filter-group">
+                <label>Category</label>
+                <select className="filter-input" value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
+                  <option value="">All</option>
+                  <option value="vehicle">Vehicle</option>
+                  <option value="service">Service</option>
+                  <option value="parts">Parts</option>
+                  <option value="general">General</option>
+                  <option value="corporate">Corporate</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+            )}
+          </div>
           {selectedIds.size > 0 && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, marginTop: 12 }}>
-              <span style={{ fontWeight: 600, color: '#991b1b' }}>{selectedIds.size} selected</span>
-              <button className="btn btn-danger btn-sm" onClick={() => setDeleteAllTarget(true)}>Delete All</button>
+            <div className="selection-bar">
+              <span className="selection-count">{selectedIds.size} selected</span>
+              <button className="btn btn-danger btn-sm" onClick={() => setDeleteAllTarget(true)}>Delete Selected</button>
               <button className="btn btn-secondary btn-sm" onClick={() => setSelectedIds(new Set())}>Deselect All</button>
             </div>
           )}
+          {renderTable()}
           {renderPagination()}
         </div>
 

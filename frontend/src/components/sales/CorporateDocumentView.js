@@ -17,19 +17,23 @@ export function customerLabelById(customerId, customers) {
 export function saleTypeQuotationLabel(saleType) {
     const m = {
         vehicle_inventory: 'Vehicle (inventory)',
-        vehicle_branding: 'Vehicle (branding)',
-        parts: 'Parts & accessories'
+        parts: 'Parts & accessories',
+        service: 'Service'
     };
     return m[saleType] || saleType || '—';
 }
 
-export function resolveQuotationLineItem(formData, selectedItem, { vehicles, vehicleVariants, parts }) {
+export function resolveQuotationLineItem(formData, selectedItem, { vehicles, vehicleVariants, parts, serviceTypes = [] }) {
     if (selectedItem?.item_name) return selectedItem.item_name;
     if (selectedItem?.vehicle_full_name) return selectedItem.vehicle_full_name;
     if (formData.saleType === 'parts') {
         const p = parts.find((x) => String(x.id) === String(formData.partId));
         if (!p) return '—';
         return `${p.name || p.part_name} (${p.part_number}) × ${formData.partQuantity || '1'}`;
+    }
+    if (formData.saleType === 'service') {
+        const service = serviceTypes.find((x) => String(x._id || x.id) === String(formData.serviceTypeId));
+        return service?.name || selectedItem?.item_name || 'Service';
     }
     if (formData.saleType === 'vehicle_branding') {
         const vv = vehicleVariants.find((x) => String(x.id) === String(formData.vehicleVariantId));
@@ -41,20 +45,28 @@ export function resolveQuotationLineItem(formData, selectedItem, { vehicles, veh
     return `${v.make_name} ${v.model_name} ${v.variant_name} (${v.color})`;
 }
 
-export function resolveBookingVehicleLine(formData, selectedItem, vehicles) {
+export function resolveBookingVehicleLine(formData, selectedItem, vehicles, serviceTypes = []) {
     if (selectedItem?.item_name) return selectedItem.item_name;
     if (selectedItem?.vehicle_full_name) return selectedItem.vehicle_full_name;
+    if (formData.saleType === 'service') {
+        const service = serviceTypes.find((x) => String(x._id || x.id) === String(formData.serviceTypeId));
+        return service?.name || selectedItem?.item_name || 'Service';
+    }
     const v = vehicles.find((x) => String(x.variant_id || x.id) === String(formData.vehicleVariantId));
     if (!v) return '—';
     return `${v.make_name} ${v.model_name} ${v.variant_name} (${v.color})`;
 }
 
-export function resolveOrderItemLine(formData, selectedItem, vehicles, parts) {
+export function resolveOrderItemLine(formData, selectedItem, vehicles, parts, serviceTypes = []) {
     if (selectedItem?.item_name) return selectedItem.item_name;
     if (formData.saleType === 'parts') {
         const p = parts.find((x) => String(x.id) === String(formData.partId));
         if (!p) return '—';
         return `${p.name || p.part_name} (${p.part_number}) × ${formData.partQuantity || '1'}`;
+    }
+    if (formData.saleType === 'service') {
+        const service = serviceTypes.find((x) => String(x._id || x.id) === String(formData.serviceTypeId));
+        return service?.name || selectedItem?.item_name || 'Service';
     }
     const v = vehicles.find((x) => String(x.id) === String(formData.vehicleId));
     if (!v) return '—';
