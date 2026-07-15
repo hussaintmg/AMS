@@ -14,6 +14,27 @@
 .uploader-format-badge { flex: 0 0 auto; padding: .8rem 1rem; border: 1px solid rgba(255,255,255,.3); border-radius: 12px; text-align: center; font-weight: 700; background: rgba(255,255,255,.1); }
 .uploader-format-badge small { font-weight: 400; opacity: .8; }
 
+.page-header .uploader-back-button {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: .5rem;
+    min-width: 104px;
+    height: 42px;
+    padding: 0 1rem !important;
+    border: 1px solid #cbd5e1 !important;
+    border-radius: 10px !important;
+    background: #fff !important;
+    color: #334155 !important;
+    font-size: .9rem;
+    font-weight: 700;
+    box-shadow: 0 2px 6px rgba(15,23,42,.06);
+    cursor: pointer;
+    transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
+}
+.page-header .uploader-back-button span { font-size: 1.2rem; line-height: 1; }
+.page-header .uploader-back-button:hover { transform: translateY(-1px); border-color: #2563eb !important; color: #1d4ed8 !important; box-shadow: 0 5px 14px rgba(37,99,235,.16); }
+
 .upload-instruction {
     color: var(--text-secondary);
     margin-bottom: 1.5rem;
@@ -72,10 +93,15 @@
 }
 
 .browse-btn {
-    cursor: pointer;
-    margin-top: 0.5rem;
-    display: inline-block;
+    cursor: pointer; margin-top: .5rem; display: inline-flex; align-items: center; justify-content: center; gap: .55rem;
+    min-width: 172px; min-height: 48px; padding: 0 1.25rem; border-radius: 11px;
+    color: #fff; background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    font-size: .95rem; font-weight: 700; letter-spacing: .01em;
+    box-shadow: 0 8px 18px rgba(37,99,235,.25); transition: transform .18s ease, box-shadow .18s ease, filter .18s ease;
 }
+.browse-btn:hover { transform: translateY(-2px); filter: brightness(1.05); box-shadow: 0 12px 24px rgba(37,99,235,.32); }
+.browse-btn:active { transform: translateY(0); }
+.browse-btn-icon { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border: 1px solid rgba(255,255,255,.5); border-radius: 7px; font-size: 1.1rem; line-height: 1; }
 
 .upload-limits {
     margin-top: 1.5rem;

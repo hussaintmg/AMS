@@ -115,7 +115,7 @@ const OrderFormUpload = () => {
         <div className="page-container">
             <div className="page-header">
                 <h2>Order Form Upload</h2>
-                <button className="btn-secondary" onClick={() => navigate(-1)}>Back</button>
+                <button className="uploader-back-button" onClick={() => navigate(-1)} aria-label="Go back"><span aria-hidden="true">←</span> Back</button>
             </div>
 
             <div className="uploader-hero">
@@ -144,8 +144,8 @@ const OrderFormUpload = () => {
                                 </svg>
                                 <h3>Drag & Drop your file here</h3>
                                 <p className="text-muted">or</p>
-                                <label className="btn-primary browse-btn">
-                                    Browse Files
+                                <label className="browse-btn">
+                                    <span className="browse-btn-icon" aria-hidden="true">↑</span><span>Browse Files</span>
                                     <input type="file" className="file-input-hidden" accept=".xlsx,.csv" onChange={handleFileInput} />
                                 </label>
                                 <p className="upload-limits">Maximum file size: 10MB</p>
