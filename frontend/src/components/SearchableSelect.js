@@ -33,6 +33,15 @@ function computeDropdownPosition(
   };
 }
 
+function flattenNodeText(node) {
+  if (node == null || node === false) return "";
+  if (Array.isArray(node)) return node.map(flattenNodeText).join("");
+  if (typeof node === "object" && node.props) {
+    return flattenNodeText(node.props.children);
+  }
+  return String(node);
+}
+
 function parseChildrenToOptions(children) {
   if (!children) return [];
   const options = [];
@@ -40,7 +49,7 @@ function parseChildrenToOptions(children) {
     if (child && child.type === "option") {
       options.push({
         value: child.props.value != null ? String(child.props.value) : "",
-        label: child.props.children != null ? String(child.props.children) : "",
+        label: flattenNodeText(child.props.children),
         disabled: child.props.disabled || false,
       });
     }
