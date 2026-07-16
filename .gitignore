@@ -18,6 +18,6 @@ coverage/
 docs/
 tests/
 .agents
-
 md
 db_backup/
+TESTING-REPORT.md
