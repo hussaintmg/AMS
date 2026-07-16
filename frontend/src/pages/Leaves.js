@@ -83,6 +83,8 @@ const Leaves = () => {
 
   useEffect(() => { if (urlSearch) setSearch(urlSearch); }, [urlSearch]);
 
+  useEffect(() => { if (searchParams.get('action') === 'create') openModal('create'); }, []);
+
   useEffect(() => {
     if (!currentUser) return;
     const timer = setTimeout(() => { setPage(1); fetchLeaves(); }, 300);

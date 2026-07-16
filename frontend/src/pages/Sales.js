@@ -258,6 +258,7 @@ function Quotations() {
 
     useEffect(() => { fetchDropdowns(); }, [fetchDropdowns]);
     useEffect(() => { fetchData(); }, [fetchData]);
+    useEffect(() => { if (searchParams.get('action') === 'create') openModal('create'); }, []);
 
     // Rule 2 — refresh dropdown and auto-select the customer created inline
     const handleCustomerCreated = useCallback(async (created) => {
@@ -749,6 +750,7 @@ function Bookings() {
 
     useEffect(() => { fetchDropdowns(); }, [fetchDropdowns]);
     useEffect(() => { fetchData(); }, [fetchData]);
+    useEffect(() => { if (searchParams.get('action') === 'create') openModal('create'); }, []);
 
     // Rule 2 — refresh dropdown and auto-select the customer created inline
     const handleCustomerCreated = useCallback(async (created) => {
@@ -1192,6 +1194,7 @@ function SalesOrders() {
 
     useEffect(() => { fetchDropdowns(); }, [fetchDropdowns]);
     useEffect(() => { fetchData(); }, [fetchData]);
+    useEffect(() => { if (searchParams.get('action') === 'create') openModal('create'); }, []);
 
     const handleFilterChange = (key, value) => {
         setFilters(prev => ({ ...prev, [key]: value }));
@@ -2077,6 +2080,8 @@ function Invoices() {
         }
     }, [urlSearch]);
 
+    useEffect(() => { if (searchParams.get('action') === 'create') openModal('create'); }, []);
+
     // Rule 2 — refresh dropdown and auto-select the customer created inline
     const handleCustomerCreated = useCallback(async (created) => {
         try { setCustomers(await fetchAllCustomersForDropdown()); } catch (_) { /* dropdown refresh best-effort */ }
@@ -2639,13 +2644,7 @@ function Invoices() {
                 <Modal title="Create Professional Invoice" onClose={closeModal} size="large">
                     <div style={{ padding: '0 1.5rem 1.5rem', fontFamily: 'Inter, sans-serif' }}>
                         {/* Company Header Snapshot */}
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2rem', borderBottom: '2px solid #f3f4f6', paddingBottom: '1.5rem' }}>
-                            <div>
-                                <h2 style={{ margin: '0 0 0.5rem 0', color: '#111827' }}>{companyInfo?.company_name || 'My Company'}</h2>
-                                <p style={{ color: '#6b7280', margin: '0.2rem 0' }}>{companyInfo?.address || 'Company Address'}</p>
-                                <p style={{ color: '#6b7280', margin: '0.2rem 0' }}>{companyInfo?.phone} | {companyInfo?.email}</p>
-                                {companyInfo?.tax_id && <p style={{ color: '#6b7280', margin: '0.2rem 0' }}>NTN: {companyInfo.tax_id}</p>}
-                            </div>
+                        <div className="invoice-form-header">
                             <div style={{ textAlign: 'right' }}>
                                 <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#374151', marginBottom: '0.5rem' }}>NEW INVOICE</div>
                                 <div style={{ color: '#6b7280' }}>DRAFT</div>
@@ -2654,9 +2653,9 @@ function Invoices() {
                         </div>
 
                         <form onSubmit={handleSubmit}>
-                            <div style={{ display: 'flex', gap: '2rem' }}>
+                            <div className="invoice-form-layout">
                                 {/* Left Col */}
-                                <div style={{ flex: 2 }}>
+                                <div className="invoice-form-left">
                                     <div className="form-row">
                                         <div className="form-group" style={{ flex: 2 }}>
                                             <label>Customer * <CustomerQuickCreate onCreated={handleCustomerCreated} /></label>
@@ -2684,8 +2683,8 @@ function Invoices() {
                                         </div>
                                         <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
                                             {formData.items.map((item, index) => (
-                                                <div key={index} style={{ display: 'flex', gap: '0.75rem', marginBottom: '0.75rem', alignItems: 'flex-start', paddingBottom: '0.75rem', borderBottom: '1px solid #f3f4f6' }}>
-                                                    <div style={{ flex: 3 }}>
+                                                <div key={index} className="invoice-line-item-row">
+                                                    <div className="invoice-line-item-desc">
                                                         <label style={{ fontSize: '0.75rem' }}>Description</label>
                                                         {formData.invoiceType === 'service' ? (
                                                             <SearchableSelect
@@ -2705,19 +2704,19 @@ function Invoices() {
                                                             <input type="text" value={item.description} onChange={(e) => handleItemChange(index, 'description', e.target.value)} required placeholder="Item Name / Service" />
                                                         )}
                                                     </div>
-                                                    <div style={{ flex: 1 }}>
+                                                    <div className="invoice-line-item-qty">
                                                         <label style={{ fontSize: '0.75rem' }}>Qty</label>
                                                         <input type="number" value={item.quantity} onChange={(e) => handleItemChange(index, 'quantity', e.target.value)} required min="1" />
                                                     </div>
-                                                    <div style={{ flex: 1.5 }}>
+                                                    <div className="invoice-line-item-price">
                                                         <label style={{ fontSize: '0.75rem' }}>Price</label>
                                                         <input type="number" value={item.unitPrice} onChange={(e) => handleItemChange(index, 'unitPrice', e.target.value)} required min="0" />
                                                     </div>
-                                                    <div style={{ flex: 1 }}>
+                                                    <div className="invoice-line-item-tax">
                                                         <label style={{ fontSize: '0.75rem' }}>Tax {((formData.invoiceType === 'service' ? serviceTax : salesTax) ? `(${(formData.invoiceType === 'service' ? serviceTax : salesTax).tax_name} ${(formData.invoiceType === 'service' ? serviceTax : salesTax).tax_rate}%)` : '')}</label>
                                                         <input type="number" value={item.taxAmount} onChange={(e) => handleItemChange(index, 'taxAmount', e.target.value)} min="0" />
                                                     </div>
-                                                    <div style={{ paddingTop: '1.5rem' }}>
+                                                    <div className="invoice-line-item-actions">
                                                         {formData.items.length > 1 && (
                                                             <button type="button" className="btn btn-danger btn-sm" onClick={() => removeItem(index)} title="Remove Item">
                                                                 <span className="material-icons" style={{ fontSize: '16px' }}>delete</span>
@@ -2731,7 +2730,7 @@ function Invoices() {
                                 </div>
 
                                 {/* Right Col */}
-                                <div style={{ flex: 1, background: '#f9fafb', padding: '1.5rem', borderRadius: '12px' }}>
+                                <div className="invoice-summary">
                                     <h5 style={{ marginTop: 0, marginBottom: '1.5rem', color: '#374151' }}>Summary</h5>
 
                                     <div className="form-group">

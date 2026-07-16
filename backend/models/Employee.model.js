@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const searchPlugin = require('../plugins/searchPlugin');
 
 const employeeSchema = new mongoose.Schema({
   employeeCode: { type: String, trim: true },
@@ -28,6 +29,6 @@ employeeSchema.index({ department: 1 });
 employeeSchema.index({ isActive: 1 });
 employeeSchema.index({ isDeleted: 1 });
 
+employeeSchema.plugin(searchPlugin, { entityType: 'employee' });
 const Employee = mongoose.model('Employee', employeeSchema);
-
 module.exports = Employee;

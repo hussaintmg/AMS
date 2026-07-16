@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const searchPlugin = require('../plugins/searchPlugin');
 
 const pdfTemplateSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true },
@@ -11,4 +12,6 @@ const pdfTemplateSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 pdfTemplateSchema.index({ documentType: 1, name: 1 }, { unique: true });
-module.exports = mongoose.model('PdfTemplate', pdfTemplateSchema);
+pdfTemplateSchema.plugin(searchPlugin, { entityType: 'pdf_template' });
+const PdfTemplate = mongoose.model('PdfTemplate', pdfTemplateSchema);
+module.exports = PdfTemplate;

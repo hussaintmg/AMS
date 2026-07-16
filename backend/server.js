@@ -297,6 +297,21 @@ const startServer = async () => {
 
     initSocket(server);
 
+    // Register all searchable modules
+    const { registerAll } = require('./services/registerModules');
+    registerAll();
+    logger.info(`Search registry initialized with ${require('./services/searchRegistry').getAllModules().length} modules`);
+
+    // Auto-rebuild search index on startup (async, non-blocking)
+    const { rebuild } = require('./services/searchIndex.service');
+    setTimeout(() => {
+      rebuild().then(count => {
+        logger.info(`Search index rebuilt: ${count} documents indexed`);
+      }).catch(err => {
+        logger.warn(`Search index rebuild skipped: ${err.message}`);
+      });
+    }, 3000);
+
     const fs = require('fs');
     const emailAssetDirs = [
       path.join(__dirname, 'uploads', 'email-assets'),

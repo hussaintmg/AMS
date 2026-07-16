@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const searchPlugin = require('../plugins/searchPlugin');
 
 const salesOrderItemSchema = new mongoose.Schema({
   description: { type: String },
@@ -50,6 +51,6 @@ salesOrderSchema.index({ orderNumber: 1 });
 salesOrderSchema.index({ customer: 1 });
 salesOrderSchema.index({ status: 1 });
 
+salesOrderSchema.plugin(searchPlugin, { entityType: 'order' });
 const SalesOrder = mongoose.model('SalesOrder', salesOrderSchema);
-
 module.exports = SalesOrder;

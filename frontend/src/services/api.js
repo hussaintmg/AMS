@@ -694,8 +694,17 @@ export const profileAPI = {
 
 // Global Search API
 export const searchAPI = {
-    search: (query, limit = 20, type = 'all', config = {}) => api.get('/search', { ...config, params: { q: query, query, limit, type, ...(config.params || {}) } }),
-    suggest: (query, config = {}) => api.get('/search/suggest', { ...config, params: { q: query, ...(config.params || {}) } })
+    search: (query, limit = 20, type = 'all', config = {}) => api.get('/search', { ...config, params: { q: query, query, limit, type, page: config.page || 1, ...(config.params || {}) } }),
+    suggest: (query, config = {}) => api.get('/search/suggest', { ...config, params: { q: query, ...(config.params || {}) } }),
+    recordClick: (data) => api.post('/search/click', data),
+    history: () => api.get('/search/history'),
+    clearHistory: () => api.delete('/search/history'),
+    popular: (limit = 20) => api.get('/search/popular', { params: { limit } }),
+    analytics: (params) => api.get('/search/analytics', { params }),
+    getConfig: () => api.get('/search/config'),
+    saveConfig: (data) => api.put('/search/config', data),
+    getModules: () => api.get('/search/modules'),
+    rebuild: () => api.post('/search/rebuild'),
 };
 
 // Order Form Customers API

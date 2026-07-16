@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const searchPlugin = require('../plugins/searchPlugin');
 
 const departmentSchema = new mongoose.Schema({
   name: {
@@ -64,6 +65,6 @@ departmentSchema.index({ parent: 1 });
 departmentSchema.index({ manager: 1 });
 departmentSchema.index({ isActive: 1 });
 
+departmentSchema.plugin(searchPlugin, { entityType: 'department' });
 const Department = mongoose.model('Department', departmentSchema);
-
 module.exports = Department;

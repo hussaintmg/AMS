@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const searchPlugin = require('../plugins/searchPlugin');
 
 const categorySchema = new mongoose.Schema({
   name: { type: String, trim: true },
@@ -48,6 +49,6 @@ partSchema.index({ sku: 1 });
 partSchema.index({ name: 1 });
 partSchema.index({ isActive: 1 });
 
+partSchema.plugin(searchPlugin, { entityType: 'part' });
 const Part = mongoose.model('Part', partSchema);
-
 module.exports = Part;

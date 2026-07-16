@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const searchPlugin = require('../plugins/searchPlugin');
 
 const statusItemSchema = new mongoose.Schema({
   collection: {
@@ -29,4 +30,6 @@ statusItemSchema.index({ collection: 1, value: 1 }, { unique: true });
 statusItemSchema.index({ collection: 1, order: 1 });
 statusItemSchema.index({ collection: 1, isActive: 1 });
 
-module.exports = mongoose.model('StatusItem', statusItemSchema);
+statusItemSchema.plugin(searchPlugin, { entityType: 'status_item' });
+const StatusItem = mongoose.model('StatusItem', statusItemSchema);
+module.exports = StatusItem;

@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const searchPlugin = require('../plugins/searchPlugin');
 
 const ledgerEntrySchema = new mongoose.Schema({
   transactionDate: { type: Date },
@@ -19,6 +20,6 @@ ledgerEntrySchema.index({ account: 1 });
 ledgerEntrySchema.index({ referenceType: 1, referenceId: 1 });
 ledgerEntrySchema.index({ isDeleted: 1 });
 
+ledgerEntrySchema.plugin(searchPlugin, { entityType: 'ledger' });
 const LedgerEntry = mongoose.model('LedgerEntry', ledgerEntrySchema);
-
 module.exports = LedgerEntry;

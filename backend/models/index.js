@@ -10,6 +10,7 @@ const Booking = require('./Booking.model');
 const SalesOrder = require('./SalesOrder.model');
 const Invoice = require('./Invoice.model');
 const Payment = require('./Payment.model');
+const PaymentMethod = require('./PaymentMethod.model');
 const ServiceAppointment = require('./ServiceAppointment.model');
 const JobCard = require('./JobCard.model');
 const Employee = require('./Employee.model');
@@ -46,6 +47,9 @@ const PdfUsage = require('./PdfUsage.model');
 const PdfVariable = require('./PdfVariable.model');
 const Notification = require('./Notification.model');
 const SearchDocument = require('./SearchDocument.model');
+const SearchAnalytics = require('./SearchAnalytics.model');
+const SearchHistory = require('./SearchHistory.model');
+const SearchConfig = require('./SearchConfig.model');
 const { VehicleMake, VehicleModel, VehicleVariant, VehicleColor, PartCategory, Supplier } = require('./VehicleMaster.model');
 
 module.exports = {
@@ -61,6 +65,7 @@ module.exports = {
   SalesOrder,
   Invoice,
   Payment,
+  PaymentMethod,
   ServiceAppointment,
   JobCard,
   Employee,
@@ -97,6 +102,9 @@ module.exports = {
   PdfVariable,
   Notification,
   SearchDocument,
+  SearchAnalytics,
+  SearchHistory,
+  SearchConfig,
   VehicleMake,
   VehicleModel,
   VehicleVariant,

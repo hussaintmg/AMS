@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const searchPlugin = require('../plugins/searchPlugin');
 
 const invoiceItemSchema = new mongoose.Schema({
   description: { type: String },
@@ -39,6 +40,6 @@ invoiceSchema.index({ customer: 1 });
 invoiceSchema.index({ salesOrder: 1 });
 invoiceSchema.index({ status: 1 });
 
+invoiceSchema.plugin(searchPlugin, { entityType: 'invoice' });
 const Invoice = mongoose.model('Invoice', invoiceSchema);
-
 module.exports = Invoice;

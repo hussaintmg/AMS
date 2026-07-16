@@ -46,13 +46,16 @@
 
 /* Stats Grid */
 .parts-inventory-page .stats-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    display: flex;
+    flex-wrap: wrap;
     gap: 1rem;
     margin-bottom: 1.5rem;
+    width: 100%;
 }
 
 .parts-inventory-page .stat-card {
+    flex: 1 1 200px;
+    min-width: 180px;
     background: white;
     border-radius: 12px;
     padding: 1.25rem;

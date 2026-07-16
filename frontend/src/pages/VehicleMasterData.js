@@ -1008,7 +1008,7 @@ const VehicleMasterData = () => {
             </div>
 
             {/* Stats Cards */}
-            <div className="stats-grid stats-grid-7">
+            <div className="stats-grid stats-grid-5">
                 <div className={`stat-card ${activeTab === 'makes' ? 'active' : ''}`} onClick={() => setActiveTab('makes')} data-section="brands">
                     <div className="stat-icon">🏭</div>
                     <div className="stat-content">

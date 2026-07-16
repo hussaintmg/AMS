@@ -72,8 +72,16 @@ function LeadsPage() {
   };
 
   useEffect(() => {
-    const requestedId = urlParams.get('open');
-    if (requestedId) setDrawerId(requestedId);
+    const searchParam = urlParams.get('search');
+    const openParam = urlParams.get('open');
+    const actionParam = urlParams.get('action');
+    if (openParam) setDrawerId(openParam);
+    if (actionParam === 'create') setShowForm(true);
+    if (searchParam) {
+      setSearchInput(searchParam);
+      handleSearch(searchParam);
+      setTimeout(() => loadLeads(1), 0);
+    }
   }, []);
 
   useEffect(() => {
@@ -92,10 +100,6 @@ function LeadsPage() {
   useEffect(() => {
     if (search !== searchInput) loadLeads(1);
   }, [search]);
-
-  useEffect(() => {
-    loadLeads(pagination.page);
-  }, []);
 
   useEffect(() => {
     loadLeads(1);

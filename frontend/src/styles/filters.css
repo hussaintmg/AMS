@@ -97,6 +97,15 @@
     margin-top: 0;
 }
 
+/* Filter actions */
+.filter-actions {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 8px;
+  white-space: nowrap;
+}
+
 /* Reset button */
 .filter-reset-btn {
     display: flex;

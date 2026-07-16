@@ -48,8 +48,10 @@ async function syncFromUser(user, actorId = user?._id) {
 async function syncFromCustomer(customer, actorId, { syncStatus = false } = {}) {
   if (!customer?._id) return;
   const updatedBy = actorId || customer.updatedBy || null;
+  const fullName = [customer.firstName, customer.lastName].filter(Boolean).join(' ').trim();
   const fields = {
     firstName: customer.firstName || '', lastName: customer.lastName || '',
+    fullName,
     email: customer.email || '', phone: customer.phone || '',
     isActive: customer.isActive !== false,
     updatedBy,

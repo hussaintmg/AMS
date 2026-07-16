@@ -1,16 +1,12 @@
 /**
  * Global Search Routes
- * Maintained by Hussain Developer
- * hussaintmerng@gmail.com | +92 319 1634446
- * AMS ERP
- * Date: 2026-01-11
+ * AMS ERP Global Search System
  */
 
 const express = require('express');
 const router = express.Router();
-const globalSearchController = require('../controllers/global-search.controller');
+const controller = require('../controllers/global-search.controller');
 const { authenticate, authorize } = require('../middleware/auth');
-const { rebuildWithLog } = require('../services/searchIndex.service');
 const searchRateLimit = require('../middleware/searchRateLimit');
 
 /**
@@ -24,58 +20,142 @@ const searchRateLimit = require('../middleware/searchRateLimit');
  * @swagger
  * /api/search:
  *   get:
- *     summary: Perform a global search across leads, customers, vehicles, etc.
+ *     summary: Search across all ERP modules
  *     tags: [Global Search]
  *     security:
  *       - bearerAuth: []
  *     parameters:
  *       - in: query
- *         name: query
+ *         name: q
  *         required: true
  *         schema:
  *           type: string
- *           minLength: 3
- *         description: Search term (at least 3 characters)
+ *         description: Search query
+ *       - in: query
+ *         name: type
+ *         schema:
+ *           type: string
+ *         description: Filter by entity type (optional)
  *       - in: query
  *         name: limit
  *         schema:
  *           type: integer
- *           default: 20
- *         description: Maximum number of results to return
+ *           default: 10
+ *         description: Results per module
  *     responses:
  *       200:
- *         description: Search results retrieved successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                 count:
- *                   type: integer
- *                 data:
- *                   type: array
- *                   items:
- *                     type: object
- *                     properties:
- *                       type:
- *                         type: string
- *                       title:
- *                         type: string
- *                       subtitle:
- *                         type: string
- *                       id:
- *                         type: integer
- *                       link:
- *                         type: string
- *       400:
- *         description: Search query too short
- *       500:
- *         description: Server error
+ *         description: Search results
  */
-router.get('/', authenticate, searchRateLimit, globalSearchController.search);
-router.get('/suggest', authenticate, searchRateLimit, globalSearchController.suggest);
-router.post('/rebuild', authenticate, authorize('super_admin'), async (req,res,next)=>{try{const count=await rebuildWithLog(req.user.id);res.json({success:true,data:{count},message:'Search index rebuilt'})}catch(e){next(e)}});
+router.get('/', authenticate, searchRateLimit, controller.search);
+
+/**
+ * @swagger
+ * /api/search/suggest:
+ *   get:
+ *     summary: Get autocomplete suggestions
+ *     tags: [Global Search]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.get('/suggest', authenticate, searchRateLimit, controller.suggest);
+
+/**
+ * @swagger
+ * /api/search/click:
+ *   post:
+ *     summary: Record a search click for analytics
+ *     tags: [Global Search]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.post('/click', authenticate, controller.click);
+
+/**
+ * @swagger
+ * /api/search/history:
+ *   get:
+ *     summary: Get current user's search history
+ *     tags: [Global Search]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.get('/history', authenticate, controller.history);
+
+/**
+ * @swagger
+ * /api/search/history:
+ *   delete:
+ *     summary: Clear current user's search history
+ *     tags: [Global Search]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.delete('/history', authenticate, controller.clearHistory);
+
+/**
+ * @swagger
+ * /api/search/popular:
+ *   get:
+ *     summary: Get popular searches across all users
+ *     tags: [Global Search]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.get('/popular', authenticate, controller.popular);
+
+/**
+ * @swagger
+ * /api/search/analytics:
+ *   get:
+ *     summary: Get search analytics (admin only)
+ *     tags: [Global Search]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.get('/analytics', authenticate, authorize('super_admin'), controller.analytics);
+
+/**
+ * @swagger
+ * /api/search/config:
+ *   get:
+ *     summary: Get global search configuration
+ *     tags: [Global Search]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.get('/config', authenticate, controller.config);
+
+/**
+ * @swagger
+ * /api/search/config:
+ *   put:
+ *     summary: Update global search configuration (admin only)
+ *     tags: [Global Search]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.put('/config', authenticate, authorize('super_admin'), controller.saveConfig);
+
+/**
+ * @swagger
+ * /api/search/modules:
+ *   get:
+ *     summary: Get search module configurations
+ *     tags: [Global Search]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.get('/modules', authenticate, controller.modulesConfig);
+
+/**
+ * @swagger
+ * /api/search/rebuild:
+ *   post:
+ *     summary: Rebuild the entire search index (super admin only)
+ *     tags: [Global Search]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.post('/rebuild', authenticate, authorize('super_admin'), controller.rebuild);
 
 module.exports = router;

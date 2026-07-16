@@ -327,6 +327,7 @@ router.post('/login', async (req, res, next) => {
           email: user.email,
           firstName: user.firstName,
           lastName: user.lastName,
+          fullName: user.fullName,
           role: user.role ? {
             id: user.role._id.toString(),
             name: user.role.name,
@@ -607,6 +608,7 @@ router.get('/me', authenticate, async (req, res) => {
       email: req.user.email,
       firstName: req.user.firstName,
       lastName: req.user.lastName,
+      fullName: req.user.fullName,
       phone: req.user.phone,
       avatar: getPublicFileUrl(req.user.avatar),
       role: roleObj ? {

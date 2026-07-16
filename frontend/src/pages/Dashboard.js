@@ -818,61 +818,6 @@ function Dashboard() {
                     </div>
                 )}
             </div>
-
-            <div className="chart-card">
-                <div className="chart-card-header">
-                    <h3 className="chart-card-title">
-                        <span className="material-icons chart-title-mi" aria-hidden>bolt</span>
-                        Shortcuts
-                    </h3>
-                </div>
-                <div className="quick-actions">
-                    <Link to="/leads" className="quick-action-btn">
-                        <span className="material-icons quick-mi">person_add_alt</span>
-                        <span>Leads</span>
-                    </Link>
-                    <Link to="/customers" className="quick-action-btn">
-                        <span className="material-icons quick-mi">contacts</span>
-                        <span>Customers</span>
-                    </Link>
-                    <Link to="/vehicles" className="quick-action-btn">
-                        <span className="material-icons quick-mi">directions_car</span>
-                        <span>Vehicles</span>
-                    </Link>
-                    <Link to="/quotations" className="quick-action-btn">
-                        <span className="material-icons quick-mi">description</span>
-                        <span>Quotations</span>
-                    </Link>
-                    <Link to="/booking" className="quick-action-btn">
-                        <span className="material-icons quick-mi">event_note</span>
-                        <span>Bookings</span>
-                    </Link>
-                    <Link to="/service/appointments" className="quick-action-btn">
-                        <span className="material-icons quick-mi">calendar_month</span>
-                        <span>Service</span>
-                    </Link>
-                    <Link to="/reports" className="quick-action-btn">
-                        <span className="material-icons quick-mi">analytics</span>
-                        <span>Reports</span>
-                    </Link>
-                    <Link to="/masterdata" className="quick-action-btn">
-                        <span className="material-icons quick-mi">dataset</span>
-                        <span>Master data</span>
-                    </Link>
-                    {isAdmin && (
-                        <>
-                            <Link to="/admin/users" className="quick-action-btn">
-                                <span className="material-icons quick-mi">manage_accounts</span>
-                                <span>Users</span>
-                            </Link>
-                            <Link to="/settings" className="quick-action-btn">
-                                <span className="material-icons quick-mi">tune</span>
-                                <span>Settings</span>
-                            </Link>
-                        </>
-                    )}
-                </div>
-            </div>
         </div>
     );
 }

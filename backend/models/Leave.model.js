@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const searchPlugin = require('../plugins/searchPlugin');
 
 const leaveSchema = new mongoose.Schema({
   employee: { type: mongoose.Schema.Types.ObjectId, ref: 'Employee' },
@@ -21,6 +22,6 @@ leaveSchema.index({ employee: 1 });
 leaveSchema.index({ status: 1 });
 leaveSchema.index({ isDeleted: 1 });
 
+leaveSchema.plugin(searchPlugin, { entityType: 'leave' });
 const Leave = mongoose.model('Leave', leaveSchema);
-
 module.exports = Leave;

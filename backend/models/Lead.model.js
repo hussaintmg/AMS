@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const searchPlugin = require('../plugins/searchPlugin');
 
 const activitySchema = new mongoose.Schema({
   type: { type: String, enum: ['created', 'updated', 'status_change', 'assignment_change', 'note_added', 'attachment_added', 'converted', 'deactivated', 'reactivated'], required: true },
@@ -86,4 +87,6 @@ leadSchema.index({ nextFollowUpAt: 1 });
 leadSchema.index({ customerType: 1 });
 leadSchema.index({ isActive: 1, deletedAt: 1 });
 
-module.exports = mongoose.model('Lead', leadSchema);
+leadSchema.plugin(searchPlugin, { entityType: 'lead' });
+const Lead = mongoose.model('Lead', leadSchema);
+module.exports = Lead;

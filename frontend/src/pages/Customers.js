@@ -87,6 +87,10 @@ function CustomersPage() {
   }, [searchInput]);
 
   useEffect(() => {
+    if (urlParams.get('action') === 'create') setShowForm(true);
+  }, []);
+
+  useEffect(() => {
     if (search !== searchInput) loadCustomers(1);
   }, [search]);
 

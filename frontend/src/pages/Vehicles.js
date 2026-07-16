@@ -234,6 +234,8 @@ const Vehicles = () => {
     }
   }, [urlSearch]);
 
+  useEffect(() => { if (searchParams.get('action') === 'create') openModal('create'); }, []);
+
   // Debounce search
   useEffect(() => {
     const timer = setTimeout(() => {

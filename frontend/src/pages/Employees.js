@@ -123,6 +123,8 @@ const Employees = () => {
     if (urlSearch) setSearch(urlSearch);
   }, [urlSearch]);
 
+  useEffect(() => { if (searchParams.get('action') === 'create') openModal('create'); }, []);
+
   useEffect(() => {
     if (!currentUser) return;
     const timer = setTimeout(() => {

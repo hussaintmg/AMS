@@ -31,8 +31,9 @@ const statusController = require('../controllers/statusManagement.controller');
 // ── User Management (read: users page permission, write: super_admin) ──
 router.get('/users/stats', authenticate, authorizePage('users'), userController.getUserStats);
 router.get('/users', authenticate, authorizePage('users'), userController.getAllUsers);
-router.get('/users/:id', authenticate, authorizePage('users'), userController.getUserById);
+router.post('/users/fix-fullname', authenticate, authorize('super_admin'), userController.fixAllUsersFullName);
 router.post('/users', authenticate, authorize('super_admin'), userController.createUser);
+router.get('/users/:id', authenticate, authorizePage('users'), userController.getUserById);
 router.put('/users/:id', authenticate, authorize('super_admin'), userController.updateUser);
 router.delete('/users/:id', authenticate, authorize('super_admin'), userController.deleteUser);
 router.patch('/users/:id/status', authenticate, authorize('super_admin'), userController.toggleUserStatus);

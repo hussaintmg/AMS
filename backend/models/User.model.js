@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
 const { v4: uuidv4 } = require("uuid");
+const searchPlugin = require('../plugins/searchPlugin');
 
 const refreshTokenSchema = new mongoose.Schema(
   {
@@ -96,6 +97,11 @@ const userSchema = new mongoose.Schema(
       trim: true,
     },
     lastName: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    fullName: {
       type: String,
       trim: true,
       default: "",
@@ -276,6 +282,7 @@ userSchema.pre("save", async function () {
   if (this.isModified("status")) {
     this.isActive = this.status === "active";
   }
+  this.fullName = [this.firstName, this.lastName].filter(Boolean).join(" ").trim();
   if (!this.isModified("password")) return;
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);
@@ -298,6 +305,6 @@ userSchema.statics.findByEmailWithPassword = function (email) {
     .populate("role");
 };
 
+userSchema.plugin(searchPlugin, { entityType: 'user' });
 const User = mongoose.model("User", userSchema);
-
 module.exports = User;

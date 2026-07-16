@@ -81,6 +81,7 @@ const getAllUsers = async (req, res, next) => {
         { email: re },
         { firstName: re },
         { lastName: re },
+        { fullName: re },
         { employeeId: re },
         { phone: re },
         { designation: re },
@@ -101,7 +102,7 @@ const getAllUsers = async (req, res, next) => {
 
     const [users, total] = await Promise.all([
       User.find(query)
-        .select('email firstName lastName phone role status department isActive employeeId createdAt lastLogin designation')
+        .select('email firstName lastName fullName phone role status department isActive employeeId createdAt lastLogin designation')
         .populate('role', 'name displayName')
         .populate({
           path: 'department',
@@ -223,7 +224,7 @@ const createUser = async (req, res, next) => {
     });
 
     const populated = await User.findById(user._id)
-      .select('email firstName lastName phone role status department isActive createdAt')
+      .select('email firstName lastName fullName phone role status department isActive createdAt')
       .populate('role', 'name displayName')
       .populate('department', 'name code')
       .lean();
@@ -318,7 +319,7 @@ const updateUser = async (req, res, next) => {
     await syncFromUser(user, req.user?.id || req.user?._id);
 
     const populated = await User.findById(user._id)
-      .select('email firstName lastName phone role status department isActive createdAt')
+      .select('email firstName lastName fullName phone role status department isActive createdAt')
       .populate('role', 'name displayName')
       .populate('department', 'name code')
       .lean();
@@ -510,8 +511,23 @@ const resetPassword = async (req, res, next) => {
   }
 };
 
+const fixAllUsersFullName = async (req, res, next) => {
+  try {
+    const users = await User.find({}).select('firstName lastName').lean();
+    let updated = 0;
+    for (const user of users) {
+      const fullName = [user.firstName, user.lastName].filter(Boolean).join(' ').trim();
+      await User.updateOne({ _id: user._id }, { $set: { fullName } });
+      updated++;
+    }
+    res.json({ success: true, message: `Full name fixed for ${updated} users`, data: { updated } });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getAllUsers, getUserById, createUser, updateUser, deleteUser,
   toggleUserStatus, assignRole, assignDepartment, removeDepartment,
-  resetPassword, getUserStats,
+  resetPassword, getUserStats, fixAllUsersFullName,
 };

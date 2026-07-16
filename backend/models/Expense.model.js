@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const searchPlugin = require('../plugins/searchPlugin');
 
 const expenseSchema = new mongoose.Schema({
   expenseNumber: { type: String, trim: true },
@@ -23,6 +24,6 @@ expenseSchema.index({ category: 1 });
 expenseSchema.index({ status: 1 });
 expenseSchema.index({ isDeleted: 1 });
 
+expenseSchema.plugin(searchPlugin, { entityType: 'expense' });
 const Expense = mongoose.model('Expense', expenseSchema);
-
 module.exports = Expense;

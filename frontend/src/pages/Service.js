@@ -137,6 +137,7 @@ function Appointments() {
   }, []);
 
   useEffect(() => { fetchData(); fetchDropdowns(); }, [fetchData, fetchDropdowns]);
+  useEffect(() => { if (searchParams.get('action') === 'create') openModal('create'); }, []);
 
   const updateFilter = (name, value) => {
     setFilters((prev) => ({ ...prev, [name]: value }));
@@ -533,6 +534,7 @@ function JobCards() {
   }, []);
 
   useEffect(() => { fetchData(); fetchDropdowns(); }, [fetchData, fetchDropdowns]);
+  useEffect(() => { if (searchParams.get('action') === 'create') openModal('create'); }, []);
 
   const updateFilter = (name, value) => {
     setFilters((prev) => ({ ...prev, [name]: value }));

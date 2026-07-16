@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const searchPlugin = require('../plugins/searchPlugin');
 
 const serviceTypeSnapshotSchema = new mongoose.Schema({
   name: { type: String, trim: true },
@@ -41,6 +42,6 @@ serviceAppointmentSchema.index({ customer: 1 });
 serviceAppointmentSchema.index({ status: 1 });
 serviceAppointmentSchema.index({ appointmentDate: 1 });
 
+serviceAppointmentSchema.plugin(searchPlugin, { entityType: 'service_appointment' });
 const ServiceAppointment = mongoose.model('ServiceAppointment', serviceAppointmentSchema);
-
 module.exports = ServiceAppointment;

@@ -47,6 +47,13 @@ export default function Ledger() {
   useEffect(() => { if (user) fetchEntries(); }, [user, fetchEntries]);
   useEffect(() => { if (!user) return; ledgerAPI.getAccounts().then((res) => setAccounts(res.data?.data?.accounts || [])).catch(() => {}); }, [user]);
 
+  useEffect(() => {
+    if (!showEntryModal) return;
+    const handler = (e) => { if (e.key === 'Escape') setShowEntryModal(false); };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [showEntryModal]);
+
   const applyFilters = (e) => { e?.preventDefault(); setPage(1); setApplied(filters); };
   const resetFilters = () => { const next = { search: '', account: '', referenceType: '', from: '', to: '' }; setFilters(next); setApplied(next); setPage(1); };
   const postEntry = async (e) => {

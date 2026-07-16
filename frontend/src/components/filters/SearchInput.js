@@ -22,7 +22,13 @@ export default function SearchInput({ value = '', onChange, placeholder = 'Searc
                 onChange={handleChange}
             />
             {value && (
-                <button type="button" className="filter-clear-btn" onClick={handleClear} title="Clear search">
+                <button
+                    type="button"
+                    className="filter-clear-btn"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={handleClear}
+                    title="Clear search"
+                >
                     ×
                 </button>
             )}

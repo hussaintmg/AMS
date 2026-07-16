@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const searchPlugin = require('../plugins/searchPlugin');
 
 const quotationItemSchema = new mongoose.Schema({
   description: { type: String },
@@ -42,6 +43,6 @@ quotationSchema.index({ quotationNumber: 1 });
 quotationSchema.index({ customer: 1 });
 quotationSchema.index({ status: 1 });
 
+quotationSchema.plugin(searchPlugin, { entityType: 'quotation' });
 const Quotation = mongoose.model('Quotation', quotationSchema);
-
 module.exports = Quotation;

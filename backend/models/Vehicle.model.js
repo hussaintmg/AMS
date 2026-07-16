@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const searchPlugin = require('../plugins/searchPlugin');
 
 const brandSchema = new mongoose.Schema({
   name: { type: String, trim: true },
@@ -85,6 +86,6 @@ vehicleSchema.index({ registrationNumber: 1 });
 vehicleSchema.index({ status: 1 });
 vehicleSchema.index({ isActive: 1 });
 
+vehicleSchema.plugin(searchPlugin, { entityType: 'vehicle' });
 const Vehicle = mongoose.model('Vehicle', vehicleSchema);
-
 module.exports = Vehicle;

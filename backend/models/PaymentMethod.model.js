@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const searchPlugin = require('../plugins/searchPlugin');
 
 const paymentMethodSchema = new mongoose.Schema({
   name: { type: String, required: [true, 'Name is required'], trim: true },
@@ -16,4 +17,6 @@ paymentMethodSchema.index({ name: 1 });
 paymentMethodSchema.index({ isActive: 1 });
 paymentMethodSchema.index({ sortOrder: 1 });
 
-module.exports = mongoose.model('PaymentMethod', paymentMethodSchema);
+paymentMethodSchema.plugin(searchPlugin, { entityType: 'payment_method' });
+const PaymentMethod = mongoose.model('PaymentMethod', paymentMethodSchema);
+module.exports = PaymentMethod;

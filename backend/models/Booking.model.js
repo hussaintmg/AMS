@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const searchPlugin = require('../plugins/searchPlugin');
 
 const bookingSchema = new mongoose.Schema({
   bookingNumber: { type: String, trim: true },
@@ -32,6 +33,6 @@ bookingSchema.index({ bookingNumber: 1 });
 bookingSchema.index({ customer: 1 });
 bookingSchema.index({ status: 1 });
 
+bookingSchema.plugin(searchPlugin, { entityType: 'booking' });
 const Booking = mongoose.model('Booking', bookingSchema);
-
 module.exports = Booking;

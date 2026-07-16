@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const searchPlugin = require('../plugins/searchPlugin');
 
 // One entry per sales/service document created for this customer.
 // Written by utils/customerSync.js whenever quotations, bookings,
@@ -75,6 +76,6 @@ customerSchema.index({ assignedTo: 1 });
 customerSchema.index({ department: 1 });
 customerSchema.index({ createdAt: -1 });
 
+customerSchema.plugin(searchPlugin, { entityType: 'customer' });
 const Customer = mongoose.model('Customer', customerSchema);
-
 module.exports = Customer;

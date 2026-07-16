@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const searchPlugin = require('../plugins/searchPlugin');
 
 const warehouseSchema = new mongoose.Schema({
   warehouseName: { type: String, required: [true, 'Warehouse name is required'], trim: true },
@@ -19,4 +20,6 @@ warehouseSchema.index({ warehouseName: 1 });
 warehouseSchema.index({ code: 1 });
 warehouseSchema.index({ isActive: 1 });
 
-module.exports = mongoose.model('Warehouse', warehouseSchema);
+warehouseSchema.plugin(searchPlugin, { entityType: 'warehouse' });
+const Warehouse = mongoose.model('Warehouse', warehouseSchema);
+module.exports = Warehouse;

@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const searchPlugin = require('../plugins/searchPlugin');
 
 const jobCardServiceSchema = new mongoose.Schema({
   serviceType: { type: mongoose.Schema.Types.ObjectId, ref: 'ServiceType', default: null },
@@ -70,6 +71,6 @@ jobCardSchema.index({ customer: 1 });
 jobCardSchema.index({ vehicle: 1 });
 jobCardSchema.index({ status: 1 });
 
+jobCardSchema.plugin(searchPlugin, { entityType: 'job_card' });
 const JobCard = mongoose.model('JobCard', jobCardSchema);
-
 module.exports = JobCard;

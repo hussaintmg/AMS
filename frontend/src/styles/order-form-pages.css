@@ -562,3 +562,114 @@
     .of-stats-grid.of-stats-5 { grid-template-columns: 1fr; }
     .of-stat-value { font-size: 1.2rem; }
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   Invoice Form (Create/Edit Modal) Responsive
+   ═══════════════════════════════════════════════════════════════ */
+.invoice-form-header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 2rem;
+    border-bottom: 2px solid #f3f4f6;
+    padding-bottom: 1.5rem;
+    gap: 1rem;
+}
+
+.invoice-form-layout {
+    display: flex;
+    gap: 2rem;
+}
+
+.invoice-line-item-row {
+    display: flex;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+    align-items: flex-start;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid #f3f4f6;
+}
+
+.invoice-line-item-desc {
+    flex: 3;
+    min-width: 0;
+}
+
+.invoice-line-item-qty {
+    flex: 1;
+    min-width: 0;
+}
+
+.invoice-line-item-price {
+    flex: 1.5;
+    min-width: 0;
+}
+
+.invoice-line-item-tax {
+    flex: 1;
+    min-width: 0;
+}
+
+.invoice-line-item-actions {
+    padding-top: 1.5rem;
+    flex-shrink: 0;
+}
+
+.invoice-summary {
+    flex: 1;
+    background: #f9fafb;
+    padding: 1.5rem;
+    border-radius: 12px;
+    min-width: 0;
+}
+
+.invoice-form-left {
+    flex: 2;
+    min-width: 0;
+}
+
+@media (max-width: 900px) {
+    .invoice-form-layout {
+        flex-direction: column;
+    }
+}
+
+@media (max-width: 768px) {
+    .invoice-form-header {
+        flex-direction: column;
+        text-align: left;
+    }
+
+    .invoice-form-header > div:last-child {
+        text-align: left;
+    }
+
+    .invoice-line-item-row {
+        flex-wrap: wrap;
+    }
+
+    .invoice-line-item-desc {
+        flex: 1 1 100%;
+    }
+
+    .invoice-line-item-qty,
+    .invoice-line-item-price,
+    .invoice-line-item-tax {
+        flex: 1;
+        min-width: 80px;
+    }
+
+    .invoice-line-item-actions {
+        padding-top: 0.5rem;
+        width: 100%;
+        display: flex;
+        justify-content: flex-end;
+    }
+}
+
+@media (max-width: 480px) {
+    .invoice-line-item-qty,
+    .invoice-line-item-price,
+    .invoice-line-item-tax {
+        flex: 1 1 45%;
+    }
+}

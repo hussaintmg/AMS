@@ -151,6 +151,8 @@ const Expenses = () => {
     if (urlSearch) setSearch(urlSearch);
   }, [urlSearch]);
 
+  useEffect(() => { if (searchParams.get('action') === 'create') openExpModal('create'); }, []);
+
   useEffect(() => {
     if (!currentUser) return;
     const timer = setTimeout(() => {

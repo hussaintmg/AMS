@@ -49,6 +49,8 @@ import PdfTemplateEditor from './pages/PdfTemplateEditor';
 import NoAccess from './pages/NoAccess';
 import NotificationSettings from './pages/NotificationSettings';
 import SearchResults from './pages/SearchResults';
+import { SearchProvider } from './context/SearchContext';
+import CommandPalette from './components/CommandPalette';
 import { getFirstAllowedPage, canViewPage } from './utils/permissions';
 
 const ProtectedPage = ({ children }) => {
@@ -87,45 +89,47 @@ const AppLayout = () => {
     const { effectivePermissions } = useAuth();
 
     return (
-        <div className="app-layout">
-            <Sidebar isOpen={sidebarOpen} onClose={closeSidebar} />
-            <div className={`sidebar-overlay ${sidebarOpen ? 'active' : ''}`} onClick={closeSidebar} />
-            <Header onMenuClick={toggleSidebar} />
-            <TableEnhancer />
-            <main className="main-content">
-                <Routes>
-                    <Route index element={<RootRedirect />} />
-                    <Route path="dashboard" element={<DashboardRoute />} />
-                    <Route path="no-access" element={<NoAccess />} />
-                    <Route path="masterdata" element={<ProtectedPage path="/masterdata"><MasterDataHub /></ProtectedPage>} />
-                    <Route path="master-data" element={<Navigate to="/masterdata" replace />} />
-                    <Route path="leads" element={<ProtectedPage path="/leads"><Leads /></ProtectedPage>} />
-                    <Route path="lead-master" element={<ProtectedPage path="/lead-master"><LeadMasterData /></ProtectedPage>} />
-                    <Route path="sales-master" element={<ProtectedPage path="/sales-master"><SalesMasterData /></ProtectedPage>} />
-                    <Route path="customers" element={<ProtectedPage path="/customers"><Customers /></ProtectedPage>} />
-                    <Route path="vehicles" element={<ProtectedPage path="/vehicles"><Vehicles /></ProtectedPage>} />
-                    <Route path="vehicle-master" element={<ProtectedPage path="/vehicle-master"><VehicleMasterData /></ProtectedPage>} />
-                    <Route path="warehouses" element={<ProtectedPage path="/warehouses"><WarehouseManagement /></ProtectedPage>} />
-                    <Route path="parts" element={<ProtectedPage path="/parts"><PartsInventory /></ProtectedPage>} />
-                    <Route path="orders" element={<ProtectedPage path="/orders"><Sales section="orders" /></ProtectedPage>} />
-                    <Route path="quotations" element={<ProtectedPage path="/quotations"><Sales section="quotations" /></ProtectedPage>} />
-                    <Route path="invoices" element={<ProtectedPage path="/invoices"><Sales section="invoices" /></ProtectedPage>} />
-                    <Route path="booking" element={<ProtectedPage path="/booking"><Sales section="booking" /></ProtectedPage>} />
-                    <Route path="sales/orders" element={<Navigate to="/orders" replace />} />
-                    <Route path="sales/quotations" element={<Navigate to="/quotations" replace />} />
-                    <Route path="sales/invoices" element={<Navigate to="/invoices" replace />} />
-                    <Route path="sales/bookings" element={<Navigate to="/booking" replace />} />
-                    <Route path="service/*" element={<ProtectedPage path="/service"><Service /></ProtectedPage>} />
-                    <Route path="service-master" element={<ProtectedPage path="/service-master"><ServiceMasterData /></ProtectedPage>} />
-                    <Route path="reports" element={<ProtectedPage path="/reports"><Reports /></ProtectedPage>} />
-                    <Route path="hr/employees" element={<ProtectedPage path="/hr/employees"><Employees /></ProtectedPage>} />
-                    <Route path="hr/leaves" element={<ProtectedPage path="/hr/leaves"><Leaves /></ProtectedPage>} />
-                    <Route path="hr/expenses" element={<ProtectedPage path="/hr/expenses"><Expenses /></ProtectedPage>} />
-                    <Route path="hr/ledger" element={<ProtectedPage path="/hr/ledger"><Ledger /></ProtectedPage>} />
-                    <Route path="uploader/order-form" element={<ProtectedPage path="/uploader/order-form"><OrderFormUpload /></ProtectedPage>} />
-                    <Route path="profile" element={<ProtectedPage path="/profile"><Profile /></ProtectedPage>} />
-                    <Route path="notification-settings" element={<NotificationSettings />} />
-                    <Route path="search" element={<SearchResults />} />
+        <SearchProvider>
+            <div className="app-layout">
+                <Sidebar isOpen={sidebarOpen} onClose={closeSidebar} />
+                <div className={`sidebar-overlay ${sidebarOpen ? 'active' : ''}`} onClick={closeSidebar} />
+                <Header onMenuClick={toggleSidebar} />
+                <CommandPalette />
+                <TableEnhancer />
+                <main className="main-content">
+                    <Routes>
+                        <Route index element={<RootRedirect />} />
+                        <Route path="dashboard" element={<DashboardRoute />} />
+                        <Route path="no-access" element={<NoAccess />} />
+                        <Route path="masterdata" element={<ProtectedPage path="/masterdata"><MasterDataHub /></ProtectedPage>} />
+                        <Route path="master-data" element={<Navigate to="/masterdata" replace />} />
+                        <Route path="leads" element={<ProtectedPage path="/leads"><Leads /></ProtectedPage>} />
+                        <Route path="lead-master" element={<ProtectedPage path="/lead-master"><LeadMasterData /></ProtectedPage>} />
+                        <Route path="sales-master" element={<ProtectedPage path="/sales-master"><SalesMasterData /></ProtectedPage>} />
+                        <Route path="customers" element={<ProtectedPage path="/customers"><Customers /></ProtectedPage>} />
+                        <Route path="vehicles" element={<ProtectedPage path="/vehicles"><Vehicles /></ProtectedPage>} />
+                        <Route path="vehicle-master" element={<ProtectedPage path="/vehicle-master"><VehicleMasterData /></ProtectedPage>} />
+                        <Route path="warehouses" element={<ProtectedPage path="/warehouses"><WarehouseManagement /></ProtectedPage>} />
+                        <Route path="parts" element={<ProtectedPage path="/parts"><PartsInventory /></ProtectedPage>} />
+                        <Route path="orders" element={<ProtectedPage path="/orders"><Sales section="orders" /></ProtectedPage>} />
+                        <Route path="quotations" element={<ProtectedPage path="/quotations"><Sales section="quotations" /></ProtectedPage>} />
+                        <Route path="invoices" element={<ProtectedPage path="/invoices"><Sales section="invoices" /></ProtectedPage>} />
+                        <Route path="booking" element={<ProtectedPage path="/booking"><Sales section="booking" /></ProtectedPage>} />
+                        <Route path="sales/orders" element={<Navigate to="/orders" replace />} />
+                        <Route path="sales/quotations" element={<Navigate to="/quotations" replace />} />
+                        <Route path="sales/invoices" element={<Navigate to="/invoices" replace />} />
+                        <Route path="sales/bookings" element={<Navigate to="/booking" replace />} />
+                        <Route path="service/*" element={<ProtectedPage path="/service"><Service /></ProtectedPage>} />
+                        <Route path="service-master" element={<ProtectedPage path="/service-master"><ServiceMasterData /></ProtectedPage>} />
+                        <Route path="reports" element={<ProtectedPage path="/reports"><Reports /></ProtectedPage>} />
+                        <Route path="hr/employees" element={<ProtectedPage path="/hr/employees"><Employees /></ProtectedPage>} />
+                        <Route path="hr/leaves" element={<ProtectedPage path="/hr/leaves"><Leaves /></ProtectedPage>} />
+                        <Route path="hr/expenses" element={<ProtectedPage path="/hr/expenses"><Expenses /></ProtectedPage>} />
+                        <Route path="hr/ledger" element={<ProtectedPage path="/hr/ledger"><Ledger /></ProtectedPage>} />
+                        <Route path="uploader/order-form" element={<ProtectedPage path="/uploader/order-form"><OrderFormUpload /></ProtectedPage>} />
+                        <Route path="profile" element={<ProtectedPage path="/profile"><Profile /></ProtectedPage>} />
+                        <Route path="notification-settings" element={<NotificationSettings />} />
+                        <Route path="search" element={<ProtectedPage path="/search"><SearchResults /></ProtectedPage>} />
 
                     {/* Admin Routes */}
                     <Route path="admin/users" element={<ProtectedPage path="/admin/users"><UserManagement /></ProtectedPage>} />
@@ -143,6 +147,7 @@ const AppLayout = () => {
                 </Routes>
             </main>
         </div>
+    </SearchProvider>
     );
 };
 

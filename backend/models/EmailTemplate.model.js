@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const searchPlugin = require('../plugins/searchPlugin');
 
 const TEMPLATE_STATUS = ['draft', 'published', 'archived'];
 
@@ -21,4 +22,6 @@ const emailTemplateSchema = new mongoose.Schema({
 
 emailTemplateSchema.index({ status: 1 });
 
-module.exports = mongoose.model('EmailTemplate', emailTemplateSchema);
+emailTemplateSchema.plugin(searchPlugin, { entityType: 'email_template' });
+const EmailTemplate = mongoose.model('EmailTemplate', emailTemplateSchema);
+module.exports = EmailTemplate;
