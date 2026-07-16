@@ -536,7 +536,7 @@
 }
 
 /* Confirm Modal */
-.modal-overlay {
+.logs-page .modal-overlay {
     position: fixed;
     top: 0;
     left: 0;

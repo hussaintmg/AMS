@@ -20,8 +20,26 @@ import '../styles/userManagement.css';
 // ═══════════════════════════════════════════════════════════════════════════
 
 function Modal({ title, children, onClose, maxWidth = '600px' }) {
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (e.key !== 'Escape') return;
+            // Let an open SearchableSelect dropdown consume Esc first
+            if (document.querySelector('.ss-portal-dropdown')) return;
+            onClose();
+        };
+        document.addEventListener('keydown', handleKeyDown);
+        return () => document.removeEventListener('keydown', handleKeyDown);
+    }, [onClose]);
+
+    const handleOverlayMouseDown = (e) => {
+        if (e.target !== e.currentTarget) return;
+        // Clicking outside an open SearchableSelect dropdown should only close the dropdown
+        if (document.querySelector('.ss-portal-dropdown')) return;
+        onClose();
+    };
+
     return (
-        <div className="modal-overlay">
+        <div className="modal-overlay" onMouseDown={handleOverlayMouseDown}>
             <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth }}>
                 <div className="modal-header">
                     <h2>{title}</h2>
@@ -162,7 +180,7 @@ function CompanyTab() {
                 </button>
             </div>
 
-            <div className="desktop-only">
+            <div className="desktop-only table-scroll-x">
                 <table className="data-table">
                     <thead>
                         <tr>
@@ -417,7 +435,7 @@ function BranchesTab() {
                 </div>
             </div>
 
-            <div className="desktop-only">
+            <div className="desktop-only table-scroll-x">
                 <table className="data-table">
                     <thead>
                         <tr>
@@ -629,7 +647,7 @@ function CurrenciesTab() {
                 <button className="btn btn-primary" onClick={() => openModal('create')}>+ New Currency</button>
             </div>
 
-            <div className="desktop-only">
+            <div className="desktop-only table-scroll-x">
                 <table className="data-table">
                     <thead>
                         <tr>
@@ -810,7 +828,7 @@ function TaxesTab() {
                 <button className="btn btn-primary" onClick={() => openModal('create')}>+ New Tax</button>
             </div>
 
-            <div className="desktop-only">
+            <div className="desktop-only table-scroll-x">
                 <table className="data-table">
                     <thead>
                         <tr>
@@ -972,7 +990,7 @@ function PaymentMethodsTab() {
     return (
         <div className="card">
             <div className="card-header"><h3>Payment Methods</h3><button className="btn btn-primary" onClick={() => openModal('create')}>+ New Payment Method</button></div>
-            <div className="desktop-only">
+            <div className="desktop-only table-scroll-x">
                 <table className="data-table"><thead><tr><th>Name</th><th>Code</th><th>Type</th><th>Description</th><th>Usage</th><th>Status</th><th>Actions</th></tr></thead>
                     <tbody>{methods.length === 0 ? <tr><td colSpan="7" style={{ textAlign: 'center' }}>No payment methods found</td></tr> : methods.map((m) => (
                         <tr key={m.id}><td><strong>{m.name}</strong></td><td>{m.code || '-'}</td><td><span className="badge badge-info">{m.type}</span></td><td>{m.description || '-'}</td><td>{m.usage_count || 0}</td><td><span className={`badge badge-${m.is_active ? 'success' : 'secondary'}`}>{m.is_active ? 'Active' : 'Inactive'}</span></td><td><ActionButtons onEdit={() => openModal('edit', m)} showDelete={false} showToggle status={m.is_active} onToggle={() => toggle(m.id)} /></td></tr>

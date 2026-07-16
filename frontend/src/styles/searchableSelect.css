@@ -14,6 +14,19 @@
     margin: 0;
 }
 
+/* Callers often pass form-control / form-select on the container;
+   the trigger inside owns the box styling, so strip the outer one
+   to avoid a double border + double padding. */
+.searchable-select.form-control,
+.searchable-select.form-select {
+    padding: 0;
+    border: none;
+    background: transparent;
+    box-shadow: none;
+    height: auto;
+    cursor: default;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    CONTAINER
    ═══════════════════════════════════════════════════════════════════════════ */
@@ -163,7 +176,7 @@
         0 4px 16px rgba(0, 0, 0, 0.07),
         0 1px 3px rgba(0, 0, 0, 0.04);
     overflow: hidden;
-    z-index: 1050;
+    z-index: 20000;
     animation: ssDropdownOpenBelow 0.15s ease-out;
 }
 

@@ -3,11 +3,13 @@ import React, {
   useRef,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
 } from "react";
 import { createPortal } from "react-dom";
+import "../styles/searchableSelect.css";
 
-const SEARCHABLE_SELECT_ZINDEX = 1050;
+const SEARCHABLE_SELECT_ZINDEX = 20000;
 const OPTION_ITEM_HEIGHT = 42;
 const LIST_PADDING = 8;
 const VIEWPORT_PADDING = 8;
@@ -228,11 +230,7 @@ export default function SearchableSelect({
     setIsOpen(true);
     setSearch("");
     setHighlightedIndex(-1);
-    requestAnimationFrame(() => {
-      calculatePosition();
-      if (searchInputRef.current) searchInputRef.current.focus();
-    });
-  }, [disabled, calculatePosition]);
+  }, [disabled]);
 
   const close = useCallback(() => {
     setIsOpen(false);
@@ -294,10 +292,15 @@ export default function SearchableSelect({
     setHighlightedIndex(-1);
   }, [search, isOpen]);
 
+  useLayoutEffect(() => {
+    if (!isOpen) return;
+    calculatePosition();
+    if (searchInputRef.current)
+      searchInputRef.current.focus({ preventScroll: true });
+  }, [isOpen, calculatePosition]);
+
   useEffect(() => {
     if (!isOpen) return;
-
-    calculatePosition();
 
     const onScroll = () => schedulePositionUpdate();
     const onResize = () => schedulePositionUpdate();
@@ -322,7 +325,7 @@ export default function SearchableSelect({
       }
       if (posRafRef.current) cancelAnimationFrame(posRafRef.current);
     };
-  }, [isOpen, calculatePosition, schedulePositionUpdate]);
+  }, [isOpen, schedulePositionUpdate]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -377,8 +380,9 @@ export default function SearchableSelect({
     };
   }, []);
 
-  const handleTriggerClick = useCallback(() => {
+  const handleTriggerClick = useCallback((e) => {
     if (disabled) return;
+    e.stopPropagation();
     toggle();
   }, [disabled, toggle]);
 
@@ -492,28 +496,22 @@ export default function SearchableSelect({
           ref={portalRef}
           className={`ss-portal-dropdown${openAbove ? " ss-above" : ""}`}
           style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            visibility:
+              dropdownStyle.top != null || dropdownStyle.bottom != null
+                ? "visible"
+                : "hidden",
             ...dropdownStyle,
             maxHeight: `${listHeight}px`,
-            background: "white",
-            border: "1px solid #ccc",
-            borderRadius: "10px",
-            boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
             zIndex: SEARCHABLE_SELECT_ZINDEX,
-            overflow: "hidden",
           }}
           role="listbox"
           aria-label="Options"
         >
-          <div className="ss-search-wrapper" style={{ position: "relative" }}>
-            <span
-              className="ss-search-icon"
-              style={{
-                position: "absolute",
-                right: "10px",
-                top: "50%",
-                transform: "translateY(-50%)",
-              }}
-            >
+          <div className="ss-search-wrapper">
+            <span className="ss-search-icon">
               <SearchIcon />
             </span>
             <input
@@ -565,7 +563,6 @@ export default function SearchableSelect({
                     optionRefs.current[idx] = el;
                   }}
                   className={classes}
-                  style={{padding: "8px 12px", cursor: opt.disabled ? "not-allowed" : "pointer"}}
                   role="option"
                   aria-selected={isSelected}
                   aria-disabled={opt.disabled}
@@ -615,17 +612,8 @@ export default function SearchableSelect({
         aria-controls={isOpen ? `${idRef.current}-listbox` : undefined}
         tabIndex={disabled ? -1 : 0}
         onClick={handleTriggerClick}
+        onPointerDown={(e) => e.stopPropagation()}
         onKeyDown={handleTriggerKeyDown}
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "8px 12px",
-          border: "1px solid #ccc",
-          borderRadius: "10px",
-          backgroundColor: disabled ? "#f5f5f5" : "#fff",
-          cursor: disabled ? "not-allowed" : "pointer",
-        }}
       >
         {hasValue ? (
           <span className="ss-value">{selectedLabel}</span>
