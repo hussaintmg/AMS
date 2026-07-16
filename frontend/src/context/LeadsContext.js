@@ -45,7 +45,14 @@ export function LeadsProvider({ children }) {
   const buildParams = useCallback((page = 1) => {
     const params = { page, limit: pagination.limit, sortBy, sortOrder };
     if (search) params.search = search;
-    Object.entries(filters).forEach(([k, v]) => { if (v || v === false) params[k] = v; });
+    Object.entries(filters).forEach(([k, v]) => {
+      if (v || v === false) {
+        let key = k;
+        if (key === 'startDate') key = 'dateFrom';
+        if (key === 'endDate') key = 'dateTo';
+        params[key] = v;
+      }
+    });
     Object.keys(params).forEach((k) => { if (!params[k] && params[k] !== false && params[k] !== 0) delete params[k]; });
     return params;
   }, [filters, search, sortBy, sortOrder, pagination.limit]);

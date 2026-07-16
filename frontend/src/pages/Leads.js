@@ -75,8 +75,12 @@ function LeadsPage() {
     const searchParam = urlParams.get('search');
     const openParam = urlParams.get('open');
     const actionParam = urlParams.get('action');
+    const convertedParam = urlParams.get('converted');
     if (openParam) setDrawerId(openParam);
     if (actionParam === 'create') setShowForm(true);
+    if (convertedParam === 'true') {
+      handleFilter({ converted: 'true' });
+    }
     if (searchParam) {
       setSearchInput(searchParam);
       handleSearch(searchParam);
@@ -98,7 +102,7 @@ function LeadsPage() {
   }, [searchInput]);
 
   useEffect(() => {
-    if (search !== searchInput) loadLeads(1);
+    loadLeads(1);
   }, [search]);
 
   useEffect(() => {

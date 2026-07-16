@@ -261,7 +261,7 @@ export default function DocumentTemplatesTab() {
                 </p>
             </div>
 
-            <div style={{ padding: '0 15px 15px', display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <div style={{ padding: '0 0 15px', display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
                 <label style={{ fontWeight: 600 }}>Filter type</label>
                 <SearchableSelect
                     className="form-control"

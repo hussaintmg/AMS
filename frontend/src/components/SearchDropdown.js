@@ -34,7 +34,7 @@ function ModuleIcon({ icon, size = 16 }) {
   return <span className="search-dropdown-icon" style={{ fontSize: size }}>{emoji}</span>;
 }
 
-export default function SearchDropdown({ isOpen, onClose }) {
+export default function SearchDropdown({ isOpen, onClose, variant = 'overlay' }) {
   const navigate = useNavigate();
   const {
     searchQuery, setSearchQuery,
@@ -50,6 +50,7 @@ export default function SearchDropdown({ isOpen, onClose }) {
   const inputRef = useRef(null);
   const listRef = useRef(null);
   const isInputFocused = useRef(false);
+  const isKeyboardNav = useRef(false);
   const isTouchDevice = useRef(
     typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0)
   ).current;
@@ -114,10 +115,12 @@ export default function SearchDropdown({ isOpen, onClose }) {
     switch (e.key) {
       case 'ArrowDown':
         e.preventDefault();
+        isKeyboardNav.current = true;
         setSelectedIndex(prev => (prev < selectable.length - 1 ? prev + 1 : 0));
         break;
       case 'ArrowUp':
         e.preventDefault();
+        isKeyboardNav.current = true;
         setSelectedIndex(prev => (prev > 0 ? prev - 1 : selectable.length - 1));
         break;
       case 'Enter': {
@@ -153,6 +156,7 @@ export default function SearchDropdown({ isOpen, onClose }) {
   };
 
   useEffect(() => {
+    if (!isKeyboardNav.current) return;
     if (selectedIndex >= 0 && listRef.current) {
       const items = listRef.current.querySelectorAll('.search-dd-item');
       if (items[selectedIndex]) {
@@ -186,7 +190,7 @@ export default function SearchDropdown({ isOpen, onClose }) {
           <div
             className={`search-dd-item search-dd-result ${isSelected ? 'selected' : ''}`}
             onClick={() => handleItemClick(item)}
-            onMouseEnter={() => setSelectedIndex(idx)}
+            onMouseEnter={() => { isKeyboardNav.current = false; setSelectedIndex(idx); }}
           >
             <ModuleIcon icon={item.icon} />
             <div className="search-dd-result-text">
@@ -203,7 +207,7 @@ export default function SearchDropdown({ isOpen, onClose }) {
           <div
             className={`search-dd-item search-dd-suggestion ${isSelected ? 'selected' : ''}`}
             onClick={() => handleItemClick(item)}
-            onMouseEnter={() => setSelectedIndex(idx)}
+            onMouseEnter={() => { isKeyboardNav.current = false; setSelectedIndex(idx); }}
           >
             <Search size={14} />
             <span className="search-dd-title" dangerouslySetInnerHTML={{ __html: item.title }} />
@@ -216,7 +220,7 @@ export default function SearchDropdown({ isOpen, onClose }) {
           <div
             className={`search-dd-item search-dd-history ${isSelected ? 'selected' : ''}`}
             onClick={() => handleItemClick(item)}
-            onMouseEnter={() => setSelectedIndex(idx)}
+            onMouseEnter={() => { isKeyboardNav.current = false; setSelectedIndex(idx); }}
           >
             <History size={14} />
             <span className="search-dd-title">{item.query}</span>
@@ -229,6 +233,101 @@ export default function SearchDropdown({ isOpen, onClose }) {
   };
 
   if (!isOpen) return null;
+
+  if (variant === 'mobile') {
+    return createPortal(
+      <div className="mobile-search-overlay" onClick={onClose}>
+        <div className="mobile-search-container" onClick={e => e.stopPropagation()} onKeyDown={handleKeyDown}>
+          <div className="mobile-search-topbar">
+            <Search size={20} className="mobile-search-icon" />
+            <input
+              ref={inputRef}
+              type="text"
+              className="mobile-search-input"
+              placeholder="Search anything..."
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                if (e.target.value.length >= 2) performSearch(e.target.value);
+              }}
+              onKeyDown={handleKeyDown}
+              autoFocus
+              autoComplete="off"
+            />
+            {isSearching && <Loader2 size={18} className="search-dd-spinner" />}
+            {searchQuery && (
+              <button className="mobile-search-clear" onClick={() => setSearchQuery('')} aria-label="Clear search">
+                <X size={18} />
+              </button>
+            )}
+            <button className="mobile-search-close" onClick={onClose} aria-label="Close search">
+              <X size={20} />
+            </button>
+          </div>
+
+          <div className="search-dd-body" ref={listRef}>
+            {isSearching && searchQuery.length >= 2 && (
+              <div className="search-dd-state">
+                <Loader2 size={20} className="search-dd-spinner" />
+                <span>Searching...</span>
+              </div>
+            )}
+
+            {!isSearching && searchQuery && searchResults?.total === 0 && (
+              <div className="search-dd-state">
+                <Search size={20} />
+                <span>No results found for "{searchQuery}"</span>
+                <button
+                  className="search-dd-view-all-btn"
+                  onClick={() => { navigate(`/search?q=${encodeURIComponent(searchQuery)}`); onClose(); }}
+                >
+                  Search everything for "{searchQuery}"
+                </button>
+              </div>
+            )}
+
+            {!isSearching && searchQuery && searchResults?.total > 0 && (
+              <div className="search-dd-results-count">
+                {searchResults.total} result{searchResults.total !== 1 ? 's' : ''} found
+                {searchResults.duration ? ` (${(searchResults.duration / 1000).toFixed(1)}s)` : ''}
+              </div>
+            )}
+
+            {selectables.map((item, idx) => (
+              <React.Fragment key={`${item.type}_${idx}`}>
+                {renderItemContent(item, idx)}
+              </React.Fragment>
+            ))}
+
+            {!isSearching && !searchQuery && searchHistory.length === 0 && (
+              <div className="search-dd-state">
+                <Search size={20} />
+                <span>Type to search across all modules</span>
+                <span className="search-dd-hint">Use Ctrl+K to open command palette</span>
+              </div>
+            )}
+
+            {!isSearching && searchQuery && searchResults?.total > 0 && (
+              <button
+                className="search-dd-view-all-btn"
+                onClick={() => { navigate(`/search?q=${encodeURIComponent(searchQuery)}`); onClose(); }}
+              >
+                <Search size={14} />
+                View all {searchResults.total} results
+              </button>
+            )}
+          </div>
+
+          <div className="search-dd-footer">
+            <span><ArrowUp size={12} /> <ArrowDown size={12} /> Navigate</span>
+            <span><kbd>Enter</kbd> Select</span>
+            <span><kbd>ESC</kbd> Close</span>
+          </div>
+        </div>
+      </div>,
+      document.body
+    );
+  }
 
   return createPortal(
     <div className="search-dropdown-overlay open" onClick={onClose}>

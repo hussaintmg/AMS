@@ -172,7 +172,8 @@ exports.getLeads = async (req, res) => {
     }
 
     if (search) {
-      const searchRegex = new RegExp(String(search).trim().split(/\s+/).map(part => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'i');
+      const escaped = String(search).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const searchRegex = new RegExp(escaped, 'i');
       filter.$or = [
         { leadNo: searchRegex },
         { customerName: searchRegex },
@@ -392,17 +393,18 @@ exports.deleteLead = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Lead not found' });
     }
 
-    lead.isActive = false;
-    lead.deletedAt = new Date();
-    lead.deletedBy = userId;
-    lead.updatedBy = userId;
-    lead.activities.push(createActivity('deactivated', `Lead ${lead.leadNo} deactivated`, userId));
-    await lead.save();
+    if (lead.convertedToCustomer) {
+      return res.status(400).json({ success: false, message: 'Cannot delete converted lead. This lead has been converted to a customer.' });
+    }
 
-    await createAuditLog(userId, 'Delete Lead', 'Leads', `Lead ${lead.leadNo} deactivated`, req);
-    logFileOperation(req, { action: 'deleteLead', leadNo: lead.leadNo });
+    const leadNo = lead.leadNo;
 
-    res.json({ success: true, message: 'Lead deactivated successfully' });
+    await Lead.deleteOne({ _id: lead._id });
+
+    await createAuditLog(userId, 'Delete Lead', 'Leads', `Lead ${leadNo} permanently deleted`, req);
+    logFileOperation(req, { action: 'deleteLead', leadNo });
+
+    res.json({ success: true, message: 'Lead deleted permanently' });
   } catch (error) {
     console.error('deleteLead error:', error);
     res.status(500).json({ success: false, message: error.message });

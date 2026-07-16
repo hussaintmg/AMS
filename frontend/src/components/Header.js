@@ -32,6 +32,7 @@ function Header({ onMenuClick }) {
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [unread, setUnread] = useState(0);
+  const [isMobile, setIsMobile] = useState(false);
   const userMenuRef = useRef(null);
   const userDropdownRef = useRef(null);
   const searchInputRef = useRef(null);
@@ -99,6 +100,25 @@ function Header({ onMenuClick }) {
     if (!showUserDropdown) return;
     positionUserDropdown();
   }, [showUserDropdown, positionUserDropdown]);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 768px)');
+    setIsMobile(mq.matches);
+    const handler = (e) => setIsMobile(e.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
+
+  useEffect(() => {
+    if (!isMobile || !isSearchOpen) return;
+    const handleClose = (e) => {
+      if (e.key === 'Escape') {
+        setIsSearchOpen(false);
+      }
+    };
+    document.addEventListener('keydown', handleClose);
+    return () => document.removeEventListener('keydown', handleClose);
+  }, [isMobile, isSearchOpen]);
 
   useEffect(() => {
     const handleShortcut = (event) => {
@@ -194,28 +214,47 @@ function Header({ onMenuClick }) {
         </svg>
       </button>
 
-      <div className="header-search-container" style={{ position: "relative" }}>
-        <form className={`header-search ${isSearchOpen ? "is-open" : ""}`} onSubmit={handleSearchSubmit}>
-          <button type="button" className="header-search-open" aria-label="Open search" onClick={openSearch}>
-            <Search size={18} aria-hidden="true" />
-          </button>
-          <input
-            ref={searchInputRef}
-            type="search"
-            placeholder="Search anything... (Ctrl+K for commands)"
-            value={searchQuery}
-            onFocus={handleSearchFocus}
-            onChange={handleSearchChange}
+      {isMobile ? (
+        <>
+          <div className="header-search-container" style={{ position: "relative" }}>
+            <button
+              className="header-mobile-search-btn"
+              onClick={openSearch}
+              aria-label="Open search"
+            >
+              <Search size={20} aria-hidden="true" />
+            </button>
+          </div>
+          <SearchDropdown
+            isOpen={isSearchOpen}
+            onClose={() => setIsSearchOpen(false)}
+            variant="mobile"
           />
-          <button type="submit" className="header-search-submit" aria-label="Search">
-            <Search size={17} aria-hidden="true" />
-          </button>
-        </form>
-        <SearchDropdown
-          isOpen={isSearchOpen}
-          onClose={() => setIsSearchOpen(false)}
-        />
-      </div>
+        </>
+      ) : (
+        <div className="header-search-container" style={{ position: "relative" }}>
+          <form className={`header-search ${isSearchOpen ? "is-open" : ""}`} onSubmit={handleSearchSubmit}>
+            <button type="button" className="header-search-open" aria-label="Open search" onClick={openSearch}>
+              <Search size={18} aria-hidden="true" />
+            </button>
+            <input
+              ref={searchInputRef}
+              type="search"
+              placeholder="Search anything... (Ctrl+K for commands)"
+              value={searchQuery}
+              onFocus={handleSearchFocus}
+              onChange={handleSearchChange}
+            />
+            <button type="submit" className="header-search-submit" aria-label="Search">
+              <Search size={17} aria-hidden="true" />
+            </button>
+          </form>
+          <SearchDropdown
+            isOpen={isSearchOpen}
+            onClose={() => setIsSearchOpen(false)}
+          />
+        </div>
+      )}
 
       <div className="header-actions">
         <button

@@ -28,7 +28,11 @@ function registerAll() {
     creatorField: 'createdBy',
     statusField: 'status',
     conditions: { deletedAt: null },
-    urlFn: (doc) => `/leads?search=${encodeURIComponent(doc.customerName || '')}&open=${doc._id}`,
+    urlFn: (doc) => {
+      let url = `/leads?search=${encodeURIComponent(doc.customerName || '')}&open=${doc._id}`;
+      if (doc.convertedToCustomer) url += '&converted=true';
+      return url;
+    },
   });
 
   registry.registerModule({

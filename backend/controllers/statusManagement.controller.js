@@ -708,7 +708,28 @@ const getAllStatuses = async (req, res, next) => {
 };
 
 const getStatusesByTable = async (req, res, next) => {
-  res.json({ success: true, data: [] });
+  try {
+    const { tableName } = req.params;
+    const collection = await StatusCollection.findOne({ key: tableName, isActive: true }).lean();
+    if (!collection) {
+      return res.json({ success: true, data: { statuses: [] } });
+    }
+    const items = await StatusItem.find({ collection: collection._id, isActive: true })
+      .sort({ order: 1, label: 1 })
+      .lean();
+    const statuses = items.map((item) => ({
+      id: item._id,
+      status_code: item.value,
+      status_name: item.label,
+      status_color: item.color || '#475569',
+      status_bg_color: item.color ? `${item.color}20` : '#e2e8f0',
+      order: item.order,
+      is_default: item.isDefault,
+    }));
+    res.json({ success: true, data: { statuses } });
+  } catch (error) {
+    next(error);
+  }
 };
 
 const getStatusById = async (req, res, next) => {
