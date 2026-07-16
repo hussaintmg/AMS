@@ -366,10 +366,11 @@ function LeadsPage() {
             </select>
           </div>
           <div className="filter-group">
-            <label>STATUS</label>
-            <select className="form-control" value={filters.status || ''} onChange={(e) => handleFilterChange('status', e.target.value)}>
-              <option value="">All Statuses</option>
-              {(meta.statuses || []).map((s) => <option key={s._id} value={s.value || s.label}>{s.label}</option>)}
+            <label>CUSTOMER TYPE</label>
+            <select className="form-control" value={filters.customerType || ''} onChange={(e) => handleFilterChange('customerType', e.target.value)}>
+              <option value="">All Types</option>
+              <option value="individual">Individual</option>
+              <option value="corporate">Corporate</option>
             </select>
           </div>
           <div className="filter-group">

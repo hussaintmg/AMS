@@ -12,6 +12,7 @@ const OPTION_ITEM_HEIGHT = 42;
 const LIST_PADDING = 8;
 const VIEWPORT_PADDING = 8;
 const EDGE_GAP = 0;
+const MIN_DROPDOWN_HEIGHT = 200;
 
 function computeDropdownPosition(
   triggerRect,
@@ -52,6 +53,14 @@ function normalizeOptions(options, labelField, valueField) {
     label: opt[labelField] != null ? String(opt[labelField]) : "",
     disabled: opt.disabled || false,
   }));
+}
+
+function detectField(options, defaultField, candidates) {
+  if (!options || options.length === 0) return defaultField;
+  for (const field of candidates) {
+    if (options.some((opt) => opt[field] != null)) return field;
+  }
+  return defaultField;
 }
 
 function makeChangeEvent(name, value) {
@@ -153,17 +162,35 @@ export default function SearchableSelect({
     () => window.innerHeight || 800,
   );
 
+  const resolvedValueField = useMemo(() => {
+    if (valueField !== "id") return valueField;
+    if (!options || !Array.isArray(options) || options.length === 0) return valueField;
+    return options.some((opt) => opt[valueField] != null)
+      ? valueField
+      : detectField(options, valueField, ["value", "_id"]);
+  }, [options, valueField]);
+
+  const resolvedLabelField = useMemo(() => {
+    if (labelField !== "name") return labelField;
+    if (!options || !Array.isArray(options) || options.length === 0) return labelField;
+    return options.some((opt) => opt[labelField] != null)
+      ? labelField
+      : detectField(options, labelField, ["label", "name"]);
+  }, [options, labelField]);
+
   const allOptions = useMemo(() => {
     if (options && Array.isArray(options)) {
-      return normalizeOptions(options, labelField, valueField);
+      return normalizeOptions(options, resolvedLabelField, resolvedValueField);
     }
     return parseChildrenToOptions(children);
-  }, [options, children, labelField, valueField]);
+  }, [options, children, resolvedLabelField, resolvedValueField]);
 
   const filteredOptions = useMemo(() => {
     if (!search.trim()) return allOptions;
     const q = search.toLowerCase().trim();
-    return allOptions.filter((opt) => opt.label.toLowerCase().includes(q));
+    return allOptions.filter(
+      (opt) => opt.value === "" || opt.label.toLowerCase().includes(q),
+    );
   }, [allOptions, search]);
 
   const selectedLabel = useMemo(() => {
@@ -453,7 +480,10 @@ export default function SearchableSelect({
     const availableHeight = viewportHeight * 0.5;
     const contentHeight =
       filteredOptions.length * OPTION_ITEM_HEIGHT + LIST_PADDING * 2;
-    return Math.min(contentHeight, availableHeight);
+    return Math.max(
+      MIN_DROPDOWN_HEIGHT,
+      Math.min(contentHeight, availableHeight),
+    );
   }, [filteredOptions.length, viewportHeight]);
 
   const dropdownPortal = isOpen

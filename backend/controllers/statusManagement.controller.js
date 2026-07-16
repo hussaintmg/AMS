@@ -707,13 +707,40 @@ const getAllStatuses = async (req, res, next) => {
   res.json({ success: true, data: {} });
 };
 
+const DEFAULT_STATUSES_BY_TABLE = {
+  vehicles: [
+    { label: 'Available', value: 'available', color: '#16a34a', isDefault: true },
+    { label: 'Sold', value: 'sold', color: '#dc2626' },
+    { label: 'Reserved', value: 'reserved', color: '#2563eb' },
+    { label: 'Under Maintenance', value: 'under_maintenance', color: '#f59e0b' },
+    { label: 'In Transit', value: 'in_transit', color: '#8b5cf6' },
+  ],
+};
+
 const getStatusesByTable = async (req, res, next) => {
   try {
     const { tableName } = req.params;
-    const collection = await StatusCollection.findOne({ key: tableName, isActive: true }).lean();
+    let collection = await StatusCollection.findOne({ key: tableName, isActive: true }).lean();
+
     if (!collection) {
-      return res.json({ success: true, data: { statuses: [] } });
+      const defaults = DEFAULT_STATUSES_BY_TABLE[tableName];
+      if (defaults) {
+        const displayName = tableName.charAt(0).toUpperCase() + tableName.slice(1);
+        const [newCollection] = await Promise.all([
+          StatusCollection.create({ name: displayName, key: tableName, isActive: true }),
+        ]);
+        const items = defaults.map((d, i) => ({
+          ...d,
+          collection: newCollection._id,
+          order: i + 1,
+        }));
+        await StatusItem.insertMany(items);
+        collection = await StatusCollection.findById(newCollection._id).lean();
+      } else {
+        return res.json({ success: true, data: { statuses: [] } });
+      }
     }
+
     const items = await StatusItem.find({ collection: collection._id, isActive: true })
       .sort({ order: 1, label: 1 })
       .lean();

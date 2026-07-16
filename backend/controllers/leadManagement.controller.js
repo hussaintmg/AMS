@@ -131,7 +131,7 @@ exports.getLeads = async (req, res) => {
       assignedTo = '', department = '', dateFrom = '', dateTo = '',
       isActive = 'true', sortBy = 'createdAt', sortOrder = 'desc',
       leadNo = '', customerName = '', email = '', phone = '',
-      converted = '',
+      converted = '', customerType = '',
     } = req.query;
 
     const filter = {};
@@ -156,6 +156,7 @@ exports.getLeads = async (req, res) => {
     if (assignedTo === 'unassigned') filter.assignedTo = null;
     else if (assignedTo && mongoose.Types.ObjectId.isValid(assignedTo)) filter.assignedTo = new mongoose.Types.ObjectId(assignedTo);
 
+    if (customerType) filter.customerType = customerType;
     if (leadNo) filter.leadNo = { $regex: leadNo, $options: 'i' };
     if (customerName) filter.customerName = { $regex: customerName, $options: 'i' };
     if (email) filter.email = { $regex: email, $options: 'i' };
