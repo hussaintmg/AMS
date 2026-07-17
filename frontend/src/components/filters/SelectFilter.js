@@ -44,7 +44,9 @@ export default function SelectFilter({
                 {includeAll && <option value="">{allLabel}</option>}
                 {options.length > 0
                     ? options.map((opt, i) => (
-                        <option key={opt[valueField] || i} value={opt[valueField]}>
+                        // Option values are not guaranteed unique (legacy master data can
+                        // hold duplicate names), so pair the value with the index.
+                        <option key={`${opt[valueField] ?? 'opt'}-${i}`} value={opt[valueField]}>
                             {opt[labelField]}
                         </option>
                     ))

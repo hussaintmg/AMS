@@ -317,11 +317,11 @@ function ServiceMasterData() {
         );
         switch(activeTab) {
             case 'types':
-                return (<><Detail label="Name" value={item.name} /><Detail label="Code" value={item.code} /><Detail label="Base Price" value={`$${Number(item.basePrice || 0).toFixed(2)}`} /><Detail label="Est. Hours" value={item.estimatedHours ? `${item.estimatedHours} hrs` : '-'} /><Detail label="Description" value={item.description} /><Detail label="Category" value={item.category} /><Detail label="Status" value={statusBadge(item.isActive)} /></>);
+                return (<><Detail label="Name" value={item.name} /><Detail label="Code" value={item.code} /><Detail label="Base Price" value={`PKR ${Number(item.basePrice || 0).toFixed(2)}`} /><Detail label="Est. Hours" value={item.estimatedHours ? `${item.estimatedHours} hrs` : '-'} /><Detail label="Description" value={item.description} /><Detail label="Category" value={item.category} /><Detail label="Status" value={statusBadge(item.isActive)} /></>);
             case 'rates':
-                return (<><Detail label="Name" value={item.name} /><Detail label="Code" value={item.code} /><Detail label="Rate" value={`$${Number(item.rate || 0).toFixed(2)}/hr`} /><Detail label="Duration" value={item.duration ? `${item.duration} min` : '-'} /><Detail label="Description" value={item.description} /><Detail label="Status" value={statusBadge(item.isActive)} /></>);
+                return (<><Detail label="Name" value={item.name} /><Detail label="Code" value={item.code} /><Detail label="Rate" value={`PKR ${Number(item.rate || 0).toFixed(2)}/hr`} /><Detail label="Duration" value={item.duration ? `${item.duration} min` : '-'} /><Detail label="Description" value={item.description} /><Detail label="Status" value={statusBadge(item.isActive)} /></>);
             case 'packages':
-                return (<><Detail label="Package Name" value={item.packageName} /><Detail label="Price" value={`$${Number(item.price || 0).toFixed(2)}`} /><Detail label="Duration" value={item.duration ? `${item.duration} min` : '-'} /><Detail label="Services" value={(item.services || []).length} /><Detail label="Description" value={item.description} /><Detail label="Warranty" value={item.warranty} /><Detail label="Status" value={statusBadge(item.isActive)} /></>);
+                return (<><Detail label="Package Name" value={item.packageName} /><Detail label="Price" value={`PKR ${Number(item.price || 0).toFixed(2)}`} /><Detail label="Duration" value={item.duration ? `${item.duration} min` : '-'} /><Detail label="Services" value={(item.services || []).length} /><Detail label="Description" value={item.description} /><Detail label="Warranty" value={item.warranty} /><Detail label="Status" value={statusBadge(item.isActive)} /></>);
             case 'warranties':
                 return (<><Detail label="Name" value={item.name} /><Detail label="Code" value={item.code} /><Detail label="Duration" value={item.durationMonths ? `${item.durationMonths} months` : '-'} /><Detail label="Km Limit" value={item.durationKm ? `${Number(item.durationKm).toLocaleString()} km` : '-'} /><Detail label="Description" value={item.description} /><Detail label="Terms" value={item.terms} /><Detail label="Status" value={statusBadge(item.isActive)} /></>);
             default: return null;
@@ -406,7 +406,7 @@ function ServiceMasterData() {
                 <td onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selectedIds.has(item._id)} onChange={() => toggleSelect(item._id)} /></td>
                 <td onClick={(e) => e.stopPropagation()}><strong>{item.name}</strong>{item.description && <div className="cell-desc">{item.description}</div>}</td>
                 <td>{item.code || '—'}</td>
-                <td>${Number(item.basePrice || 0).toFixed(2)}</td>
+                <td>PKR {Number(item.basePrice || 0).toFixed(2)}</td>
                 <td>{item.estimatedHours ? `${item.estimatedHours} hrs` : '—'}</td>
                 <td>{renderStatus(item)}</td>
                 <td onClick={(e) => e.stopPropagation()}>{renderActions(item)}</td>
@@ -420,7 +420,7 @@ function ServiceMasterData() {
         <>
             <div className="card-field"><strong>{item.name}</strong></div>
             {item.code && <div className="card-field"><label>Code:</label><span>{item.code}</span></div>}
-            <div className="card-field"><label>Base Price:</label><span>${Number(item.basePrice || 0).toFixed(2)}</span></div>
+            <div className="card-field"><label>Base Price:</label><span>PKR {Number(item.basePrice || 0).toFixed(2)}</span></div>
             {item.estimatedHours && <div className="card-field"><label>Est. Hours:</label><span>{item.estimatedHours} hrs</span></div>}
             {item.description && <div className="card-field"><label>Description:</label><span>{item.description}</span></div>}
             <div className="card-field">{renderStatus(item)}</div>
@@ -434,7 +434,7 @@ function ServiceMasterData() {
                 <td onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selectedIds.has(item._id)} onChange={() => toggleSelect(item._id)} /></td>
                 <td onClick={(e) => e.stopPropagation()}><strong>{item.name}</strong>{item.description && <div className="cell-desc">{item.description}</div>}</td>
                 <td>{item.code || '—'}</td>
-                <td>${Number(item.rate || 0).toFixed(2)}/hr</td>
+                <td>PKR {Number(item.rate || 0).toFixed(2)}/hr</td>
                 <td>{item.duration ? `${item.duration} min` : '—'}</td>
                 <td>{renderStatus(item)}</td>
                 <td onClick={(e) => e.stopPropagation()}>{renderActions(item)}</td>
@@ -448,7 +448,7 @@ function ServiceMasterData() {
         <>
             <div className="card-field"><strong>{item.name}</strong></div>
             {item.code && <div className="card-field"><label>Code:</label><span>{item.code}</span></div>}
-            <div className="card-field"><label>Rate:</label><span>${Number(item.rate || 0).toFixed(2)}/hr</span></div>
+            <div className="card-field"><label>Rate:</label><span>PKR {Number(item.rate || 0).toFixed(2)}/hr</span></div>
             {item.duration && <div className="card-field"><label>Duration:</label><span>{item.duration} min</span></div>}
             {item.description && <div className="card-field"><label>Description:</label><span>{item.description}</span></div>}
             <div className="card-field">{renderStatus(item)}</div>
@@ -461,7 +461,7 @@ function ServiceMasterData() {
             <tr key={item._id} onClick={() => setDrawerItem(item)} style={{ cursor: 'pointer' }}>
                 <td onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selectedIds.has(item._id)} onChange={() => toggleSelect(item._id)} /></td>
                 <td onClick={(e) => e.stopPropagation()}><strong>{item.packageName}</strong>{item.description && <div className="cell-desc">{item.description}</div>}</td>
-                <td>${Number(item.price || 0).toFixed(2)}</td>
+                <td>PKR {Number(item.price || 0).toFixed(2)}</td>
                 <td>{(item.services || []).length} items</td>
                 <td>{item.duration ? `${item.duration} min` : '—'}</td>
                 <td>{renderStatus(item)}</td>
@@ -475,7 +475,7 @@ function ServiceMasterData() {
     const renderPackagesCards = () => renderCards(tableData, item => (
         <>
             <div className="card-field"><strong>{item.packageName}</strong></div>
-            <div className="card-field"><label>Price:</label><span>${Number(item.price || 0).toFixed(2)}</span></div>
+            <div className="card-field"><label>Price:</label><span>PKR {Number(item.price || 0).toFixed(2)}</span></div>
             <div className="card-field"><label>Services:</label><span>{(item.services || []).length} items</span></div>
             {item.duration && <div className="card-field"><label>Duration:</label><span>{item.duration} min</span></div>}
             {item.description && <div className="card-field"><label>Description:</label><span>{item.description}</span></div>}
@@ -528,7 +528,7 @@ function ServiceMasterData() {
             </div>
             <div className="grid grid-cols-2 gap-4">
                 <div className="form-group">
-                    <label>Base Price ($)</label>
+                    <label>Base Price (PKR)</label>
                     <input type="number" name="basePrice" value={formData.basePrice ?? ''} onChange={handleInputChange} min="0" step="0.01" />
                 </div>
                 <div className="form-group">
@@ -561,7 +561,7 @@ function ServiceMasterData() {
             </div>
             <div className="grid grid-cols-2 gap-4">
                 <div className="form-group">
-                    <label>Rate ($/hr) *</label>
+                    <label>Rate (PKR/hr) *</label>
                     <input type="number" name="rate" value={formData.rate ?? ''} onChange={handleInputChange} min="0" step="0.01" required />
                 </div>
                 <div className="form-group">
@@ -590,7 +590,7 @@ function ServiceMasterData() {
             </div>
             <div className="grid grid-cols-2 gap-4">
                 <div className="form-group">
-                    <label>Price ($)</label>
+                    <label>Price (PKR)</label>
                     <input type="number" name="price" value={formData.price ?? ''} onChange={handleInputChange} min="0" step="0.01" />
                 </div>
                 <div className="form-group">

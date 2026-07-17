@@ -4,6 +4,7 @@ const {
 } = require('../models/VehicleMaster.model');
 const { AppError } = require('../middleware/errorHandler');
 const logger = require('../utils/logger');
+const { assertUniqueName } = require('../utils/uniqueness.util');
 const { normalizePhone } = require('../utils/phone.util');
 const { logFileOperation } = require('../utils/apiLogger');
 const Log = require('../models/mongo/Log.model');
@@ -110,6 +111,7 @@ const createMake = async (req, res, next) => {
   try {
     const { name, country, logo, description, establishedYear, website, isActive } = req.body;
     if (!name) throw new AppError('Brand name is required', 400);
+    await assertUniqueName(VehicleMake, 'name', name, { label: 'Brand' });
 
     const doc = await VehicleMake.create({
       name, country, logo,
@@ -250,6 +252,8 @@ const createModel = async (req, res, next) => {
   try {
     const { makeId, name, year, bodyType, fuelType, transmission, engineCapacity, seatingCapacity, isActive } = req.body;
     if (!makeId || !name) throw new AppError('Make ID and Model name are required', 400);
+    // Same model name under a different brand is legitimate — scope to the make.
+    await assertUniqueName(VehicleModel, 'name', name, { scope: { make_id: makeId }, label: 'Model' });
 
     const doc = await VehicleModel.create({
       make_id: makeId,
@@ -398,6 +402,7 @@ const createVariant = async (req, res, next) => {
   try {
     const { modelId, makeId, name, basePrice, features, specifications, isActive } = req.body;
     if (!modelId || !name) throw new AppError('Model ID and Variant name are required', 400);
+    await assertUniqueName(VehicleVariant, 'name', name, { scope: { model_id: modelId }, label: 'Variant' });
 
     const doc = await VehicleVariant.create({
       model_id: modelId,
@@ -519,6 +524,7 @@ const createColor = async (req, res, next) => {
   try {
     const { name, hexCode, isMetallic, additionalCost, isActive } = req.body;
     if (!name) throw new AppError('Color name is required', 400);
+    await assertUniqueName(VehicleColor, 'name', name, { label: 'Color' });
 
     const doc = await VehicleColor.create({
       name,

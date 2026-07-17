@@ -443,12 +443,32 @@ const aggregateFilterOptions = async (scoped) => {
   }
 
   const data = results[0];
-  const usersArr = (data.users || []).filter((u) => u.id).map((u) => ({
-    id: u.id,
-    email: u.email || '',
-    roleName: u.roleName || '',
-    name: [u.firstName, u.lastName].filter(Boolean).join(' ') || u.email || u.id,
-  })).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+  // $addToSet dedupes on the WHOLE user object, so a user whose name/email/role
+  // changed over time yields several entries sharing one id — which renders as
+  // duplicate <option> keys in the filter. Collapse to one entry per user id,
+  // keeping the most complete snapshot.
+  const byId = new Map();
+  for (const u of data.users || []) {
+    if (!u.id) continue;
+    const id = String(u.id);
+    const candidate = {
+      id,
+      email: u.email || '',
+      roleName: u.roleName || '',
+      name: [u.firstName, u.lastName].filter(Boolean).join(' ') || u.email || id,
+    };
+    const existing = byId.get(id);
+    if (!existing) {
+      byId.set(id, candidate);
+      continue;
+    }
+    // Prefer the entry that actually carries a real name/email/role.
+    if (existing.name === id && candidate.name !== id) existing.name = candidate.name;
+    if (!existing.email && candidate.email) existing.email = candidate.email;
+    if (!existing.roleName && candidate.roleName) existing.roleName = candidate.roleName;
+  }
+  const usersArr = [...byId.values()].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
   const roleNames = [...new Set(usersArr.map((u) => u.roleName).filter(Boolean))];
   const roleDocs = await Role.find({ name: { $in: roleNames } })

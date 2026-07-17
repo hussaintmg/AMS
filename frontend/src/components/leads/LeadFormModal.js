@@ -99,13 +99,16 @@ export default function LeadFormModal({ lead, onClose, onSaved }) {
       if (!normalized) errs.phone = 'Invalid phone number';
     }
     setErrors(errs);
-    return Object.keys(errs).length === 0;
+    return errs;
   };
 
   const handleSubmit = async (e) => {
     if (e) e.preventDefault();
-    if (!validate()) {
-      const firstErr = Object.keys(errors)[0] || 'customerName';
+    // Use the errors validate() just computed — reading the `errors` state here
+    // would give the previous render's value, since setErrors is asynchronous.
+    const errs = validate();
+    if (Object.keys(errs).length > 0) {
+      const firstErr = Object.keys(errs)[0];
       const tabMap = { customerName: 'basic', email: 'basic', phone: 'basic' };
       setActiveTab(tabMap[firstErr] || 'basic');
       return;
@@ -394,7 +397,10 @@ export default function LeadFormModal({ lead, onClose, onSaved }) {
             ))}
           </div>
 
-          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+          {/* noValidate: the browser's native type="email" check would block submit
+              before handleSubmit runs, so our own field-level messages never rendered
+              and the user saw the form silently refuse to submit. */}
+          <form noValidate onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
             <div className="modal-body" style={{ overflowY: 'auto', flex: 1 }}>
               {renderTab()}
             </div>

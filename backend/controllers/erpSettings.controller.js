@@ -1,22 +1,159 @@
 /**
- * ERP Settings Controller
+ * ERP Settings Controller (MongoDB)
  * Comprehensive CRUD operations for Company, Branch, Settings, Currency, and Tax Management
+ *
+ * Migrated off the legacy MySQL stored procedures — the MySQL layer is a stub since the
+ * MongoDB migration, so every read returned empty and every write crashed.
+ *
  * Maintained by Hussain Developer
  * hussaintmerng@gmail.com | +92 319 1634446
  * AMS ERP
  * Date: 2026-01-08
  */
 
-const { query } = require('../config/database');
+const mongoose = require('mongoose');
 const { AppError } = require('../middleware/errorHandler');
 const { normalizePhone } = require('../utils/phone.util');
 const defaultDocumentTemplates = require('../constants/defaultDocumentTemplates');
+const {
+    Company,
+    Branch,
+    Currency,
+    TaxConfig,
+    DocumentTemplate,
+    DOCUMENT_TEMPLATE_TYPES: TEMPLATE_TYPE_LIST,
+} = require('../models/ErpSettings.model');
+const SystemSetting = require('../models/SystemSetting.model');
+const User = require('../models/User.model');
 
-const DOCUMENT_TEMPLATE_TYPES = new Set(['quotation', 'booking', 'order', 'invoice']);
+const DOCUMENT_TEMPLATE_TYPES = new Set(TEMPLATE_TYPE_LIST);
+
+const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const toObjectId = (value) => (mongoose.Types.ObjectId.isValid(value) ? new mongoose.Types.ObjectId(value) : null);
+
+/**
+ * Sequential code generator based on the MAX existing number, not on insertion order —
+ * deriving "next" from the newest document breaks as soon as a row is deleted or
+ * backfilled out of order.
+ */
+async function nextCode(Model, field, prefix, width = 4) {
+    const rows = await Model.find({ [field]: new RegExp(`^${prefix}-\\d+$`) })
+        .select(field)
+        .lean();
+    const max = rows.reduce((acc, row) => {
+        const n = parseInt(String(row[field]).slice(prefix.length + 1), 10);
+        return Number.isFinite(n) && n > acc ? n : acc;
+    }, 0);
+    return `${prefix}-${String(max + 1).padStart(width, '0')}`;
+}
+
+// ── Response mappers (frontend consumes snake_case) ─────────────────────────
+
+const mapCompany = (c, branchCount = 0) => ({
+    id: c._id,
+    company_code: c.companyCode || '',
+    company_name: c.companyName,
+    legal_name: c.legalName || '',
+    registration_number: c.registrationNumber || '',
+    tax_id: c.taxId || '',
+    email: c.email || '',
+    phone: c.phone || '',
+    fax: c.fax || '',
+    website: c.website || '',
+    address: c.address || '',
+    city: c.city || '',
+    state: c.state || '',
+    country: c.country || '',
+    postal_code: c.postalCode || '',
+    currency_code: c.currencyCode || '',
+    fiscal_year_start: c.fiscalYearStart || '',
+    timezone: c.timezone || '',
+    is_active: !!c.isActive,
+    branch_count: branchCount,
+    created_at: c.createdAt,
+    updated_at: c.updatedAt,
+});
+
+const mapBranch = (b) => {
+    const company = b.companyId && typeof b.companyId === 'object' ? b.companyId : null;
+    const manager = b.managerId && typeof b.managerId === 'object' ? b.managerId : null;
+    return {
+        id: b._id,
+        branch_code: b.branchCode || '',
+        branch_name: b.branchName,
+        branch_type: b.branchType,
+        company_id: company ? company._id : b.companyId,
+        company_name: company ? company.companyName : '',
+        manager_id: manager ? manager._id : b.managerId,
+        manager_name: manager ? [manager.firstName, manager.lastName].filter(Boolean).join(' ') : '',
+        email: b.email || '',
+        phone: b.phone || '',
+        fax: b.fax || '',
+        address: b.address || '',
+        city: b.city || '',
+        state: b.state || '',
+        country: b.country || '',
+        postal_code: b.postalCode || '',
+        latitude: b.latitude,
+        longitude: b.longitude,
+        opening_hours: b.openingHours || '',
+        is_active: !!b.isActive,
+        created_at: b.createdAt,
+        updated_at: b.updatedAt,
+    };
+};
+
+const mapCurrency = (c) => ({
+    id: c._id,
+    code: c.code,
+    name: c.name,
+    symbol: c.symbol,
+    exchange_rate: c.exchangeRate,
+    decimal_places: c.decimalPlaces,
+    is_default: !!c.isDefault,
+    is_active: !!c.isActive,
+    created_at: c.createdAt,
+});
+
+const mapTax = (t) => ({
+    id: t._id,
+    tax_name: t.taxName,
+    tax_code: t.taxCode,
+    tax_rate: t.taxRate,
+    tax_type: t.taxType,
+    description: t.description || '',
+    is_compound: !!t.isCompound,
+    applies_to: t.appliesTo || 'all',
+    is_active: !!t.isActive,
+    created_at: t.createdAt,
+});
+
+const mapTemplate = (t, includeHtml = false) => ({
+    id: t._id,
+    document_type: t.documentType,
+    name: t.name,
+    company_id: t.companyId || null,
+    is_default: !!t.isDefault,
+    is_active: !!t.isActive,
+    html_length: (t.htmlContent || '').length,
+    ...(includeHtml ? { html_content: t.htmlContent || '' } : {}),
+    created_at: t.createdAt,
+    updated_at: t.updatedAt,
+});
 
 // ═══════════════════════════════════════════════════════════════════════════
 // COMPANY MANAGEMENT
 // ═══════════════════════════════════════════════════════════════════════════
+
+/** Attach branch counts without an N+1 query per company. */
+async function branchCountsFor(companyIds) {
+    const rows = await Branch.aggregate([
+        { $match: { companyId: { $in: companyIds }, isActive: true } },
+        { $group: { _id: '$companyId', count: { $sum: 1 } } },
+    ]);
+    return Object.fromEntries(rows.map((r) => [String(r._id), r.count]));
+}
 
 /**
  * Get all companies
@@ -26,26 +163,19 @@ const getAllCompanies = async (req, res, next) => {
     try {
         const { active, search } = req.query;
 
-        let sql = `SELECT * FROM vw_company_summary WHERE 1=1`;
-        const params = [];
-
-        if (active !== undefined) {
-            sql += ` AND is_active = ?`;
-            params.push(active === 'true');
-        }
+        const filter = {};
+        if (active !== undefined) filter.isActive = active === 'true';
         if (search) {
-            sql += ` AND (company_name LIKE ? OR company_code LIKE ? OR email LIKE ?)`;
-            const searchTerm = `%${search}%`;
-            params.push(searchTerm, searchTerm, searchTerm);
+            const regex = new RegExp(escapeRegex(search), 'i');
+            filter.$or = [{ companyName: regex }, { companyCode: regex }, { email: regex }];
         }
 
-        sql += ` ORDER BY is_active DESC, id DESC`;
-
-        const companies = await query(sql, params);
+        const companies = await Company.find(filter).sort({ isActive: -1, createdAt: -1 }).lean();
+        const counts = await branchCountsFor(companies.map((c) => c._id));
 
         res.json({
             success: true,
-            data: companies
+            data: companies.map((c) => mapCompany(c, counts[String(c._id)] || 0)),
         });
     } catch (error) {
         next(error);
@@ -59,21 +189,23 @@ const getAllCompanies = async (req, res, next) => {
 const getCompanyById = async (req, res, next) => {
     try {
         const { id } = req.params;
+        if (!toObjectId(id)) throw new AppError('Company not found', 404);
 
-        const company = await query(`SELECT * FROM vw_company_summary WHERE id = ?`, [id]);
+        const company = await Company.findById(id).lean();
+        if (!company) throw new AppError('Company not found', 404);
 
-        if (company.length === 0) {
-            throw new AppError('Company not found', 404);
-        }
-
-        const branches = await query(`SELECT * FROM vw_branch_details WHERE company_id = ? ORDER BY branch_type, branch_name`, [id]);
+        const branches = await Branch.find({ companyId: company._id })
+            .populate('companyId', 'companyName')
+            .populate('managerId', 'firstName lastName')
+            .sort({ branchType: 1, branchName: 1 })
+            .lean();
 
         res.json({
             success: true,
             data: {
-                ...company[0],
-                branches
-            }
+                ...mapCompany(company, branches.filter((b) => b.isActive).length),
+                branches: branches.map(mapBranch),
+            },
         });
     } catch (error) {
         next(error);
@@ -91,46 +223,36 @@ const createCompany = async (req, res, next) => {
             email, phone, fax, website, address, city, state,
             country, postalCode, currencyCode, fiscalYearStart, timezone
         } = req.body;
-        const normalizedPhone = phone ? normalizePhone(phone) : null;
 
-        if (!companyName) {
+        if (!companyName || !String(companyName).trim()) {
             throw new AppError('Company name is required', 400);
         }
 
-        // Call stored procedure
-        await query(`CALL sp_create_company(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, @company_id, @company_code)`, [
-            companyName, legalName || null, registrationNumber || null, taxId || null,
-            email || null, normalizedPhone, address || null, city || null,
-            country || 'Pakistan', req.user.id
-        ]);
-
-        const result = await query(`SELECT @company_id as id, @company_code as company_code`);
-        const companyId = result[0].id;
-
-        // Update additional fields if provided
-        const updates = [];
-        const updateParams = [];
-
-        if (fax) { updates.push('fax = ?'); updateParams.push(fax); }
-        if (website) { updates.push('website = ?'); updateParams.push(website); }
-        if (state) { updates.push('state = ?'); updateParams.push(state); }
-        if (postalCode) { updates.push('postal_code = ?'); updateParams.push(postalCode); }
-        if (currencyCode) { updates.push('currency_code = ?'); updateParams.push(currencyCode); }
-        if (fiscalYearStart) { updates.push('fiscal_year_start = ?'); updateParams.push(fiscalYearStart); }
-        if (timezone) { updates.push('timezone = ?'); updateParams.push(timezone); }
-
-        if (updates.length > 0) {
-            updateParams.push(companyId);
-            await query(`UPDATE companies SET ${updates.join(', ')} WHERE id = ?`, updateParams);
-        }
+        const company = await Company.create({
+            companyCode: await nextCode(Company, 'companyCode', 'COM'),
+            companyName: String(companyName).trim(),
+            legalName: legalName || '',
+            registrationNumber: registrationNumber || '',
+            taxId: taxId || '',
+            email: email || '',
+            phone: phone ? normalizePhone(phone) : '',
+            fax: fax || '',
+            website: website || '',
+            address: address || '',
+            city: city || '',
+            state: state || '',
+            country: country || 'Pakistan',
+            postalCode: postalCode || '',
+            currencyCode: currencyCode || 'PKR',
+            fiscalYearStart: fiscalYearStart || '',
+            timezone: timezone || 'Asia/Karachi',
+            createdBy: req.user?._id || req.user?.id || null,
+        });
 
         res.status(201).json({
             success: true,
             message: 'Company created successfully',
-            data: {
-                id: companyId,
-                company_code: result[0].company_code
-            }
+            data: mapCompany(company.toObject(), 0),
         });
     } catch (error) {
         next(error);
@@ -144,51 +266,39 @@ const createCompany = async (req, res, next) => {
 const updateCompany = async (req, res, next) => {
     try {
         const { id } = req.params;
+        if (!toObjectId(id)) throw new AppError('Company not found', 404);
+
+        const company = await Company.findById(id);
+        if (!company) throw new AppError('Company not found', 404);
+
         const {
             companyName, legalName, registrationNumber, taxId,
             email, phone, fax, website, address, city, state,
             country, postalCode, currencyCode, fiscalYearStart, timezone, isActive
         } = req.body;
-        const normalizedPhone = phone !== undefined && phone !== null && phone !== '' ? normalizePhone(phone) : phone;
 
-        // Check company exists
-        const existing = await query(`SELECT id FROM companies WHERE id = ?`, [id]);
-        if (existing.length === 0) {
-            throw new AppError('Company not found', 404);
+        const assign = {
+            companyName, legalName, registrationNumber, taxId, email, fax, website,
+            address, city, state, country, postalCode, currencyCode, fiscalYearStart,
+            timezone, isActive,
+        };
+        let changed = false;
+        for (const [key, value] of Object.entries(assign)) {
+            if (value !== undefined) { company[key] = value; changed = true; }
         }
-
-        // Build dynamic update
-        const updates = [];
-        const params = [];
-
-        if (companyName !== undefined) { updates.push('company_name = ?'); params.push(companyName); }
-        if (legalName !== undefined) { updates.push('legal_name = ?'); params.push(legalName); }
-        if (registrationNumber !== undefined) { updates.push('registration_number = ?'); params.push(registrationNumber); }
-        if (taxId !== undefined) { updates.push('tax_id = ?'); params.push(taxId); }
-        if (email !== undefined) { updates.push('email = ?'); params.push(email); }
-        if (phone !== undefined) { updates.push('phone = ?'); params.push(phone); }
-        if (fax !== undefined) { updates.push('fax = ?'); params.push(fax); }
-        if (website !== undefined) { updates.push('website = ?'); params.push(website); }
-        if (address !== undefined) { updates.push('address = ?'); params.push(address); }
-        if (city !== undefined) { updates.push('city = ?'); params.push(city); }
-        if (state !== undefined) { updates.push('state = ?'); params.push(state); }
-        if (country !== undefined) { updates.push('country = ?'); params.push(country); }
-        if (postalCode !== undefined) { updates.push('postal_code = ?'); params.push(postalCode); }
-        if (currencyCode !== undefined) { updates.push('currency_code = ?'); params.push(currencyCode); }
-        if (fiscalYearStart !== undefined) { updates.push('fiscal_year_start = ?'); params.push(fiscalYearStart); }
-        if (timezone !== undefined) { updates.push('timezone = ?'); params.push(timezone); }
-        if (isActive !== undefined) { updates.push('is_active = ?'); params.push(isActive); }
-
-        if (updates.length === 0) {
-            throw new AppError('No fields to update', 400);
+        if (phone !== undefined) {
+            company.phone = phone ? normalizePhone(phone) : '';
+            changed = true;
         }
+        if (!changed) throw new AppError('No fields to update', 400);
 
-        params.push(id);
-        await query(`UPDATE companies SET ${updates.join(', ')} WHERE id = ?`, params);
+        company.updatedBy = req.user?._id || req.user?.id || null;
+        await company.save();
 
         res.json({
             success: true,
-            message: 'Company updated successfully'
+            message: 'Company updated successfully',
+            data: mapCompany(company.toObject()),
         });
     } catch (error) {
         next(error);
@@ -196,26 +306,22 @@ const updateCompany = async (req, res, next) => {
 };
 
 /**
- * Delete company
+ * Delete company (soft delete)
  * @route DELETE /api/erp-settings/companies/:id
  */
 const deleteCompany = async (req, res, next) => {
     try {
         const { id } = req.params;
+        if (!toObjectId(id)) throw new AppError('Company not found', 404);
 
-        // Check company exists
-        const existing = await query(`SELECT id FROM companies WHERE id = ?`, [id]);
-        if (existing.length === 0) {
-            throw new AppError('Company not found', 404);
-        }
+        const company = await Company.findById(id);
+        if (!company) throw new AppError('Company not found', 404);
 
-        // Soft delete - set is_active to false
-        await query(`UPDATE companies SET is_active = FALSE WHERE id = ?`, [id]);
+        company.isActive = false;
+        company.updatedBy = req.user?._id || req.user?.id || null;
+        await company.save();
 
-        res.json({
-            success: true,
-            message: 'Company deactivated successfully'
-        });
+        res.json({ success: true, message: 'Company deactivated successfully' });
     } catch (error) {
         next(error);
     }
@@ -225,6 +331,10 @@ const deleteCompany = async (req, res, next) => {
 // BRANCH MANAGEMENT
 // ═══════════════════════════════════════════════════════════════════════════
 
+const branchQuery = (filter) => Branch.find(filter)
+    .populate('companyId', 'companyName')
+    .populate('managerId', 'firstName lastName');
+
 /**
  * Get all branches
  * @route GET /api/erp-settings/branches
@@ -233,35 +343,22 @@ const getAllBranches = async (req, res, next) => {
     try {
         const { companyId, branchType, active, search } = req.query;
 
-        let sql = `SELECT * FROM vw_branch_details WHERE 1=1`;
-        const params = [];
-
+        const filter = {};
         if (companyId) {
-            sql += ` AND company_id = ?`;
-            params.push(companyId);
+            const cid = toObjectId(companyId);
+            if (!cid) return res.json({ success: true, data: [] });
+            filter.companyId = cid;
         }
-        if (branchType) {
-            sql += ` AND branch_type = ?`;
-            params.push(branchType);
-        }
-        if (active !== undefined) {
-            sql += ` AND is_active = ?`;
-            params.push(active === 'true');
-        }
+        if (branchType) filter.branchType = branchType;
+        if (active !== undefined) filter.isActive = active === 'true';
         if (search) {
-            sql += ` AND (branch_name LIKE ? OR branch_code LIKE ? OR city LIKE ?)`;
-            const searchTerm = `%${search}%`;
-            params.push(searchTerm, searchTerm, searchTerm);
+            const regex = new RegExp(escapeRegex(search), 'i');
+            filter.$or = [{ branchName: regex }, { branchCode: regex }, { city: regex }];
         }
 
-        sql += ` ORDER BY company_name, branch_type, branch_name`;
+        const branches = await branchQuery(filter).sort({ branchType: 1, branchName: 1 }).lean();
 
-        const branches = await query(sql, params);
-
-        res.json({
-            success: true,
-            data: branches
-        });
+        res.json({ success: true, data: branches.map(mapBranch) });
     } catch (error) {
         next(error);
     }
@@ -274,17 +371,12 @@ const getAllBranches = async (req, res, next) => {
 const getBranchById = async (req, res, next) => {
     try {
         const { id } = req.params;
+        if (!toObjectId(id)) throw new AppError('Branch not found', 404);
 
-        const branch = await query(`SELECT * FROM vw_branch_details WHERE id = ?`, [id]);
+        const branch = await branchQuery({ _id: id }).lean();
+        if (!branch.length) throw new AppError('Branch not found', 404);
 
-        if (branch.length === 0) {
-            throw new AppError('Branch not found', 404);
-        }
-
-        res.json({
-            success: true,
-            data: branch[0]
-        });
+        res.json({ success: true, data: mapBranch(branch[0]) });
     } catch (error) {
         next(error);
     }
@@ -302,43 +394,41 @@ const createBranch = async (req, res, next) => {
             postalCode, latitude, longitude, openingHours
         } = req.body;
 
-        if (!companyId || !branchName) {
+        if (!companyId || !branchName || !String(branchName).trim()) {
             throw new AppError('Company ID and branch name are required', 400);
         }
+        const cid = toObjectId(companyId);
+        if (!cid) throw new AppError('Invalid company ID', 400);
 
-        // Call stored procedure
-        await query(`CALL sp_create_branch(?, ?, ?, ?, ?, ?, ?, ?, ?, @branch_id, @branch_code)`, [
-            companyId, branchName, branchType || 'regional', managerId || null,
-            email || null, phone || null, address || null, city || null, req.user.id
-        ]);
+        const company = await Company.findById(cid).select('_id');
+        if (!company) throw new AppError('Company not found', 404);
 
-        const result = await query(`SELECT @branch_id as id, @branch_code as branch_code`);
-        const branchId = result[0].id;
+        const branch = await Branch.create({
+            branchCode: await nextCode(Branch, 'branchCode', 'BR'),
+            companyId: cid,
+            branchName: String(branchName).trim(),
+            branchType: branchType || 'regional',
+            managerId: managerId ? toObjectId(managerId) : null,
+            email: email || '',
+            phone: phone ? normalizePhone(phone) : '',
+            fax: fax || '',
+            address: address || '',
+            city: city || '',
+            state: state || '',
+            country: country || 'Pakistan',
+            postalCode: postalCode || '',
+            latitude: latitude === undefined || latitude === '' ? null : Number(latitude),
+            longitude: longitude === undefined || longitude === '' ? null : Number(longitude),
+            openingHours: openingHours || '',
+            createdBy: req.user?._id || req.user?.id || null,
+        });
 
-        // Update additional fields
-        const updates = [];
-        const updateParams = [];
-
-        if (fax) { updates.push('fax = ?'); updateParams.push(fax); }
-        if (state) { updates.push('state = ?'); updateParams.push(state); }
-        if (country) { updates.push('country = ?'); updateParams.push(country); }
-        if (postalCode) { updates.push('postal_code = ?'); updateParams.push(postalCode); }
-        if (latitude) { updates.push('latitude = ?'); updateParams.push(latitude); }
-        if (longitude) { updates.push('longitude = ?'); updateParams.push(longitude); }
-        if (openingHours) { updates.push('opening_hours = ?'); updateParams.push(openingHours); }
-
-        if (updates.length > 0) {
-            updateParams.push(branchId);
-            await query(`UPDATE company_branches SET ${updates.join(', ')} WHERE id = ?`, updateParams);
-        }
+        const created = await branchQuery({ _id: branch._id }).lean();
 
         res.status(201).json({
             success: true,
             message: 'Branch created successfully',
-            data: {
-                id: branchId,
-                branch_code: result[0].branch_code
-            }
+            data: mapBranch(created[0]),
         });
     } catch (error) {
         next(error);
@@ -352,48 +442,52 @@ const createBranch = async (req, res, next) => {
 const updateBranch = async (req, res, next) => {
     try {
         const { id } = req.params;
+        if (!toObjectId(id)) throw new AppError('Branch not found', 404);
+
+        const branch = await Branch.findById(id);
+        if (!branch) throw new AppError('Branch not found', 404);
+
         const {
             companyId, branchName, branchType, managerId, email, phone, fax,
             address, city, state, country, postalCode, latitude,
             longitude, openingHours, isActive
         } = req.body;
 
-        // Check branch exists
-        const existing = await query(`SELECT id FROM company_branches WHERE id = ?`, [id]);
-        if (existing.length === 0) {
-            throw new AppError('Branch not found', 404);
+        const assign = {
+            branchName, branchType, email, fax, address, city, state, country,
+            postalCode, openingHours, isActive,
+        };
+        let changed = false;
+        for (const [key, value] of Object.entries(assign)) {
+            if (value !== undefined) { branch[key] = value; changed = true; }
         }
-
-        const updates = [];
-        const params = [];
-
-        if (companyId !== undefined) { updates.push('company_id = ?'); params.push(companyId); }
-        if (branchName !== undefined) { updates.push('branch_name = ?'); params.push(branchName); }
-        if (branchType !== undefined) { updates.push('branch_type = ?'); params.push(branchType); }
-        if (managerId !== undefined) { updates.push('manager_id = ?'); params.push(managerId || null); }
-        if (email !== undefined) { updates.push('email = ?'); params.push(email); }
-        if (phone !== undefined) { updates.push('phone = ?'); params.push(phone); }
-        if (fax !== undefined) { updates.push('fax = ?'); params.push(fax); }
-        if (address !== undefined) { updates.push('address = ?'); params.push(address); }
-        if (city !== undefined) { updates.push('city = ?'); params.push(city); }
-        if (state !== undefined) { updates.push('state = ?'); params.push(state); }
-        if (country !== undefined) { updates.push('country = ?'); params.push(country); }
-        if (postalCode !== undefined) { updates.push('postal_code = ?'); params.push(postalCode); }
-        if (latitude !== undefined) { updates.push('latitude = ?'); params.push(latitude); }
-        if (longitude !== undefined) { updates.push('longitude = ?'); params.push(longitude); }
-        if (openingHours !== undefined) { updates.push('opening_hours = ?'); params.push(openingHours); }
-        if (isActive !== undefined) { updates.push('is_active = ?'); params.push(isActive); }
-
-        if (updates.length === 0) {
-            throw new AppError('No fields to update', 400);
+        if (companyId !== undefined) {
+            const cid = toObjectId(companyId);
+            if (!cid) throw new AppError('Invalid company ID', 400);
+            const exists = await Company.findById(cid).select('_id');
+            if (!exists) throw new AppError('Company not found', 404);
+            branch.companyId = cid;
+            changed = true;
         }
+        if (managerId !== undefined) {
+            branch.managerId = managerId ? toObjectId(managerId) : null;
+            changed = true;
+        }
+        if (phone !== undefined) { branch.phone = phone ? normalizePhone(phone) : ''; changed = true; }
+        if (latitude !== undefined) { branch.latitude = latitude === '' ? null : Number(latitude); changed = true; }
+        if (longitude !== undefined) { branch.longitude = longitude === '' ? null : Number(longitude); changed = true; }
 
-        params.push(id);
-        await query(`UPDATE company_branches SET ${updates.join(', ')} WHERE id = ?`, params);
+        if (!changed) throw new AppError('No fields to update', 400);
+
+        branch.updatedBy = req.user?._id || req.user?.id || null;
+        await branch.save();
+
+        const updated = await branchQuery({ _id: branch._id }).lean();
 
         res.json({
             success: true,
-            message: 'Branch updated successfully'
+            message: 'Branch updated successfully',
+            data: mapBranch(updated[0]),
         });
     } catch (error) {
         next(error);
@@ -401,28 +495,26 @@ const updateBranch = async (req, res, next) => {
 };
 
 /**
- * Delete branch
+ * Delete branch (soft delete)
  * @route DELETE /api/erp-settings/branches/:id
  */
 const deleteBranch = async (req, res, next) => {
     try {
         const { id } = req.params;
+        if (!toObjectId(id)) throw new AppError('Branch not found', 404);
 
-        const existing = await query(`SELECT id, branch_type FROM company_branches WHERE id = ?`, [id]);
-        if (existing.length === 0) {
-            throw new AppError('Branch not found', 404);
-        }
+        const branch = await Branch.findById(id);
+        if (!branch) throw new AppError('Branch not found', 404);
 
-        if (existing[0].branch_type === 'head_office') {
+        if (branch.branchType === 'head_office') {
             throw new AppError('Cannot delete head office branch', 400);
         }
 
-        await query(`UPDATE company_branches SET is_active = FALSE WHERE id = ?`, [id]);
+        branch.isActive = false;
+        branch.updatedBy = req.user?._id || req.user?.id || null;
+        await branch.save();
 
-        res.json({
-            success: true,
-            message: 'Branch deactivated successfully'
-        });
+        res.json({ success: true, message: 'Branch deactivated successfully' });
     } catch (error) {
         next(error);
     }
@@ -432,6 +524,17 @@ const deleteBranch = async (req, res, next) => {
 // SYSTEM SETTINGS
 // ═══════════════════════════════════════════════════════════════════════════
 
+const mapSetting = (s) => ({
+    setting_key: s.key,
+    setting_value: s.value,
+    setting_type: typeof s.value === 'number' ? 'number'
+        : typeof s.value === 'boolean' ? 'boolean' : 'string',
+    category: s.category || 'general',
+    display_name: s.key,
+    description: s.description || '',
+    is_editable: true,
+});
+
 /**
  * Get all settings
  * @route GET /api/erp-settings/settings
@@ -440,71 +543,56 @@ const getAllSettings = async (req, res, next) => {
     try {
         const { category } = req.query;
 
-        let sql = `
-            SELECT setting_key, setting_value, setting_type, category, 
-                   display_name, description, is_editable
-            FROM system_settings
-            WHERE 1=1
-        `;
-        const params = [];
+        const filter = {};
+        if (category) filter.category = category;
 
-        if (category) {
-            sql += ` AND category = ?`;
-            params.push(category);
-        }
+        const rows = await SystemSetting.find(filter).sort({ category: 1, key: 1 }).lean();
+        const settings = rows.map(mapSetting);
 
-        sql += ` ORDER BY category, display_name`;
-
-        const settings = await query(sql, params);
-
-        // Group by category
         const grouped = settings.reduce((acc, setting) => {
-            if (!acc[setting.category]) {
-                acc[setting.category] = [];
-            }
-            acc[setting.category].push(setting);
+            (acc[setting.category] = acc[setting.category] || []).push(setting);
             return acc;
         }, {});
 
-        res.json({
-            success: true,
-            data: settings,
-            grouped
-        });
+        res.json({ success: true, data: settings, grouped });
     } catch (error) {
         next(error);
     }
 };
 
 /**
- * Update settings (bulk update)
+ * Update settings (bulk upsert)
  * @route PUT /api/erp-settings/settings
  */
 const updateSettings = async (req, res, next) => {
     try {
         const { settings } = req.body;
-        const ipAddress = req.ip || req.connection.remoteAddress;
 
         if (!Array.isArray(settings) || settings.length === 0) {
             throw new AppError('Settings array is required', 400);
         }
 
+        const updated = [];
         for (const setting of settings) {
             if (!setting.key || setting.value === undefined) continue;
-
-            try {
-                await query(`CALL sp_update_system_setting(?, ?, ?, ?)`, [
-                    setting.key, String(setting.value), req.user.id, ipAddress
-                ]);
-            } catch (err) {
-                // Log but continue with other settings
-                console.error(`Failed to update setting ${setting.key}:`, err.message);
-            }
+            await SystemSetting.findOneAndUpdate(
+                { key: setting.key },
+                {
+                    $set: {
+                        value: setting.value,
+                        ...(setting.category ? { category: setting.category } : {}),
+                        ...(setting.description ? { description: setting.description } : {}),
+                    },
+                },
+                { upsert: true, new: true, setDefaultsOnInsert: true, runValidators: true }
+            );
+            updated.push(setting.key);
         }
 
         res.json({
             success: true,
-            message: 'Settings updated successfully'
+            message: 'Settings updated successfully',
+            data: { updated },
         });
     } catch (error) {
         next(error);
@@ -517,11 +605,14 @@ const updateSettings = async (req, res, next) => {
  */
 const getSettingCategories = async (req, res, next) => {
     try {
-        const categories = await query(`SELECT * FROM vw_settings_grouped ORDER BY category`);
+        const rows = await SystemSetting.aggregate([
+            { $group: { _id: '$category', setting_count: { $sum: 1 } } },
+            { $sort: { _id: 1 } },
+        ]);
 
         res.json({
             success: true,
-            data: categories
+            data: rows.map((r) => ({ category: r._id || 'general', setting_count: r.setting_count })),
         });
     } catch (error) {
         next(error);
@@ -532,30 +623,31 @@ const getSettingCategories = async (req, res, next) => {
 // CURRENCY MANAGEMENT
 // ═══════════════════════════════════════════════════════════════════════════
 
+/** Seed the base currency so the dropdowns are not empty on a fresh database. */
+async function ensureDefaultCurrency() {
+    const count = await Currency.estimatedDocumentCount();
+    if (count > 0) return;
+    await Currency.create({
+        code: 'PKR', name: 'Pakistani Rupee', symbol: '₨',
+        exchangeRate: 1, decimalPlaces: 2, isDefault: true, isActive: true,
+    });
+}
+
 /**
  * Get all currencies
  * @route GET /api/erp-settings/currencies
  */
 const getAllCurrencies = async (req, res, next) => {
     try {
+        await ensureDefaultCurrency();
         const { active } = req.query;
 
-        let sql = `SELECT * FROM currencies WHERE 1=1`;
-        const params = [];
+        const filter = {};
+        if (active !== undefined) filter.isActive = active === 'true';
 
-        if (active !== undefined) {
-            sql += ` AND is_active = ?`;
-            params.push(active === 'true');
-        }
+        const currencies = await Currency.find(filter).sort({ isDefault: -1, name: 1 }).lean();
 
-        sql += ` ORDER BY is_default DESC, name`;
-
-        const currencies = await query(sql, params);
-
-        res.json({
-            success: true,
-            data: currencies
-        });
+        res.json({ success: true, data: currencies.map(mapCurrency) });
     } catch (error) {
         next(error);
     }
@@ -573,33 +665,29 @@ const createCurrency = async (req, res, next) => {
             throw new AppError('Code, name, and symbol are required', 400);
         }
 
-        // Check if code exists
-        const existing = await query(`SELECT id FROM currencies WHERE code = ?`, [code]);
-        if (existing.length > 0) {
-            throw new AppError('Currency code already exists', 400);
-        }
+        const normalizedCode = String(code).trim().toUpperCase();
+        const existing = await Currency.findOne({ code: normalizedCode }).select('_id');
+        if (existing) throw new AppError('Currency code already exists', 409);
 
-        // If setting as default, unset other defaults first
         if (isDefault) {
-            await query(`UPDATE currencies SET is_default = FALSE`);
+            await Currency.updateMany({}, { $set: { isDefault: false } });
         }
 
-        const result = await query(`
-            INSERT INTO currencies (code, name, symbol, exchange_rate, decimal_places, is_default, is_active)
-            VALUES (?, ?, ?, ?, ?, ?, TRUE)
-        `, [
-            code.toUpperCase(),
+        const currency = await Currency.create({
+            code: normalizedCode,
             name,
             symbol,
-            parseFloat(exchangeRate) || 1,
-            parseInt(decimalPlaces) || 2,
-            isDefault || false
-        ]);
+            exchangeRate: exchangeRate === undefined || exchangeRate === '' ? 1 : Number(exchangeRate),
+            decimalPlaces: decimalPlaces === undefined || decimalPlaces === '' ? 2 : Number(decimalPlaces),
+            isDefault: !!isDefault,
+            isActive: true,
+            createdBy: req.user?._id || req.user?.id || null,
+        });
 
         res.status(201).json({
             success: true,
             message: 'Currency created successfully',
-            data: { id: result.insertId }
+            data: mapCurrency(currency.toObject()),
         });
     } catch (error) {
         next(error);
@@ -613,33 +701,32 @@ const createCurrency = async (req, res, next) => {
 const updateCurrency = async (req, res, next) => {
     try {
         const { id } = req.params;
+        if (!toObjectId(id)) throw new AppError('Currency not found', 404);
+
+        const currency = await Currency.findById(id);
+        if (!currency) throw new AppError('Currency not found', 404);
+
         const { name, symbol, exchangeRate, decimalPlaces, isDefault, isActive } = req.body;
 
-        const existing = await query(`SELECT id FROM currencies WHERE id = ?`, [id]);
-        if (existing.length === 0) {
-            throw new AppError('Currency not found', 404);
+        let changed = false;
+        if (name !== undefined) { currency.name = name; changed = true; }
+        if (symbol !== undefined) { currency.symbol = symbol; changed = true; }
+        if (exchangeRate !== undefined) { currency.exchangeRate = Number(exchangeRate); changed = true; }
+        if (decimalPlaces !== undefined) { currency.decimalPlaces = Number(decimalPlaces); changed = true; }
+        if (isActive !== undefined) { currency.isActive = isActive; changed = true; }
+        if (isDefault !== undefined) {
+            if (isDefault) await Currency.updateMany({ _id: { $ne: currency._id } }, { $set: { isDefault: false } });
+            currency.isDefault = isDefault;
+            changed = true;
         }
+        if (!changed) throw new AppError('No fields to update', 400);
 
-        const updates = [];
-        const params = [];
-
-        if (name !== undefined) { updates.push('name = ?'); params.push(name); }
-        if (symbol !== undefined) { updates.push('symbol = ?'); params.push(symbol); }
-        if (exchangeRate !== undefined) { updates.push('exchange_rate = ?'); params.push(parseFloat(exchangeRate)); }
-        if (decimalPlaces !== undefined) { updates.push('decimal_places = ?'); params.push(parseInt(decimalPlaces)); }
-        if (isDefault !== undefined) { updates.push('is_default = ?'); params.push(isDefault); }
-        if (isActive !== undefined) { updates.push('is_active = ?'); params.push(isActive); }
-
-        if (updates.length === 0) {
-            throw new AppError('No fields to update', 400);
-        }
-
-        params.push(id);
-        await query(`UPDATE currencies SET ${updates.join(', ')} WHERE id = ?`, params);
+        await currency.save();
 
         res.json({
             success: true,
-            message: 'Currency updated successfully'
+            message: 'Currency updated successfully',
+            data: mapCurrency(currency.toObject()),
         });
     } catch (error) {
         next(error);
@@ -647,28 +734,23 @@ const updateCurrency = async (req, res, next) => {
 };
 
 /**
- * Delete currency
+ * Delete currency (soft delete)
  * @route DELETE /api/erp-settings/currencies/:id
  */
 const deleteCurrency = async (req, res, next) => {
     try {
         const { id } = req.params;
+        if (!toObjectId(id)) throw new AppError('Currency not found', 404);
 
-        const existing = await query(`SELECT id, is_default FROM currencies WHERE id = ?`, [id]);
-        if (existing.length === 0) {
-            throw new AppError('Currency not found', 404);
-        }
+        const currency = await Currency.findById(id);
+        if (!currency) throw new AppError('Currency not found', 404);
 
-        if (existing[0].is_default) {
-            throw new AppError('Cannot delete default currency', 400);
-        }
+        if (currency.isDefault) throw new AppError('Cannot delete default currency', 400);
 
-        await query(`UPDATE currencies SET is_active = FALSE WHERE id = ?`, [id]);
+        currency.isActive = false;
+        await currency.save();
 
-        res.json({
-            success: true,
-            message: 'Currency deactivated successfully'
-        });
+        res.json({ success: true, message: 'Currency deactivated successfully' });
     } catch (error) {
         next(error);
     }
@@ -686,26 +768,13 @@ const getAllTaxes = async (req, res, next) => {
     try {
         const { active, taxType } = req.query;
 
-        let sql = `SELECT * FROM tax_configurations WHERE 1=1`;
-        const params = [];
+        const filter = {};
+        if (active !== undefined) filter.isActive = active === 'true';
+        if (taxType) filter.taxType = taxType;
 
-        if (active !== undefined) {
-            sql += ` AND is_active = ?`;
-            params.push(active === 'true');
-        }
-        if (taxType) {
-            sql += ` AND tax_type = ?`;
-            params.push(taxType);
-        }
+        const taxes = await TaxConfig.find(filter).sort({ taxType: 1, taxName: 1 }).lean();
 
-        sql += ` ORDER BY tax_type, tax_name`;
-
-        const taxes = await query(sql, params);
-
-        res.json({
-            success: true,
-            data: taxes
-        });
+        res.json({ success: true, data: taxes.map(mapTax) });
     } catch (error) {
         next(error);
     }
@@ -719,33 +788,30 @@ const createTax = async (req, res, next) => {
     try {
         const { taxName, taxCode, taxRate, taxType, description, isCompound, appliesTo } = req.body;
 
-        if (!taxName || !taxCode || taxRate === undefined) {
+        if (!taxName || !taxCode || taxRate === undefined || taxRate === '') {
             throw new AppError('Tax name, code, and rate are required', 400);
         }
 
-        const existing = await query(`SELECT id FROM tax_configurations WHERE tax_code = ?`, [taxCode]);
-        if (existing.length > 0) {
-            throw new AppError('Tax code already exists', 400);
-        }
+        const normalizedCode = String(taxCode).trim().toUpperCase();
+        const existing = await TaxConfig.findOne({ taxCode: normalizedCode }).select('_id');
+        if (existing) throw new AppError('Tax code already exists', 409);
 
-        const result = await query(`
-            INSERT INTO tax_configurations (tax_name, tax_code, tax_rate, tax_type, description, is_compound, applies_to, created_by, is_active)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, TRUE)
-        `, [
+        const tax = await TaxConfig.create({
             taxName,
-            taxCode.toUpperCase(),
-            parseFloat(taxRate),
-            taxType || 'sales',
-            description || null,
-            isCompound || false,
-            appliesTo || 'all',
-            req.user.id
-        ]);
+            taxCode: normalizedCode,
+            taxRate: Number(taxRate),
+            taxType: taxType || 'sales',
+            description: description || '',
+            isCompound: !!isCompound,
+            appliesTo: appliesTo || 'all',
+            isActive: true,
+            createdBy: req.user?._id || req.user?.id || null,
+        });
 
         res.status(201).json({
             success: true,
             message: 'Tax configuration created successfully',
-            data: { id: result.insertId }
+            data: mapTax(tax.toObject()),
         });
     } catch (error) {
         next(error);
@@ -759,34 +825,29 @@ const createTax = async (req, res, next) => {
 const updateTax = async (req, res, next) => {
     try {
         const { id } = req.params;
+        if (!toObjectId(id)) throw new AppError('Tax configuration not found', 404);
+
+        const tax = await TaxConfig.findById(id);
+        if (!tax) throw new AppError('Tax configuration not found', 404);
+
         const { taxName, taxRate, taxType, description, isCompound, appliesTo, isActive } = req.body;
 
-        const existing = await query(`SELECT id FROM tax_configurations WHERE id = ?`, [id]);
-        if (existing.length === 0) {
-            throw new AppError('Tax configuration not found', 404);
-        }
+        let changed = false;
+        if (taxName !== undefined) { tax.taxName = taxName; changed = true; }
+        if (taxRate !== undefined) { tax.taxRate = Number(taxRate); changed = true; }
+        if (taxType !== undefined) { tax.taxType = taxType; changed = true; }
+        if (description !== undefined) { tax.description = description; changed = true; }
+        if (isCompound !== undefined) { tax.isCompound = isCompound; changed = true; }
+        if (appliesTo !== undefined) { tax.appliesTo = appliesTo; changed = true; }
+        if (isActive !== undefined) { tax.isActive = isActive; changed = true; }
+        if (!changed) throw new AppError('No fields to update', 400);
 
-        const updates = [];
-        const params = [];
-
-        if (taxName !== undefined) { updates.push('tax_name = ?'); params.push(taxName); }
-        if (taxRate !== undefined) { updates.push('tax_rate = ?'); params.push(parseFloat(taxRate)); }
-        if (taxType !== undefined) { updates.push('tax_type = ?'); params.push(taxType); }
-        if (description !== undefined) { updates.push('description = ?'); params.push(description); }
-        if (isCompound !== undefined) { updates.push('is_compound = ?'); params.push(isCompound); }
-        if (appliesTo !== undefined) { updates.push('applies_to = ?'); params.push(appliesTo); }
-        if (isActive !== undefined) { updates.push('is_active = ?'); params.push(isActive); }
-
-        if (updates.length === 0) {
-            throw new AppError('No fields to update', 400);
-        }
-
-        params.push(id);
-        await query(`UPDATE tax_configurations SET ${updates.join(', ')} WHERE id = ?`, params);
+        await tax.save();
 
         res.json({
             success: true,
-            message: 'Tax configuration updated successfully'
+            message: 'Tax configuration updated successfully',
+            data: mapTax(tax.toObject()),
         });
     } catch (error) {
         next(error);
@@ -794,24 +855,21 @@ const updateTax = async (req, res, next) => {
 };
 
 /**
- * Delete tax configuration
+ * Delete tax configuration (soft delete)
  * @route DELETE /api/erp-settings/taxes/:id
  */
 const deleteTax = async (req, res, next) => {
     try {
         const { id } = req.params;
+        if (!toObjectId(id)) throw new AppError('Tax configuration not found', 404);
 
-        const existing = await query(`SELECT id FROM tax_configurations WHERE id = ?`, [id]);
-        if (existing.length === 0) {
-            throw new AppError('Tax configuration not found', 404);
-        }
+        const tax = await TaxConfig.findById(id);
+        if (!tax) throw new AppError('Tax configuration not found', 404);
 
-        await query(`UPDATE tax_configurations SET is_active = FALSE WHERE id = ?`, [id]);
+        tax.isActive = false;
+        await tax.save();
 
-        res.json({
-            success: true,
-            message: 'Tax configuration deactivated successfully'
-        });
+        res.json({ success: true, message: 'Tax configuration deactivated successfully' });
     } catch (error) {
         next(error);
     }
@@ -827,11 +885,34 @@ const deleteTax = async (req, res, next) => {
  */
 const getERPStats = async (req, res, next) => {
     try {
-        const stats = await query(`SELECT * FROM vw_erp_stats`);
+        const [
+            totalCompanies, activeCompanies,
+            totalBranches, activeBranches,
+            totalCurrencies, activeCurrencies,
+            totalTaxes, activeTaxes,
+        ] = await Promise.all([
+            Company.countDocuments({}),
+            Company.countDocuments({ isActive: true }),
+            Branch.countDocuments({}),
+            Branch.countDocuments({ isActive: true }),
+            Currency.countDocuments({}),
+            Currency.countDocuments({ isActive: true }),
+            TaxConfig.countDocuments({}),
+            TaxConfig.countDocuments({ isActive: true }),
+        ]);
 
         res.json({
             success: true,
-            data: stats[0] || {}
+            data: {
+                total_companies: totalCompanies,
+                active_companies: activeCompanies,
+                total_branches: totalBranches,
+                active_branches: activeBranches,
+                total_currencies: totalCurrencies,
+                active_currencies: activeCurrencies,
+                total_taxes: totalTaxes,
+                active_taxes: activeTaxes,
+            },
         });
     } catch (error) {
         next(error);
@@ -844,17 +925,20 @@ const getERPStats = async (req, res, next) => {
  */
 const getManagers = async (req, res, next) => {
     try {
-        const managers = await query(`
-            SELECT u.id, CONCAT(u.first_name, ' ', u.last_name) as name, u.email, r.name as role_name
-            FROM users u
-            LEFT JOIN roles r ON u.role_id = r.id
-            WHERE u.is_active = TRUE
-            ORDER BY u.first_name
-        `);
+        const users = await User.find({ isActive: true })
+            .select('firstName lastName email role')
+            .populate('role', 'name')
+            .sort({ firstName: 1 })
+            .lean();
 
         res.json({
             success: true,
-            data: managers
+            data: users.map((u) => ({
+                id: u._id,
+                name: [u.firstName, u.lastName].filter(Boolean).join(' '),
+                email: u.email,
+                role_name: u.role?.name || '',
+            })),
         });
     } catch (error) {
         next(error);
@@ -866,59 +950,42 @@ const getManagers = async (req, res, next) => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 const ensureDefaultDocumentTemplates = async () => {
-    const cnt = await query(`SELECT COUNT(*) AS n FROM document_templates`);
-    if (Number(cnt[0]?.n || 0) > 0) return;
-    const seeds = [
-        ['quotation', 'Standard quotation', defaultDocumentTemplates.quotation],
-        ['booking', 'Standard booking', defaultDocumentTemplates.booking],
-        ['order', 'Standard sales order', defaultDocumentTemplates.order],
-        ['invoice', 'Standard invoice (dealer)', defaultDocumentTemplates.invoice]
-    ];
-    for (const [documentType, name, html] of seeds) {
-        await query(
-            `INSERT INTO document_templates (document_type, name, html_content, company_id, is_default, is_active)
-             VALUES (?, ?, ?, NULL, TRUE, TRUE)`,
-            [documentType, name, html]
-        );
-    }
+    const count = await DocumentTemplate.estimatedDocumentCount();
+    if (count > 0) return;
+    await DocumentTemplate.insertMany([
+        { documentType: 'quotation', name: 'Standard quotation', htmlContent: defaultDocumentTemplates.quotation },
+        { documentType: 'booking', name: 'Standard booking', htmlContent: defaultDocumentTemplates.booking },
+        { documentType: 'order', name: 'Standard sales order', htmlContent: defaultDocumentTemplates.order },
+        { documentType: 'invoice', name: 'Standard invoice (dealer)', htmlContent: defaultDocumentTemplates.invoice },
+    ].map((t) => ({ ...t, companyId: null, isDefault: true, isActive: true })));
 };
 
 const clearDefaultForScope = async (documentType, companyId) => {
-    if (companyId == null || companyId === '') {
-        await query(
-            `UPDATE document_templates SET is_default = FALSE WHERE document_type = ? AND company_id IS NULL`,
-            [documentType]
-        );
-    } else {
-        await query(
-            `UPDATE document_templates SET is_default = FALSE WHERE document_type = ? AND company_id = ?`,
-            [documentType, companyId]
-        );
-    }
+    await DocumentTemplate.updateMany(
+        { documentType, companyId: companyId || null },
+        { $set: { isDefault: false } }
+    );
 };
 
 const getAllDocumentTemplates = async (req, res, next) => {
     try {
         await ensureDefaultDocumentTemplates();
         const { documentType, active } = req.query;
-        let sql = `SELECT id, document_type, name, company_id, is_default, is_active, created_at, updated_at,
-            CHAR_LENGTH(html_content) AS html_length
-            FROM document_templates WHERE 1=1`;
-        const params = [];
+
+        const filter = {};
         if (documentType) {
             if (!DOCUMENT_TEMPLATE_TYPES.has(documentType)) {
                 throw new AppError('Invalid document type', 400);
             }
-            sql += ` AND document_type = ?`;
-            params.push(documentType);
+            filter.documentType = documentType;
         }
-        if (active !== undefined) {
-            sql += ` AND is_active = ?`;
-            params.push(active === 'true');
-        }
-        sql += ` ORDER BY document_type, is_default DESC, name`;
-        const rows = await query(sql, params);
-        res.json({ success: true, data: rows });
+        if (active !== undefined) filter.isActive = active === 'true';
+
+        const rows = await DocumentTemplate.find(filter)
+            .sort({ documentType: 1, isDefault: -1, name: 1 })
+            .lean();
+
+        res.json({ success: true, data: rows.map((t) => mapTemplate(t)) });
     } catch (error) {
         next(error);
     }
@@ -928,9 +995,12 @@ const getDocumentTemplateById = async (req, res, next) => {
     try {
         await ensureDefaultDocumentTemplates();
         const { id } = req.params;
-        const rows = await query(`SELECT * FROM document_templates WHERE id = ?`, [id]);
-        if (!rows.length) throw new AppError('Template not found', 404);
-        res.json({ success: true, data: rows[0] });
+        if (!toObjectId(id)) throw new AppError('Template not found', 404);
+
+        const template = await DocumentTemplate.findById(id).lean();
+        if (!template) throw new AppError('Template not found', 404);
+
+        res.json({ success: true, data: mapTemplate(template, true) });
     } catch (error) {
         next(error);
     }
@@ -943,30 +1013,27 @@ const getDefaultDocumentTemplate = async (req, res, next) => {
         if (!DOCUMENT_TEMPLATE_TYPES.has(documentType)) {
             throw new AppError('Invalid document type', 400);
         }
-        const companyId = req.query.companyId ? parseInt(req.query.companyId, 10) : null;
-        let rows = [];
-        if (companyId && !Number.isNaN(companyId)) {
-            rows = await query(
-                `SELECT * FROM document_templates WHERE document_type = ? AND is_active = TRUE
-                 AND company_id = ? AND is_default = TRUE ORDER BY id DESC LIMIT 1`,
-                [documentType, companyId]
-            );
+
+        const companyId = req.query.companyId ? toObjectId(req.query.companyId) : null;
+
+        // Company-scoped default wins, then the global default, then anything active.
+        let template = null;
+        if (companyId) {
+            template = await DocumentTemplate.findOne({
+                documentType, isActive: true, companyId, isDefault: true,
+            }).sort({ createdAt: -1 }).lean();
         }
-        if (!rows.length) {
-            rows = await query(
-                `SELECT * FROM document_templates WHERE document_type = ? AND is_active = TRUE
-                 AND company_id IS NULL AND is_default = TRUE ORDER BY id DESC LIMIT 1`,
-                [documentType]
-            );
+        if (!template) {
+            template = await DocumentTemplate.findOne({
+                documentType, isActive: true, companyId: null, isDefault: true,
+            }).sort({ createdAt: -1 }).lean();
         }
-        if (!rows.length) {
-            rows = await query(
-                `SELECT * FROM document_templates WHERE document_type = ? AND is_active = TRUE
-                 ORDER BY is_default DESC, id DESC LIMIT 1`,
-                [documentType]
-            );
+        if (!template) {
+            template = await DocumentTemplate.findOne({ documentType, isActive: true })
+                .sort({ isDefault: -1, createdAt: -1 }).lean();
         }
-        res.json({ success: true, data: rows[0] || null });
+
+        res.json({ success: true, data: template ? mapTemplate(template, true) : null });
     } catch (error) {
         next(error);
     }
@@ -974,28 +1041,36 @@ const getDefaultDocumentTemplate = async (req, res, next) => {
 
 const createDocumentTemplate = async (req, res, next) => {
     try {
-        const {
-            documentType, name, htmlContent, companyId, isDefault
-        } = req.body;
+        const { documentType, name, htmlContent, companyId, isDefault } = req.body;
+
         if (!DOCUMENT_TEMPLATE_TYPES.has(documentType)) {
             throw new AppError('Invalid document type', 400);
         }
         if (!name || !htmlContent) {
             throw new AppError('Name and htmlContent are required', 400);
         }
-        const cid = companyId === undefined || companyId === '' ? null : parseInt(companyId, 10);
-        if (isDefault) {
-            await clearDefaultForScope(documentType, cid);
-        }
-        const result = await query(
-            `INSERT INTO document_templates (document_type, name, html_content, company_id, is_default, is_active, created_by)
-             VALUES (?, ?, ?, ?, ?, TRUE, ?)`,
-            [documentType, name, htmlContent, Number.isNaN(cid) ? null : cid, !!isDefault, req.user?.id || null]
-        );
+
+        const cid = companyId === undefined || companyId === '' || companyId === null
+            ? null
+            : toObjectId(companyId);
+        if (companyId && !cid) throw new AppError('Invalid company ID', 400);
+
+        if (isDefault) await clearDefaultForScope(documentType, cid);
+
+        const template = await DocumentTemplate.create({
+            documentType,
+            name,
+            htmlContent,
+            companyId: cid,
+            isDefault: !!isDefault,
+            isActive: true,
+            createdBy: req.user?._id || req.user?.id || null,
+        });
+
         res.status(201).json({
             success: true,
             message: 'Template created',
-            data: { id: result.insertId }
+            data: mapTemplate(template.toObject()),
         });
     } catch (error) {
         next(error);
@@ -1005,39 +1080,36 @@ const createDocumentTemplate = async (req, res, next) => {
 const updateDocumentTemplate = async (req, res, next) => {
     try {
         const { id } = req.params;
-        const {
-            documentType, name, htmlContent, companyId, isDefault, isActive
-        } = req.body;
-        const existing = await query(`SELECT * FROM document_templates WHERE id = ?`, [id]);
-        if (!existing.length) throw new AppError('Template not found', 404);
-        const cur = existing[0];
-        const nextType = documentType || cur.document_type;
+        if (!toObjectId(id)) throw new AppError('Template not found', 404);
+
+        const template = await DocumentTemplate.findById(id);
+        if (!template) throw new AppError('Template not found', 404);
+
+        const { documentType, name, htmlContent, companyId, isDefault, isActive } = req.body;
+
+        const nextType = documentType || template.documentType;
         if (!DOCUMENT_TEMPLATE_TYPES.has(nextType)) {
             throw new AppError('Invalid document type', 400);
         }
-        const cid = companyId !== undefined
-            ? (companyId === '' || companyId === null ? null : parseInt(companyId, 10))
-            : cur.company_id;
-        if (isDefault) {
-            await clearDefaultForScope(nextType, cid);
+
+        let cid = template.companyId;
+        if (companyId !== undefined) {
+            cid = companyId === '' || companyId === null ? null : toObjectId(companyId);
+            if (companyId && !cid) throw new AppError('Invalid company ID', 400);
         }
-        const nextActive = isActive !== undefined ? !!isActive : !!cur.is_active;
-        await query(
-            `UPDATE document_templates SET
-                document_type = ?, name = ?, html_content = ?, company_id = ?,
-                is_default = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP
-             WHERE id = ?`,
-            [
-                nextType,
-                name ?? cur.name,
-                htmlContent ?? cur.html_content,
-                cid === undefined || Number.isNaN(cid) ? cur.company_id : cid,
-                isDefault !== undefined ? !!isDefault : !!cur.is_default,
-                nextActive,
-                id
-            ]
-        );
-        res.json({ success: true, message: 'Template updated' });
+
+        if (isDefault) await clearDefaultForScope(nextType, cid);
+
+        template.documentType = nextType;
+        if (name !== undefined) template.name = name;
+        if (htmlContent !== undefined) template.htmlContent = htmlContent;
+        template.companyId = cid;
+        if (isDefault !== undefined) template.isDefault = !!isDefault;
+        if (isActive !== undefined) template.isActive = !!isActive;
+
+        await template.save();
+
+        res.json({ success: true, message: 'Template updated', data: mapTemplate(template.toObject()) });
     } catch (error) {
         next(error);
     }
@@ -1046,9 +1118,15 @@ const updateDocumentTemplate = async (req, res, next) => {
 const deleteDocumentTemplate = async (req, res, next) => {
     try {
         const { id } = req.params;
-        const existing = await query(`SELECT id FROM document_templates WHERE id = ?`, [id]);
-        if (!existing.length) throw new AppError('Template not found', 404);
-        await query(`UPDATE document_templates SET is_active = FALSE, is_default = FALSE WHERE id = ?`, [id]);
+        if (!toObjectId(id)) throw new AppError('Template not found', 404);
+
+        const template = await DocumentTemplate.findById(id);
+        if (!template) throw new AppError('Template not found', 404);
+
+        template.isActive = false;
+        template.isDefault = false;
+        await template.save();
+
         res.json({ success: true, message: 'Template deactivated' });
     } catch (error) {
         next(error);
@@ -1057,7 +1135,7 @@ const deleteDocumentTemplate = async (req, res, next) => {
 
 const seedDocumentTemplates = async (req, res, next) => {
     try {
-        await query(`DELETE FROM document_templates`);
+        await DocumentTemplate.deleteMany({});
         await ensureDefaultDocumentTemplates();
         res.json({ success: true, message: 'Factory templates installed' });
     } catch (error) {
@@ -1106,5 +1184,5 @@ module.exports = {
     createDocumentTemplate,
     updateDocumentTemplate,
     deleteDocumentTemplate,
-    seedDocumentTemplates
+    seedDocumentTemplates,
 };

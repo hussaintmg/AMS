@@ -44,7 +44,7 @@ async function createAuditLog(userId, action, module, details, req) {
   }
 }
 
-exports.getStats = async (req, res) => {
+exports.getStats = async (req, res, next) => {
   try {
     const modelNames = ['sources', 'types', 'priorities', 'cities'];
     const results = await Promise.all(modelNames.map(async (name) => {
@@ -66,11 +66,11 @@ exports.getStats = async (req, res) => {
     res.json({ success: true, data: stats });
   } catch (error) {
     console.error('getStats error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    next(error);
   }
 };
 
-exports.getAll = async (req, res) => {
+exports.getAll = async (req, res, next) => {
   try {
     const type = req.params.type;
     const Model = getModel(type);
@@ -110,11 +110,11 @@ exports.getAll = async (req, res) => {
     res.json({ success: true, data: items });
   } catch (error) {
     console.error('getAll error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    next(error);
   }
 };
 
-exports.create = async (req, res) => {
+exports.create = async (req, res, next) => {
   try {
     const userId = req.user?._id || req.user?.id;
     const type = req.params.type;
@@ -154,11 +154,11 @@ exports.create = async (req, res) => {
     res.status(201).json({ success: true, message: `${getLabel(type)} created successfully`, data: item });
   } catch (error) {
     console.error('create error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    next(error);
   }
 };
 
-exports.update = async (req, res) => {
+exports.update = async (req, res, next) => {
   try {
     const userId = req.user?._id || req.user?.id;
     const type = req.params.type;
@@ -198,11 +198,11 @@ exports.update = async (req, res) => {
     res.json({ success: true, message: `${getLabel(type)} updated successfully`, data: item });
   } catch (error) {
     console.error('update error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    next(error);
   }
 };
 
-exports.remove = async (req, res) => {
+exports.remove = async (req, res, next) => {
   try {
     const userId = req.user?._id || req.user?.id;
     const type = req.params.type;
@@ -230,6 +230,6 @@ exports.remove = async (req, res) => {
     res.json({ success: true, message: `${getLabel(type)} deleted successfully` });
   } catch (error) {
     console.error('remove error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    next(error);
   }
 };

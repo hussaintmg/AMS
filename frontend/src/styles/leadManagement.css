@@ -277,7 +277,9 @@
   padding: 0.25rem 0;
 }
 
-@media (max-width: 768px) {
+/* Matches the .desktop-only/.mobile-only breakpoint (1024px) — see
+   userManagement.css; the table hides at 1024px so cards must appear there. */
+@media (max-width: 1024px) {
   .mobile-cards-container { display: block; }
 }
 

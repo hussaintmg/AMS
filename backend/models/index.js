@@ -51,6 +51,7 @@ const SearchAnalytics = require('./SearchAnalytics.model');
 const SearchHistory = require('./SearchHistory.model');
 const SearchConfig = require('./SearchConfig.model');
 const { VehicleMake, VehicleModel, VehicleVariant, VehicleColor, PartCategory, Supplier } = require('./VehicleMaster.model');
+const { Company, Branch, Currency, TaxConfig, DocumentTemplate } = require('./ErpSettings.model');
 
 module.exports = {
   Role,
@@ -111,4 +112,9 @@ module.exports = {
   VehicleColor,
   PartCategory,
   Supplier,
+  Company,
+  Branch,
+  Currency,
+  TaxConfig,
+  DocumentTemplate,
 };

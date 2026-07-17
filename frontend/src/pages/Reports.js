@@ -363,7 +363,10 @@ function Reports() {
               <div className="report-table-wrap">
                 <table className="report-table">
                   <thead><tr>{reportColumns.map((key) => <th key={key}>{columnLabel(key)}</th>)}</tr></thead>
-                  <tbody>{reportRows.map((row, index) => <tr key={row.id || index}>{reportColumns.map((key) => <td key={key}>{displayCell(key, row[key])}</td>)}</tr>)}</tbody>
+                  {/* Reports join across tables, so two rows can legitimately carry the
+                      same row.id (one sale, two invoice lines). Pairing id with the index
+                      keeps every key unique — a duplicate key silently drops rows. */}
+                  <tbody>{reportRows.map((row, index) => <tr key={`${row.id ?? 'row'}-${index}`}>{reportColumns.map((key) => <td key={key}>{displayCell(key, row[key])}</td>)}</tr>)}</tbody>
                 </table>
               </div>
             ) : (

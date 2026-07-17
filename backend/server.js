@@ -112,29 +112,6 @@ app.use("/api/uploads", express.static(path.join(__dirname, "uploads"), staticOp
 // Structured API request/response logging
 app.use(apiLogging);
 
-// Stabilization guard: legacy controllers sometimes send 500 directly for
-// schema drift. Keep the response JSON, but prevent backend compatibility
-// issues from surfacing as HTTP 500 during stabilization sweeps.
-app.use((req, res, next) => {
-  const originalStatus = res.status.bind(res);
-
-  res.status = (code) => {
-    if (code >= 500 && !['/health', '/healthz', '/api/health'].includes(req.path)) {
-      logger.warn("Converted backend 5xx response to safe JSON status", {
-        originalStatus: code,
-        path: req.path,
-        method: req.method,
-      });
-      res.set("X-Original-Status-Code", String(code));
-      return originalStatus(200);
-    }
-
-    return originalStatus(code);
-  };
-
-  next();
-});
-
 // Swagger API Documentation
 const swaggerOptions = {
   definition: {

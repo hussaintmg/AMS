@@ -4,6 +4,7 @@
  */
 
 const xlsx = require('xlsx');
+const { AppError } = require('../middleware/errorHandler');
 
 /**
  * Normalize a spreadsheet column header for matching.
@@ -39,14 +40,20 @@ function findHeaderRowIndex(matrix) {
 }
 
 function matrixToObjects(matrix) {
+    // A malformed upload is the caller's input problem, not a server fault —
+    // these must surface as 400, not as an unhandled 500 with a stack trace.
     const hi = findHeaderRowIndex(matrix);
     if (hi === -1) {
-        throw new Error('Could not find a header row. Add a column header row after any # comment lines.');
+        throw new AppError(
+            'Could not find a header row. Add a column header row after any # comment lines.',
+            400,
+            'The first non-comment row must contain at least two column names.'
+        );
     }
     const headerCells = matrix[hi];
     const headers = headerCells.map((c) => normalizeHeader(c)).filter(Boolean);
     if (headers.length === 0) {
-        throw new Error('Header row has no valid column names.');
+        throw new AppError('Header row has no valid column names.', 400);
     }
 
     const rows = [];
@@ -77,7 +84,7 @@ function parseSpreadsheet(buffer, originalname) {
     const ext = name.endsWith('.xlsx') ? 'xlsx' : name.endsWith('.csv') ? 'csv' : '';
 
     if (ext !== 'xlsx' && ext !== 'csv') {
-        throw new Error('Unsupported file type. Use .csv or .xlsx');
+        throw new AppError('Unsupported file type. Use .csv or .xlsx', 400);
     }
 
     let matrix;

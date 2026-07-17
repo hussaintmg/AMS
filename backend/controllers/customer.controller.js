@@ -10,6 +10,8 @@ const StatusItem = require('../models/StatusItem.model');
 const Department = require('../models/Department.model');
 const Log = require('../models/mongo/Log.model');
 const { logFileOperation } = require('../utils/apiLogger');
+const { isValidPhone } = require('../utils/phone.util');
+const { sanitizeFields, containsMarkup } = require('../utils/sanitize.util');
 const { syncFromCustomer } = require('../utils/relationshipSync');
 const { allowedOwnerIds } = require('../utils/roleJobs');
 
@@ -60,7 +62,7 @@ async function createAuditLog(userId, action, module, details, req) {
   }
 }
 
-exports.getCustomerMeta = async (req, res) => {
+exports.getCustomerMeta = async (req, res, next) => {
   try {
     const statusSetting = await SystemSetting.findOne({ key: 'lead_status_collection_id' }).lean();
     let statusCollection = null;
@@ -112,11 +114,11 @@ exports.getCustomerMeta = async (req, res) => {
     });
   } catch (error) {
     console.error('getCustomerMeta error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    next(error);
   }
 };
 
-exports.getCustomers = async (req, res) => {
+exports.getCustomers = async (req, res, next) => {
   try {
     const user = req.user;
     const isSuperAdmin = user?.role?.toString() === (await getSuperAdminRoleId());
@@ -204,11 +206,11 @@ exports.getCustomers = async (req, res) => {
     });
   } catch (error) {
     console.error('getCustomers error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    next(error);
   }
 };
 
-exports.getCustomerById = async (req, res) => {
+exports.getCustomerById = async (req, res, next) => {
   try {
     const customer = await Customer.findById(req.params.id)
       .populate('source', 'name code')
@@ -228,16 +230,19 @@ exports.getCustomerById = async (req, res) => {
     res.json({ success: true, data: customer });
   } catch (error) {
     console.error('getCustomerById error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    next(error);
   }
 };
 
-exports.createCustomer = async (req, res) => {
+exports.createCustomer = async (req, res, next) => {
   try {
     const userId = req.user?._id || req.user?.id;
 
     if (!req.body.firstName || !req.body.firstName.trim()) {
       return res.status(400).json({ success: false, message: 'First name is required' });
+    }
+    if (containsMarkup(req.body.firstName) || containsMarkup(req.body.lastName)) {
+      return res.status(400).json({ success: false, message: 'Name cannot contain HTML or script tags' });
     }
     if (!req.body.email || !req.body.email.trim()) {
       return res.status(400).json({ success: false, message: 'Email is required' });
@@ -247,7 +252,24 @@ exports.createCustomer = async (req, res) => {
     if (!validateEmail(email)) {
       return res.status(400).json({ success: false, message: 'Invalid email format' });
     }
+
+    // Email identifies the customer across sales/invoices — duplicates make it
+    // ambiguous which record a transaction belongs to.
+    const existing = await Customer.findOne({ email, deletedAt: null }).select('_id customerCode').lean();
+    if (existing) {
+      return res.status(409).json({
+        success: false,
+        message: `A customer with email "${email}" already exists (${existing.customerCode || existing._id})`,
+      });
+    }
+
     const phone = req.body.phone ? normalizePhone(req.body.phone) : '';
+    if (phone && !isValidPhone(phone)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid phone number — enter a valid number, e.g. 03001234567',
+      });
+    }
 
     // Get customer role config
     const roleConfigSetting = await SystemSetting.findOne({ key: 'customer_role_config' }).lean();
@@ -265,6 +287,10 @@ exports.createCustomer = async (req, res) => {
       customerCode,
       createdBy: userId,
     };
+    // Names/addresses reach PDF invoices and email templates, which do not
+    // escape — strip markup here rather than trusting every downstream surface.
+    sanitizeFields(customerData, ['firstName', 'lastName', 'companyName', 'city', 'state', 'country'], 200);
+    sanitizeFields(customerData, ['address'], 500);
 
     Object.keys(customerData).forEach((k) => {
       if (customerData[k] === '' || customerData[k] === null) customerData[k] = undefined;
@@ -326,11 +352,11 @@ exports.createCustomer = async (req, res) => {
     });
   } catch (error) {
     console.error('createCustomer error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    next(error);
   }
 };
 
-exports.updateCustomer = async (req, res) => {
+exports.updateCustomer = async (req, res, next) => {
   try {
     const userId = req.user?._id || req.user?.id;
     const customer = await Customer.findById(req.params.id);
@@ -348,11 +374,11 @@ exports.updateCustomer = async (req, res) => {
     res.json({ success: true, message: 'Customer updated successfully', data: customer });
   } catch (error) {
     console.error('updateCustomer error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    next(error);
   }
 };
 
-exports.deleteCustomer = async (req, res) => {
+exports.deleteCustomer = async (req, res, next) => {
   try {
     const userId = req.user?._id || req.user?.id;
     const customer = await Customer.findById(req.params.id);
@@ -372,11 +398,11 @@ exports.deleteCustomer = async (req, res) => {
     res.json({ success: true, message: 'Customer deactivated successfully' });
   } catch (error) {
     console.error('deleteCustomer error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    next(error);
   }
 };
 
-exports.toggleCustomerStatus = async (req, res) => {
+exports.toggleCustomerStatus = async (req, res, next) => {
   try {
     const userId = req.user?._id || req.user?.id;
     const customer = await Customer.findById(req.params.id);
@@ -395,11 +421,11 @@ exports.toggleCustomerStatus = async (req, res) => {
     res.json({ success: true, message: `Customer ${customer.isActive ? 'activated' : 'deactivated'} successfully`, isActive: customer.isActive });
   } catch (error) {
     console.error('toggleCustomerStatus error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    next(error);
   }
 };
 
-exports.getCustomerStats = async (req, res) => {
+exports.getCustomerStats = async (req, res, next) => {
   try {
     const now = new Date();
     const last30Days = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
@@ -420,21 +446,21 @@ exports.getCustomerStats = async (req, res) => {
     });
   } catch (error) {
     console.error('getCustomerStats error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    next(error);
   }
 };
 
-exports.getCustomerCities = async (req, res) => {
+exports.getCustomerCities = async (req, res, next) => {
   try {
     const cities = await Customer.distinct('city', { city: { $ne: '' } });
     res.json({ success: true, data: cities.sort() });
   } catch (error) {
     console.error('getCustomerCities error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    next(error);
   }
 };
 
-exports.getAllForDropdown = async (req, res) => {
+exports.getAllForDropdown = async (req, res, next) => {
   try {
     const customers = await Customer.find({ isActive: true, deletedAt: null })
       .select('customerCode firstName lastName phone email')
@@ -453,6 +479,6 @@ exports.getAllForDropdown = async (req, res) => {
     res.json({ success: true, data: mapped });
   } catch (error) {
     console.error('getAllForDropdown error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    next(error);
   }
 };

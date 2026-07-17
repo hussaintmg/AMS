@@ -7,6 +7,7 @@ const InvoiceType = require('../models/InvoiceType.model');
 const Log = require('../models/mongo/Log.model');
 const { AppError } = require('../middleware/errorHandler');
 const logger = require('../utils/logger');
+const { assertUniqueName } = require('../utils/uniqueness.util');
 const { logFileOperation } = require('../utils/apiLogger');
 
 async function createAuditLog(userId, action, module, details, req) {
@@ -100,6 +101,7 @@ function createEntityHandlers(Model, entityName, labelField = 'name') {
       const body = {};
       allowed.forEach(f => { if (req.body[f] !== undefined) body[f] = req.body[f]; });
       if (!body.name) throw new AppError('Name is required', 400);
+      await assertUniqueName(Model, 'name', body.name, { label: entityName });
 
       body.isActive = body.isActive !== undefined ? body.isActive : true;
       body.createdBy = req.user.id;

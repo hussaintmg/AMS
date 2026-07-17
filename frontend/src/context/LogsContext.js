@@ -195,7 +195,11 @@ export function LogsProvider({ children }) {
 
         const socket = socketIO(url, {
             auth: { token },
-            transports: ['websocket', 'polling'],
+            // Polling first, then upgrade to websocket — socket.io does not fall back
+            // from the first transport, so forcing 'websocket' first meant any proxy
+            // that didn't cleanly pass the upgrade (the CRA dev proxy) left the socket
+            // permanently timing out instead of using polling.
+            transports: ['polling', 'websocket'],
             withCredentials: true,
             reconnection: true,
             reconnectionAttempts: 10,

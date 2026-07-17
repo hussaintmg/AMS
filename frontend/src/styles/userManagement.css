@@ -2191,7 +2191,10 @@ textarea:focus {
     box-sizing: border-box;
 }
 
-@media (max-width: 768px) {
+/* Must match the .desktop-only/.mobile-only breakpoint above (1024px):
+   the table hides at 1024px, so the cards have to take over at the same
+   width or the content area renders blank between 769px and 1024px. */
+@media (max-width: 1024px) {
     .mobile-cards-container { display: flex; }
 }
 

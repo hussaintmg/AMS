@@ -21,6 +21,7 @@ const logger = require('../utils/logger');
 const { AppError } = require('../middleware/errorHandler');
 const { parseSpreadsheet } = require('../utils/bulkImport.parse');
 const { normalizePhone } = require('../utils/phone.util');
+const { leadNumberSequence } = require('../utils/leadNumber.util');
 
 const Lead = require('../models/Lead.model');
 const Customer = require('../models/Customer.model');
@@ -663,15 +664,6 @@ exports.downloadTemplate = async (req, res, next) => {
 
 /* ═══ Leads ═════════════════════════════════════════════════════════════ */
 
-async function nextLeadNumber() {
-  const lastLead = await Lead.findOne({ leadNo: { $regex: /^LEAD-/ } }).sort({ createdAt: -1 }).lean();
-  let nextNum = 1;
-  if (lastLead && lastLead.leadNo) {
-    const match = lastLead.leadNo.match(/LEAD-(\d+)/);
-    if (match) nextNum = parseInt(match[1], 10) + 1;
-  }
-  return nextNum;
-}
 
 exports.importLeads = async (req, res, next) => {
   try {
@@ -701,7 +693,7 @@ exports.importLeads = async (req, res, next) => {
     const resolveUser = makeUserResolver(assignable.users, assignable.allowedRoleIds);
     const defaultStatus = statusItems.length ? statusItems[0].value : '';
 
-    let leadSeq = await nextLeadNumber();
+    const nextLeadNo = await leadNumberSequence();
     const docs = [];
     const docRows = [];
 
@@ -750,8 +742,7 @@ exports.importLeads = async (req, res, next) => {
         continue;
       }
 
-      const leadNo = `LEAD-${String(leadSeq).padStart(6, '0')}`;
-      leadSeq += 1;
+      const leadNo = nextLeadNo();
 
       docs.push({
         leadNo,

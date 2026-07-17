@@ -317,9 +317,19 @@ const createVehicle = async (req, res, next) => {
 
         logger.info(`Vehicle created: ${vin} by ${req.user?.email || 'system'}`);
 
+        // Selling below cost is a real (clearance) scenario, so it is allowed —
+        // but it is surfaced rather than saved silently.
+        const warnings = [];
+        if (newVehicle.salePrice < newVehicle.purchasePrice) {
+            warnings.push(
+                `Selling price (${newVehicle.salePrice}) is below the purchase price (${newVehicle.purchasePrice}) — this vehicle will book a loss.`
+            );
+        }
+
         res.status(201).json({
             success: true,
             message: 'Vehicle created successfully',
+            warnings,
             data: {
                 id: newVehicle._id,
                 vin: newVehicle.vin
@@ -327,13 +337,6 @@ const createVehicle = async (req, res, next) => {
         });
     } catch (error) {
         logger.error('Error creating vehicle:', error);
-        if (error instanceof AppError) {
-            return res.status(error.statusCode).json({ success: false, message: error.message });
-        }
-        if (error.code === 11000) {
-            const field = Object.keys(error.keyPattern || {})[0] || 'field';
-            return res.status(400).json({ success: false, message: `Duplicate value for ${field}` });
-        }
         next(error);
     }
 };

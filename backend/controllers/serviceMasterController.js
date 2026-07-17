@@ -5,6 +5,7 @@ const WarrantyType = require('../models/WarrantyType.model');
 const Log = require('../models/mongo/Log.model');
 const { AppError } = require('../middleware/errorHandler');
 const logger = require('../utils/logger');
+const { assertUniqueName } = require('../utils/uniqueness.util');
 const { logFileOperation } = require('../utils/apiLogger');
 
 async function createAuditLog(userId, action, module, details, req) {
@@ -93,6 +94,7 @@ const createServiceType = async (req, res, next) => {
   try {
     const { name, code, description, basePrice, estimatedHours, category, isActive } = req.body;
     if (!name) throw new AppError('Name is required', 400);
+    await assertUniqueName(ServiceType, 'name', name, { label: 'Service type' });
 
     const item = await ServiceType.create({
       name, code, description, basePrice, estimatedHours, category,

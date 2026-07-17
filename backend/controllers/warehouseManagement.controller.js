@@ -89,6 +89,10 @@ const createWarehouse = async (req, res, next) => {
     if (!warehouseName) throw new AppError('Warehouse name is required', 400);
     if (!code) throw new AppError('Code is required', 400);
 
+    // Departments already enforce code uniqueness; warehouses must match.
+    const existing = await Warehouse.findOne({ code: String(code).trim() }).select('_id').lean();
+    if (existing) throw new AppError(`Warehouse code "${String(code).trim()}" already exists`, 409);
+
     const item = await Warehouse.create({
       warehouseName, code, type, manager, phone, email, address, city,
       capacity: capacity || 0,

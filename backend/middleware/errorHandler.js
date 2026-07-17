@@ -18,95 +18,111 @@ class AppError extends Error {
     }
 }
 
-const SCHEMA_ERROR_CODES = new Set([
-    'ER_BAD_FIELD_ERROR',
-    'ER_NO_SUCH_TABLE',
-    'ER_SP_DOES_NOT_EXIST',
-    'ER_PARSE_ERROR',
-    'ER_TRUNCATED_WRONG_VALUE',
-    'ER_WRONG_FIELD_WITH_GROUP',
-    'ER_NO_DEFAULT_FOR_FIELD'
-]);
+/**
+ * Translate driver/ODM errors into the HTTP status the client should see.
+ * Anything not recognised here keeps its own statusCode, or falls back to 500.
+ */
+const normalizeError = (err) => {
+    // Mongoose schema validation (required, min/max, enum, match, ...)
+    if (err.name === 'ValidationError' && err.errors) {
+        const fields = Object.values(err.errors).map((e) => e.message);
+        return {
+            statusCode: 400,
+            message: fields.join('; ') || 'Validation failed',
+            code: 'VALIDATION_ERROR',
+            resolution: 'Correct the highlighted fields and try again.',
+            isOperational: true,
+        };
+    }
 
-const SCHEMA_ERROR_PATTERNS = [
-    /unknown column/i,
-    /unknown table/i,
-    /doesn't exist/i,
-    /does not exist/i,
-    /procedure .* does not exist/i,
-    /function .* does not exist/i,
-    /view .* doesn't exist/i,
-    /sql syntax/i,
-    /schema/i,
-    /database_error/i
-];
+    // Bad ObjectId / uncastable value
+    if (err.name === 'CastError') {
+        return {
+            statusCode: 400,
+            message: `Invalid value for "${err.path}"`,
+            code: 'CAST_ERROR',
+            resolution: 'Provide a valid identifier.',
+            isOperational: true,
+        };
+    }
 
-const isSchemaCompatibilityError = (err) => {
-    const message = `${err.message || ''} ${err.code || ''} ${err.resolution || ''}`;
-    return SCHEMA_ERROR_CODES.has(err.code) || SCHEMA_ERROR_PATTERNS.some((pattern) => pattern.test(message));
-};
+    // Duplicate key on a unique index
+    if (err.code === 11000 || err.code === 11001) {
+        const field = Object.keys(err.keyPattern || err.keyValue || {})[0];
+        return {
+            statusCode: 409,
+            message: field
+                ? `A record with this ${field} already exists`
+                : 'This record already exists',
+            code: 'DUPLICATE_KEY',
+            resolution: 'Use a different value for the duplicated field.',
+            isOperational: true,
+        };
+    }
 
-const buildSafeFallback = (req, err) => {
-    const path = req.path || '';
-    const isStats = /stats|kpis|analytics|summary|overview|chart|distribution|alerts/i.test(path);
+    // JWT errors
+    if (err.name === 'JsonWebTokenError') {
+        return { statusCode: 401, message: 'Invalid token', code: 'INVALID_TOKEN', isOperational: true };
+    }
+    if (err.name === 'TokenExpiredError') {
+        return { statusCode: 401, message: 'Token expired', code: 'TOKEN_EXPIRED', isOperational: true };
+    }
+
+    // Body parser / malformed JSON
+    if (err.type === 'entity.parse.failed') {
+        return { statusCode: 400, message: 'Malformed JSON body', code: 'BAD_JSON', isOperational: true };
+    }
+    if (err.type === 'entity.too.large') {
+        return { statusCode: 413, message: 'Payload too large', code: 'PAYLOAD_TOO_LARGE', isOperational: true };
+    }
 
     return {
-        success: true,
-        message: 'Schema compatibility fallback returned safe response',
-        data: isStats ? {} : [],
-        fallback: {
-            reason: 'SCHEMA_COMPATIBILITY',
-            originalMessage: err.message
-        }
+        statusCode: err.statusCode || 500,
+        message: err.message,
+        code: err.code,
+        resolution: err.resolution,
+        isOperational: err.isOperational === true,
     };
 };
 
 const errorHandler = (err, req, res, next) => {
-    err.statusCode = err.statusCode || 500;
+    const normalized = normalizeError(err);
+    err.statusCode = normalized.statusCode;
     res.locals.apiError = err;
 
-    if (err.statusCode >= 500 && isSchemaCompatibilityError(err)) {
-        logger.warn('Schema compatibility fallback:', {
-            message: err.message,
-            code: err.code,
-            resolution: err.resolution,
-            path: req.path,
-            method: req.method
-        });
-
-        return res.status(200).json(buildSafeFallback(req, err));
-    }
-
-    logger.error('Error:', {
-        message: err.message,
-        statusCode: err.statusCode,
-        resolution: err.resolution,
+    const logAt = normalized.statusCode >= 500 ? 'error' : 'warn';
+    logger[logAt]('Error:', {
+        message: normalized.message,
+        statusCode: normalized.statusCode,
+        resolution: normalized.resolution,
         path: req.path,
         method: req.method,
         stack: err.stack
     });
 
+    const isDev = process.env.NODE_ENV === 'development';
+
     const response = {
         success: false,
-        message: err.message,
-        resolution: err.resolution,
-        code: err.code
+        message: normalized.message,
+        resolution: normalized.resolution,
+        code: normalized.code
     };
 
-    // Development mode - send full error
-    if (process.env.NODE_ENV === 'development') {
-        response.error = err;
-        response.stack = err.stack;
-    }
-
-    // Production mode - send minimal error info (but include resolution if operational)
-    if (process.env.NODE_ENV !== 'development' && !err.isOperational) {
+    // Never leak internals for unexpected failures outside development.
+    if (!isDev && !normalized.isOperational) {
         response.message = 'Something went wrong';
         delete response.resolution;
     }
 
-    return res.status(err.statusCode).json(response);
+    // Stack traces are a development-only affordance.
+    if (isDev) {
+        response.stack = err.stack;
+    }
+
+    return res.status(normalized.statusCode).json(response);
 };
 
 module.exports = errorHandler;
 module.exports.AppError = AppError;
+module.exports.normalizeError = normalizeError;

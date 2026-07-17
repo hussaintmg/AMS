@@ -64,12 +64,17 @@ const vehicleSchema = new mongoose.Schema({
   variant: { type: variantSchema, default: {} },
   color: { type: colorSchema, default: {} },
   warehouse: { type: warehouseRefSchema, default: {} },
-  year: { type: Number },
-  purchasePrice: { type: Number },
-  salePrice: { type: Number },
+  year: {
+    type: Number,
+    min: [1900, 'Year must be 1900 or later'],
+    // Dealers legitimately stock next-model-year vehicles, so allow one year ahead.
+    max: [new Date().getFullYear() + 1, `Year cannot be later than ${new Date().getFullYear() + 1}`]
+  },
+  purchasePrice: { type: Number, min: [0, 'Purchase price cannot be negative'] },
+  salePrice: { type: Number, min: [0, 'Sale price cannot be negative'] },
   status: { type: String, trim: true },
   conditionType: { type: String, trim: true },
-  mileage: { type: Number },
+  mileage: { type: Number, min: [0, 'Mileage cannot be negative'] },
   location: { type: String, trim: true },
   arrivalDate: { type: Date },
   notes: { type: String },

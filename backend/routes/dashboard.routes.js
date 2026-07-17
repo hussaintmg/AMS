@@ -3,7 +3,7 @@ const router = express.Router();
 const { authenticate } = require('../middleware/auth');
 const {
   Lead, Customer, Vehicle, Part, SalesOrder, Invoice, ServiceAppointment, JobCard,
-  Quotation, Booking, Employee, Leave, Expense, Payment, User, ActivityLog,
+  Quotation, Booking, Employee, Leave, Expense, Payment, User, ActivityLog, Payroll,
 } = require('../models');
 
 const adminRoles = ['super_admin', 'admin', 'manager'];
@@ -16,12 +16,13 @@ const startOfMonth = (date = new Date()) => new Date(date.getFullYear(), date.ge
 const customerName = (customer) => customer ? ([customer.firstName, customer.lastName].filter(Boolean).join(' ') || customer.companyName || '') : '';
 
 async function hrSummary() {
-  const [activeEmployees, pendingLeaveRequests, pendingExpenseLines] = await Promise.all([
+  const [activeEmployees, pendingLeaveRequests, pendingExpenseLines, draftPayrollPeriods] = await Promise.all([
     Employee.countDocuments({ isActive: { $ne: false }, isDeleted: { $ne: true } }),
     Leave.countDocuments({ status: 'pending', isDeleted: { $ne: true } }),
     Expense.countDocuments({ status: { $in: ['draft', 'submitted'] }, isDeleted: { $ne: true } }),
+    Payroll.countDocuments({ status: 'draft' }),
   ]);
-  return { activeEmployees, pendingLeaveRequests, draftPayrollPeriods: 0, pendingExpenseLines };
+  return { activeEmployees, pendingLeaveRequests, draftPayrollPeriods, pendingExpenseLines };
 }
 
 async function dashboardStats(user) {

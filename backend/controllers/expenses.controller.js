@@ -2,8 +2,43 @@ const Expense = require('../models/Expense.model');
 const ExpenseCategory = require('../models/ExpenseCategory.model');
 const Employee = require('../models/Employee.model');
 const AppError = require('../utils/AppError');
+const {
+  postDoubleEntry,
+  isAlreadyPosted,
+  DEFAULT_CREDIT_ACCOUNT,
+  DEFAULT_EXPENSE_ACCOUNT,
+} = require('../services/ledgerPosting.service');
 
 const getUserId = (req) => req.user?.id || req.user?._id;
+
+/**
+ * Post an expense to the ledger: debit the expense account, credit cash.
+ * Shared by postExpense and the 'posted' branch of toggleExpenseStatus so a
+ * status change can never mark an expense posted without a ledger entry.
+ */
+async function postExpenseToLedger(item, req) {
+  if (await isAlreadyPosted('expense', item.expenseNumber)) {
+    throw new AppError('Expense already posted', 400);
+  }
+  if (!(Number(item.amount) > 0)) {
+    throw new AppError('Cannot post an expense with a zero or negative amount', 400);
+  }
+
+  await postDoubleEntry({
+    transactionDate: item.expenseDate,
+    debitAccount: item.account || item.category || DEFAULT_EXPENSE_ACCOUNT,
+    creditAccount: DEFAULT_CREDIT_ACCOUNT,
+    amount: item.amount,
+    description: item.description || `Expense ${item.expenseNumber}`,
+    referenceType: 'expense',
+    referenceId: item.expenseNumber,
+    userId: getUserId(req),
+  });
+
+  item.status = 'posted';
+  item.updatedBy = getUserId(req);
+  await item.save();
+}
 
 const getBulkIds = (req) => {
   const ids = Array.isArray(req.body?.ids) ? [...new Set(req.body.ids.filter(Boolean))] : [];
@@ -116,9 +151,18 @@ exports.toggleExpenseStatus = async (req, res, next) => {
     }
     const item = await Expense.findOne({ _id: req.params.id, isDeleted: false });
     if (!item) throw new AppError('Expense not found', 404);
-    item.status = status;
-    item.updatedBy = getUserId(req);
-    await item.save();
+
+    if (status === 'posted') {
+      // Route through the ledger so this path can't create a posted expense
+      // that has no matching journal entry.
+      if (item.status === 'posted') throw new AppError('Expense already posted', 400);
+      await postExpenseToLedger(item, req);
+    } else {
+      if (item.status === 'posted') throw new AppError('Posted expenses cannot change status', 400);
+      item.status = status;
+      item.updatedBy = getUserId(req);
+      await item.save();
+    }
     res.json({ success: true, message: `Expense status updated to ${status}`, data: { expense: item } });
   } catch (error) { next(error); }
 };
@@ -128,9 +172,7 @@ exports.postExpense = async (req, res, next) => {
     const item = await Expense.findOne({ _id: req.params.id, isDeleted: false });
     if (!item) throw new AppError('Expense not found', 404);
     if (item.status === 'posted') throw new AppError('Expense already posted', 400);
-    item.status = 'posted';
-    item.updatedBy = getUserId(req);
-    await item.save();
+    await postExpenseToLedger(item, req);
     res.json({ success: true, message: 'Expense posted to ledger', data: { expense: item } });
   } catch (error) { next(error); }
 };

@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const crypto = require('crypto');
+const { sanitizeText, sanitizeFields, containsMarkup } = require('../utils/sanitize.util');
 const Lead = require('../models/Lead.model');
 const LeadSource = require('../models/LeadSource.model');
 const LeadType = require('../models/LeadType.model');
@@ -13,9 +14,8 @@ const Role = require('../models/Role.model');
 const Department = require('../models/Department.model');
 const SystemSetting = require('../models/SystemSetting.model');
 const Log = require('../models/mongo/Log.model');
-const { normalizePhone } = require('../utils/phone.util');
+const { normalizePhone, isValidPhone } = require('../utils/phone.util');
 const { logFileOperation } = require('../utils/apiLogger');
-const { query } = require('../config/database');
 const { allowedOwnerIds } = require('../utils/roleJobs');
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -31,15 +31,7 @@ function validateEmail(email) {
   return email && EMAIL_REGEX.test(email);
 }
 
-async function generateLeadNo() {
-  const lastLead = await Lead.findOne({ leadNo: { $regex: /^LD-/ } }).sort({ createdAt: -1 }).lean();
-  let nextNum = 1;
-  if (lastLead && lastLead.leadNo) {
-    const match = lastLead.leadNo.match(/LD-(\d+)/);
-    if (match) nextNum = parseInt(match[1], 10) + 1;
-  }
-  return `LD-${String(nextNum).padStart(8, '0')}`;
-}
+const { generateLeadNo } = require('../utils/leadNumber.util');
 
 function createActivity(type, description, performedBy, oldValue = null, newValue = null) {
   return {
@@ -68,7 +60,7 @@ async function createAuditLog(userId, action, module, details, req) {
   }
 }
 
-exports.seedDefaults = async (req, res) => {
+exports.seedDefaults = async (req, res, next) => {
   try {
     const userId = req.user?._id || req.user?.id;
     const typeCount = await LeadType.countDocuments();
@@ -116,11 +108,11 @@ exports.seedDefaults = async (req, res) => {
     res.json({ success: true, message: 'Defaults seeded', data: results });
   } catch (error) {
     console.error('seedDefaults error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    next(error);
   }
 };
 
-exports.getLeads = async (req, res) => {
+exports.getLeads = async (req, res, next) => {
   try {
     const user = req.user;
     const isSuperAdmin = user?.role?.toString() === (await getSuperAdminRoleId());
@@ -220,11 +212,11 @@ exports.getLeads = async (req, res) => {
     });
   } catch (error) {
     console.error('getLeads error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    next(error);
   }
 };
 
-exports.getLeadById = async (req, res) => {
+exports.getLeadById = async (req, res, next) => {
   try {
     const lead = await Lead.findById(req.params.id)
       .populate('source', 'name code')
@@ -244,16 +236,23 @@ exports.getLeadById = async (req, res) => {
     res.json({ success: true, data: lead });
   } catch (error) {
     console.error('getLeadById error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    next(error);
   }
 };
 
-exports.createLead = async (req, res) => {
+exports.createLead = async (req, res, next) => {
   try {
     const userId = req.user?._id || req.user?.id;
-    const { customerName, email: rawEmail, phone: rawPhone } = req.body;
+    const { email: rawEmail, phone: rawPhone } = req.body;
 
-    if (!customerName || !customerName.trim()) {
+    if (!req.body.customerName || !String(req.body.customerName).trim()) {
+      return res.status(400).json({ success: false, message: 'Customer name is required' });
+    }
+    if (containsMarkup(req.body.customerName)) {
+      return res.status(400).json({ success: false, message: 'Customer name cannot contain HTML or script tags' });
+    }
+    const customerName = sanitizeText(req.body.customerName, 200);
+    if (!customerName) {
       return res.status(400).json({ success: false, message: 'Customer name is required' });
     }
 
@@ -269,8 +268,11 @@ exports.createLead = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Phone is required' });
     }
     const phone = normalizePhone(rawPhone);
-    if (!phone) {
-      return res.status(400).json({ success: false, message: 'Invalid phone number' });
+    if (!isValidPhone(phone)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid phone number — enter a valid number, e.g. 03001234567',
+      });
     }
 
     const leadNo = await generateLeadNo();
@@ -278,6 +280,9 @@ exports.createLead = async (req, res) => {
     let alternatePhone = null;
     if (req.body.alternatePhone) {
       alternatePhone = normalizePhone(req.body.alternatePhone);
+      if (!isValidPhone(alternatePhone)) {
+        return res.status(400).json({ success: false, message: 'Invalid alternate phone number' });
+      }
     }
 
     let statusVal = req.body.status || '';
@@ -291,6 +296,8 @@ exports.createLead = async (req, res) => {
 
     const leadData = {
       ...req.body,
+      // Explicit after the spread: req.body still holds the raw values.
+      customerName,
       email,
       phone,
       alternatePhone: alternatePhone || undefined,
@@ -299,6 +306,10 @@ exports.createLead = async (req, res) => {
       createdBy: userId,
       activities: [createActivity('created', `Lead ${leadNo} created`, userId)],
     };
+    sanitizeFields(leadData, ['address', 'city', 'state', 'country'], 200);
+    if (leadData.description !== undefined) {
+      leadData.description = sanitizeText(leadData.description, 5000);
+    }
 
     let lead;
     try {
@@ -318,11 +329,11 @@ exports.createLead = async (req, res) => {
     res.status(201).json({ success: true, message: 'Lead created successfully', data: lead });
   } catch (error) {
     console.error('createLead error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    next(error);
   }
 };
 
-exports.updateLead = async (req, res) => {
+exports.updateLead = async (req, res, next) => {
   try {
     const userId = req.user?._id || req.user?.id;
     const lead = await Lead.findById(req.params.id);
@@ -382,11 +393,11 @@ exports.updateLead = async (req, res) => {
     res.json({ success: true, message: 'Lead updated successfully', data: lead });
   } catch (error) {
     console.error('updateLead error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    next(error);
   }
 };
 
-exports.deleteLead = async (req, res) => {
+exports.deleteLead = async (req, res, next) => {
   try {
     const userId = req.user?._id || req.user?.id;
     const lead = await Lead.findById(req.params.id);
@@ -408,11 +419,11 @@ exports.deleteLead = async (req, res) => {
     res.json({ success: true, message: 'Lead deleted permanently' });
   } catch (error) {
     console.error('deleteLead error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    next(error);
   }
 };
 
-exports.assignLead = async (req, res) => {
+exports.assignLead = async (req, res, next) => {
   try {
     const userId = req.user?._id || req.user?.id;
     const { assignedTo } = req.body;
@@ -441,11 +452,11 @@ exports.assignLead = async (req, res) => {
     res.json({ success: true, message: 'Lead assigned successfully', data: lead });
   } catch (error) {
     console.error('assignLead error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    next(error);
   }
 };
 
-exports.changeStatus = async (req, res) => {
+exports.changeStatus = async (req, res, next) => {
   try {
     const userId = req.user?._id || req.user?.id;
     const { status } = req.body;
@@ -470,11 +481,11 @@ exports.changeStatus = async (req, res) => {
     res.json({ success: true, message: 'Lead status updated', data: lead });
   } catch (error) {
     console.error('changeStatus error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    next(error);
   }
 };
 
-exports.addNote = async (req, res) => {
+exports.addNote = async (req, res, next) => {
   try {
     const userId = req.user?._id || req.user?.id;
     const { content } = req.body;
@@ -499,11 +510,11 @@ exports.addNote = async (req, res) => {
     res.status(201).json({ success: true, message: 'Note added successfully', data: lead });
   } catch (error) {
     console.error('addNote error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    next(error);
   }
 };
 
-exports.getActivities = async (req, res) => {
+exports.getActivities = async (req, res, next) => {
   try {
     const lead = await Lead.findById(req.params.id)
       .select('activities')
@@ -519,11 +530,11 @@ exports.getActivities = async (req, res) => {
     res.json({ success: true, data: activities });
   } catch (error) {
     console.error('getActivities error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    next(error);
   }
 };
 
-exports.getLeadStats = async (req, res) => {
+exports.getLeadStats = async (req, res, next) => {
   try {
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -553,11 +564,11 @@ exports.getLeadStats = async (req, res) => {
     });
   } catch (error) {
     console.error('getLeadStats error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    next(error);
   }
 };
 
-exports.getLeadMeta = async (req, res) => {
+exports.getLeadMeta = async (req, res, next) => {
   try {
     const statusSetting = await SystemSetting.findOne({ key: 'lead_status_collection_id' }).lean();
     let statusCollection = null;
@@ -613,7 +624,7 @@ exports.getLeadMeta = async (req, res) => {
     });
   } catch (error) {
     console.error('getLeadMeta error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    next(error);
   }
 };
 
@@ -650,7 +661,7 @@ async function findInactiveItemsWithLeads() {
   return used;
 }
 
-exports.convertToCustomer = async (req, res) => {
+exports.convertToCustomer = async (req, res, next) => {
   try {
     const userId = req.user?._id || req.user?.id;
     const lead = await Lead.findById(req.params.id);
@@ -783,11 +794,11 @@ exports.convertToCustomer = async (req, res) => {
     });
   } catch (error) {
     console.error('convertToCustomer error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    next(error);
   }
 };
 
-exports.markLost = async (req, res) => {
+exports.markLost = async (req, res, next) => {
   try {
     const userId = req.user?._id || req.user?.id;
     const { lostReason } = req.body;
@@ -812,6 +823,6 @@ exports.markLost = async (req, res) => {
     res.json({ success: true, message: 'Lead marked as lost', data: lead });
   } catch (error) {
     console.error('markLost error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    next(error);
   }
 };

@@ -172,6 +172,19 @@ const createPart = async (req, res, next) => {
             minimumStock, maximumStock, reorderLevel, warehouseId, binLocation
         } = req.body;
 
+        if (!name || !String(name).trim()) {
+            throw new AppError('Part name is required', 400);
+        }
+
+        // Part number is the primary inventory identifier — two parts sharing it
+        // makes stock and sales reporting ambiguous.
+        if (partNumber && String(partNumber).trim()) {
+            const duplicate = await Part.findOne({ partCode: String(partNumber).trim() }).select('_id').lean();
+            if (duplicate) {
+                throw new AppError(`Part number "${String(partNumber).trim()}" already exists`, 409);
+            }
+        }
+
         let categoryData = {};
         if (categoryId) {
             const cat = await PartCategory.findById(categoryId).lean();
@@ -188,7 +201,7 @@ const createPart = async (req, res, next) => {
             }
         }
 
-        const partCode = partNumber || `PART-${Date.now()}`;
+        const partCode = (partNumber && String(partNumber).trim()) || `PART-${Date.now()}`;
 
         let warehouseData = {};
         if (warehouseId) {
@@ -249,6 +262,16 @@ const updatePart = async (req, res, next) => {
         const part = await Part.findById(id);
         if (!part) {
             throw new AppError('Part not found', 404);
+        }
+
+        if (partNumber !== undefined && String(partNumber).trim() !== part.partCode) {
+            const duplicate = await Part.findOne({
+                partCode: String(partNumber).trim(),
+                _id: { $ne: part._id },
+            }).select('_id').lean();
+            if (duplicate) {
+                throw new AppError(`Part number "${String(partNumber).trim()}" already exists`, 409);
+            }
         }
 
         if (categoryId) {

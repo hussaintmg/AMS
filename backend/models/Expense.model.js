@@ -6,7 +6,11 @@ const expenseSchema = new mongoose.Schema({
   category: { type: String, trim: true },
   account: { type: String, trim: true },
   employee: { type: mongoose.Schema.Types.ObjectId, ref: 'Employee' },
-  amount: { type: Number, default: 0 },
+  amount: {
+    type: Number,
+    default: 0,
+    min: [0.01, 'Amount must be greater than zero']
+  },
   expenseDate: { type: Date },
   description: { type: String },
   vendor: { type: String, trim: true },

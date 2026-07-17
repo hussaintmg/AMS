@@ -1048,6 +1048,17 @@ async function createOrderInternal({ body, userId, bookingId = null, quotationId
 
     const totals = orderTotals({ ...body, vehiclePrice: basePrice });
 
+    if (totals.paidAmount < 0) {
+        throw new AppError('Paid amount cannot be negative', 400);
+    }
+    // An overpayment would post a negative balance and corrupt receivables.
+    if (totals.paidAmount > totals.totalAmount) {
+        throw new AppError(
+            `Paid amount (${totals.paidAmount}) cannot exceed the order total (${totals.totalAmount})`,
+            400
+        );
+    }
+
     const description = saleType === 'vehicle'
         ? ([vehicle.make?.name, vehicle.model?.name, vehicle.variant?.name, vehicle.year].filter(Boolean).join(' ') || 'Vehicle')
         : saleType === 'parts' ? `${part.name || 'Part'}${part.partCode ? ` (${part.partCode})` : ''}` : service.name;
