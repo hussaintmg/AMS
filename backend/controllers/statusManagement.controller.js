@@ -722,16 +722,18 @@ const getStatusesByTable = async (req, res, next) => {
       const defaults = DEFAULT_STATUSES_BY_TABLE[tableName];
       if (defaults) {
         const displayName = tableName.charAt(0).toUpperCase() + tableName.slice(1);
-        const [newCollection] = await Promise.all([
-          StatusCollection.create({ name: displayName, key: tableName, isActive: true }),
-        ]);
-        const items = defaults.map((d, i) => ({
-          ...d,
-          collection: newCollection._id,
-          order: i + 1,
-        }));
-        await StatusItem.insertMany(items);
-        collection = await StatusCollection.findById(newCollection._id).lean();
+        try {
+          const newCollection = await StatusCollection.create({ name: displayName, key: tableName, isActive: true });
+          const items = defaults.map((d, i) => ({ ...d, collection: newCollection._id, order: i + 1 }));
+          await StatusItem.insertMany(items);
+          collection = newCollection.toObject();
+        } catch (error) {
+          // Two browser requests can arrive together when a page first opens.
+          // If the other request won the unique-key race, simply use its record.
+          if (error?.code !== 11000) throw error;
+          collection = await StatusCollection.findOne({ key: tableName, isActive: true }).lean();
+          if (!collection) throw error;
+        }
       } else {
         return res.json({ success: true, data: { statuses: [] } });
       }

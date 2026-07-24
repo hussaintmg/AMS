@@ -31,6 +31,18 @@ function validateEmail(email) {
   return email && EMAIL_REGEX.test(email);
 }
 
+// The collection selected in Server Management is authoritative.  Falling back
+// to the legacy `leads` key keeps existing installations working, but must not
+// override an administrator's selected collection.
+async function getLeadStatusCollection() {
+  const setting = await SystemSetting.findOne({ key: 'lead_status_collection_id' }).lean();
+  if (setting?.value) {
+    const configured = await StatusCollection.findOne({ _id: setting.value, isActive: true }).lean();
+    if (configured) return configured;
+  }
+  return StatusCollection.findOne({ key: 'leads', isActive: true }).lean();
+}
+
 const { generateLeadNo } = require('../utils/leadNumber.util');
 
 function createActivity(type, description, performedBy, oldValue = null, newValue = null) {
@@ -287,7 +299,7 @@ exports.createLead = async (req, res, next) => {
 
     let statusVal = req.body.status || '';
     if (!statusVal) {
-      const statusCollection = await StatusCollection.findOne({ key: 'leads', isActive: true }).lean();
+      const statusCollection = await getLeadStatusCollection();
       if (statusCollection) {
         const firstStatus = await StatusItem.findOne({ collection: statusCollection._id, isActive: true }).sort({ order: 1 }).lean();
         if (firstStatus) statusVal = firstStatus.value;
@@ -464,6 +476,14 @@ exports.changeStatus = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Status is required' });
     }
 
+    const statusCollection = await getLeadStatusCollection();
+    if (statusCollection) {
+      const configuredStatus = await StatusItem.exists({ collection: statusCollection._id, isActive: true, value: status });
+      if (!configuredStatus) {
+        return res.status(400).json({ success: false, message: 'Select a status configured for leads.' });
+      }
+    }
+
     const lead = await Lead.findById(req.params.id);
     if (!lead) {
       return res.status(404).json({ success: false, message: 'Lead not found' });
@@ -570,14 +590,7 @@ exports.getLeadStats = async (req, res, next) => {
 
 exports.getLeadMeta = async (req, res, next) => {
   try {
-    const statusSetting = await SystemSetting.findOne({ key: 'lead_status_collection_id' }).lean();
-    let statusCollection = null;
-    if (statusSetting?.value) {
-      statusCollection = await StatusCollection.findById(statusSetting.value).where('isActive').equals(true).lean();
-    }
-    if (!statusCollection) {
-      statusCollection = await StatusCollection.findOne({ key: 'leads', isActive: true }).lean();
-    }
+    const statusCollection = await getLeadStatusCollection();
     let statuses = [];
     if (statusCollection) {
       statuses = await StatusItem.find({ collection: statusCollection._id, isActive: true }).sort({ order: 1 }).lean();
@@ -672,18 +685,26 @@ exports.convertToCustomer = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Lead is already converted to customer' });
     }
 
-    // Check if user already exists with this email
-    if (lead.email) {
-      const existingUser = await User.findOne({ email: lead.email.toLowerCase().trim() }).lean();
-      if (existingUser) {
-        // Delete the lead
-        await Lead.findByIdAndDelete(lead._id);
-        return res.json({
-          success: true,
-          message: 'User already exists with this email',
-          data: { leadDeleted: true, existingUser: { id: existingUser._id.toString(), email: existingUser.email } },
-        });
-      }
+    // A conversion creates both a Customer and a User.  Check every currently
+    // unique identity before making either record; never delete the lead when
+    // a duplicate is found so it can be corrected or linked by an operator.
+    const Customer = require('../models/Customer.model');
+    const email = lead.email?.toLowerCase().trim();
+    const [existingUser, existingCustomer] = await Promise.all([
+      email ? User.findOne({ email }).select('_id email customer').lean() : null,
+      email ? Customer.findOne({ email, deletedAt: null }).select('_id customerCode email user').lean() : null,
+    ]);
+    if (existingUser || existingCustomer) {
+      return res.status(409).json({
+        success: false,
+        message: existingUser
+          ? 'A user already exists with this lead email. The lead was not converted.'
+          : 'A customer already exists with this lead email. The lead was not converted.',
+        data: {
+          existingUser: existingUser ? { id: String(existingUser._id), email: existingUser.email } : null,
+          existingCustomer: existingCustomer ? { id: String(existingCustomer._id), customerCode: existingCustomer.customerCode, email: existingCustomer.email } : null,
+        },
+      });
     }
 
     // Get customer role config
@@ -693,8 +714,6 @@ exports.convertToCustomer = async (req, res, next) => {
     }
 
     const activeRoleId = roleConfigSetting.value.activeRoleId;
-    const Customer = require('../models/Customer.model');
-
     // Auto-generate customer code
     const lastCustomer = await Customer.findOne({ customerCode: { $regex: /^CUS-/ } }).sort({ createdAt: -1 }).lean();
     let nextNum = 1;
