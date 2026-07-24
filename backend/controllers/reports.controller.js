@@ -102,16 +102,44 @@ const getReceivablesAging = getCustomerReceivables;
 const getLeadStatistics = async (req, res, next) => {
   try {
     const filter = { isActive: { $ne: false }, deletedAt: null, ...dateRange(req.query, 'createdAt') };
-    const leads = await Lead.find(filter).sort({ createdAt: -1 }).limit(5000).lean();
-    send(res, rows(leads, (lead) => ({ id: lead._id, reference: lead.leadNo, date: lead.leadDate || lead.createdAt, customer: lead.customerName, status: lead.status || 'new', source: lead.source?.name || '', amount: asNumber(lead.leadValue), probability: asNumber(lead.probability) })));
+    const leads = await Lead.find(filter)
+      .populate('source', 'name')
+      .populate('assignedTo', 'firstName lastName email')
+      .populate('convertedCustomerId', 'customerCode firstName lastName email')
+      .sort({ createdAt: -1 }).limit(5000).lean();
+    send(res, rows(leads, (lead) => ({
+      id: lead._id, reference: lead.leadNo, date: lead.leadDate || lead.createdAt,
+      created_at: lead.createdAt, updated_at: lead.updatedAt,
+      customer: lead.customerName, email: lead.email || '', phone: lead.phone || '',
+      status: lead.status || 'new', source: lead.source?.name || '',
+      assigned_to: lead.assignedTo ? `${lead.assignedTo.firstName || ''} ${lead.assignedTo.lastName || ''}`.trim() || lead.assignedTo.email : '',
+      converted: !!lead.convertedToCustomer,
+      converted_customer: lead.convertedCustomerId ? `${lead.convertedCustomerId.customerCode || ''} ${lead.convertedCustomerId.firstName || ''} ${lead.convertedCustomerId.lastName || ''}`.trim() : '',
+      amount: asNumber(lead.leadValue), probability: asNumber(lead.probability),
+    })));
   } catch (error) { next(error); }
 };
 
 const getServiceAnalytics = async (req, res, next) => {
   try {
     const filter = { ...dateRange(req.query, 'createdAt') };
-    const cards = await JobCard.find(filter).populate('customer', 'firstName lastName companyName').sort({ createdAt: -1 }).limit(5000).lean();
-    send(res, rows(cards, (card) => ({ id: card._id, reference: card.jobCardNumber, date: card.createdAt, customer: customerName(card.customer), status: card.status || 'open', amount: asNumber(card.totalAmount || card.grandTotal), revenue: asNumber(card.totalAmount || card.grandTotal), invoiceId: card.invoice || null })));
+    const cards = await JobCard.find(filter)
+      .populate('customer', 'firstName lastName companyName email phone')
+      .populate('warrantyType', 'name durationMonths')
+      .populate('servicePackage', 'packageName price')
+      .populate('technician', 'firstName lastName email')
+      .populate('services.laborRate', 'name rate')
+      .sort({ createdAt: -1 }).limit(5000).lean();
+    send(res, rows(cards, (card) => ({
+      id: card._id, reference: card.jobCardNumber, date: card.createdAt, created_at: card.createdAt, updated_at: card.updatedAt,
+      customer: customerName(card.customer), customer_email: card.customer?.email || '', customer_phone: card.customer?.phone || '',
+      vehicle: [card.customerVehicle?.number, card.customerVehicle?.make, card.customerVehicle?.model].filter(Boolean).join(' · '),
+      status: card.status || 'open', service_package: card.servicePackage?.packageName || '',
+      warranty_type: card.warrantyType?.name || '',
+      technician: card.technician ? `${card.technician.firstName || ''} ${card.technician.lastName || ''}`.trim() || card.technician.email : '',
+      labor_rates: (card.services || []).map((service) => service.laborRate?.name).filter(Boolean).join(', '),
+      amount: asNumber(card.totalAmount || card.grandTotal), revenue: asNumber(card.totalAmount || card.grandTotal), invoiceId: card.invoice || null,
+    })));
   } catch (error) { next(error); }
 };
 const getServiceKpiDetail = getServiceAnalytics;

@@ -533,6 +533,7 @@ function JobCards() {
   const [serviceTypes, setServiceTypes] = useState([]);
   const [laborRates, setLaborRates] = useState([]);
   const [warrantyTypes, setWarrantyTypes] = useState([]);
+  const [servicePackages, setServicePackages] = useState([]);
   const [technicians, setTechnicians] = useState([]);
   const [advisors, setAdvisors] = useState([]);
   const [parts, setParts] = useState([]);
@@ -545,7 +546,7 @@ function JobCards() {
     customerId: '', vehicleId: '', vehicleNumber: '', vehicleMake: '', vehicleModel: '',
     vehicleVin: '', odometerReading: '', fuelLevel: '', promisedDate: '',
     customerRemarks: '', technicianRemarks: '', serviceAdvisorId: '', technicianId: '',
-    discount: '0', taxAmount: '0', warrantyTypeId: '',
+    discount: '0', taxAmount: '0', warrantyTypeId: '', servicePackageId: '',
   });
 
   const [jobServices, setJobServices] = useState([]);
@@ -583,6 +584,7 @@ function JobCards() {
         serviceMasterAPI.getTypes(),
         serviceMasterAPI.getLaborRates(),
         serviceMasterAPI.getWarranties(),
+        serviceMasterAPI.getPackages({ limit: 500 }),
         serviceAPI.getTechnicians().catch(() => ({ data: { data: [] } })),
         serviceAPI.getAdvisors().catch(() => ({ data: { data: [] } })),
         partsAPI.getAll({ limit: 500 }),
@@ -592,11 +594,12 @@ function JobCards() {
       setServiceTypes(results[1].status === 'fulfilled' ? results[1].value?.data?.data || [] : []);
       setLaborRates(results[2].status === 'fulfilled' ? results[2].value?.data?.data || [] : []);
       setWarrantyTypes(results[3].status === 'fulfilled' ? results[3].value?.data?.data || [] : []);
-      setTechnicians(results[4].status === 'fulfilled' ? results[4].value?.data?.data || [] : []);
-      setAdvisors(results[5].status === 'fulfilled' ? results[5].value?.data?.data || [] : []);
-      setParts(results[6].status === 'fulfilled' ? results[6].value?.data?.data?.parts || [] : []);
-      const brands = results[7].status === 'fulfilled'
-        ? results[7].value?.data?.brands || results[7].value?.data?.data?.brands || []
+      setServicePackages(results[4].status === 'fulfilled' ? results[4].value?.data?.data || [] : []);
+      setTechnicians(results[5].status === 'fulfilled' ? results[5].value?.data?.data || [] : []);
+      setAdvisors(results[6].status === 'fulfilled' ? results[6].value?.data?.data || [] : []);
+      setParts(results[7].status === 'fulfilled' ? results[7].value?.data?.data?.parts || [] : []);
+      const brands = results[8].status === 'fulfilled'
+        ? results[8].value?.data?.brands || results[8].value?.data?.data?.brands || []
         : [];
       setVehicleBrands(brands);
     } catch (_) {}
@@ -630,6 +633,7 @@ function JobCards() {
           serviceAdvisorId: jc.service_advisor_id || '', technicianId: jc.technician_id || '',
           discount: jc.discount || '0', taxAmount: jc.tax_amount || '0',
           warrantyTypeId: jc.warranty_type_id || '',
+          servicePackageId: jc.service_package_id || '',
         });
         setJobServices(jc.services || []);
         setJobParts(jc.parts || []);
@@ -639,7 +643,7 @@ function JobCards() {
         customerId: '', vehicleId: '', vehicleNumber: '', vehicleMake: '', vehicleModel: '',
         vehicleVin: '', odometerReading: '', fuelLevel: '', promisedDate: '',
         customerRemarks: '', technicianRemarks: '', serviceAdvisorId: '', technicianId: '',
-        discount: '0', taxAmount: '0', warrantyTypeId: '',
+        discount: '0', taxAmount: '0', warrantyTypeId: '', servicePackageId: '',
       });
     }
     setShowModal(true);
@@ -771,6 +775,7 @@ function JobCards() {
   const stOptions = serviceTypes.map((t) => ({ id: String(t._id || t.id), name: `${t.name}${t.basePrice ? ` - PKR ${Number(t.basePrice).toLocaleString()}` : ''}` }));
   const lrOptions = laborRates.map((lr) => ({ id: String(lr._id || lr.id), name: `${lr.name}${lr.rate ? ` - PKR ${Number(lr.rate).toLocaleString()}/hr` : ''}` }));
   const wtOptions = warrantyTypes.map((w) => ({ id: String(w._id || w.id), name: `${w.name}${w.durationMonths ? ` (${w.durationMonths}mo)` : ''}` }));
+  const packageOptions = servicePackages.map((p) => ({ id: String(p._id || p.id), name: `${p.packageName || p.name}${p.price ? ` - PKR ${Number(p.price).toLocaleString()}` : ''}` }));
   const technicianOptions = technicians.map((t) => ({ id: String(t.id), name: t.name }));
   const advisorOptions = advisors.map((a) => ({ id: String(a.id), name: a.name }));
   const customerOptions = customers.map((c) => ({ id: String(c.id), name: customerOptionLabel(c) }));
@@ -961,6 +966,12 @@ function JobCards() {
                       <SearchableSelect name="warrantyTypeId" value={formData.warrantyTypeId || ''}
                         onChange={handleChange} options={wtOptions} placeholder="Select warranty (optional)"
                         disabled={modalMode === 'view'} />
+                    </div>
+                    <div className="form-group"><label>Service Package</label>
+                      <SearchableSelect name="servicePackageId" value={formData.servicePackageId || ''}
+                        onChange={handleChange} options={packageOptions} placeholder="Select package (optional)"
+                        disabled={modalMode === 'view'} />
+                      {modalMode === 'create' && formData.servicePackageId && <small className="form-hint">Package services will be added when this job card is created.</small>}
                     </div>
                   </div>
                 </div>

@@ -57,6 +57,28 @@ function useDebounce(value, delay) {
     return debouncedValue;
 }
 
+// Status Collections are the Mongo-backed options system used by the rest of
+// the ERP.  Keep a legacy fallback only until an administrator has configured
+// the relevant Sales collection.
+function useSalesStatusOptions(collectionKey, fallback) {
+    const [options, setOptions] = useState(fallback);
+    useEffect(() => {
+        let active = true;
+        adminAPI.getStatusesByTable(collectionKey)
+            .then((res) => {
+                const statuses = res.data?.data?.statuses || [];
+                if (!active || !statuses.length) return;
+                setOptions(statuses.map((item) => ({
+                    value: item.status_code || item.value || item.name,
+                    label: item.status_name || item.label || item.display_name || item.name,
+                })).filter((item) => item.value && item.label));
+            })
+            .catch(() => { /* the fallback remains available */ });
+        return () => { active = false; };
+    }, [collectionKey]);
+    return options;
+}
+
 /** Print open sales document modal via isolated iframe (reliable in Chrome). */
 function runSalesPrint() {
     printSalesModal();
@@ -201,14 +223,15 @@ function Quotations() {
     const canDownloadPdf = policyAllows(user, 'quotations', 'downloadPdf', true);
 
     // Status options for Quotations
-    const statusOptions = [
+    const statusOptions = useSalesStatusOptions('quotations', [
         { label: 'Draft', value: 'draft' },
         { label: 'Sent', value: 'sent' },
+        { label: 'Pending', value: 'pending' },
         { label: 'Accepted', value: 'accepted' },
         { label: 'Rejected', value: 'rejected' },
         { label: 'Converted', value: 'converted' },
         { label: 'Expired', value: 'expired' }
-    ];
+    ]);
 
     const fetchData = useCallback(async () => {
         try {
@@ -700,14 +723,14 @@ function Bookings() {
     const canSendEmail = policyAllows(user, 'bookings', 'sendEmail', ['super_admin','admin','sales_manager','sales_executive'].includes(user?.role));
     const canDownloadPdf = policyAllows(user, 'bookings', 'downloadPdf', true);
 
-    const statusOptions = [
+    const statusOptions = useSalesStatusOptions('bookings', [
         { label: 'Pending', value: 'pending' },
         { label: 'Confirmed', value: 'confirmed' },
-        { label: 'Processing', value: 'processing' },
-        { label: 'Ready', value: 'ready' },
+        { label: 'Scheduled', value: 'scheduled' },
+        { label: 'In Progress', value: 'in_progress' },
         { label: 'Cancelled', value: 'cancelled' },
         { label: 'Completed', value: 'completed' }
-    ];
+    ]);
 
     const fetchData = useCallback(async () => {
         try {
@@ -1137,13 +1160,13 @@ function SalesOrders() {
     });
     const debouncedSearch = useDebounce(filters.search, 300);
 
-    const statusOptions = [
+    const statusOptions = useSalesStatusOptions('sales_orders', [
         { label: 'Pending', value: 'pending' },
         { label: 'Confirmed', value: 'confirmed' },
         { label: 'Invoiced', value: 'invoiced' },
         { label: 'Delivered', value: 'delivered' },
         { label: 'Cancelled', value: 'cancelled' }
-    ];
+    ]);
 
     const fetchData = useCallback(async () => {
         try {
@@ -2059,7 +2082,12 @@ function Invoices() {
                 const statuses = Array.isArray(statusPayload)
                     ? statusPayload
                     : (Array.isArray(statusPayload?.statuses) ? statusPayload.statuses : []);
-                setInvoiceStatuses(statuses);
+                setInvoiceStatuses(statuses.map((status) => ({
+                    ...status,
+                    is_active: status.is_active ?? status.isActive ?? true,
+                    name: status.name || status.status_code || status.value,
+                    display_name: status.display_name || status.status_name || status.label,
+                })));
             } else {
                 setInvoiceStatuses([]);
             }
@@ -2296,14 +2324,14 @@ function Invoices() {
         return <span className={`badge badge-${colors[status] || 'secondary'}`}>{status?.toUpperCase()}</span>;
     };
 
-    const statusOptions = [
+    const statusOptions = useSalesStatusOptions('invoices', [
         { label: 'Draft', value: 'draft' },
         { label: 'Sent', value: 'sent' },
         { label: 'Partial', value: 'partial' },
         { label: 'Paid', value: 'paid' },
         { label: 'Overdue', value: 'overdue' },
         { label: 'Cancelled', value: 'cancelled' }
-    ];
+    ]);
     const createFormStatusOptions = invoiceStatuses
         .filter(status => status.is_active === 1 || status.is_active === true)
         .map(status => ({

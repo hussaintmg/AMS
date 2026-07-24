@@ -711,6 +711,38 @@ const DEFAULT_STATUSES_BY_TABLE = {
     { label: 'Under Maintenance', value: 'under_maintenance', color: '#f59e0b' },
     { label: 'In Transit', value: 'in_transit', color: '#8b5cf6' },
   ],
+  quotations: [
+    { label: 'Draft', value: 'draft', color: '#64748b', isDefault: true },
+    { label: 'Sent', value: 'sent', color: '#2563eb' },
+    { label: 'Pending', value: 'pending', color: '#f59e0b' },
+    { label: 'Accepted', value: 'accepted', color: '#16a34a' },
+    { label: 'Rejected', value: 'rejected', color: '#dc2626' },
+    { label: 'Expired', value: 'expired', color: '#f97316' },
+    { label: 'Converted', value: 'converted', color: '#7c3aed' },
+  ],
+  bookings: [
+    { label: 'Pending', value: 'pending', color: '#f59e0b', isDefault: true },
+    { label: 'Confirmed', value: 'confirmed', color: '#2563eb' },
+    { label: 'Scheduled', value: 'scheduled', color: '#0ea5e9' },
+    { label: 'In Progress', value: 'in_progress', color: '#f97316' },
+    { label: 'Completed', value: 'completed', color: '#16a34a' },
+    { label: 'Cancelled', value: 'cancelled', color: '#dc2626' },
+  ],
+  sales_orders: [
+    { label: 'Pending', value: 'pending', color: '#f59e0b', isDefault: true },
+    { label: 'Confirmed', value: 'confirmed', color: '#2563eb' },
+    { label: 'Invoiced', value: 'invoiced', color: '#7c3aed' },
+    { label: 'Delivered', value: 'delivered', color: '#16a34a' },
+    { label: 'Cancelled', value: 'cancelled', color: '#dc2626' },
+  ],
+  invoices: [
+    { label: 'Draft', value: 'draft', color: '#64748b', isDefault: true },
+    { label: 'Sent', value: 'sent', color: '#2563eb' },
+    { label: 'Partially Paid', value: 'partial', color: '#f59e0b' },
+    { label: 'Paid', value: 'paid', color: '#16a34a' },
+    { label: 'Overdue', value: 'overdue', color: '#dc2626' },
+    { label: 'Cancelled', value: 'cancelled', color: '#991b1b' },
+  ],
 };
 
 const getStatusesByTable = async (req, res, next) => {

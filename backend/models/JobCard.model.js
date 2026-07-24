@@ -39,6 +39,9 @@ const jobCardSchema = new mongoose.Schema({
   serviceAdvisor: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   technician: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   warrantyType: { type: mongoose.Schema.Types.ObjectId, ref: 'WarrantyType', default: null },
+  // The package is retained for audit/reporting; its services are copied into
+  // the job card so later package edits never change an existing job.
+  servicePackage: { type: mongoose.Schema.Types.ObjectId, ref: 'ServicePackage', default: null },
   status: { type: String, trim: true },
   odometer: { type: Number },
   fuelLevel: { type: String, trim: true, default: '' },

@@ -15,6 +15,7 @@ const logger = require('../utils/logger');
 const ServiceAppointment = require('../models/ServiceAppointment.model');
 const JobCard = require('../models/JobCard.model');
 const ServiceType = require('../models/ServiceType.model');
+const ServicePackage = require('../models/ServicePackage.model');
 const Part = require('../models/Part.model');
 const Customer = require('../models/Customer.model');
 const User = require('../models/User.model');
@@ -374,6 +375,8 @@ const mapJobCard = (jc, { detailed = false } = {}) => ({
     service_advisor_id: jc.serviceAdvisor || null,
     technician_id: jc.technician || null,
     warranty_type_id: jc.warrantyType || null,
+    service_package_id: jc.servicePackage?._id || jc.servicePackage || null,
+    service_package_name: jc.servicePackage?.packageName || '',
     status: jc.status || 'open',
     odometer_reading: jc.odometer || '',
     fuel_level: jc.fuelLevel || '',
@@ -441,6 +444,7 @@ const getAllJobCards = async (req, res, next) => {
             JobCard.find(filter)
                 .populate('customer', 'firstName lastName companyName phone customerCode')
                 .populate('invoice', 'invoiceNumber status totalAmount')
+                .populate('servicePackage', 'packageName price')
                 .sort({ createdAt: -1 })
                 .skip((pageNum - 1) * limitNum)
                 .limit(limitNum)
@@ -464,6 +468,7 @@ const getJobCardById = async (req, res, next) => {
         const jobCard = await JobCard.findById(req.params.id)
             .populate('customer', 'firstName lastName companyName phone customerCode')
             .populate('invoice', 'invoiceNumber status totalAmount')
+            .populate('servicePackage', 'packageName price')
             .lean();
         if (!jobCard) throw new AppError('Job card not found', 404);
         res.json({ success: true, data: mapJobCard(jobCard, { detailed: true }) });
@@ -477,11 +482,30 @@ const createJobCard = async (req, res, next) => {
         const {
             appointmentId, customerId, vehicleId, odometerReading, fuelLevel, promisedDate,
             customerRemarks, technicianRemarks, serviceAdvisorId, technicianId,
-            discount, taxAmount, warrantyTypeId,
+            discount, taxAmount, warrantyTypeId, servicePackageId,
         } = req.body;
 
         const customer = await requireCustomer(customerId);
         const jobCardNumber = await nextDocNumber(JobCard, 'jobCardNumber', 'JC');
+        let servicePackage = null;
+        if (sanitizeId(servicePackageId)) {
+            servicePackage = await ServicePackage.findOne({ _id: servicePackageId, isActive: true }).lean();
+            if (!servicePackage) throw new AppError('Selected service package is not available', 400);
+        }
+
+        // Package lines are snapshots.  This lets packages remain reusable
+        // master data while preserving the price and scope agreed on this job.
+        const packageServices = servicePackage
+            ? (servicePackage.services?.length
+                ? servicePackage.services.map((item) => ({
+                    description: item.name || servicePackage.packageName,
+                    hours: 0,
+                    rate: num(item.price),
+                    total: num(item.price) * Math.max(1, num(item.quantity, 1)),
+                    status: 'pending',
+                }))
+                : [{ description: servicePackage.packageName, hours: 0, rate: num(servicePackage.price), total: num(servicePackage.price), status: 'pending' }])
+            : [];
 
         const jobCard = await JobCard.create({
             jobCardNumber,
@@ -492,6 +516,8 @@ const createJobCard = async (req, res, next) => {
             serviceAdvisor: sanitizeId(serviceAdvisorId),
             technician: sanitizeId(technicianId),
             warrantyType: sanitizeId(warrantyTypeId),
+            servicePackage: servicePackage?._id || null,
+            services: packageServices,
             status: 'open',
             odometer: num(odometerReading, null) || null,
             fuelLevel: fuelLevel || '',
@@ -545,7 +571,7 @@ const updateJobCard = async (req, res, next) => {
         const {
             customerId, vehicleId, odometerReading, fuelLevel, promisedDate,
             customerRemarks, technicianRemarks, serviceAdvisorId, technicianId,
-            discount, taxAmount, warrantyTypeId, status,
+            discount, taxAmount, warrantyTypeId, servicePackageId, status,
         } = req.body;
 
         if (sanitizeId(customerId)) {
@@ -563,6 +589,13 @@ const updateJobCard = async (req, res, next) => {
         if (serviceAdvisorId !== undefined) jobCard.serviceAdvisor = sanitizeId(serviceAdvisorId);
         if (technicianId !== undefined) jobCard.technician = sanitizeId(technicianId);
         if (warrantyTypeId !== undefined) jobCard.warrantyType = sanitizeId(warrantyTypeId);
+        if (servicePackageId !== undefined) {
+            const packageId = sanitizeId(servicePackageId);
+            if (packageId && !await ServicePackage.exists({ _id: packageId, isActive: true })) {
+                throw new AppError('Selected service package is not available', 400);
+            }
+            jobCard.servicePackage = packageId;
+        }
         if (discount !== undefined) jobCard.discount = num(discount);
         if (taxAmount !== undefined) jobCard.taxAmount = num(taxAmount);
         if (status) jobCard.status = status;
