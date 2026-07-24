@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Save, Type, Square, Minus, Trash2, Copy, Plus, Search, ChevronDown, Image, FilePlus2, Link, QrCode, Variable, GripVertical } from 'lucide-react';
+import { ArrowLeft, Save, Type, Square, Minus, Trash2, Copy, Plus, Search, ChevronDown, Image, FilePlus2, Link, QrCode, Variable } from 'lucide-react';
 import QRCode from 'qrcode';
 import toast from 'react-hot-toast';
 import { pdfManagementAPI } from '../services/api';
@@ -21,9 +21,10 @@ function QrPreview({ value }) {
   return src ? <img src={src} alt="QR code" /> : null;
 }
 
-function VariableDropInput({ label, placeholder, value, onChange, type = 'input' }) {
+function VariableDropInput({ label, placeholder, value, onChange, variables, type = 'input' }) {
   const inputRef = useRef(null);
-  const [dragOver, setDragOver] = useState(false);
+  const [varOpen, setVarOpen] = useState(false);
+  const [varSearch, setVarSearch] = useState('');
 
   const insertAtCursor = useCallback((ref) => {
     const el = inputRef.current;
@@ -33,76 +34,49 @@ function VariableDropInput({ label, placeholder, value, onChange, type = 'input'
     const end = el.selectionEnd ?? start;
     const next = current.slice(0, start) + ref + current.slice(end);
     onChange(next);
+    setVarOpen(false);
+    setVarSearch('');
     requestAnimationFrame(() => { el.focus(); el.setSelectionRange(start + ref.length, start + ref.length); });
   }, [value, onChange]);
 
-  const handleDrop = useCallback((e) => {
-    e.preventDefault();
-    setDragOver(false);
-    const ref = e.dataTransfer.getData('application/pdf-variable');
-    if (!ref) return;
-    insertAtCursor(ref);
-  }, [insertAtCursor]);
-
-  const handleDragOver = useCallback((e) => { e.preventDefault(); e.stopPropagation(); setDragOver(true); }, []);
-  const handleDragLeave = useCallback((e) => { e.stopPropagation(); setDragOver(false); }, []);
+  const filtered = useMemo(() => variables.filter(v => `${v.key} ${v.label || ''}`.toLowerCase().includes(varSearch.toLowerCase())), [variables, varSearch]);
 
   return (
-    <label className={`pdf-input-wrap ${dragOver ? 'drop-highlight' : ''}`}>
+    <label className="pdf-input-wrap">
       <span className="pdf-input-label">{label}</span>
       <div className="pdf-input-row">
         {type === 'textarea'
-          ? <textarea ref={inputRef} rows="4" value={value || ''} onChange={e => onChange(e.target.value)} onDrop={handleDrop} onDragOver={handleDragOver} onDragLeave={handleDragLeave} placeholder={placeholder} />
-          : <input ref={inputRef} type="text" value={value || ''} onChange={e => onChange(e.target.value)} onDrop={handleDrop} onDragOver={handleDragOver} onDragLeave={handleDragLeave} placeholder={placeholder} />}
-        <button type="button" className="pdf-var-insert-btn" title="Insert variable at cursor" onClick={() => insertAtCursor('{{variable}}')}>
-          <Variable size={14} />
+          ? <textarea ref={inputRef} rows="4" value={value || ''} onChange={e => onChange(e.target.value)} placeholder={placeholder} />
+          : <input ref={inputRef} type="text" value={value || ''} onChange={e => onChange(e.target.value)} placeholder={placeholder} />}
+      </div>
+      <div className="pdf-var-dropdown">
+        <button type="button" className="pdf-var-dropdown-btn" onClick={() => setVarOpen(o => !o)}>
+          <Variable size={13} />Insert variable
         </button>
+        {varOpen && (
+          <div className="pdf-var-dropdown-menu">
+            <div className="pdf-var-dropdown-search">
+              <Search size={12} />
+              <input autoFocus placeholder="Search..." value={varSearch} onChange={e => setVarSearch(e.target.value)} />
+            </div>
+            <div className="pdf-var-dropdown-list">
+              {filtered.map(v => (
+                <button key={v.key} type="button" onClick={() => insertAtCursor(v.reference)}>
+                  <code>{v.reference}</code><small>{v.label || v.category}</small>
+                </button>
+              ))}
+              {!filtered.length && <p className="pdf-var-dropdown-empty">No variables found</p>}
+            </div>
+          </div>
+        )}
       </div>
     </label>
-  );
-}
-
-function VariablesPanel({ variables, search, onSearch, onInsert }) {
-  const [open, setOpen] = useState(false);
-  const filtered = useMemo(() => variables.filter(v => `${v.key} ${v.label || ''}`.toLowerCase().includes(search.toLowerCase())), [variables, search]);
-  return (
-    <div className="pdf-props-vars-section">
-      <button className="pdf-props-vars-toggle" onClick={() => setOpen(o => !o)}>
-        <span><Variable size={14} /> Variables</span>
-        <ChevronDown size={14} className={open ? 'rotated' : ''} />
-      </button>
-      {open && (
-        <div className="pdf-props-vars-body">
-          <div className="pdf-props-vars-search">
-            <Search size={13} />
-            <input placeholder="Search variables..." value={search} onChange={e => onSearch(e.target.value)} />
-          </div>
-          <div className="pdf-props-vars-list">
-            {filtered.map(v => (
-              <button
-                key={v.key}
-                draggable
-                onDragStart={e => e.dataTransfer.setData('application/pdf-variable', v.reference)}
-                onClick={() => onInsert(v)}
-                className="pdf-props-var-item"
-              >
-                <GripVertical size={12} className="drag-handle" />
-                <span className="pdf-props-var-ref">{v.reference}</span>
-                <span className="pdf-props-var-label">{v.label || v.category}</span>
-              </button>
-            ))}
-            {!filtered.length && <p className="pdf-props-vars-empty">No variables found</p>}
-          </div>
-        </div>
-      )}
-    </div>
   );
 }
 
 export default function PdfTemplateEditor() {
   const { id } = useParams(), navigate = useNavigate(), fileRef = useRef(null);
   const [template, setTemplate] = useState(null), [pageIndex, setPageIndex] = useState(0), [selectedId, setSelectedId] = useState(null), [variables, setVariables] = useState([]), [saving, setSaving] = useState(false), [elementOpen, setElementOpen] = useState(true);
-  const [propsVarSearch, setPropsVarSearch] = useState('');
   const [sidebarVarOpen, setSidebarVarOpen] = useState(false);
   const [sidebarVarSearch, setSidebarVarSearch] = useState('');
   const htmlRef = useRef(null);
@@ -345,25 +319,25 @@ export default function PdfTemplateEditor() {
 
               {/* Element-specific fields with drag-drop + insert */}
               {selected.type === 'text' && (
-                <VariableDropInput label="Content" placeholder="Type text or drop variable here..." value={selected.text || ''} onChange={setText} type="textarea" />
+                <VariableDropInput label="Content" placeholder="Type text or drop variable here..." value={selected.text || ''} onChange={setText} variables={variables} type="textarea" />
               )}
 
               {selected.type === 'image' && (
                 <>
-                  <VariableDropInput label="Image URL or variable" placeholder="https://... or {{customer.profileImage}}" value={selected.imageUrl || ''} onChange={v => setField('imageUrl', v)} />
+                  <VariableDropInput label="Image URL or variable" placeholder="https://... or {{customer.profileImage}}" value={selected.imageUrl || ''} onChange={v => setField('imageUrl', v)} variables={variables} />
                   <label>Upload image<input type="file" accept="image/*" onChange={uploadElementImage} /></label>
                 </>
               )}
 
               {selected.type === 'link' && (
                 <>
-                  <VariableDropInput label="Link label" placeholder="Link text" value={selected.text || ''} onChange={setText} />
-                  <VariableDropInput label="URL or variable" placeholder="https://.../{{document.number}}" value={selected.url || ''} onChange={v => setField('url', v)} />
+                  <VariableDropInput label="Link label" placeholder="Link text" value={selected.text || ''} onChange={setText} variables={variables} />
+                  <VariableDropInput label="URL or variable" placeholder="https://.../{{document.number}}" value={selected.url || ''} onChange={v => setField('url', v)} variables={variables} />
                 </>
               )}
 
               {selected.type === 'qr' && (
-                <VariableDropInput label="QR URL / value / variable" placeholder="https://.../{{document.number}}" value={selected.qrValue || ''} onChange={v => setField('qrValue', v)} type="textarea" />
+                <VariableDropInput label="QR URL / value / variable" placeholder="https://.../{{document.number}}" value={selected.qrValue || ''} onChange={v => setField('qrValue', v)} variables={variables} type="textarea" />
               )}
 
               {/* CSS Position & Size */}
@@ -395,9 +369,6 @@ export default function PdfTemplateEditor() {
               {/* Free-form CSS */}
               <label className="pdf-css-label">Free CSS<textarea className="pdf-css-editor" rows="5" value={cssText} onChange={e => applyCssText(e.target.value)} placeholder={`left: 60px;\ntop: 80px;\nfont-family: Georgia, serif;\nletter-spacing: 0.5px;`} /></label>
               <small className="pdf-css-hint">One <code>property: value;</code> per line. Anything valid here is applied to the element.</small>
-
-              {/* Variables panel for selected element */}
-              <VariablesPanel variables={variables} search={propsVarSearch} onSearch={setPropsVarSearch} onInsert={insertVariable} />
             </>
           ) : (
             <>
@@ -446,9 +417,6 @@ export default function PdfTemplateEditor() {
                   </div>
                 )}
               </div>
-
-              {/* Variables panel for page */}
-              <VariablesPanel variables={variables} search={propsVarSearch} onSearch={setPropsVarSearch} onInsert={v => addElement('text', v.reference)} />
             </>
           )}
         </aside>
