@@ -32,12 +32,20 @@ const executeReport = createReport;
 const getSalesPerformance = async (req, res, next) => {
   try {
     const filter = { status: { $ne: 'cancelled' }, ...dateRange(req.query, 'orderDate') };
-    const orders = await SalesOrder.find(filter).populate('customer', 'firstName lastName companyName').sort({ orderDate: -1, createdAt: -1 }).limit(2000).lean();
+    const orders = await SalesOrder.find(filter)
+      .populate('customer', 'firstName lastName companyName email phone customerCode')
+      .populate('vehicle', 'number make model')
+      .sort({ orderDate: -1, createdAt: -1 }).limit(2000).lean();
     const data = rows(orders, (order) => ({
       id: order._id, date: order.orderDate || order.createdAt, reference: order.orderNumber,
-      customer: customerName(order.customer), status: order.status || 'pending',
+      customer: customerName(order.customer), customer_code: order.customer?.customerCode || '',
+      email: order.customer?.email || '', phone: order.customer?.phone || '',
+      status: order.status || 'pending', sale_type: order.saleType || '',
+      vehicle: [order.vehicle?.number, order.vehicle?.make, order.vehicle?.model].filter(Boolean).join(' · '),
       amount: asNumber(order.totalAmount), revenue: asNumber(order.totalAmount),
       payment: asNumber(order.paidAmount), balance: asNumber(order.balanceAmount),
+      subtotal: asNumber(order.subtotal), tax_amount: asNumber(order.taxAmount), discount_amount: asNumber(order.discountAmount),
+      delivery_date: order.deliveryDate || null,
     }));
     send(res, data);
   } catch (error) { next(error); }
@@ -88,12 +96,14 @@ const getPendingDeliveries = async (req, res, next) => {
 const getCustomerReceivables = async (req, res, next) => {
   try {
     const filter = { status: { $nin: ['paid', 'cancelled'] }, ...dateRange(req.query, 'invoiceDate') };
-    const invoices = await Invoice.find(filter).populate('customer', 'firstName lastName companyName email phone isActive').sort({ dueDate: 1 }).limit(5000).lean();
+    const invoices = await Invoice.find(filter).populate('customer', 'firstName lastName companyName email phone isActive customerCode').sort({ dueDate: 1 }).limit(5000).lean();
     send(res, rows(invoices, (invoice) => ({
       id: invoice._id, customerId: idOf(invoice.customer), customer: customerName(invoice.customer) || 'Walk-in customer',
-      email: invoice.customer?.email || '', phone: invoice.customer?.phone || '', active: invoice.customer?.isActive !== false, reference: invoice.invoiceNumber,
-      dueDate: invoice.dueDate, amount: asNumber(invoice.totalAmount), paid: asNumber(invoice.paidAmount),
-      outstanding: asNumber(invoice.balanceAmount ?? (invoice.totalAmount - invoice.paidAmount)), status: invoice.status,
+      customer_code: invoice.customer?.customerCode || '', email: invoice.customer?.email || '', phone: invoice.customer?.phone || '', active: invoice.customer?.isActive !== false,
+      reference: invoice.invoiceNumber, invoice_type: invoice.invoiceType || 'sales', status: invoice.status,
+      invoice_date: invoice.invoiceDate, due_date: invoice.dueDate, amount: asNumber(invoice.totalAmount), paid: asNumber(invoice.paidAmount),
+      outstanding: asNumber(invoice.balanceAmount ?? (invoice.totalAmount - invoice.paidAmount)),
+      balance_amount: asNumber(invoice.balanceAmount), subtotal: asNumber(invoice.subtotal), tax_amount: asNumber(invoice.taxAmount), discount_amount: asNumber(invoice.discountAmount),
     })));
   } catch (error) { next(error); }
 };
@@ -104,18 +114,25 @@ const getLeadStatistics = async (req, res, next) => {
     const filter = { isActive: { $ne: false }, deletedAt: null, ...dateRange(req.query, 'createdAt') };
     const leads = await Lead.find(filter)
       .populate('source', 'name')
+      .populate('type', 'name')
+      .populate('priority', 'name')
       .populate('assignedTo', 'firstName lastName email')
       .populate('convertedCustomerId', 'customerCode firstName lastName email')
       .sort({ createdAt: -1 }).limit(5000).lean();
     send(res, rows(leads, (lead) => ({
       id: lead._id, reference: lead.leadNo, date: lead.leadDate || lead.createdAt,
       created_at: lead.createdAt, updated_at: lead.updatedAt,
-      customer: lead.customerName, email: lead.email || '', phone: lead.phone || '',
-      status: lead.status || 'new', source: lead.source?.name || '',
+      customer: lead.customerName, customer_type: lead.customerType, company: lead.companyName || '',
+      email: lead.email || '', phone: lead.phone || '', alternate_phone: lead.alternatePhone || '',
+      city: lead.city || '', state: lead.state || '', country: lead.country || '',
+      status: lead.status || 'new', source: lead.source?.name || '', type: lead.type?.name || '', priority: lead.priority?.name || '',
       assigned_to: lead.assignedTo ? `${lead.assignedTo.firstName || ''} ${lead.assignedTo.lastName || ''}`.trim() || lead.assignedTo.email : '',
       converted: !!lead.convertedToCustomer,
       converted_customer: lead.convertedCustomerId ? `${lead.convertedCustomerId.customerCode || ''} ${lead.convertedCustomerId.firstName || ''} ${lead.convertedCustomerId.lastName || ''}`.trim() : '',
+      expected_close_date: lead.expectedCloseDate, next_follow_up: lead.nextFollowUpAt,
+      lost_reason: lead.lostReason || '', converted_at: lead.convertedAt,
       amount: asNumber(lead.leadValue), probability: asNumber(lead.probability),
+      notes: (lead.notes || []).map((note) => note.content).join('; '),
     })));
   } catch (error) { next(error); }
 };
@@ -124,21 +141,26 @@ const getServiceAnalytics = async (req, res, next) => {
   try {
     const filter = { ...dateRange(req.query, 'createdAt') };
     const cards = await JobCard.find(filter)
-      .populate('customer', 'firstName lastName companyName email phone')
+      .populate('customer', 'firstName lastName companyName email phone customerCode')
+      .populate('vehicle', 'number make model')
       .populate('warrantyType', 'name durationMonths')
       .populate('servicePackage', 'packageName price')
+      .populate('serviceAdvisor', 'firstName lastName email')
       .populate('technician', 'firstName lastName email')
       .populate('services.laborRate', 'name rate')
       .sort({ createdAt: -1 }).limit(5000).lean();
     send(res, rows(cards, (card) => ({
       id: card._id, reference: card.jobCardNumber, date: card.createdAt, created_at: card.createdAt, updated_at: card.updatedAt,
-      customer: customerName(card.customer), customer_email: card.customer?.email || '', customer_phone: card.customer?.phone || '',
+      customer: customerName(card.customer), customer_code: card.customer?.customerCode || '', customer_email: card.customer?.email || '', customer_phone: card.customer?.phone || '',
       vehicle: [card.customerVehicle?.number, card.customerVehicle?.make, card.customerVehicle?.model].filter(Boolean).join(' · '),
-      status: card.status || 'open', service_package: card.servicePackage?.packageName || '',
-      warranty_type: card.warrantyType?.name || '',
+      status: card.status || 'open', service_package: card.servicePackage?.packageName || '', warranty_type: card.warrantyType?.name || '',
+      service_advisor: card.serviceAdvisor ? `${card.serviceAdvisor.firstName || ''} ${card.serviceAdvisor.lastName || ''}`.trim() || card.serviceAdvisor.email : '',
       technician: card.technician ? `${card.technician.firstName || ''} ${card.technician.lastName || ''}`.trim() || card.technician.email : '',
       labor_rates: (card.services || []).map((service) => service.laborRate?.name).filter(Boolean).join(', '),
-      amount: asNumber(card.totalAmount || card.grandTotal), revenue: asNumber(card.totalAmount || card.grandTotal), invoiceId: card.invoice || null,
+      labor_total: asNumber(card.laborTotal), parts_total: asNumber(card.partsTotal), discount: asNumber(card.discount),
+      tax_amount: asNumber(card.taxAmount), amount: asNumber(card.totalAmount || card.grandTotal), revenue: asNumber(card.totalAmount || card.grandTotal),
+      grand_total: asNumber(card.grandTotal), invoice_id: card.invoice || null, promised_date: card.promisedDate || null,
+      completed_at: card.completedAt || null, delivered_at: card.deliveredAt || null,
     })));
   } catch (error) { next(error); }
 };

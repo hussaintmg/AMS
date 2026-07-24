@@ -14,6 +14,7 @@ router.put('/usages/:documentType', admin, controller.assignUsage);
 router.get('/variables', authenticate, controller.variables);
 router.post('/variables', admin, controller.createVariable);
 router.post('/variables/bulk', admin, controller.bulkVariables);
+router.get('/resolved-html/:documentType/:id', authenticate, controller.resolvedHtml);
 router.get('/download/:documentType/:id', authenticate, controller.downloadOne);
 router.post('/download/:documentType/bulk', authenticate, controller.downloadBulk);
 module.exports = router;

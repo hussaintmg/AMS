@@ -55,7 +55,7 @@ exports.createTemplate = async (req, res, next) => {
 };
 exports.updateTemplate = async (req, res, next) => {
   try {
-    const allowed = ['name', 'description', 'status', 'designData'];
+    const allowed = ['name', 'description', 'status', 'designData', 'mode', 'html', 'css'];
     const updates = {}; allowed.forEach((key) => { if (req.body[key] !== undefined) updates[key] = req.body[key]; });
     updates.updatedBy = userId(req);
     const template = await PdfTemplate.findByIdAndUpdate(req.params.id, { $set: updates }, { new: true, runValidators: true });
@@ -104,6 +104,47 @@ async function activeTemplate(type) {
   if (!usage?.template || usage.template.status !== 'active') throw Object.assign(new Error(`No active PDF template assigned for ${TYPES[type]?.label || type}`), { statusCode: 404 });
   return usage.template;
 }
+/** Resolve {{token}} placeholders in a string against a document data bag. */
+const getPath = (source, key) => key.split('.').reduce((value, part) => (value == null ? undefined : value[part]), source);
+const formatToken = (value, key) => {
+  if (value == null) return '';
+  if (value instanceof Date || /date|until|createdAt|updatedAt/i.test(key)) {
+    const date = new Date(value);
+    if (!Number.isNaN(date.getTime())) return date.toLocaleDateString('en-GB');
+  }
+  if (typeof value === 'object') {
+    return Array.isArray(value)
+      ? value.map((item) => item.description || item.name || JSON.stringify(item)).join(', ')
+      : JSON.stringify(value);
+  }
+  return String(value);
+};
+const resolveTokens = (text, data) => String(text || '')
+  .replace(/\{\{\s*([^}]+)\s*\}\}/g, (_, key) => formatToken(getPath(data, key.trim()), key.trim()));
+
+/**
+ * Return an HTML-mode template with its placeholders filled in. The client
+ * prints this to PDF, which keeps full CSS/HTML fidelity without shipping a
+ * headless browser on the server.
+ */
+exports.resolvedHtml = async (req, res, next) => {
+  try {
+    const template = await activeTemplate(req.params.documentType);
+    if (template.mode !== 'html') {
+      return res.status(400).json({ success: false, message: 'The assigned template is not an HTML template' });
+    }
+    const record = await loadRecord(req.params.documentType, req.params.id);
+    res.json({
+      success: true,
+      data: {
+        name: record.name,
+        html: resolveTokens(template.html, record.data),
+        css: template.css || '',
+      },
+    });
+  } catch (error) { next(error); }
+};
+
 exports.downloadOne = async (req, res, next) => {
   try {
     const template = await activeTemplate(req.params.documentType); const record = await loadRecord(req.params.documentType, req.params.id);

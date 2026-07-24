@@ -5,6 +5,7 @@ import { Routes, Route, NavLink, useSearchParams, useNavigate } from 'react-rout
 import { serviceAPI, customerAPI, partsAPI, serviceMasterAPI, vehicleAPI } from '../services/api';
 import toast from 'react-hot-toast';
 import ConfirmModal from '../components/ConfirmModal';
+import SalesDrawer from '../components/sales/SalesDrawer';
 import CustomerQuickCreate from '../components/customers/CustomerQuickCreate';
 import useModalKeyboard from '../hooks/useModalKeyboard';
 import { useAuth } from '../context/AuthContext';
@@ -120,6 +121,36 @@ function Appointments() {
       }
       catch (_) { setData([]); } finally { setLoading(false); }
   }, [filters, pagination.page, pagination.limit]);
+
+  // Detail drawer
+  const [drawerItem, setDrawerItem] = useState(null);
+  const [drawerLoading, setDrawerLoading] = useState(false);
+  const [savingStatus, setSavingStatus] = useState(false);
+
+  const loadDrawer = useCallback(async (id) => {
+    setDrawerLoading(true);
+    try {
+      const res = await serviceAPI.getAppointment(id);
+      setDrawerItem(res.data?.data || null);
+    } catch (_) {
+      toast.error('Failed to load appointment');
+      setDrawerItem(null);
+    } finally { setDrawerLoading(false); }
+  }, []);
+
+  const openDrawer = (row) => { setDrawerItem({ id: row.id }); loadDrawer(row.id); };
+
+  const handleDrawerStatus = async (status) => {
+    if (!drawerItem?.id) return;
+    setSavingStatus(true);
+    try {
+      await serviceAPI.updateAppointmentStatus(drawerItem.id, status);
+      toast.success('Status updated');
+      await Promise.all([loadDrawer(drawerItem.id), fetchData()]);
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to update status');
+    } finally { setSavingStatus(false); }
+  };
 
   const fetchDropdowns = useCallback(async () => {
     try {
@@ -377,6 +408,7 @@ function Appointments() {
           ]}
           data={data}
           loading={loading}
+          onRowClick={openDrawer}
           emptyMessage="No appointments found"
         />
       </div>
@@ -505,6 +537,29 @@ function Appointments() {
           </div>
         </div>
       )}
+
+      <SalesDrawer
+        isOpen={Boolean(drawerItem)}
+        loading={drawerLoading}
+        onClose={() => setDrawerItem(null)}
+        title={`Appointment ${drawerItem?.appointment_number || ''}`}
+        subtitle={drawerItem?.customer_name}
+        fields={[
+          { label: 'Date', value: drawerItem?.appointment_date ? new Date(drawerItem.appointment_date).toLocaleDateString('en-GB') : '-' },
+          { label: 'Time', value: drawerItem?.appointment_time },
+          { label: 'Service Type', value: drawerItem?.service_type_name },
+          { label: 'Vehicle', value: [drawerItem?.customer_vehicle_make, drawerItem?.customer_vehicle_model, drawerItem?.customer_vehicle_variant].filter(Boolean).join(' ') },
+          { label: 'Vehicle No.', value: drawerItem?.customer_vehicle_number },
+          { label: 'Estimated Duration', value: drawerItem?.estimated_duration ? `${drawerItem.estimated_duration} min` : '-' },
+          { label: 'Customer Concerns', value: drawerItem?.customer_concerns, full: true },
+          { label: 'Notes', value: drawerItem?.notes, full: true },
+        ]}
+        statusOptions={Object.keys(APPT_STATUS_CLASS).map((value) => ({ value, label: value.replace(/_/g, ' ') }))}
+        status={drawerItem?.status}
+        onStatusChange={handleDrawerStatus}
+        savingStatus={savingStatus}
+        canEditStatus={canEdit}
+      />
     </div>
   );
 }
@@ -576,6 +631,35 @@ function JobCards() {
     }
     catch (_) { setData([]); } finally { setLoading(false); }
   }, [filters, pagination.page, pagination.limit]);
+
+  const [jcDrawer, setJcDrawer] = useState(null);
+  const [jcDrawerLoading, setJcDrawerLoading] = useState(false);
+  const [jcSavingStatus, setJcSavingStatus] = useState(false);
+
+  const loadJcDrawer = useCallback(async (id) => {
+    setJcDrawerLoading(true);
+    try {
+      const res = await serviceAPI.getJobCard(id);
+      setJcDrawer(res.data?.data || null);
+    } catch (_) {
+      toast.error('Failed to load job card');
+      setJcDrawer(null);
+    } finally { setJcDrawerLoading(false); }
+  }, []);
+
+  const openJcDrawer = (row) => { setJcDrawer({ id: row.id }); loadJcDrawer(row.id); };
+
+  const handleJcStatus = async (status) => {
+    if (!jcDrawer?.id) return;
+    setJcSavingStatus(true);
+    try {
+      await serviceAPI.updateJobCardStatus(jcDrawer.id, status);
+      toast.success('Status updated');
+      await Promise.all([loadJcDrawer(jcDrawer.id), fetchData()]);
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to update status');
+    } finally { setJcSavingStatus(false); }
+  };
 
   const fetchDropdowns = useCallback(async () => {
     try {
@@ -864,6 +948,7 @@ function JobCards() {
           ]}
           data={data}
           loading={loading}
+          onRowClick={openJcDrawer}
           emptyMessage="No job cards found"
         />
       </div>
@@ -1172,6 +1257,50 @@ function JobCards() {
           </div>
         </div>
       )}
+
+      <SalesDrawer
+        isOpen={Boolean(jcDrawer)}
+        loading={jcDrawerLoading}
+        onClose={() => setJcDrawer(null)}
+        title={`Job Card ${jcDrawer?.job_card_number || ''}`}
+        subtitle={jcDrawer?.customer_name}
+        fields={[
+          { label: 'Received', value: jcDrawer?.received_date ? new Date(jcDrawer.received_date).toLocaleDateString('en-GB') : '-' },
+          { label: 'Promised', value: jcDrawer?.promised_date ? new Date(jcDrawer.promised_date).toLocaleDateString('en-GB') : '-' },
+          { label: 'Vehicle', value: [jcDrawer?.customer_vehicle_make, jcDrawer?.customer_vehicle_model].filter(Boolean).join(' ') },
+          { label: 'Vehicle No.', value: jcDrawer?.customer_vehicle_number },
+          { label: 'Odometer', value: jcDrawer?.odometer_reading },
+          { label: 'Service Advisor', value: jcDrawer?.service_advisor_name },
+          { label: 'Service Package', value: jcDrawer?.service_package_name },
+          { label: 'Warranty', value: jcDrawer?.warranty_type_name },
+          { label: 'Labour Total', value: jcDrawer?.labor_total != null ? `PKR ${Number(jcDrawer.labor_total).toLocaleString()}` : '-' },
+          { label: 'Parts Total', value: jcDrawer?.parts_total != null ? `PKR ${Number(jcDrawer.parts_total).toLocaleString()}` : '-' },
+          { label: 'Customer Remarks', value: jcDrawer?.customer_remarks, full: true },
+          { label: 'Technician Remarks', value: jcDrawer?.technician_remarks, full: true },
+        ]}
+        items={[
+          ...(jcDrawer?.services || []).map((x) => ({
+            description: `Labour: ${x.description || x.service_type_name || '-'}`,
+            quantity: x.hours, unitPrice: x.rate, total: x.total,
+          })),
+          ...(jcDrawer?.parts || []).map((x) => ({
+            description: `Part: ${x.part_name || x.description || '-'}${x.is_warranty ? ' (warranty)' : ''}`,
+            quantity: x.quantity, unitPrice: x.unit_price, total: x.total,
+          })),
+        ]}
+        statusOptions={Object.keys(JC_STATUS_CLASS).map((value) => ({ value, label: value.replace(/_/g, ' ') }))}
+        status={jcDrawer?.status}
+        onStatusChange={handleJcStatus}
+        savingStatus={jcSavingStatus}
+        canEditStatus={canEdit}
+        totals={{
+          total: jcDrawer?.grand_total,
+          paid: jcDrawer?.paid_amount || 0,
+          balance: jcDrawer?.balance_amount != null
+            ? jcDrawer.balance_amount
+            : Number(jcDrawer?.grand_total || 0) - Number(jcDrawer?.paid_amount || 0),
+        }}
+      />
     </div>
   );
 }

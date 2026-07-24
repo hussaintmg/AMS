@@ -235,6 +235,7 @@ export const pdfManagementAPI = {
     getVariables: (documentType) => api.get('/pdf-management/variables', { params: { documentType } }),
     createVariable: (data) => api.post('/pdf-management/variables', data),
     bulkVariables: (data) => api.post('/pdf-management/variables/bulk', data),
+    getResolvedHtml: (documentType, id) => api.get(`/pdf-management/resolved-html/${documentType}/${id}`),
     download: (documentType, id) => api.get(`/pdf-management/download/${documentType}/${id}`, { responseType: 'blob' }),
     downloadBulk: (documentType, ids) => api.post(`/pdf-management/download/${documentType}/bulk`, { ids }, { responseType: 'blob' }),
 };

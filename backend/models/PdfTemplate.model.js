@@ -7,6 +7,11 @@ const pdfTemplateSchema = new mongoose.Schema({
   status: { type: String, enum: ['draft', 'active', 'inactive'], default: 'draft', index: true },
   description: { type: String, trim: true, default: '' },
   designData: { type: mongoose.Schema.Types.Mixed, default: () => ({ pages: [] }) },
+  // Authoring mode. 'designer' drives the drag-and-drop pages above; 'html'
+  // renders the raw html/css below instead, which the client prints to PDF.
+  mode: { type: String, enum: ['designer', 'html'], default: 'designer' },
+  html: { type: String, default: '' },
+  css: { type: String, default: '' },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
 }, { timestamps: true });

@@ -223,12 +223,21 @@ function Reports() {
   };
 
   const reportRows = cardData?._rows || [];
-  const reportColumns = reportRows.length ? Object.keys(reportRows[0]).filter((key) => key !== 'id' && key !== 'onLeave') : [];
+  const reportColumns = reportRows.length ? Array.from(new Set(reportRows.flatMap((row) => Object.keys(row))))
+    .filter((key) => key !== 'id' && key !== 'onLeave' && key !== '_id') : [];
   const columnLabel = (key) => key.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase());
   const displayCell = (key, value) => {
     if (value === null || value === undefined || value === '') return '—';
-    if (['amount', 'revenue', 'payment', 'balance', 'outstanding', 'stockValue'].includes(key)) return `PKR ${Number(value || 0).toLocaleString()}`;
-    if (['date', 'dueDate'].includes(key)) return new Date(value).toLocaleDateString();
+    if (Array.isArray(value)) return value.filter((item) => item !== null && item !== undefined && item !== '').join(', ');
+    if (typeof value === 'object') {
+      if (value.name || value.label || value.title) return value.name || value.label || value.title;
+      return JSON.stringify(value).replace(/["{}]/g, '').replace(/,/g, ', ');
+    }
+    if (['amount', 'revenue', 'payment', 'balance', 'outstanding', 'stockValue', 'totalAmount', 'paidAmount', 'balanceAmount'].includes(key)) return `PKR ${Number(value || 0).toLocaleString()}`;
+    if (/date/i.test(key)) {
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString();
+    }
     return String(value);
   };
 
