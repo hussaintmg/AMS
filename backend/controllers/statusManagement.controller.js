@@ -743,32 +743,46 @@ const DEFAULT_STATUSES_BY_TABLE = {
     { label: 'Overdue', value: 'overdue', color: '#dc2626' },
     { label: 'Cancelled', value: 'cancelled', color: '#991b1b' },
   ],
+  leads: [
+    { label: 'New', value: 'new', color: '#2563eb', isDefault: true },
+    { label: 'Contacted', value: 'contacted', color: '#0ea5e9' },
+    { label: 'Qualified', value: 'qualified', color: '#7c3aed' },
+    { label: 'Proposal', value: 'proposal', color: '#f59e0b' },
+    { label: 'Negotiation', value: 'negotiation', color: '#f97316' },
+    { label: 'Won', value: 'won', color: '#16a34a' },
+    { label: 'Lost', value: 'lost', color: '#dc2626' },
+  ],
+};
+
+/**
+ * Resolve (creating on first use) the status collection backing a table.
+ * Shared so lead/sales screens never report "no statuses configured" just
+ * because nobody has opened Status Management yet.
+ */
+const ensureStatusCollection = async (tableName) => {
+  let collection = await StatusCollection.findOne({ key: tableName }).lean();
+  if (collection) return collection;
+
+  const defaults = DEFAULT_STATUSES_BY_TABLE[tableName];
+  if (!defaults) return null;
+
+  const displayName = tableName.charAt(0).toUpperCase() + tableName.slice(1);
+  try {
+    const created = await StatusCollection.create({ name: displayName, key: tableName, isActive: true });
+    await StatusItem.insertMany(defaults.map((d, i) => ({ ...d, collection: created._id, order: i + 1 })));
+    return created.toObject();
+  } catch (error) {
+    if (error?.code !== 11000) throw error;
+    return StatusCollection.findOne({ $or: [{ key: tableName }, { name: displayName }] }).lean();
+  }
 };
 
 const getStatusesByTable = async (req, res, next) => {
   try {
     const { tableName } = req.params;
-    let collection = await StatusCollection.findOne({ key: tableName, isActive: true }).lean();
-
+    const collection = await ensureStatusCollection(tableName);
     if (!collection) {
-      const defaults = DEFAULT_STATUSES_BY_TABLE[tableName];
-      if (defaults) {
-        const displayName = tableName.charAt(0).toUpperCase() + tableName.slice(1);
-        try {
-          const newCollection = await StatusCollection.create({ name: displayName, key: tableName, isActive: true });
-          const items = defaults.map((d, i) => ({ ...d, collection: newCollection._id, order: i + 1 }));
-          await StatusItem.insertMany(items);
-          collection = newCollection.toObject();
-        } catch (error) {
-          // Two browser requests can arrive together when a page first opens.
-          // If the other request won the unique-key race, simply use its record.
-          if (error?.code !== 11000) throw error;
-          collection = await StatusCollection.findOne({ key: tableName, isActive: true }).lean();
-          if (!collection) throw error;
-        }
-      } else {
-        return res.json({ success: true, data: { statuses: [] } });
-      }
+      return res.json({ success: true, data: { statuses: [] } });
     }
 
     const items = await StatusItem.find({ collection: collection._id, isActive: true })
@@ -818,6 +832,7 @@ const getStatusAnalytics = async (req, res, next) => {
 };
 
 module.exports = {
+  ensureStatusCollection,
   getAllCollections,
   getCollectionStats,
   getCollectionById,

@@ -8,6 +8,7 @@ const LeadPriority = require('../models/LeadPriority.model');
 const LeadCity = require('../models/LeadCity.model');
 
 const StatusCollection = require('../models/StatusCollection.model');
+const { ensureStatusCollection } = require('./statusManagement.controller');
 const StatusItem = require('../models/StatusItem.model');
 const User = require('../models/User.model');
 const Role = require('../models/Role.model');
@@ -40,7 +41,10 @@ async function getLeadStatusCollection() {
     const configured = await StatusCollection.findOne({ _id: setting.value, isActive: true }).lean();
     if (configured) return configured;
   }
-  return StatusCollection.findOne({ key: 'leads', isActive: true }).lean();
+  // Nothing selected (or the selection was deactivated): seed the `leads`
+  // collection on first use so the form offers statuses instead of telling the
+  // user to go and configure one.
+  return ensureStatusCollection('leads');
 }
 
 const { generateLeadNo } = require('../utils/leadNumber.util');
@@ -685,24 +689,43 @@ exports.convertToCustomer = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Lead is already converted to customer' });
     }
 
-    // A conversion creates both a Customer and a User.  Check every currently
-    // unique identity before making either record; never delete the lead when
-    // a duplicate is found so it can be corrected or linked by an operator.
+    // A conversion creates both a Customer and a User. Check every identity
+    // field that must stay unique before writing either record, and say exactly
+    // which one clashed. The lead is never deleted on a clash so an operator can
+    // correct it or link it to the existing record.
     const Customer = require('../models/Customer.model');
     const email = lead.email?.toLowerCase().trim();
-    const [existingUser, existingCustomer] = await Promise.all([
-      email ? User.findOne({ email }).select('_id email customer').lean() : null,
-      email ? Customer.findOne({ email, deletedAt: null }).select('_id customerCode email user').lean() : null,
+    const phone = lead.phone ? normalizePhone(lead.phone) : '';
+
+    const [userByEmail, customerByEmail, userByPhone, customerByPhone] = await Promise.all([
+      email ? User.findOne({ email }).select('_id email phone').lean() : null,
+      email ? Customer.findOne({ email, deletedAt: null }).select('_id customerCode email phone').lean() : null,
+      phone ? User.findOne({ phone }).select('_id email phone').lean() : null,
+      phone ? Customer.findOne({ phone, deletedAt: null }).select('_id customerCode email phone').lean() : null,
     ]);
-    if (existingUser || existingCustomer) {
+
+    const clash = [
+      { field: 'email', value: email, record: userByEmail, kind: 'user' },
+      { field: 'email', value: email, record: customerByEmail, kind: 'customer' },
+      { field: 'phone', value: phone, record: userByPhone, kind: 'user' },
+      { field: 'phone', value: phone, record: customerByPhone, kind: 'customer' },
+    ].find((c) => c.record);
+
+    if (clash) {
+      const existingUser = userByEmail || userByPhone;
+      const existingCustomer = customerByEmail || customerByPhone;
       return res.status(409).json({
         success: false,
-        message: existingUser
-          ? 'A user already exists with this lead email. The lead was not converted.'
-          : 'A customer already exists with this lead email. The lead was not converted.',
+        message: `A ${clash.kind} already exists with this lead's ${clash.field} (${clash.value}). The lead was not converted.`,
+        resolution: `Change the lead's ${clash.field}, or open the existing ${clash.kind} and link this lead to it.`,
         data: {
-          existingUser: existingUser ? { id: String(existingUser._id), email: existingUser.email } : null,
-          existingCustomer: existingCustomer ? { id: String(existingCustomer._id), customerCode: existingCustomer.customerCode, email: existingCustomer.email } : null,
+          conflictField: clash.field,
+          conflictValue: clash.value,
+          conflictWith: clash.kind,
+          existingUser: existingUser ? { id: String(existingUser._id), email: existingUser.email, phone: existingUser.phone } : null,
+          existingCustomer: existingCustomer
+            ? { id: String(existingCustomer._id), customerCode: existingCustomer.customerCode, email: existingCustomer.email, phone: existingCustomer.phone }
+            : null,
         },
       });
     }
