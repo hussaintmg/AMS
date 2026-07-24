@@ -442,3 +442,9 @@
     display: block;
     pointer-events: none;
 }
+
+/* Fully settled documents (balance cleared) are tinted so they are
+   distinguishable at a glance from ones still carrying a balance. */
+.data-table tr.sales-row-settled td{background:#f0fdf4}
+.data-table tr.sales-row-settled:hover td{background:#dcfce7}
+.data-table tr.sales-row-settled.selected-row td{background:#dcfce7}

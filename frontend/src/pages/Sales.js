@@ -21,6 +21,7 @@ import BulkUploadModal from '../components/BulkUploadModal';
 import ServerPagination from '../components/ServerPagination';
 
 import SalesFilterBar from '../components/sales/SalesFilterBar';
+import SalesDrawer from '../components/sales/SalesDrawer';
 import CorporatePrintHeader, { SalesDocumentMeta } from '../components/sales/CorporatePrintHeader';
 import {
     CorpDocTitleBar,
@@ -221,6 +222,40 @@ function Quotations() {
     const canDelete = policyAllows(user, 'quotations', 'delete', canEdit);
     const canSendEmail = policyAllows(user, 'quotations', 'sendEmail', canCreate);
     const canDownloadPdf = policyAllows(user, 'quotations', 'downloadPdf', true);
+
+    // Detail drawer
+    const [drawerItem, setDrawerItem] = useState(null);
+    const [drawerLoading, setDrawerLoading] = useState(false);
+    const [savingStatus, setSavingStatus] = useState(false);
+
+    const loadDrawer = useCallback(async (id) => {
+        setDrawerLoading(true);
+        try {
+            const res = await salesAPI.getQuotation(id);
+            setDrawerItem(res.data?.data || null);
+        } catch (error) {
+            toast.error('Failed to load quotation details');
+            setDrawerItem(null);
+        } finally {
+            setDrawerLoading(false);
+        }
+    }, []);
+
+    const openDrawer = (row) => { setDrawerItem({ id: row.id }); loadDrawer(row.id); };
+
+    const handleDrawerStatus = async (status) => {
+        if (!drawerItem?.id) return;
+        setSavingStatus(true);
+        try {
+            await salesAPI.updateQuotationStatus(drawerItem.id, status);
+            toast.success('Status updated');
+            await Promise.all([loadDrawer(drawerItem.id), fetchData()]);
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Failed to update status');
+        } finally {
+            setSavingStatus(false);
+        }
+    };
 
     // Status options for Quotations
     const statusOptions = useSalesStatusOptions('quotations', [
@@ -470,15 +505,15 @@ function Quotations() {
                     </thead>
                     <tbody>
                         {data.map(q => (
-                            <tr key={q.id} className={selectedIds.includes(q.id)?'selected-row':''}>
-                                <td className="sales-select-cell"><input type="checkbox" checked={selectedIds.includes(q.id)} onChange={e=>setSelectedIds(ids=>e.target.checked?[...new Set([...ids,q.id])]:ids.filter(id=>id!==q.id))}/></td>
+                            <tr key={q.id} onClick={() => openDrawer(q)} style={{ cursor: 'pointer' }} className={selectedIds.includes(q.id)?'selected-row':''}>
+                                <td className="sales-select-cell" onClick={e=>e.stopPropagation()}><input type="checkbox" checked={selectedIds.includes(q.id)} onChange={e=>setSelectedIds(ids=>e.target.checked?[...new Set([...ids,q.id])]:ids.filter(id=>id!==q.id))}/></td>
                                 <td><strong>{q.quotation_number}</strong></td>
                                 <td>{new Date(q.created_at).toLocaleDateString()}</td>
                                 <td>{q.customer_name}</td>
                                 <td>{q.item_name || q.vehicle_full_name || 'Parts/Services'}</td>
                                 <td>PKR {Number(q.total_amount).toLocaleString()}</td>
                                 <td>{getStatusBadge(q.status)}</td>
-                                <td>
+                                <td onClick={e=>e.stopPropagation()}>
                                     <ActionButtons
                                         showView={true}
                                         onView={() => openModal('view', q)}
@@ -675,6 +710,28 @@ function Quotations() {
                     )}
                 </Modal>
             )}
+
+            <SalesDrawer
+                isOpen={Boolean(drawerItem)}
+                loading={drawerLoading}
+                onClose={() => setDrawerItem(null)}
+                title={`Quotation ${drawerItem?.quotation_number || ''}`}
+                subtitle={drawerItem?.customer_name}
+                fields={[
+                    { label: 'Date', value: drawerItem?.created_at ? new Date(drawerItem.created_at).toLocaleDateString('en-GB') : '-' },
+                    { label: 'Customer', value: drawerItem?.customer_name },
+                    { label: 'Item', value: drawerItem?.item_name || drawerItem?.vehicle_full_name },
+                    { label: 'Total', value: drawerItem?.total_amount != null ? `PKR ${Number(drawerItem.total_amount).toLocaleString()}` : '-' },
+                    { label: 'Valid Until', value: drawerItem?.valid_until ? new Date(drawerItem.valid_until).toLocaleDateString('en-GB') : '-' },
+                    { label: 'Notes', value: drawerItem?.notes, full: true },
+                ]}
+                items={drawerItem?.items || []}
+                statusOptions={statusOptions}
+                status={drawerItem?.status}
+                onStatusChange={handleDrawerStatus}
+                savingStatus={savingStatus}
+                canEditStatus={canEdit}
+            />
         </div>
     );
 }
@@ -719,6 +776,40 @@ function Bookings() {
 
     const canAction = policyAllows(user, 'bookings', 'edit', ['super_admin','admin','sales_manager'].includes(user?.role));
     const canDelete = policyAllows(user, 'bookings', 'delete', ['super_admin','sales_manager'].includes(user?.role));
+
+    // Detail drawer
+    const [drawerItem, setDrawerItem] = useState(null);
+    const [drawerLoading, setDrawerLoading] = useState(false);
+    const [savingStatus, setSavingStatus] = useState(false);
+
+    const loadDrawer = useCallback(async (id) => {
+        setDrawerLoading(true);
+        try {
+            const res = await salesAPI.getBooking(id);
+            setDrawerItem(res.data?.data || null);
+        } catch (error) {
+            toast.error('Failed to load booking details');
+            setDrawerItem(null);
+        } finally {
+            setDrawerLoading(false);
+        }
+    }, []);
+
+    const openDrawer = (row) => { setDrawerItem({ id: row.id }); loadDrawer(row.id); };
+
+    const handleDrawerStatus = async (status) => {
+        if (!drawerItem?.id) return;
+        setSavingStatus(true);
+        try {
+            await salesAPI.updateBooking(drawerItem.id, { status });
+            toast.success('Status updated');
+            await Promise.all([loadDrawer(drawerItem.id), fetchData()]);
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Failed to update status');
+        } finally {
+            setSavingStatus(false);
+        }
+    };
     const canCreate = policyAllows(user, 'bookings', 'create', canAction);
     const canSendEmail = policyAllows(user, 'bookings', 'sendEmail', ['super_admin','admin','sales_manager','sales_executive'].includes(user?.role));
     const canDownloadPdf = policyAllows(user, 'bookings', 'downloadPdf', true);
@@ -917,15 +1008,15 @@ function Bookings() {
                     </thead>
                     <tbody>
                         {data.map(b => (
-                            <tr key={b.id} className={selectedIds.includes(b.id)?'selected-row':''}>
-                                <td className="sales-select-cell"><input type="checkbox" checked={selectedIds.includes(b.id)} onChange={e=>setSelectedIds(ids=>e.target.checked?[...new Set([...ids,b.id])]:ids.filter(id=>id!==b.id))}/></td>
+                            <tr key={b.id} onClick={() => openDrawer(b)} style={{ cursor: 'pointer' }} className={selectedIds.includes(b.id)?'selected-row':''}>
+                                <td className="sales-select-cell" onClick={e=>e.stopPropagation()}><input type="checkbox" checked={selectedIds.includes(b.id)} onChange={e=>setSelectedIds(ids=>e.target.checked?[...new Set([...ids,b.id])]:ids.filter(id=>id!==b.id))}/></td>
                                 <td><strong>{b.booking_number}</strong></td>
                                 <td>{b.customer_name}</td>
                                 <td>{b.item_name || b.vehicle_full_name || 'Parts/Services'}</td>
                                 <td>PKR {Number(b.booking_amount).toLocaleString()}</td>
                                 <td>{b.expected_delivery_date ? new Date(b.expected_delivery_date).toLocaleDateString() : '-'}</td>
                                 <td>{getStatusBadge(b.status)}</td>
-                                <td>
+                                <td onClick={e=>e.stopPropagation()}>
                                     <ActionButtons
                                         showView={true}
                                         onView={() => openModal('view', b)}
@@ -1100,6 +1191,27 @@ function Bookings() {
                     </Modal>
                 )
             }
+
+            <SalesDrawer
+                isOpen={Boolean(drawerItem)}
+                loading={drawerLoading}
+                onClose={() => setDrawerItem(null)}
+                title={`Booking ${drawerItem?.booking_number || ''}`}
+                subtitle={drawerItem?.customer_name}
+                fields={[
+                    { label: 'Customer', value: drawerItem?.customer_name },
+                    { label: 'Item', value: drawerItem?.item_name || drawerItem?.vehicle_full_name },
+                    { label: 'Booking Amount', value: drawerItem?.booking_amount != null ? `PKR ${Number(drawerItem.booking_amount).toLocaleString()}` : '-' },
+                    { label: 'Expected Delivery', value: drawerItem?.expected_delivery_date ? new Date(drawerItem.expected_delivery_date).toLocaleDateString('en-GB') : '-' },
+                    { label: 'Notes', value: drawerItem?.notes, full: true },
+                ]}
+                items={drawerItem?.items || []}
+                statusOptions={statusOptions}
+                status={drawerItem?.status}
+                onStatusChange={handleDrawerStatus}
+                savingStatus={savingStatus}
+                canEditStatus={canAction}
+            />
         </div>
     );
 }
@@ -1150,6 +1262,40 @@ function SalesOrders() {
     const canDeliverOrInvoice = ['super_admin', 'admin', 'sales_manager', 'accountant'].includes(user?.role);
     const canSendEmail = policyAllows(user, 'sales_orders', 'sendEmail', ['super_admin','admin','sales_manager','sales_executive'].includes(user?.role));
     const canDownloadPdf = policyAllows(user, 'sales_orders', 'downloadPdf', true);
+
+    // Detail drawer
+    const [drawerItem, setDrawerItem] = useState(null);
+    const [drawerLoading, setDrawerLoading] = useState(false);
+    const [savingStatus, setSavingStatus] = useState(false);
+
+    const loadDrawer = useCallback(async (id) => {
+        setDrawerLoading(true);
+        try {
+            const res = await salesAPI.getOrder(id);
+            setDrawerItem(res.data?.data || null);
+        } catch (error) {
+            toast.error('Failed to load order details');
+            setDrawerItem(null);
+        } finally {
+            setDrawerLoading(false);
+        }
+    }, []);
+
+    const openDrawer = (row) => { setDrawerItem({ id: row.id }); loadDrawer(row.id); };
+
+    const handleDrawerStatus = async (status) => {
+        if (!drawerItem?.id) return;
+        setSavingStatus(true);
+        try {
+            await salesAPI.updateOrderStatus(drawerItem.id, status);
+            toast.success('Status updated');
+            await Promise.all([loadDrawer(drawerItem.id), fetchData()]);
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Failed to update status');
+        } finally {
+            setSavingStatus(false);
+        }
+    };
 
     // Filters & Pagination
     const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 0 });
@@ -1515,8 +1661,8 @@ function SalesOrders() {
                     </thead>
                     <tbody>
                         {data.map(o => (
-                            <tr key={o.id} className={selectedIds.includes(o.id)?'selected-row':''}>
-                                <td className="sales-select-cell"><input type="checkbox" checked={selectedIds.includes(o.id)} onChange={e=>setSelectedIds(ids=>e.target.checked?[...new Set([...ids,o.id])]:ids.filter(id=>id!==o.id))}/></td>
+                            <tr key={o.id} onClick={() => openDrawer(o)} style={{ cursor: 'pointer' }} className={[selectedIds.includes(o.id)?'selected-row':'', Number(o.grand_total) > 0 && Number(o.paid_amount) >= Number(o.grand_total) ? 'sales-row-settled' : ''].filter(Boolean).join(' ')}>
+                                <td className="sales-select-cell" onClick={e=>e.stopPropagation()}><input type="checkbox" checked={selectedIds.includes(o.id)} onChange={e=>setSelectedIds(ids=>e.target.checked?[...new Set([...ids,o.id])]:ids.filter(id=>id!==o.id))}/></td>
                                 <td><strong>{o.order_number}</strong></td>
                                 <td>{new Date(o.created_at).toLocaleDateString()}</td>
                                 <td>{o.customer_name}</td>
@@ -1532,7 +1678,7 @@ function SalesOrders() {
                                     )}
                                 </td>
                                 <td>{getStatusBadge(o.status)}</td>
-                                <td>
+                                <td onClick={e=>e.stopPropagation()}>
                                     <ActionButtons
                                         showView={true}
                                         showEdit={canEdit && o.status !== 'delivered' && o.status !== 'cancelled' && !o.invoice_number}
@@ -1949,6 +2095,35 @@ function SalesOrders() {
                 templateType="sales-orders"
                 onCompleted={() => fetchData()}
             />
+
+            <SalesDrawer
+                isOpen={Boolean(drawerItem)}
+                loading={drawerLoading}
+                onClose={() => setDrawerItem(null)}
+                title={`Sales Order ${drawerItem?.order_number || ''}`}
+                subtitle={drawerItem?.customer_name}
+                fields={[
+                    { label: 'Date', value: drawerItem?.created_at ? new Date(drawerItem.created_at).toLocaleDateString('en-GB') : '-' },
+                    { label: 'Customer', value: drawerItem?.customer_name },
+                    { label: 'Sale Type', value: drawerItem?.sale_type },
+                    { label: 'Item', value: drawerItem?.item_name },
+                    { label: 'Invoice', value: drawerItem?.invoice_number || 'Not generated' },
+                    { label: 'Notes', value: drawerItem?.notes, full: true },
+                ]}
+                items={drawerItem?.items || []}
+                statusOptions={statusOptions}
+                status={drawerItem?.status}
+                onStatusChange={handleDrawerStatus}
+                savingStatus={savingStatus}
+                canEditStatus={canEdit}
+                totals={{
+                    total: drawerItem?.grand_total,
+                    paid: drawerItem?.paid_amount,
+                    balance: drawerItem?.balance_amount != null
+                        ? drawerItem.balance_amount
+                        : Number(drawerItem?.grand_total || 0) - Number(drawerItem?.paid_amount || 0),
+                }}
+            />
         </div>
     );
 }
@@ -2012,6 +2187,53 @@ function Invoices() {
     const canEdit = policyAllows(user, 'invoices', 'edit', ['super_admin','admin','accountant'].includes(user?.role));
     const canDelete = policyAllows(user, 'invoices', 'delete', user?.role === 'super_admin');
     const canRecordPayment = ['super_admin', 'admin', 'sales_manager', 'accountant'].includes(user?.role);
+
+    // Detail drawer (status + payment ledger)
+    const [drawerInvoice, setDrawerInvoice] = useState(null);
+    const [drawerLoading, setDrawerLoading] = useState(false);
+    const [savingStatus, setSavingStatus] = useState(false);
+
+    const loadDrawer = useCallback(async (id) => {
+        setDrawerLoading(true);
+        try {
+            const res = await invoiceAPI.getById(id);
+            setDrawerInvoice(res.data?.data || null);
+        } catch (error) {
+            toast.error('Failed to load invoice details');
+            setDrawerInvoice(null);
+        } finally {
+            setDrawerLoading(false);
+        }
+    }, []);
+
+    const openDrawer = (row) => { setDrawerInvoice({ id: row.id }); loadDrawer(row.id); };
+
+    const handleDrawerStatus = async (status) => {
+        if (!drawerInvoice?.id) return;
+        setSavingStatus(true);
+        try {
+            await invoiceAPI.updateStatus(drawerInvoice.id, status);
+            toast.success('Status updated');
+            await Promise.all([loadDrawer(drawerInvoice.id), fetchData()]);
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Failed to update status');
+        } finally {
+            setSavingStatus(false);
+        }
+    };
+
+    const handleDrawerPayment = async ({ amount, paymentMethodId, referenceNumber }) => {
+        if (!drawerInvoice?.id) return false;
+        try {
+            await invoiceAPI.recordPayment(drawerInvoice.id, { amount, paymentMethodId, referenceNumber });
+            toast.success('Payment recorded');
+            await Promise.all([loadDrawer(drawerInvoice.id), fetchData()]);
+            return true;
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Failed to record payment');
+            return false;
+        }
+    };
     const canSend = policyAllows(user, 'invoices', 'sendEmail', ['super_admin','admin','sales_manager','accountant'].includes(user?.role));
     const canDownloadPdf = policyAllows(user, 'invoices', 'downloadPdf', true);
 
@@ -2382,8 +2604,17 @@ function Invoices() {
                     </thead>
                     <tbody>
                         {data.map(inv => (
-                            <tr key={inv.id} className={selectedIds.includes(inv.id)?'selected-row':''}>
-                                <td className="sales-select-cell"><input type="checkbox" checked={selectedIds.includes(inv.id)} onChange={e=>setSelectedIds(ids=>e.target.checked?[...new Set([...ids,inv.id])]:ids.filter(id=>id!==inv.id))}/></td>
+                            <tr
+                                key={inv.id}
+                                onClick={() => openDrawer(inv)}
+                                style={{ cursor: 'pointer' }}
+                                className={[
+                                    selectedIds.includes(inv.id) ? 'selected-row' : '',
+                                    // Settled invoices are tinted so a fully paid row stands out.
+                                    Number(inv.balance_amount) <= 0 ? 'sales-row-settled' : '',
+                                ].filter(Boolean).join(' ')}
+                            >
+                                <td className="sales-select-cell" onClick={e=>e.stopPropagation()}><input type="checkbox" checked={selectedIds.includes(inv.id)} onChange={e=>setSelectedIds(ids=>e.target.checked?[...new Set([...ids,inv.id])]:ids.filter(id=>id!==inv.id))}/></td>
                                 <td><strong>{inv.invoice_number}</strong></td>
                                 <td>{new Date(inv.invoice_date).toLocaleDateString()}</td>
                                 <td>{new Date(inv.due_date).toLocaleDateString()}</td>
@@ -2395,7 +2626,7 @@ function Invoices() {
                                     PKR {Number(inv.balance_amount).toLocaleString()}
                                 </td>
                                 <td>{getStatusBadge(inv.status)}</td>
-                                <td>
+                                <td onClick={e=>e.stopPropagation()}>
                                     <ActionButtons
                                         showView={true}
                                         showEdit={canEdit && inv.status === 'draft'}
@@ -2495,6 +2726,35 @@ function Invoices() {
                 confirmText={confirmModal.confirmText}
                 onConfirm={confirmModal.onConfirm}
                 onCancel={() => setConfirmModal({ isOpen: false })}
+            />
+
+            <SalesDrawer
+                isOpen={Boolean(drawerInvoice)}
+                loading={drawerLoading}
+                onClose={() => setDrawerInvoice(null)}
+                title={`Invoice ${drawerInvoice?.invoice_number || ''}`}
+                subtitle={drawerInvoice?.customer_name}
+                fields={[
+                    { label: 'Invoice Date', value: drawerInvoice?.invoice_date ? new Date(drawerInvoice.invoice_date).toLocaleDateString('en-GB') : '-' },
+                    { label: 'Due Date', value: drawerInvoice?.due_date ? new Date(drawerInvoice.due_date).toLocaleDateString('en-GB') : '-' },
+                    { label: 'Customer', value: drawerInvoice?.customer_name },
+                    { label: 'Type', value: drawerInvoice?.invoice_type },
+                    { label: 'Notes', value: drawerInvoice?.notes, full: true },
+                ]}
+                items={drawerInvoice?.items || []}
+                statusOptions={statusOptions}
+                status={drawerInvoice?.status}
+                onStatusChange={handleDrawerStatus}
+                savingStatus={savingStatus}
+                canEditStatus={canEdit}
+                totals={{
+                    total: drawerInvoice?.total_amount,
+                    paid: drawerInvoice?.paid_amount,
+                    balance: drawerInvoice?.balance_amount,
+                }}
+                payments={drawerInvoice?.payments || []}
+                paymentMethods={paymentMethods}
+                onRecordPayment={canRecordPayment ? handleDrawerPayment : null}
             />
 
             {/* View Invoice Modal */}
