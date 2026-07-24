@@ -467,9 +467,7 @@ const deleteVehicle = async (req, res, next) => {
             throw new AppError('Vehicle not found', 404);
         }
 
-        vehicle.isActive = false;
-        vehicle.updatedBy = req.user?.id || null;
-        await vehicle.save();
+        await Vehicle.deleteOne({ _id: vehicle._id });
 
         logger.info(`Vehicle deleted: ID ${id} by ${req.user?.email || 'system'}`);
         res.json({ success: true, message: 'Vehicle deleted successfully' });

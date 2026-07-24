@@ -19,6 +19,7 @@ const Part = require('../models/Part.model');
 const Customer = require('../models/Customer.model');
 const User = require('../models/User.model');
 const Role = require('../models/Role.model');
+const SystemSetting = require('../models/SystemSetting.model');
 const { nextDocNumber } = require('../utils/docNumber');
 const { recordCustomerActivity } = require('../utils/customerSync');
 const { createInvoiceForJobCard } = require('../utils/invoiceFactory');
@@ -60,6 +61,7 @@ const vehicleSnapshotFromBody = (body, current = {}) => ({
     number: body.vehicleNumber !== undefined ? String(body.vehicleNumber || '').trim() : (current.number || ''),
     make: body.vehicleMake !== undefined ? String(body.vehicleMake || '').trim() : (current.make || ''),
     model: body.vehicleModel !== undefined ? String(body.vehicleModel || '').trim() : (current.model || ''),
+    variant: body.vehicleVariant !== undefined ? String(body.vehicleVariant || '').trim() : (current.variant || ''),
     year: body.vehicleYear !== undefined ? (num(body.vehicleYear, null) || null) : (current.year || null),
     vin: body.vehicleVin !== undefined ? String(body.vehicleVin || '').trim() : (current.vin || ''),
 });
@@ -78,6 +80,7 @@ const mapAppointment = (a) => ({
     customer_vehicle_number: a.customerVehicle?.number || '',
     customer_vehicle_make: a.customerVehicle?.make || '',
     customer_vehicle_model: a.customerVehicle?.model || '',
+    customer_vehicle_variant: a.customerVehicle?.variant || '',
     customer_vehicle_year: a.customerVehicle?.year || '',
     customer_vehicle_vin: a.customerVehicle?.vin || '',
     service_type_id: a.serviceTypeRef || null,
@@ -937,6 +940,24 @@ const getTechnicians = async (req, res, next) => {
 
 const getAdvisors = async (req, res, next) => {
     try {
+        // Prefer the roles chosen under Server Management → Role Usage. Fall back
+        // to matching on role name so existing installs keep working until an
+        // admin configures the list.
+        const setting = await SystemSetting.findOne({ key: 'service_advisor_roles' }).lean();
+        const configuredRoleIds = Array.isArray(setting?.value) ? setting.value : [];
+
+        if (configuredRoleIds.length) {
+            const users = await User.find({ role: { $in: configuredRoleIds }, isActive: true })
+                .select('firstName lastName email')
+                .sort({ firstName: 1 })
+                .lean();
+            const advisors = users.map((u) => ({
+                id: u._id,
+                name: [u.firstName, u.lastName].filter(Boolean).join(' ') || u.email,
+            }));
+            return res.json({ success: true, data: advisors });
+        }
+
         const advisors = await getUsersByRolePattern('service_(advisor|manager)|advisor');
         res.json({ success: true, data: advisors });
     } catch (error) {

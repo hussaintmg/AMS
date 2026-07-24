@@ -514,11 +514,12 @@ const Employees = () => {
 
       <ConfirmModal
         isOpen={!!confirmDelete}
-        title="Deactivate Employee"
-        message={`Deactivate employee "${confirmDelete ? fullName(confirmDelete) : ""}"?`}
-        confirmText="Deactivate"
+        title="Delete Employee"
+        message={`Are you sure you want to delete "${confirmDelete ? fullName(confirmDelete) : ""}"? This action cannot be undone.`}
+        confirmText="Delete"
         onConfirm={handleDelete}
         onCancel={() => setConfirmDelete(null)}
+        type="danger"
       />
 
       <EmployeeFormModal

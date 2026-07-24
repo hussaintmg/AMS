@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { warehouseAPI } from '../services/api';
+import { warehouseAPI, leadMasterAPI, warehouseManagerRolesAPI } from '../services/api';
 import toast from 'react-hot-toast';
 import ActionButtons from '../components/ActionButtons';
 import ToggleSwitch from '../components/ToggleSwitch';
@@ -32,6 +32,11 @@ function WarehouseManagement() {
   // Delete
   const [deleteTarget, setDeleteTarget] = useState(null);
 
+  // Form reference data: warehouse types reuse the Lead "types" master list and
+  // managers come from the roles configured under Server Management → Role Usage.
+  const [typeOptions, setTypeOptions] = useState([]);
+  const [managerOptions, setManagerOptions] = useState([]);
+
   // ── Drawer keyboard ──────────────────────────────────────────────────
 
   useEffect(() => {
@@ -49,6 +54,23 @@ function WarehouseManagement() {
       if (res.data.success) setStats(res.data.data || {});
     } catch (error) {
       console.error('Failed to fetch stats:', error);
+    }
+  }, []);
+
+  const fetchFormReferenceData = useCallback(async () => {
+    const [typesRes, managersRes] = await Promise.allSettled([
+      leadMasterAPI.getAll('types', { active: 'true' }),
+      warehouseManagerRolesAPI.getUsers(),
+    ]);
+    if (typesRes.status === 'fulfilled') {
+      setTypeOptions(toArray(typesRes.value?.data?.data));
+    } else {
+      console.error('Failed to load warehouse types:', typesRes.reason);
+    }
+    if (managersRes.status === 'fulfilled') {
+      setManagerOptions(toArray(managersRes.value?.data?.data?.users));
+    } else {
+      console.error('Failed to load warehouse managers:', managersRes.reason);
     }
   }, []);
 
@@ -71,6 +93,7 @@ function WarehouseManagement() {
 
   useEffect(() => { fetchStats(); }, [fetchStats]);
   useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => { fetchFormReferenceData(); }, [fetchFormReferenceData]);
 
   // ── Handlers ─────────────────────────────────────────────────────────
 
@@ -252,7 +275,16 @@ function WarehouseManagement() {
       <div className="grid-cols-2">
         <div className="form-group">
           <label>Type</label>
-          <input type="text" name="type" value={formData.type || ''} onChange={handleInputChange} placeholder="e.g. Main, Service" />
+          <select name="type" value={formData.type || ''} onChange={handleInputChange}>
+            <option value="">Select type</option>
+            {typeOptions.map((t) => (
+              <option key={t._id} value={t.name}>{t.name}</option>
+            ))}
+            {/* Preserve a value saved before this list existed. */}
+            {formData.type && !typeOptions.some((t) => t.name === formData.type) && (
+              <option value={formData.type}>{formData.type}</option>
+            )}
+          </select>
         </div>
         <div className="form-group">
           <label>Capacity (units)</label>
@@ -261,7 +293,19 @@ function WarehouseManagement() {
       </div>
       <div className="form-group">
         <label>Manager</label>
-        <input type="text" name="manager" value={formData.manager || ''} onChange={handleInputChange} placeholder="Manager name" />
+        <select name="manager" value={formData.manager || ''} onChange={handleInputChange}>
+          <option value="">
+            {managerOptions.length ? 'Select manager' : 'No manager roles configured in Server Management'}
+          </option>
+          {managerOptions.map((u) => {
+            const name = `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.email;
+            return <option key={u._id} value={name}>{name}</option>;
+          })}
+          {/* Preserve a manager captured before the dropdown was introduced. */}
+          {formData.manager && !managerOptions.some((u) => (
+            (`${u.firstName || ''} ${u.lastName || ''}`.trim() || u.email) === formData.manager
+          )) && <option value={formData.manager}>{formData.manager}</option>}
+        </select>
       </div>
       <div className="grid-cols-2">
         <div className="form-group">

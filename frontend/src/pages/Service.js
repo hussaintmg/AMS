@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import SearchableSelect from '../components/SearchableSelect';
 import DataTable from '../components/DataTable';
 import { Routes, Route, NavLink, useSearchParams, useNavigate } from 'react-router-dom';
-import { serviceAPI, customerAPI, partsAPI, serviceMasterAPI } from '../services/api';
+import { serviceAPI, customerAPI, partsAPI, serviceMasterAPI, vehicleAPI } from '../services/api';
 import toast from 'react-hot-toast';
 import ConfirmModal from '../components/ConfirmModal';
 import CustomerQuickCreate from '../components/customers/CustomerQuickCreate';
@@ -89,13 +89,17 @@ function Appointments() {
   const [serviceTypes, setServiceTypes] = useState([]);
   const [advisors, setAdvisors] = useState([]);
   const [vehicleBrands, setVehicleBrands] = useState([]);
+  const [vehicleModels, setVehicleModels] = useState([]);
+  const [vehicleVariants, setVehicleVariants] = useState([]);
+  const [selectedMakeId, setSelectedMakeId] = useState('');
+  const [selectedModelId, setSelectedModelId] = useState('');
   const [stats, setStats] = useState({ total: 0, scheduled: 0, confirmed: 0, in_progress: 0, completed: 0, today: 0 });
   const [filters, setFilters] = useState({ search: urlSearch, status: '', customerId: '', dateFrom: '', dateTo: '' });
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 0 });
 
   const [formData, setFormData] = useState({
     customerId: '', vehicleId: '', vehicleNumber: '', vehicleMake: '', vehicleModel: '',
-    vehicleYear: '', vehicleVin: '', serviceTypeId: '', appointmentDate: '',
+    vehicleVariant: '', vehicleYear: '', vehicleVin: '', serviceTypeId: '', appointmentDate: '',
     appointmentTime: '', estimatedDuration: '', customerConcerns: '', notes: '', serviceAdvisorId: '',
   });
   const [confirmDelete, setConfirmDelete] = useState(null);
@@ -123,17 +127,33 @@ function Appointments() {
         fetchAllCustomersForDropdown(),
         serviceMasterAPI.getTypes(),
         serviceAPI.getAdvisors().catch(() => ({ data: { data: [] } })),
-        vehicleBrandingService.getActiveBrands().catch(() => ({ data: { brands: [] }, success: true })),
+        vehicleAPI.getMakes(),
       ]);
       setCustomers(results[0].status === 'fulfilled' ? results[0].value || [] : []);
       const types = results[1].status === 'fulfilled' ? results[1].value?.data?.data || [] : [];
       setServiceTypes(types);
       setAdvisors(results[2].status === 'fulfilled' ? results[2].value?.data?.data || [] : []);
-      const brands = results[3].status === 'fulfilled'
-        ? results[3].value?.data?.brands || results[3].value?.data?.data?.brands || []
-        : [];
-      setVehicleBrands(brands);
+      // Brands come from vehicle master data so the picker matches the makes,
+      // models and variants actually held in the catalogue.
+      setVehicleBrands(results[3].status === 'fulfilled' ? results[3].value?.data?.data || [] : []);
     } catch (_) {}
+  }, []);
+
+  // Models/variants cascade from the current make/model selection.
+  const loadModelsForMake = useCallback(async (makeId) => {
+    if (!makeId) { setVehicleModels([]); setVehicleVariants([]); return; }
+    try {
+      const res = await vehicleAPI.getModels(makeId);
+      setVehicleModels(res?.data?.data || []);
+    } catch (_) { setVehicleModels([]); }
+  }, []);
+
+  const loadVariantsForModel = useCallback(async (modelId) => {
+    if (!modelId) { setVehicleVariants([]); return; }
+    try {
+      const res = await vehicleAPI.getVariants(modelId);
+      setVehicleVariants(res?.data?.data || []);
+    } catch (_) { setVehicleVariants([]); }
   }, []);
 
   useEffect(() => { fetchData(); fetchDropdowns(); }, [fetchData, fetchDropdowns]);
@@ -158,7 +178,8 @@ function Appointments() {
     setFormData(item ? {
       customerId: item.customer_id || '', vehicleId: item.vehicle_id || '',
       vehicleNumber: item.customer_vehicle_number || '', vehicleMake: item.customer_vehicle_make || '',
-      vehicleModel: item.customer_vehicle_model || '', vehicleYear: item.customer_vehicle_year || '',
+      vehicleModel: item.customer_vehicle_model || '', vehicleVariant: item.customer_vehicle_variant || '',
+      vehicleYear: item.customer_vehicle_year || '',
       vehicleVin: item.customer_vehicle_vin || '', serviceTypeId: item.service_type_id || '',
       appointmentDate: item.appointment_date ? item.appointment_date.split('T')[0] : '',
       appointmentTime: item.appointment_time || '', estimatedDuration: item.estimated_duration || '',
@@ -166,17 +187,57 @@ function Appointments() {
       serviceAdvisorId: item.service_advisor_id || '',
     } : {
       customerId: '', vehicleId: '', vehicleNumber: '', vehicleMake: '', vehicleModel: '',
-      vehicleYear: '', vehicleVin: '', serviceTypeId: '', appointmentDate: '',
+      vehicleVariant: '', vehicleYear: '', vehicleVin: '', serviceTypeId: '', appointmentDate: '',
       appointmentTime: '', estimatedDuration: '', customerConcerns: '', notes: '', serviceAdvisorId: '',
     });
+
+    // Rebuild the make → model → variant cascade from the stored names so an
+    // existing appointment opens with its dropdowns populated.
+    const make = item && vehicleBrands.find((b) => b.name === item.customer_vehicle_make);
+    setSelectedMakeId(make ? String(make.id) : '');
+    setSelectedModelId('');
+    setVehicleModels([]);
+    setVehicleVariants([]);
+    if (make) {
+      vehicleAPI.getModels(make.id)
+        .then((res) => {
+          const models = res?.data?.data || [];
+          setVehicleModels(models);
+          const model = models.find((m) => m.name === item.customer_vehicle_model);
+          if (!model) return;
+          setSelectedModelId(String(model.id));
+          return vehicleAPI.getVariants(model.id)
+            .then((vr) => setVehicleVariants(vr?.data?.data || []));
+        })
+        .catch(() => {});
+    }
+
     setShowModal(true);
   };
 
   const closeModal = () => { setShowModal(false); setSelectedItem(null); };
 
+  // Appointments store the make/model/variant as names, so keep the selected id
+  // only to drive the next dropdown in the cascade.
   const handleVehicleBrandSelect = (e) => {
     const brand = vehicleBrands.find((b) => String(b.id) === String(e.target.value));
-    setFormData({ ...formData, vehicleId: '', vehicleMake: brand?.name || '' });
+    setSelectedMakeId(e.target.value || '');
+    setSelectedModelId('');
+    setFormData((prev) => ({ ...prev, vehicleId: '', vehicleMake: brand?.name || '', vehicleModel: '', vehicleVariant: '' }));
+    loadModelsForMake(e.target.value);
+    setVehicleVariants([]);
+  };
+
+  const handleVehicleModelSelect = (e) => {
+    const model = vehicleModels.find((m) => String(m.id) === String(e.target.value));
+    setSelectedModelId(e.target.value || '');
+    setFormData((prev) => ({ ...prev, vehicleModel: model?.name || '', vehicleVariant: '' }));
+    loadVariantsForModel(e.target.value);
+  };
+
+  const handleVehicleVariantSelect = (e) => {
+    const variant = vehicleVariants.find((v) => String(v.id) === String(e.target.value));
+    setFormData((prev) => ({ ...prev, vehicleVariant: variant?.name || '' }));
   };
 
   const handleChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -238,6 +299,8 @@ function Appointments() {
   const advisorOptions = advisors.map((a) => ({ id: String(a.id), name: a.name }));
   const customerOptions = customers.map((c) => ({ id: String(c.id), name: customerOptionLabel(c) }));
   const brandOptions = vehicleBrands.map((b) => ({ id: String(b.id), name: b.name }));
+  const modelOptions = vehicleModels.map((m) => ({ id: String(m.id), name: m.name }));
+  const variantOptions = vehicleVariants.map((v) => ({ id: String(v.id), name: v.name }));
 
   return (
     <div className="card">
@@ -359,35 +422,41 @@ function Appointments() {
                     options={customerOptions} placeholder="Select Customer"
                     required disabled={modalMode === 'view'} />
                 </div>
-                <div className="form-group">
-                  <label>Vehicle Brand</label>
-                  <SearchableSelect value={vehicleBrands.find((b) => b.name === formData.vehicleMake)?.id || ''}
-                    onChange={handleVehicleBrandSelect} options={brandOptions} placeholder="-- Select brand or enter details manually below --"
-                    disabled={modalMode === 'view'} />
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Vehicle Brand</label>
+                    <SearchableSelect value={selectedMakeId}
+                      onChange={handleVehicleBrandSelect} options={brandOptions} placeholder="Select Brand"
+                      disabled={modalMode === 'view'} />
+                  </div>
+                  <div className="form-group">
+                    <label>Vehicle Model</label>
+                    <SearchableSelect value={selectedModelId}
+                      onChange={handleVehicleModelSelect} options={modelOptions} placeholder="Select Model"
+                      disabled={modalMode === 'view' || !selectedMakeId} />
+                  </div>
                 </div>
                 <div className="form-row">
+                  <div className="form-group">
+                    <label>Vehicle Variant</label>
+                    <SearchableSelect value={vehicleVariants.find((v) => v.name === formData.vehicleVariant)?.id || ''}
+                      onChange={handleVehicleVariantSelect} options={variantOptions} placeholder="Select Variant"
+                      disabled={modalMode === 'view' || !selectedModelId} />
+                  </div>
                   <div className="form-group">
                     <label>Vehicle Number</label>
                     <input type="text" name="vehicleNumber" className="form-control" value={formData.vehicleNumber} onChange={handleChange} placeholder="ABC-123" disabled={modalMode === 'view'} />
                   </div>
-                  <div className="form-group">
-                    <label>Vehicle Make</label>
-                    <input type="text" name="vehicleMake" className="form-control" value={formData.vehicleMake} onChange={handleChange} placeholder="Toyota" disabled={modalMode === 'view'} />
-                  </div>
                 </div>
                 <div className="form-row">
-                  <div className="form-group">
-                    <label>Vehicle Model</label>
-                    <input type="text" name="vehicleModel" className="form-control" value={formData.vehicleModel} onChange={handleChange} placeholder="Corolla" disabled={modalMode === 'view'} />
-                  </div>
                   <div className="form-group">
                     <label>Year</label>
                     <input type="number" name="vehicleYear" className="form-control" value={formData.vehicleYear} onChange={handleChange} placeholder="2024" disabled={modalMode === 'view'} />
                   </div>
-                </div>
-                <div className="form-group">
-                  <label>VIN</label>
-                  <input type="text" name="vehicleVin" className="form-control" value={formData.vehicleVin} onChange={handleChange} placeholder="VIN" disabled={modalMode === 'view'} />
+                  <div className="form-group">
+                    <label>VIN</label>
+                    <input type="text" name="vehicleVin" className="form-control" value={formData.vehicleVin} onChange={handleChange} placeholder="VIN" disabled={modalMode === 'view'} />
+                  </div>
                 </div>
                 <div className="form-row">
                   <div className="form-group">

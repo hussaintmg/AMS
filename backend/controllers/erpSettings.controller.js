@@ -317,11 +317,9 @@ const deleteCompany = async (req, res, next) => {
         const company = await Company.findById(id);
         if (!company) throw new AppError('Company not found', 404);
 
-        company.isActive = false;
-        company.updatedBy = req.user?._id || req.user?.id || null;
-        await company.save();
+        await Company.deleteOne({ _id: company._id });
 
-        res.json({ success: true, message: 'Company deactivated successfully' });
+        res.json({ success: true, message: 'Company deleted successfully' });
     } catch (error) {
         next(error);
     }
@@ -510,11 +508,9 @@ const deleteBranch = async (req, res, next) => {
             throw new AppError('Cannot delete head office branch', 400);
         }
 
-        branch.isActive = false;
-        branch.updatedBy = req.user?._id || req.user?.id || null;
-        await branch.save();
+        await Branch.deleteOne({ _id: branch._id });
 
-        res.json({ success: true, message: 'Branch deactivated successfully' });
+        res.json({ success: true, message: 'Branch deleted successfully' });
     } catch (error) {
         next(error);
     }
@@ -747,10 +743,9 @@ const deleteCurrency = async (req, res, next) => {
 
         if (currency.isDefault) throw new AppError('Cannot delete default currency', 400);
 
-        currency.isActive = false;
-        await currency.save();
+        await Currency.deleteOne({ _id: currency._id });
 
-        res.json({ success: true, message: 'Currency deactivated successfully' });
+        res.json({ success: true, message: 'Currency deleted successfully' });
     } catch (error) {
         next(error);
     }
@@ -866,10 +861,9 @@ const deleteTax = async (req, res, next) => {
         const tax = await TaxConfig.findById(id);
         if (!tax) throw new AppError('Tax configuration not found', 404);
 
-        tax.isActive = false;
-        await tax.save();
+        await TaxConfig.deleteOne({ _id: tax._id });
 
-        res.json({ success: true, message: 'Tax configuration deactivated successfully' });
+        res.json({ success: true, message: 'Tax configuration deleted successfully' });
     } catch (error) {
         next(error);
     }
@@ -1123,11 +1117,9 @@ const deleteDocumentTemplate = async (req, res, next) => {
         const template = await DocumentTemplate.findById(id);
         if (!template) throw new AppError('Template not found', 404);
 
-        template.isActive = false;
-        template.isDefault = false;
-        await template.save();
+        await DocumentTemplate.deleteOne({ _id: template._id });
 
-        res.json({ success: true, message: 'Template deactivated' });
+        res.json({ success: true, message: 'Template deleted' });
     } catch (error) {
         next(error);
     }

@@ -768,6 +768,16 @@ router.put('/customer-role-config', requireSuperAdmin, controller.saveCustomerRo
 router.get('/employee-role-config', requireSuperAdmin, controller.getEmployeeRoleConfig);
 router.put('/employee-role-config', requireSuperAdmin, controller.saveEmployeeRoleConfig);
 
+// Role-usage configs. Reading the resolved user lists only needs a signed-in
+// user, since the warehouse and service forms depend on them.
+router.get('/warehouse-manager-roles', requireSuperAdmin, controller.getWarehouseManagerRoles);
+router.put('/warehouse-manager-roles', requireSuperAdmin, controller.updateWarehouseManagerRoles);
+router.get('/warehouse-manager-users', authenticate, controller.getWarehouseManagerUsers);
+
+router.get('/service-advisor-roles', requireSuperAdmin, controller.getServiceAdvisorRoles);
+router.put('/service-advisor-roles', requireSuperAdmin, controller.updateServiceAdvisorRoles);
+router.get('/service-advisor-users', authenticate, controller.getServiceAdvisorUsers);
+
 // ── System Settings (permissionMode, logPermissionMode) ──
 router.get('/settings/:key', requireSuperAdmin, controller.getSetting);
 router.get('/settings', requireSuperAdmin, controller.getSetting);

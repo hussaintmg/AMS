@@ -334,9 +334,7 @@ const deletePart = async (req, res, next) => {
             throw new AppError('Part not found', 404);
         }
 
-        part.isActive = false;
-        part.updatedBy = req.user?.id || null;
-        await part.save();
+        await Part.deleteOne({ _id: part._id });
 
         logger.info(`Part deleted: ID ${id} by ${req.user?.email || 'system'}`);
 

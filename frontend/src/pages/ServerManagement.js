@@ -12,7 +12,7 @@ import FilterBar, {
   SearchInput,
   ResetFiltersButton,
 } from "../components/filters/FilterBar";
-import { serverManagementAPI, adminAPI, customerRoleConfigAPI, employeeRoleConfigAPI } from "../services/api";
+import { serverManagementAPI, adminAPI, customerRoleConfigAPI, employeeRoleConfigAPI, warehouseManagerRolesAPI, serviceAdvisorRolesAPI } from "../services/api";
 import { showApiSuccess, showApiError } from "../utils/toastResponse";
 import "../styles/serverManagement.css";
 import "../styles/filters.css";
@@ -379,6 +379,10 @@ function ServerManagement() {
   const [customerConfigSaving, setCustomerConfigSaving] = useState(false);
   const [employeeConfigActiveRoleId, setEmployeeConfigActiveRoleId] = useState('');
   const [employeeConfigSaving, setEmployeeConfigSaving] = useState(false);
+  const [warehouseManagerRoleIds, setWarehouseManagerRoleIds] = useState([]);
+  const [warehouseManagerSaving, setWarehouseManagerSaving] = useState(false);
+  const [serviceAdvisorRoleIds, setServiceAdvisorRoleIds] = useState([]);
+  const [serviceAdvisorSaving, setServiceAdvisorSaving] = useState(false);
   const [selectedJobRoleId, setSelectedJobRoleId] = useState('');
   const [roleJobs, setRoleJobs] = useState([]);
   const [roleJobsLoading, setRoleJobsLoading] = useState(false);
@@ -516,6 +520,12 @@ function ServerManagement() {
       }
       const { data: erc } = await employeeRoleConfigAPI.get();
       if (erc?.data) setEmployeeConfigActiveRoleId(erc.data.activeRoleId || '');
+
+      const { data: wmr } = await warehouseManagerRolesAPI.get();
+      if (Array.isArray(wmr?.data?.roles)) setWarehouseManagerRoleIds(wmr.data.roles);
+
+      const { data: sar } = await serviceAdvisorRolesAPI.get();
+      if (Array.isArray(sar?.data?.roles)) setServiceAdvisorRoleIds(sar.data.roles);
     } catch (error) {
       showApiError(error, "Failed to load server management data");
     } finally {
@@ -2158,6 +2168,38 @@ function ServerManagement() {
     }
   };
 
+  const saveWarehouseManagerRoles = async () => {
+    if (savingRef.current.warehouseManagerRoles) return;
+    savingRef.current.warehouseManagerRoles = true;
+    setWarehouseManagerSaving(true);
+    try {
+      const { data: res } = await warehouseManagerRolesAPI.update(warehouseManagerRoleIds);
+      if (res?.success) showApiSuccess(res, 'Warehouse manager roles saved');
+      else throw new Error(res?.message || 'Failed to save');
+    } catch (err) {
+      showApiError(err, 'Failed to save warehouse manager roles');
+    } finally {
+      savingRef.current.warehouseManagerRoles = false;
+      setWarehouseManagerSaving(false);
+    }
+  };
+
+  const saveServiceAdvisorRoles = async () => {
+    if (savingRef.current.serviceAdvisorRoles) return;
+    savingRef.current.serviceAdvisorRoles = true;
+    setServiceAdvisorSaving(true);
+    try {
+      const { data: res } = await serviceAdvisorRolesAPI.update(serviceAdvisorRoleIds);
+      if (res?.success) showApiSuccess(res, 'Service advisor roles saved');
+      else throw new Error(res?.message || 'Failed to save');
+    } catch (err) {
+      showApiError(err, 'Failed to save service advisor roles');
+    } finally {
+      savingRef.current.serviceAdvisorRoles = false;
+      setServiceAdvisorSaving(false);
+    }
+  };
+
   const loadRoleJobs = async (roleId) => {
     setSelectedJobRoleId(roleId);
     if (!roleId) { setRoleJobs([]); return; }
@@ -2198,7 +2240,7 @@ function ServerManagement() {
     const actionLabels = { create: 'Create', edit: 'Edit', delete: 'Delete', sendEmail: 'Send email', downloadPdf: 'Download PDF', export: 'Export' };
     return <form className="sm-panel" onSubmit={(event) => { event.preventDefault(); saveRoleJobs(); }}>
       <div className="sm-panel-header"><div><h2>Role Jobs</h2><p>Configure what a role can do and whose business data it can see. Own data is always included.</p></div><div style={{display:'flex',gap:8}}><button type="button" className="btn btn-secondary" onClick={() => setShowLeadAssignmentRoleModal(true)}>+ Create Role</button><button className="btn btn-primary" disabled={!selectedJobRoleId || roleJobsSaving}>{roleJobsSaving?'Saving...':'Save'}</button></div></div>
-      <div className="sm-form-grid"><label>Management Role</label><select className="form-input" value={selectedJobRoleId} onChange={(event) => loadRoleJobs(event.target.value)} style={{maxWidth:420}}><option value="">Select a role</option>{roleArr.filter((role) => role.name !== 'super_admin').map((role) => <option key={getRoleId(role)} value={getRoleId(role)}>{role.displayName || role.name}</option>)}</select></div>
+      <div className="sm-form-grid sm-form-stack"><label>Management Role</label><select className="form-input" value={selectedJobRoleId} onChange={(event) => loadRoleJobs(event.target.value)} style={{maxWidth:420}}><option value="">Select a role</option>{roleArr.filter((role) => role.name !== 'super_admin').map((role) => <option key={getRoleId(role)} value={getRoleId(role)}>{role.displayName || role.name}</option>)}</select></div>
       {roleJobsLoading ? <p className="sm-empty">Loading role jobs...</p> : selectedJobRoleId && roleJobs.length === 0 ? <p className="sm-empty">Assign pages to this role in Roles Permissions first.</p> : <div className="sm-role-job-list">{roleJobs.map((job) => <section className="sm-role-job-card" key={job.pageKey} data-role-job={job.pageKey} tabIndex="-1"><div className="sm-role-job-heading"><div><strong>{job.label}</strong><span>{job.module}</span></div><span className="sm-own-data">Own data always visible</span></div><div className="sm-role-job-actions">{Object.entries(actionLabels).map(([key,label]) => <label key={key}><input type="checkbox" checked={job.actions[key] === true} onChange={() => updateRoleJob(job.pageKey, (item) => ({...item,actions:{...item.actions,[key]:!item.actions[key]}}))}/><span>{label}</span></label>)}</div><div className="sm-role-job-scope"><label>Additional data visibility</label><select value={job.dataScope.mode} onChange={(event) => updateRoleJob(job.pageKey, (item) => ({...item,dataScope:{...item.dataScope,mode:event.target.value}}))}><option value="own">Own only</option><option value="selected_roles">Own + selected roles</option><option value="selected_users">Own + selected users</option><option value="all">All data</option></select>{job.dataScope.mode === 'selected_roles' && <div className="sm-scope-options">{roleArr.filter((role) => String(getRoleId(role)) !== String(selectedJobRoleId)).map((role) => {const id=String(getRoleId(role));return <label key={id}><input type="checkbox" checked={job.dataScope.roles.includes(id)} onChange={() => updateRoleJob(job.pageKey,(item)=>({...item,dataScope:{...item.dataScope,roles:item.dataScope.roles.includes(id)?item.dataScope.roles.filter((value)=>value!==id):[...item.dataScope.roles,id]}}))}/>{role.displayName||role.name}</label>})}</div>}{job.dataScope.mode === 'selected_users' && <div className="sm-scope-options">{userArr.map((person) => {const id=String(person._id||person.id);return <label key={id}><input type="checkbox" checked={job.dataScope.users.includes(id)} onChange={() => updateRoleJob(job.pageKey,(item)=>({...item,dataScope:{...item.dataScope,users:item.dataScope.users.includes(id)?item.dataScope.users.filter((value)=>value!==id):[...item.dataScope.users,id]}}))}/>{person.firstName} {person.lastName}</label>})}</div>}</div></section>)}</div>}
     </form>;
   };
@@ -2214,7 +2256,7 @@ function ServerManagement() {
           {employeeConfigSaving ? 'Saving...' : 'Save'}
         </button>
       </div>
-      <div className="sm-form-grid">
+      <div className="sm-form-grid sm-form-stack">
         <label>New Employee Role</label>
         <select className="form-input" value={employeeConfigActiveRoleId} onChange={(e) => setEmployeeConfigActiveRoleId(e.target.value)} style={{ maxWidth: '400px' }}>
           <option value="">Select a role</option>
@@ -2227,6 +2269,74 @@ function ServerManagement() {
   );
 
 
+
+  /** Shared "pick the roles that staff this field" panel. */
+  const renderRoleUsagePicker = ({
+    panel, heading, blurb, label, selected, setSelected, saving, onSave,
+  }) => (
+    <form
+      className="sm-panel"
+      data-role-usage-panel={panel}
+      onSubmit={(e) => { e.preventDefault(); onSave(); }}
+    >
+      <div className="sm-panel-header">
+        <div>
+          <h2>{heading}</h2>
+          <p>{blurb}</p>
+        </div>
+        <button type="submit" className="btn btn-primary" disabled={saving}>
+          {saving ? 'Saving...' : 'Save'}
+        </button>
+      </div>
+      <div className="sm-form-grid sm-form-stack">
+        <label>{label}</label>
+        {roleArr.length === 0 ? (
+          <p className="sm-empty">
+            No roles found. Create roles first in the Roles Permissions tab.
+          </p>
+        ) : (
+          <div
+            className="sm-checkbox-grid"
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
+              gap: '8px',
+            }}
+          >
+            {roleArr
+              .filter((r) => r.name !== 'super_admin')
+              .map((role) => {
+                const rid = String(getRoleId(role));
+                return (
+                  <label
+                    key={rid}
+                    className="sm-permission-row"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '8px 12px',
+                      border: '1px solid var(--border-light)',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selected.includes(rid)}
+                      onChange={() => setSelected((prev) => (
+                        prev.includes(rid) ? prev.filter((id) => id !== rid) : [...prev, rid]
+                      ))}
+                    />
+                    <span>{role.displayName || role.name}</span>
+                  </label>
+                );
+              })}
+          </div>
+        )}
+      </div>
+    </form>
+  );
 
   const renderRoleUsage = () => (
     <div className="sm-role-usage">
@@ -2262,7 +2372,7 @@ function ServerManagement() {
             </button>
           </div>
         </div>
-        <div className="sm-form-grid" data-role-usage-panel="lead" style={{ marginBottom: "24px" }}>
+        <div className="sm-form-grid sm-form-stack" data-role-usage-panel="lead" style={{ marginBottom: "24px" }}>
           <label style={{ fontWeight: 600, fontSize: "14px", color: "var(--text-primary)" }}>
             Lead Assignment Roles
           </label>
@@ -2320,7 +2430,7 @@ function ServerManagement() {
           <p style={{ fontSize: "13px", color: "var(--text-secondary)", margin: "0 0 16px 0" }}>
             Select which role is assigned to newly converted customers and which roles are considered customer roles.
           </p>
-          <div className="sm-form-grid" style={{ marginBottom: "16px" }}>
+          <div className="sm-form-grid sm-form-stack" style={{ marginBottom: "16px" }}>
             <label>Active Customer Role</label>
             <select
               className="form-input"
@@ -2338,7 +2448,7 @@ function ServerManagement() {
                 ))}
             </select>
           </div>
-          <div className="sm-form-grid">
+          <div className="sm-form-grid sm-form-stack">
             <label>Available Customer Roles</label>
             {roleArr.length === 0 ? (
               <p className="sm-empty">No roles found. Create roles first in the Roles Permissions tab.</p>
@@ -2401,6 +2511,26 @@ function ServerManagement() {
         </div>
       </form>
       {renderEmployeeConfig()}
+      {renderRoleUsagePicker({
+        panel: 'warehouse-manager',
+        heading: 'Warehouse Manager Roles',
+        blurb: 'Select which roles can be assigned as warehouse managers. Only active users with these roles appear in the Warehouse Management manager dropdown.',
+        label: 'Warehouse Manager Roles',
+        selected: warehouseManagerRoleIds,
+        setSelected: setWarehouseManagerRoleIds,
+        saving: warehouseManagerSaving,
+        onSave: saveWarehouseManagerRoles,
+      })}
+      {renderRoleUsagePicker({
+        panel: 'service-advisor',
+        heading: 'Service Advisor Roles',
+        blurb: 'Select which roles act as service advisors. Only active users with these roles appear in the Service page advisor dropdown.',
+        label: 'Service Advisor Roles',
+        selected: serviceAdvisorRoleIds,
+        setSelected: setServiceAdvisorRoleIds,
+        saving: serviceAdvisorSaving,
+        onSave: saveServiceAdvisorRoles,
+      })}
     </div>
   );
 

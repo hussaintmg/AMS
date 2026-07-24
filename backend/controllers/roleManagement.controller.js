@@ -3,14 +3,14 @@ const { Role, User } = require('../models');
 const getAllRoles = async (req, res, next) => {
   try {
     const roles = await Role.find()
-      .select('name displayName description isActive createdAt')
+      .select('name displayName description isActive createdAt permissions')
       .sort({ name: 1 })
       .lean();
 
     const rolesWithCounts = await Promise.all(roles.map(async (role) => {
       const userCount = await User.countDocuments({ role: role._id });
       const activeUserCount = await User.countDocuments({ role: role._id, isActive: true });
-      return { ...role, user_count: userCount, active_user_count: activeUserCount };
+      return { ...role, user_count: userCount, active_user_count: activeUserCount, permission_count: role.permissions?.length || 0 };
     }));
 
     res.json({ success: true, data: rolesWithCounts });

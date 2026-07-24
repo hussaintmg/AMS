@@ -155,40 +155,43 @@ const Vehicles = () => {
 
   // Fetch reference data
   const fetchReferenceData = useCallback(async () => {
-    try {
-      const [
-        makesRes,
-        colorsRes,
-        warehousesRes,
-        statsRes,
-        statusRes,
-        conditionRes,
-      ] = await Promise.all([
-        vehicleAPI.getMakes(),
-        vehicleAPI.getColors(),
-        vehicleAPI.getWarehouses(),
-        vehicleAPI.getStats(),
-        adminAPI.getStatusesByTable("vehicles"),
-        vehicleMasterAPI.getConditions(),
-      ]);
+    // Settle each request independently. Some of these endpoints are permission
+    // gated (e.g. statuses requires the "statuses" page), and with Promise.all a
+    // single 403 would leave the brand/model/colour pickers empty for everyone
+    // who lacks that permission.
+    const [
+      makesRes,
+      colorsRes,
+      warehousesRes,
+      statsRes,
+      statusRes,
+      conditionRes,
+    ] = await Promise.allSettled([
+      vehicleAPI.getMakes(),
+      vehicleAPI.getColors(),
+      vehicleAPI.getWarehouses(),
+      vehicleAPI.getStats(),
+      adminAPI.getStatusesByTable("vehicles"),
+      vehicleMasterAPI.getConditions(),
+    ]);
 
-      setMakes(makesRes?.data?.data || []);
-      setColors(colorsRes?.data?.data || []);
-      setWarehouses(warehousesRes?.data?.data || []);
-      setStats(statsRes?.data?.data || {});
+    const valueOf = (result, fallback) => {
+      if (result.status === "fulfilled") return result.value?.data?.data ?? fallback;
+      console.error("Error fetching reference data:", result.reason);
+      return fallback;
+    };
 
-      // Set dynamic options
-      if (statusRes?.data?.data?.statuses) {
-        setStatusOptions(statusRes.data.data.statuses);
-      }
+    setMakes(valueOf(makesRes, []));
+    setColors(valueOf(colorsRes, []));
+    setWarehouses(valueOf(warehousesRes, []));
+    setStats(valueOf(statsRes, {}));
 
-      if (conditionRes?.data?.data?.conditions) {
-        setConditionOptions(conditionRes.data.data.conditions);
-      }
-    } catch (err) {
-      console.error("Error fetching reference data:", err);
-      // Don't clear main data on error, keep what we have or defaults
-    }
+    // Dynamic options are optional — keep the defaults when unavailable.
+    const statuses = valueOf(statusRes, {})?.statuses;
+    if (statuses) setStatusOptions(statuses);
+
+    const conditions = valueOf(conditionRes, {})?.conditions;
+    if (conditions) setConditionOptions(conditions);
   }, []);
 
   // Load models when make changes

@@ -11,8 +11,11 @@ import { useAuth } from '../context/AuthContext';
 import { adminAPI } from '../services/api';
 import toast from 'react-hot-toast';
 import ErrorPopup from '../components/ErrorPopup';
+import ConfirmModal from '../components/ConfirmModal';
 import ActionButtons from '../components/ActionButtons';
 import '../styles/userManagement.css';
+
+const roleId = (r) => r?._id || r?.id;
 
 const RoleManagement = () => {
     const { user } = useAuth();
@@ -28,6 +31,7 @@ const RoleManagement = () => {
     const [selectedRole, setSelectedRole] = useState(null);
     const [permissionGroups, setPermissionGroups] = useState([]);
     const [selectedPermissions, setSelectedPermissions] = useState([]);
+    const [deleteTarget, setDeleteTarget] = useState(null);
 
     // Form data
     const [formData, setFormData] = useState({
@@ -78,7 +82,7 @@ const RoleManagement = () => {
         } else if (role) {
             // Fetch role details with permissions
             try {
-                const response = await adminAPI.getRole(role.id);
+                const response = await adminAPI.getRole(roleId(role));
                 const roleData = response.data.data;
                 setFormData({
                     name: roleData.name,
@@ -153,10 +157,10 @@ const RoleManagement = () => {
 
         try {
             // Update role details
-            await adminAPI.updateRole(selectedRole.id, formData);
+            await adminAPI.updateRole(roleId(selectedRole), formData);
 
             // Update permissions
-            await adminAPI.updateRolePermissions(selectedRole.id, selectedPermissions);
+            await adminAPI.updateRolePermissions(roleId(selectedRole), selectedPermissions);
 
             toast.success('Role updated successfully!');
             closeModal();
@@ -168,11 +172,16 @@ const RoleManagement = () => {
     };
 
     // Delete role
-    const handleDeleteRole = async (roleId, roleName) => {
-        if (!window.confirm(`Delete role "${roleName}"? This cannot be undone.`)) return;
+    const requestDeleteRole = (role) => {
+        setDeleteTarget({ id: roleId(role), name: role.name });
+    };
 
+    const confirmDeleteRole = async () => {
+        if (!deleteTarget) return;
+        const { id } = deleteTarget;
+        setDeleteTarget(null);
         try {
-            await adminAPI.deleteRole(roleId);
+            await adminAPI.deleteRole(id);
             toast.success('Role deleted successfully!');
             fetchRoles();
         } catch (err) {
@@ -213,7 +222,7 @@ const RoleManagement = () => {
                     </div>
                 ) : (
                     roles.map(role => (
-                        <div className="role-card" key={role.id}>
+                        <div className="role-card" key={roleId(role)}>
                             <div className="role-header">
                                 <h3 className="role-name">{role.name.replace(/_/g, ' ')}</h3>
                                 <span className={`role-badge ${role.name === 'super_admin' ? 'badge-danger' : 'badge-primary'}`}>
@@ -238,7 +247,7 @@ const RoleManagement = () => {
                                 <ActionButtons
                                     onEdit={() => openModal('edit', role)}
                                     // Only show delete if not super_admin (logic handled by showDelete prop effectively or by conditional rendering)
-                                    onDelete={role.name !== 'super_admin' ? () => handleDeleteRole(role.id, role.name) : null}
+                                    onDelete={role.name !== 'super_admin' ? () => requestDeleteRole(role) : null}
                                     showEdit
                                     showDelete={role.name !== 'super_admin'}
                                     title={role.name}
@@ -349,6 +358,18 @@ const RoleManagement = () => {
                     </div>
                 </div>
             )}
+
+            {/* Delete Confirmation Modal */}
+            <ConfirmModal
+                isOpen={!!deleteTarget}
+                onCancel={() => setDeleteTarget(null)}
+                onConfirm={confirmDeleteRole}
+                title="Delete Role"
+                message={`Are you sure you want to delete the role "${deleteTarget?.name}"? Users assigned to this role will have their role removed.`}
+                confirmText="Delete"
+                cancelText="Cancel"
+                type="danger"
+            />
         </div>
     );
 };

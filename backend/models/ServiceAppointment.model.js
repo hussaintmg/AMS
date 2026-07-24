@@ -12,6 +12,7 @@ const customerVehicleSchema = new mongoose.Schema({
   number: { type: String, trim: true, default: '' },
   make: { type: String, trim: true, default: '' },
   model: { type: String, trim: true, default: '' },
+  variant: { type: String, trim: true, default: '' },
   year: { type: Number, default: null },
   vin: { type: String, trim: true, default: '' }
 }, { _id: false });

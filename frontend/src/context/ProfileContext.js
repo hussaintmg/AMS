@@ -58,6 +58,7 @@ export function ProfileProvider({ children }) {
             if (res?.data?.success === true) {
                 const data = { ...res.data.data, avatar: normalizeAvatarUrl(res.data.data.avatar) };
                 setProfile(data);
+                eventBus.dispatch('profile:updated', { avatar: data.avatar, user: data });
                 showApiSuccess(res, 'Profile updated successfully');
                 return { success: true, data };
             }

@@ -16,6 +16,7 @@ const toArray = (value) => Array.isArray(value) ? value : [];
 function ServiceMasterData() {
     const [activeTab, setActiveTab] = useState('types');
     const [stats, setStats] = useState({ serviceTypes: 0, laborRates: 0, packages: 0, warranties: 0 });
+    const [warrantyTypes, setWarrantyTypes] = useState([]);
     const [loading, setLoading] = useState(false);
     const [tableData, setTableData] = useState([]);
     const [search, setSearch] = useState('');
@@ -110,9 +111,22 @@ function ServiceMasterData() {
         }
     }, [activeTab, search, pagination.page, pagination.limit]);
 
+    // Warranty types feed the package form's warranty picker, so they are loaded
+    // independently of whichever tab is currently shown.
+    const fetchWarrantyTypes = useCallback(async () => {
+        try {
+            const res = await serviceMasterAPI.getWarranties({ limit: 500 });
+            if (res.data.success) setWarrantyTypes(toArray(res.data.data));
+        } catch (error) {
+            console.error('Failed to fetch warranty types:', error);
+        }
+    }, []);
+
     useEffect(() => { fetchStats(); }, [fetchStats]);
 
     useEffect(() => { fetchTableData(); }, [fetchTableData]);
+
+    useEffect(() => { fetchWarrantyTypes(); }, [fetchWarrantyTypes]);
 
     const handleTabChange = (tab) => {
         setActiveTab(tab);
@@ -604,7 +618,21 @@ function ServiceMasterData() {
             </div>
             <div className="form-group">
                 <label>Warranty</label>
-                <input type="text" name="warranty" value={formData.warranty || ''} onChange={handleInputChange} placeholder="e.g. 12 months / 20,000 km" />
+                <select name="warranty" value={formData.warranty || ''} onChange={handleInputChange}>
+                    <option value="">-- Select warranty type --</option>
+                    {warrantyTypes.map((w) => (
+                        <option key={w._id} value={w.name}>
+                            {w.name}
+                            {w.durationMonths ? ` — ${w.durationMonths} months` : ''}
+                            {w.durationKm ? ` / ${Number(w.durationKm).toLocaleString()} km` : ''}
+                        </option>
+                    ))}
+                    {/* Keep a legacy free-text value selectable so editing an older
+                        package does not silently clear its warranty. */}
+                    {formData.warranty && !warrantyTypes.some((w) => w.name === formData.warranty) && (
+                        <option value={formData.warranty}>{formData.warranty}</option>
+                    )}
+                </select>
             </div>
 
             {/* Services sub-array */}

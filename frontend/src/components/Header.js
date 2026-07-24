@@ -38,6 +38,12 @@ function Header({ onMenuClick }) {
   const searchInputRef = useRef(null);
   const notifRef = useRef(null);
 
+  // A failed load latches avatarError; clear it when a new avatar arrives so an
+  // upload shows up immediately instead of waiting for a page reload.
+  useEffect(() => {
+    setAvatarError(false);
+  }, [user?.avatar]);
+
   const hasAvatar = user?.avatar && !avatarError;
   const avatarUrl = hasAvatar ? getAvatarUrl(user.avatar) : "";
   const initials = user

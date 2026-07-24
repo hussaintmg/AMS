@@ -212,6 +212,18 @@ export const customerRoleConfigAPI = {
     update: (data) => api.put('/server-management/customer-role-config', data),
 };
 
+export const warehouseManagerRolesAPI = {
+    get: () => api.get('/server-management/warehouse-manager-roles'),
+    update: (roles) => api.put('/server-management/warehouse-manager-roles', { roles }),
+    getUsers: () => api.get('/server-management/warehouse-manager-users'),
+};
+
+export const serviceAdvisorRolesAPI = {
+    get: () => api.get('/server-management/service-advisor-roles'),
+    update: (roles) => api.put('/server-management/service-advisor-roles', { roles }),
+    getUsers: () => api.get('/server-management/service-advisor-users'),
+};
+
 export const pdfManagementAPI = {
     getTemplates: (params) => api.get('/pdf-management/templates', { params }),
     getTemplate: (id) => api.get(`/pdf-management/templates/${id}`),
@@ -513,6 +525,7 @@ export const adminAPI = {
     createDepartment: (data) => api.post('/admin/departments', data),
     updateDepartment: (id, data) => api.put(`/admin/departments/${id}`, data),
     deleteDepartment: (id) => api.delete(`/admin/departments/${id}`),
+    toggleDepartmentStatus: (id) => api.patch(`/admin/departments/${id}/status`),
     assignDepartmentManager: (id, userId) => api.patch(`/admin/departments/${id}/manager`, { userId }),
     getDepartmentStats: () => api.get('/admin/departments/stats'),
 

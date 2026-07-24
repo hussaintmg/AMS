@@ -515,7 +515,7 @@ function DepartmentDrawer({
       <ConfirmModal
         isOpen={showDeleteConfirm}
         title="Delete Department"
-        message={`Are you sure you want to delete "${department.name}"? This will deactivate the department and its sub-departments.`}
+        message={`Are you sure you want to permanently delete "${department.name}"? Sub-departments will move up to its parent and assigned staff will be unassigned. This action cannot be undone.`}
         onConfirm={handleDelete}
         onCancel={() => setShowDeleteConfirm(false)}
         confirmText="Delete"

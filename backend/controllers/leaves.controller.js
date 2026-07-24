@@ -13,8 +13,8 @@ const getBulkIds = (req) => {
 exports.bulkDeleteLeaves = async (req, res, next) => {
   try {
     const ids = getBulkIds(req);
-    const result = await Leave.updateMany({ _id: { $in: ids }, isDeleted: false }, { $set: { isDeleted: true, isActive: false, updatedBy: getUserId(req) } });
-    res.json({ success: true, message: `${result.modifiedCount} leave request(s) deleted`, data: { modifiedCount: result.modifiedCount } });
+    const result = await Leave.deleteMany({ _id: { $in: ids } });
+    res.json({ success: true, message: `${result.deletedCount} leave request(s) deleted`, data: { modifiedCount: result.deletedCount } });
   } catch (error) { next(error); }
 };
 
@@ -117,9 +117,7 @@ exports.deleteLeave = async (req, res, next) => {
   try {
     const item = await Leave.findOne({ _id: req.params.id, isDeleted: false });
     if (!item) throw new AppError('Leave not found', 404);
-    item.isDeleted = true;
-    item.updatedBy = getUserId(req);
-    await item.save();
+    await Leave.deleteOne({ _id: item._id });
     res.json({ success: true, message: 'Leave deleted' });
   } catch (error) { next(error); }
 };

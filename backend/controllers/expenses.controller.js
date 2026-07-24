@@ -51,8 +51,8 @@ exports.bulkDeleteExpenses = async (req, res, next) => {
     const ids = getBulkIds(req);
     const protectedCount = await Expense.countDocuments({ _id: { $in: ids }, isDeleted: false, status: 'posted' });
     if (protectedCount) throw new AppError('Posted expenses cannot be deleted', 400);
-    const result = await Expense.updateMany({ _id: { $in: ids }, isDeleted: false }, { $set: { isDeleted: true, isActive: false, updatedBy: getUserId(req) } });
-    res.json({ success: true, message: `${result.modifiedCount} expense(s) deleted`, data: { modifiedCount: result.modifiedCount } });
+    const result = await Expense.deleteMany({ _id: { $in: ids } });
+    res.json({ success: true, message: `${result.deletedCount} expense(s) deleted`, data: { modifiedCount: result.deletedCount } });
   } catch (error) { next(error); }
 };
 
@@ -182,9 +182,7 @@ exports.deleteExpense = async (req, res, next) => {
     const item = await Expense.findOne({ _id: req.params.id, isDeleted: false });
     if (!item) throw new AppError('Expense not found', 404);
     if (item.status === 'posted') throw new AppError('Posted expenses cannot be deleted', 400);
-    item.isDeleted = true;
-    item.updatedBy = getUserId(req);
-    await item.save();
+    await Expense.deleteOne({ _id: item._id });
     res.json({ success: true, message: 'Expense deleted' });
   } catch (error) { next(error); }
 };

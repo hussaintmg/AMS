@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useUserManagement } from "../context/UserManagementContext";
 import toast from "react-hot-toast";
@@ -18,6 +18,7 @@ const DepartmentManagement = () => {
     createDepartment,
     updateDepartment,
     deleteDepartment,
+    toggleDepartmentStatus,
     loadDepartments,
     loadUsers,
     loadRoles,
@@ -56,6 +57,13 @@ const DepartmentManagement = () => {
 
   // Delete confirm from table
   const [deleteConfirm, setDeleteConfirm] = useState(null);
+
+  // The table lists every department (so inactive ones can be re-enabled), but
+  // pickers must only offer active ones.
+  const activeDepartments = useMemo(
+    () => flatDepartments.filter((d) => (d.is_active ?? d.isActive) !== false),
+    [flatDepartments]
+  );
 
   const loadAllData = useCallback(async () => {
     try {
@@ -204,6 +212,20 @@ const DepartmentManagement = () => {
     } catch (err) {
       toast.error("Failed to delete department");
       setDeleteConfirm(null);
+    }
+  };
+
+  // Activate / deactivate department
+  const handleToggleDepartmentStatus = async (dept) => {
+    try {
+      const result = await toggleDepartmentStatus(dept.id || dept._id);
+      if (result.success) {
+        await loadAllData();
+      } else {
+        toast.error(result.message || "Failed to update department status");
+      }
+    } catch (err) {
+      toast.error("Failed to update department status");
     }
   };
 
@@ -398,8 +420,11 @@ const DepartmentManagement = () => {
                     <td onClick={(e) => e.stopPropagation()}>
                       <ActionButtons
                         onEdit={() => openDrawer(dept)}
+                        onToggle={() => handleToggleDepartmentStatus(dept)}
                         onDelete={() => setDeleteConfirm(dept)}
+                        status={!!dept.is_active}
                         showEdit
+                        showToggle
                         showDelete
                         title={dept.name}
                       />
@@ -472,8 +497,11 @@ const DepartmentManagement = () => {
                   <div className="user-card-actions" onClick={(e) => e.stopPropagation()}>
                     <ActionButtons
                       onEdit={() => openDrawer(dept)}
+                      onToggle={() => handleToggleDepartmentStatus(dept)}
                       onDelete={() => setDeleteConfirm(dept)}
+                      status={!!dept.is_active}
                       showEdit
+                      showToggle
                       showDelete
                       title={dept.name}
                     />
@@ -490,7 +518,7 @@ const DepartmentManagement = () => {
         isOpen={showCreateModal}
         mode="create"
         initialData={null}
-        departments={flatDepartments}
+        departments={activeDepartments}
         users={allUsers}
         onClose={() => setShowCreateModal(false)}
         onSubmit={handleCreateDepartment}
@@ -506,7 +534,7 @@ const DepartmentManagement = () => {
         staff={drawerStaff}
         allUsers={allUsers}
         roles={roles}
-        flatDepartments={flatDepartments}
+        flatDepartments={activeDepartments}
         onSaveDepartment={handleSaveDepartment}
         onDeleteDepartment={handleDeleteFromDrawer}
         onRefresh={refreshDrawer}
@@ -523,7 +551,7 @@ const DepartmentManagement = () => {
         title="Delete Department"
         message={
           deleteConfirm
-            ? `Are you sure you want to delete "${deleteConfirm.name}"? This will deactivate the department and its sub-departments.`
+            ? `Are you sure you want to permanently delete "${deleteConfirm.name}"? Sub-departments will move up to its parent and assigned staff will be unassigned. This action cannot be undone.`
             : ""
         }
         onConfirm={handleDeleteFromTable}

@@ -41,7 +41,9 @@ export function EmployeesProvider({ children }) {
   const loadDepartments = useCallback(async () => {
     try { const res = await adminAPI.getDepartments({ flat: true });
       const d = res.data?.data || []; const list = d?.flat || (Array.isArray(d) ? d : []);
-      setDepartments(list); return list;
+      // Only active departments should be selectable in the employee form.
+      const active = list.filter((x) => (x.is_active ?? x.isActive) !== false);
+      setDepartments(active); return active;
     } catch (err) { showApiError(err, 'Failed to load departments'); throw err; }
   }, []);
 
@@ -73,8 +75,8 @@ export function EmployeesProvider({ children }) {
 
   const deleteEmployee = useCallback(async (id) => {
     try { setSaving(true); const res = await employeeAPI.remove(id);
-      showApiSuccess(res, 'Employee deactivated'); return { success: true };
-    } catch (err) { showApiError(err, 'Failed to deactivate employee');
+      showApiSuccess(res, 'Employee deleted'); return { success: true };
+    } catch (err) { showApiError(err, 'Failed to delete employee');
       return { success: false, error: err.response?.data };
     } finally { setSaving(false); }
   }, []);

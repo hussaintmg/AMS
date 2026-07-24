@@ -7,6 +7,7 @@ import { useAuth } from '../context/AuthContext';
 import { useUserManagement } from '../context/UserManagementContext';
 import toast from 'react-hot-toast';
 import ErrorPopup from '../components/ErrorPopup';
+import ConfirmModal from '../components/ConfirmModal';
 import ActionButtons from '../components/ActionButtons';
 import { Search } from "lucide-react";
 import '../styles/userManagement.css';
@@ -36,6 +37,7 @@ const UserManagement = () => {
     const [showModal, setShowModal] = useState(false);
     const [modalMode, setModalMode] = useState('create');
     const [selectedUser, setSelectedUser] = useState(null);
+    const [deleteTarget, setDeleteTarget] = useState(null);
 
     // Nested department creation modal state
     const [showDeptModal, setShowDeptModal] = useState(false);
@@ -135,8 +137,15 @@ const UserManagement = () => {
         if (result.success) fetchUsers();
     };
 
-    const handleDeleteUser = async (userId, email) => {
-        const result = await deleteUser(userId, email);
+    const requestDeleteUser = (userId, email) => {
+        setDeleteTarget({ id: userId, email });
+    };
+
+    const confirmDeleteUser = async () => {
+        if (!deleteTarget) return;
+        const { id, email } = deleteTarget;
+        setDeleteTarget(null);
+        const result = await deleteUser(id, email);
         if (result.success) {
             fetchUsers();
         } else if (result.error) {
@@ -354,7 +363,7 @@ const UserManagement = () => {
                                         <ActionButtons
                                             onEdit={() => openModal('edit', user)}
                                             onToggle={() => handleToggleStatus(uid)}
-                                            onDelete={() => handleDeleteUser(uid, user.email)}
+                                            onDelete={() => requestDeleteUser(uid, user.email)}
                                             status={statusText === 'active'}
                                             title={user.email}
                                             disableToggle={isSuperAdmin}
@@ -434,7 +443,7 @@ const UserManagement = () => {
                                         <ActionButtons
                                             onEdit={() => openModal('edit', user)}
                                             onToggle={() => handleToggleStatus(uid)}
-                                            onDelete={() => handleDeleteUser(uid, user.email)}
+                                            onDelete={() => requestDeleteUser(uid, user.email)}
                                             status={statusText === 'active'}
                                             title={user.email}
                                             disableToggle={isSuperAdmin}
@@ -517,6 +526,17 @@ const UserManagement = () => {
                 onClose={closeCreateRole}
                 onSubmit={handleRoleCreated}
                 loading={savingRole}
+            />
+
+            <ConfirmModal
+                isOpen={!!deleteTarget}
+                title="Delete User"
+                message={`Are you sure you want to permanently delete user "${deleteTarget?.email || ''}"? This action cannot be undone.`}
+                confirmText="Delete"
+                cancelText="Cancel"
+                type="danger"
+                onConfirm={confirmDeleteUser}
+                onCancel={() => setDeleteTarget(null)}
             />
         </div>
     );

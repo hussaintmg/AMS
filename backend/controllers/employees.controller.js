@@ -14,11 +14,8 @@ const getBulkIds = (req) => {
 exports.bulkDeleteEmployees = async (req, res, next) => {
   try {
     const ids = getBulkIds(req);
-    const result = await Employee.updateMany(
-      { _id: { $in: ids }, isDeleted: false },
-      { $set: { isDeleted: true, isActive: false, updatedBy: getUserId(req) } }
-    );
-    res.json({ success: true, message: `${result.modifiedCount} employee(s) deleted`, data: { modifiedCount: result.modifiedCount } });
+    const result = await Employee.deleteMany({ _id: { $in: ids } });
+    res.json({ success: true, message: `${result.deletedCount} employee(s) deleted`, data: { modifiedCount: result.deletedCount } });
   } catch (error) { next(error); }
 };
 
@@ -120,6 +117,8 @@ exports.toggleEmployeeStatus = async (req, res, next) => {
     const item = await Employee.findOne({ _id: req.params.id, isDeleted: false });
     if (!item) throw new AppError('Employee not found', 404);
     item.isActive = !item.isActive;
+    // `status` is what the UI badge reads, so keep it in step with isActive.
+    item.status = item.isActive ? 'active' : 'inactive';
     item.updatedBy = getUserId(req);
     await item.save();
     res.json({ success: true, message: `Employee ${item.isActive ? 'activated' : 'deactivated'}`, data: { employee: item } });
@@ -130,10 +129,7 @@ exports.deleteEmployee = async (req, res, next) => {
   try {
     const item = await Employee.findOne({ _id: req.params.id, isDeleted: false });
     if (!item) throw new AppError('Employee not found', 404);
-    item.isDeleted = true;
-    item.isActive = false;
-    item.updatedBy = getUserId(req);
-    await item.save();
+    await Employee.deleteOne({ _id: item._id });
     res.json({ success: true, message: 'Employee deleted' });
   } catch (error) { next(error); }
 };

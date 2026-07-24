@@ -62,7 +62,10 @@ export function UserManagementProvider({ children }) {
             const res = await adminAPI.getDepartments({ flat: true });
             const data = res.data.data;
             const deptList = (data && Array.isArray(data.flat)) ? data.flat : (data || []);
-            setDepartments(deptList);
+            // `departments` feeds the pickers in user/department forms, so only
+            // expose active ones there. Callers that need the full list
+            // (e.g. Department Management) use the returned payload instead.
+            setDepartments(deptList.filter((d) => (d.is_active ?? d.isActive) !== false));
             return data || { hierarchy: [], flat: deptList };
         } catch (err) {
             showApiError(err, 'Failed to load departments');
@@ -151,8 +154,7 @@ export function UserManagementProvider({ children }) {
         }
     }, []);
 
-    const deleteUser = useCallback(async (userId, email) => {
-        if (!window.confirm(`Are you sure you want to delete user "${email}"?`)) return { success: false };
+    const deleteUser = useCallback(async (userId) => {
         try {
             const res = await adminAPI.deleteUser(userId);
             if (!(res?.status >= 200 && res?.status < 300 && res?.data?.success === true)) {
@@ -233,6 +235,19 @@ export function UserManagementProvider({ children }) {
         }
     }, [loadDepartments]);
 
+    const toggleDepartmentStatus = useCallback(async (id) => {
+        try {
+            const res = await adminAPI.toggleDepartmentStatus(id);
+            ensureSuccess(res, 'Department status updated');
+            await loadDepartments();
+            showApiSuccess(res, 'Department status updated');
+            return { success: true, isActive: res.data?.data?.isActive };
+        } catch (err) {
+            showApiError(err, 'Failed to update department status');
+            return { success: false, message: getErrorMessage(err, 'Failed to update department status') };
+        }
+    }, [loadDepartments]);
+
     const loadDepartmentById = useCallback(async (id) => {
         try {
             const res = await adminAPI.getDepartment(id);
@@ -277,13 +292,13 @@ export function UserManagementProvider({ children }) {
         assignUserDepartment, removeUserDepartment,
         createUser, updateUser, deleteUser, toggleUserStatus,
         createRole,
-        createDepartment, updateDepartment, deleteDepartment
+        createDepartment, updateDepartment, deleteDepartment, toggleDepartmentStatus
     }), [users, roles, departments, stats, loading, saving, error,
         loadUsers, loadRoles, loadDepartments, loadStats, loadDepartmentStats, loadReferenceData,
         loadDepartmentById,
         assignUserDepartment, removeUserDepartment,
         createUser, updateUser, deleteUser, toggleUserStatus,
-        createRole, createDepartment, updateDepartment, deleteDepartment]);
+        createRole, createDepartment, updateDepartment, deleteDepartment, toggleDepartmentStatus]);
 
     return (
         <UserManagementContext.Provider value={value}>

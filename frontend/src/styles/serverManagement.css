@@ -204,6 +204,28 @@
   margin-bottom: 18px;
 }
 
+/*
+ * Label / description / control blocks must read top-to-bottom. The auto-fit
+ * columns above would otherwise drop each child into its own column and leave
+ * the caption jammed against the control next to it.
+ */
+.sm-form-grid.sm-form-stack {
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.sm-form-grid.sm-form-stack > label {
+  margin-bottom: 0;
+}
+
+.sm-form-grid.sm-form-stack > p {
+  margin: 0;
+}
+
+.sm-checkbox-grid {
+  margin-top: 4px;
+}
+
 .sm-form-grid label {
   display: grid;
   gap: 6px;
@@ -320,17 +342,31 @@
 
 .sm-permission-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
 }
 
 .sm-permission-grid .sm-permission-row {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 16px;
   border: 1px solid #eef2f7;
   border-radius: 8px;
-  padding: 12px;
+  padding: 12px 14px;
+  cursor: pointer;
+}
+
+/* The label needs room to wrap without colliding with the checkbox. */
+.sm-permission-grid .sm-permission-row span {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.sm-permission-grid .sm-permission-row input[type="checkbox"] {
+  flex: 0 0 auto;
+  margin: 0;
 }
 
 .sm-icon-picker {
@@ -583,6 +619,12 @@
 
 .sm-permission-row {
   border-top: 1px solid #eef2f7;
+}
+
+.sm-role-usage {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .sm-empty,

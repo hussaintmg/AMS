@@ -402,7 +402,7 @@ exports.deleteAsset = async (req, res, next) => {
     if (!asset) throw new AppError('Asset not found', 404);
 
     const filePath = asset.filePath;
-    await BrandingAsset.findByIdAndUpdate(req.params.id, { isActive: false }, { returnDocument: 'after' });
+    await BrandingAsset.deleteOne({ _id: asset._id });
     const settings = await BrandingSetting.find();
     await Promise.all(settings.map(async (setting) => {
       let changed = false;
@@ -831,6 +831,89 @@ exports.saveEmployeeRoleConfig = async (req, res, next) => {
     next(error);
   }
 };
+
+/*
+ * Role-usage settings that decide which roles staff a given form field, plus a
+ * lookup that turns the configured roles into the actual selectable users.
+ */
+const ROLE_USAGE_SETTINGS = {
+  warehouseManager: {
+    key: 'warehouse_manager_roles',
+    category: 'warehouse',
+    description: 'Role IDs whose users can be assigned as warehouse managers',
+    label: 'Warehouse manager roles',
+  },
+  serviceAdvisor: {
+    key: 'service_advisor_roles',
+    category: 'service',
+    description: 'Role IDs whose users can be assigned as service advisors',
+    label: 'Service advisor roles',
+  },
+};
+
+const readRoleUsage = async (name) => {
+  const setting = await SystemSetting.findOne({ key: ROLE_USAGE_SETTINGS[name].key }).lean();
+  return setting && Array.isArray(setting.value) ? setting.value : [];
+};
+
+const makeRoleUsageHandlers = (name) => {
+  const config = ROLE_USAGE_SETTINGS[name];
+  return {
+    get: async (_req, res, next) => {
+      try {
+        res.json({ success: true, data: { roles: await readRoleUsage(name) } });
+      } catch (error) {
+        next(error);
+      }
+    },
+    update: async (req, res, next) => {
+      try {
+        const { roles } = req.body;
+        if (!Array.isArray(roles)) {
+          return res.status(400).json({ success: false, message: 'roles array is required' });
+        }
+        await SystemSetting.findOneAndUpdate(
+          { key: config.key },
+          { $set: { key: config.key, value: roles, category: config.category, description: config.description } },
+          { upsert: true, returnDocument: 'after' },
+        );
+        await createAuditLog(getUserId(req), `Update ${config.label}`, 'Server Management', `${config.label} saved`, req);
+        res.json({ success: true, message: `${config.label} saved`, data: { roles } });
+      } catch (error) {
+        next(error);
+      }
+    },
+    /** Active users holding one of the configured roles. */
+    users: async (_req, res, next) => {
+      try {
+        const roles = await readRoleUsage(name);
+        if (!roles.length) return res.json({ success: true, data: { users: [], roles } });
+        const users = await User.find({
+          role: { $in: roles },
+          isActive: true,
+          status: 'active',
+        })
+          .select('firstName lastName email phone role')
+          .populate('role', 'name displayName')
+          .sort({ firstName: 1 })
+          .lean();
+        res.json({ success: true, data: { users, roles } });
+      } catch (error) {
+        next(error);
+      }
+    },
+  };
+};
+
+const warehouseManagerHandlers = makeRoleUsageHandlers('warehouseManager');
+exports.getWarehouseManagerRoles = warehouseManagerHandlers.get;
+exports.updateWarehouseManagerRoles = warehouseManagerHandlers.update;
+exports.getWarehouseManagerUsers = warehouseManagerHandlers.users;
+
+const serviceAdvisorHandlers = makeRoleUsageHandlers('serviceAdvisor');
+exports.getServiceAdvisorRoles = serviceAdvisorHandlers.get;
+exports.updateServiceAdvisorRoles = serviceAdvisorHandlers.update;
+exports.getServiceAdvisorUsers = serviceAdvisorHandlers.users;
 
 exports.getRoleJobs = async (req, res, next) => {
   try {

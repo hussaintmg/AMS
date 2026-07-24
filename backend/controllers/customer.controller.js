@@ -386,16 +386,13 @@ exports.deleteCustomer = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Customer not found' });
     }
 
-    customer.isActive = false;
-    customer.deletedAt = new Date();
-    customer.updatedBy = userId;
-    await customer.save();
-    await syncFromCustomer(customer, userId, { syncStatus: true });
+    const { customerCode } = customer;
+    await Customer.deleteOne({ _id: customer._id });
 
-    await createAuditLog(userId, 'Deactivate Customer', 'Customers', `Customer ${customer.customerCode} deactivated`, req);
-    logFileOperation(req, { action: 'deleteCustomer', customerCode: customer.customerCode });
+    await createAuditLog(userId, 'Delete Customer', 'Customers', `Customer ${customerCode} deleted`, req);
+    logFileOperation(req, { action: 'deleteCustomer', customerCode });
 
-    res.json({ success: true, message: 'Customer deactivated successfully' });
+    res.json({ success: true, message: 'Customer deleted successfully' });
   } catch (error) {
     console.error('deleteCustomer error:', error);
     next(error);

@@ -62,6 +62,7 @@ router.get('/departments/:id', authenticate, authorizePage('departments'), depar
 router.post('/departments', authenticate, authorize('super_admin'), departmentController.createDepartment);
 router.put('/departments/:id', authenticate, authorize('super_admin'), departmentController.updateDepartment);
 router.delete('/departments/:id', authenticate, authorize('super_admin'), departmentController.deleteDepartment);
+router.patch('/departments/:id/status', authenticate, authorize('super_admin'), departmentController.toggleDepartmentStatus);
 router.patch('/departments/:id/manager', authenticate, authorize('super_admin'), departmentController.assignManager);
 
 // ── Status Management (read: statuses page permission, write: super_admin) ──

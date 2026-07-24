@@ -361,25 +361,82 @@ const deleteDepartment = async (req, res, next) => {
   try {
     const dept = await Department.findById(req.params.id);
     if (!dept) return res.status(404).json({ success: false, message: 'Department not found' });
-    dept.isActive = false;
-    dept.updatedBy = req.user?.id || req.user?._id;
-    await dept.save();
 
-    await Department.updateMany({ parent: dept._id }, { isActive: false });
+    const actorId = req.user?.id || req.user?._id;
+    const deptName = dept.name;
+
+    // Hard delete. Re-parent any children to this department's parent so the
+    // tree stays connected, and detach users/employees that pointed here.
+    await Department.updateMany({ parent: dept._id }, { $set: { parent: dept.parent || null, updatedBy: actorId } });
+    await User.updateMany({ department: dept._id }, { $set: { department: null, updatedBy: actorId } });
+    await Employee.updateMany({ department: dept._id }, { $set: { department: null, updatedBy: actorId } });
+    await Department.deleteOne({ _id: dept._id });
 
     await Log.create({
       endpoint: `/admin/departments/${req.params.id}`,
       method: 'DELETE',
       module: 'department-management',
-      action: 'deactivate',
+      action: 'delete',
       user: { id: req.user?.id, email: req.user?.email },
       ip: req.ip,
-      description: `Deactivated department ${dept.name} and its children`,
+      description: `Deleted department ${deptName}`,
     });
 
-    logFileOperation(req, { action: 'deleteDepartment', departmentId: req.params.id, name: dept.name });
+    logFileOperation(req, { action: 'deleteDepartment', departmentId: req.params.id, name: deptName });
 
-    res.json({ success: true, message: 'Department deactivated' });
+    res.json({ success: true, message: 'Department deleted' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @swagger
+ * /admin/departments/{id}/status:
+ *   patch:
+ *     tags: [Department Management]
+ *     summary: Toggle department status (active ↔ inactive)
+ *     security: [{ cookieAuth: [], bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Department status toggled
+ *       404:
+ *         description: Department not found
+ */
+const toggleDepartmentStatus = async (req, res, next) => {
+  try {
+    const dept = await Department.findById(req.params.id);
+    if (!dept) return res.status(404).json({ success: false, message: 'Department not found' });
+
+    const actorId = req.user?.id || req.user?._id;
+    dept.isActive = !dept.isActive;
+    dept.updatedBy = actorId;
+    await dept.save();
+
+    // Deactivating a parent cascades to its children; activating does too so a
+    // re-enabled branch becomes usable again.
+    await Department.updateMany({ parent: dept._id }, { $set: { isActive: dept.isActive, updatedBy: actorId } });
+
+    await Log.create({
+      endpoint: `/admin/departments/${req.params.id}/status`,
+      method: 'PATCH',
+      module: 'department-management',
+      action: dept.isActive ? 'activate' : 'deactivate',
+      user: { id: req.user?.id, email: req.user?.email },
+      ip: req.ip,
+      description: `${dept.isActive ? 'Activated' : 'Deactivated'} department ${dept.name}`,
+    });
+
+    res.json({
+      success: true,
+      message: `Department ${dept.isActive ? 'activated' : 'deactivated'}`,
+      data: { id: dept._id, isActive: dept.isActive },
+    });
   } catch (error) {
     next(error);
   }
@@ -444,5 +501,5 @@ const assignManager = async (req, res, next) => {
 
 module.exports = {
   getAllDepartments, getDepartmentById, createDepartment, updateDepartment,
-  deleteDepartment, assignManager, getDepartmentStats,
+  deleteDepartment, toggleDepartmentStatus, assignManager, getDepartmentStats,
 };

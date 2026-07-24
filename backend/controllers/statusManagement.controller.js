@@ -310,25 +310,23 @@ const deleteCollection = async (req, res, next) => {
     const collection = await StatusCollection.findById(req.params.id);
     if (!collection) return res.status(404).json({ success: false, message: 'Status collection not found' });
 
-    collection.isActive = false;
-    collection.updatedBy = req.user?.id || req.user?._id;
-    await collection.save();
-
-    await StatusItem.updateMany({ collection: collection._id }, { isActive: false });
+    const collectionName = collection.name;
+    await StatusItem.deleteMany({ collection: collection._id });
+    await StatusCollection.deleteOne({ _id: collection._id });
 
     await Log.create({
       endpoint: `/admin/status-collections/${req.params.id}`,
       method: 'DELETE',
       module: 'status-management',
-      action: 'deactivateCollection',
+      action: 'deleteCollection',
       user: { id: req.user?.id, email: req.user?.email },
       ip: req.ip,
-      description: `Deactivated status collection "${collection.name}" and its items`,
+      description: `Deleted status collection "${collectionName}" and its items`,
     });
 
-    logFileOperation(req, { action: 'deleteStatusCollection', collectionId: req.params.id, name: collection.name });
+    logFileOperation(req, { action: 'deleteStatusCollection', collectionId: req.params.id, name: collectionName });
 
-    res.json({ success: true, message: 'Status collection deactivated' });
+    res.json({ success: true, message: 'Status collection deleted' });
   } catch (error) {
     next(error);
   }
@@ -581,25 +579,23 @@ const deleteStatusItem = async (req, res, next) => {
     const item = await StatusItem.findById(req.params.itemId).populate('collection', 'name');
     if (!item) return res.status(404).json({ success: false, message: 'Status item not found' });
 
-    item.isActive = false;
-    item.updatedBy = req.user?.id || req.user?._id;
-    await item.save();
-
     const collName = item.collection?.name || 'Unknown';
+    const itemLabel = item.label;
+    await StatusItem.deleteOne({ _id: item._id });
 
     await Log.create({
       endpoint: `/admin/status-items/${req.params.itemId}`,
       method: 'DELETE',
       module: 'status-management',
-      action: 'deactivateStatusItem',
+      action: 'deleteStatusItem',
       user: { id: req.user?.id, email: req.user?.email },
       ip: req.ip,
-      description: `Deactivated status item "${item.label}" in collection "${collName}"`,
+      description: `Deleted status item "${itemLabel}" in collection "${collName}"`,
     });
 
-    logFileOperation(req, { action: 'deleteStatusItem', itemId: req.params.itemId, label: item.label });
+    logFileOperation(req, { action: 'deleteStatusItem', itemId: req.params.itemId, label: itemLabel });
 
-    res.json({ success: true, message: 'Status item deactivated' });
+    res.json({ success: true, message: 'Status item deleted' });
   } catch (error) {
     next(error);
   }

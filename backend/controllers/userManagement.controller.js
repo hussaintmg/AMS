@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { User, Role, Department, Log } = require('../models');
+const { User, Role, Department, Log, Employee } = require('../models');
 const { logFileOperation } = require('../utils/apiLogger');
 const { normalizePhone } = require('../utils/phone.util');
 const logger = require('../utils/logger');
@@ -367,27 +367,26 @@ const deleteUser = async (req, res, next) => {
     const user = await User.findById(req.params.id).populate('role', 'name');
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
     if (isSuperAdminUser(user)) {
-      return res.status(403).json({ success: false, message: 'Super admin cannot be deactivated' });
+      return res.status(403).json({ success: false, message: 'Super admin cannot be deleted' });
     }
-    user.status = 'inactive';
-    user.isActive = false;
-    user.updatedBy = req.user?.id || req.user?._id;
-    await user.save();
-    await syncFromUser(user, req.user?.id || req.user?._id);
+    const deletedEmail = user.email;
+    // Hard delete: remove the user and its mirrored employee record(s)
+    await Employee.deleteMany({ user: user._id });
+    await User.deleteOne({ _id: user._id });
 
     await Log.create({
       endpoint: `/admin/users/${req.params.id}`,
       method: 'DELETE',
       module: 'user-management',
-      action: 'deactivate',
+      action: 'delete',
       user: { id: req.user?.id, email: req.user?.email },
       ip: req.ip,
-      description: `Deactivated user ${user.email}`,
+      description: `Deleted user ${deletedEmail}`,
     });
 
-    logFileOperation(req, { action: 'deactivateUser', userId: req.params.id, email: user.email });
+    logFileOperation(req, { action: 'deleteUser', userId: req.params.id, email: deletedEmail });
 
-    res.json({ success: true, message: 'User deactivated' });
+    res.json({ success: true, message: 'User deleted' });
   } catch (error) {
     next(error);
   }
