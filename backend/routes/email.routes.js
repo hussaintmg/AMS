@@ -38,6 +38,25 @@ const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 }
 });
 
+const uploadDataFile = multer({
+  storage,
+  fileFilter: (_req, file, cb) => {
+    const allowed = [
+      'text/csv', 'application/csv', 'text/plain',
+      'application/json', 'text/json',
+      'application/vnd.ms-excel',
+      'application/octet-stream'
+    ];
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (allowed.includes(file.mimetype) || ['.csv', '.json', '.txt', '.tsv'].includes(ext)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only CSV, JSON, or text files are allowed'));
+    }
+  },
+  limits: { fileSize: 5 * 1024 * 1024 }
+});
+
 const authAndPage = [authenticate, authorizePage('email_templates')];
 
 /**
@@ -755,7 +774,7 @@ router.post('/variables', authAndPage, variablesCtrl.create);
 router.put('/variables/:id', authAndPage, variablesCtrl.update);
 router.delete('/variables/:id', authAndPage, variablesCtrl.remove);
 router.patch('/variables/:id/toggle', authAndPage, variablesCtrl.toggle);
-router.post('/variables/import', authAndPage, upload.single('file'), variablesCtrl.importBulk);
+router.post('/variables/import', authAndPage, uploadDataFile.single('file'), variablesCtrl.importBulk);
 
 // ── Assets ──
 router.get('/assets', authAndPage, assetsCtrl.list);
