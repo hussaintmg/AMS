@@ -39,7 +39,7 @@ const upload = multer({
 });
 
 const uploadDataFile = multer({
-  storage,
+  storage: multer.memoryStorage(),
   fileFilter: (_req, file, cb) => {
     const allowed = [
       'text/csv', 'application/csv', 'text/plain',
