@@ -1,8 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Save, Type, Square, Minus, Trash2, Copy, Plus, Search, ChevronDown, Image, FilePlus2, Link, QrCode, Variable, PanelLeftOpen, PanelRightOpen } from 'lucide-react';
+import { ArrowLeft, Save, Type, Square, Minus, Trash2, Copy, Plus, Search, ChevronDown, Image, FilePlus2, Link, QrCode, Variable, PanelLeftOpen, PanelRightOpen, Code } from 'lucide-react';
 import QRCode from 'qrcode';
 import toast from 'react-hot-toast';
+import Editor from 'react-simple-code-editor';
+import Prism from 'prismjs';
+import 'prismjs/components/prism-markup';
+import 'prismjs/components/prism-css';
+import 'prismjs/themes/prism-tomorrow.css';
 import { pdfManagementAPI } from '../services/api';
 import '../styles/pdfManagement.css';
 
@@ -21,6 +26,37 @@ const sample = {
 const resolve = text => String(text || '').replace(/\{\{\s*([^}]+)\s*\}\}/g, (_, key) => { const v = key.trim().split('.').reduce((o, p) => (o == null ? undefined : o[p]), sample); return v == null || v === '' ? `{{${key.trim()}}}` : v; });
 const newPage = () => ({ config: { format: 'A4', width: 794, height: 1123, backgroundColor: '#ffffff' }, backgroundImage: '', bgSize: 'cover', bgPosition: 'center center', elements: [] });
 const normalizePage = p => ({ ...newPage(), ...p, config: { ...newPage().config, ...(p?.config || {}) }, elements: Array.isArray(p?.elements) ? p.elements.map(e => ({ ...e, id: e.id || uid(), css: Array.isArray(e.css) ? e.css : [] })) : [] });
+
+const highlightHtml = code => Prism.highlight(code, Prism.languages.markup, 'markup');
+const highlightCss = code => Prism.highlight(code, Prism.languages.css, 'css');
+
+function compileDesignToHtml(page) {
+  if (!page) return { html: '', css: '' };
+  const cfg = page.config || {};
+  const w = cfg.width || 794, h = cfg.height || 1123;
+  let css = `* { box-sizing: border-box; margin: 0; padding: 0; }\n`;
+  css += `.pdf-page { position: relative; width: ${w}px; height: ${h}px; background: ${cfg.backgroundColor || '#ffffff'}; overflow: hidden; font-family: Arial, Helvetica, sans-serif; }\n`;
+  if (page.backgroundImage) {
+    css += `.pdf-page { background-image: url(${page.backgroundImage.substring(0, 80)}...); background-size: ${page.bgSize || 'cover'}; background-position: ${page.bgPosition || 'center center'}; background-repeat: no-repeat; }\n`;
+  }
+  let bodyHtml = '<div class="pdf-page">\n';
+  (page.elements || []).forEach(el => {
+    const s = cssObject(el.css);
+    const pos = ['left', 'top', 'width', 'height', 'font-size', 'font-weight', 'font-family', 'font-style', 'letter-spacing', 'color', 'text-align', 'background-color', 'border-radius', 'opacity', 'line-height', 'padding', 'border'].map(p => s[p] != null ? `${p}: ${s[p]}` : null).filter(Boolean).join('; ');
+    const style = `position: absolute; ${pos}`;
+    switch (el.type) {
+      case 'text': bodyHtml += `  <div style="${style}">${resolve(el.text || '')}</div>\n`; break;
+      case 'image': bodyHtml += `  <img src="${resolve(el.imageUrl || '')}" style="${style}" />\n`; break;
+      case 'link': bodyHtml += `  <a href="${resolve(el.url || '#')}" style="${style}">${resolve(el.text || el.url || '')}</a>\n`; break;
+      case 'qr': bodyHtml += `  <div style="${style}"><!-- QR: ${resolve(el.qrValue || '')} --></div>\n`; break;
+      case 'rectangle': bodyHtml += `  <div style="${style}"></div>\n`; break;
+      case 'line': bodyHtml += `  <hr style="${style}" />\n`; break;
+      default: bodyHtml += `  <div style="${style}">${resolve(el.text || '')}</div>\n`;
+    }
+  });
+  bodyHtml += '</div>';
+  return { html: bodyHtml, css };
+}
 
 function QrPreview({ value }) {
   const [src, setSrc] = useState('');
@@ -89,6 +125,8 @@ export default function PdfTemplateEditor() {
   const [varMenuPos, setVarMenuPos] = useState(null);
   const [leftOpen, setLeftOpen] = useState(false);
   const [rightOpen, setRightOpen] = useState(false);
+  const [showCodeView, setShowCodeView] = useState(false);
+  const [showDesignerPreview, setShowDesignerPreview] = useState(false);
   const htmlRef = useRef(null);
   const sidebarVarBtnRef = useRef(null);
 
@@ -122,6 +160,7 @@ export default function PdfTemplateEditor() {
   const pages = template?.designData?.pages || [], page = pages[pageIndex] || null, selected = page?.elements?.find(e => e.id === selectedId) || null, style = cssObject(selected?.css);
   const isHtml = template?.mode === 'html';
   const filteredSidebarVars = useMemo(() => variables.filter(v => `${v.key} ${v.label || ''}`.toLowerCase().includes(sidebarVarSearch.toLowerCase())), [variables, sidebarVarSearch]);
+  const compiled = useMemo(() => !isHtml && page ? compileDesignToHtml(page) : null, [isHtml, page]);
 
   const mutatePage = (index, fn) => setTemplate(t => { if (!t) return t; const next = structuredClone(t), target = next.designData.pages[index]; if (!target) return t; fn(target); return next; });
   const mutateElement = (elementId, fn, index = pageIndex) => mutatePage(index, p => { const el = p.elements.find(x => x.id === elementId); if (el) fn(el); });
@@ -227,6 +266,19 @@ export default function PdfTemplateEditor() {
     finally { setSaving(false); }
   };
 
+  const switchMode = (newMode) => {
+    if (newMode === (template.mode || 'designer')) return;
+    // First time entering HTML mode with no html yet: seed it from the design.
+    if (newMode === 'html' && !template.html && page) {
+      const compiledNow = compileDesignToHtml(page);
+      setTemplateField('html', compiledNow.html);
+      setTemplateField('css', compiledNow.css);
+      toast.success('Loaded your design into the HTML editor');
+    }
+    setSelectedId(null);
+    setTemplateField('mode', newMode);
+  };
+
   const addPage = () => { setTemplate(t => ({ ...t, designData: { ...t.designData, pages: [...t.designData.pages, newPage()] } })); setPageIndex(pages.length); setSelectedId(null); };
   const duplicatePage = () => { const copy = structuredClone(page); copy.elements = copy.elements.map(e => ({ ...e, id: uid() })); setTemplate(t => ({ ...t, designData: { ...t.designData, pages: [...t.designData.pages.slice(0, pageIndex + 1), copy, ...t.designData.pages.slice(pageIndex + 1)] } })); setPageIndex(pageIndex + 1); setSelectedId(null); };
   const deletePage = () => { if (pages.length === 1) return toast.error('At least one page is required'); setTemplate(t => ({ ...t, designData: { ...t.designData, pages: t.designData.pages.filter((_, i) => i !== pageIndex) } })); setPageIndex(Math.max(0, pageIndex - 1)); setSelectedId(null); };
@@ -244,17 +296,34 @@ export default function PdfTemplateEditor() {
       {/* ── Header ── */}
       <header className="pdf-editor-header">
         <button className="icon-btn" title="Back" onClick={() => navigate('/pdf-management')}><ArrowLeft size={19} /></button>
-        <input value={template.name} onChange={e => setTemplate({ ...template, name: e.target.value })} />
-        <select value={template.status} onChange={e => setTemplate({ ...template, status: e.target.value })}>
-          <option value="draft">Draft</option>
-          <option value="active">Active</option>
-          <option value="inactive">Inactive</option>
-        </select>
-        <select title="Authoring mode" value={template.mode || 'designer'} onChange={e => setTemplateField('mode', e.target.value)}>
-          <option value="designer">Designer</option>
-          <option value="html">HTML / CSS</option>
-        </select>
-        <button className="btn btn-primary" onClick={save} disabled={saving}><Save size={17} />{saving ? 'Saving...' : 'Save'}</button>
+        <input className="pdf-name-input" value={template.name} onChange={e => setTemplate({ ...template, name: e.target.value })} placeholder="Template name" />
+
+        {/* Clear Designer / HTML mode toggle */}
+        <div className="pdf-mode-toggle" role="tablist">
+          <button type="button" className={!isHtml ? 'active' : ''} onClick={() => switchMode('designer')} title="Drag-and-drop designer">
+            <PanelLeftOpen size={15} />Designer
+          </button>
+          <button type="button" className={isHtml ? 'active' : ''} onClick={() => switchMode('html')} title="Write raw HTML & CSS">
+            <Code size={15} />HTML
+          </button>
+        </div>
+
+        {!isHtml && (
+          <button className={`icon-btn pdf-codeview-btn ${showCodeView ? 'active' : ''}`} title={showCodeView ? 'Hide compiled code' : 'View compiled HTML/CSS'} onClick={() => setShowCodeView(v => !v)}>
+            <Code size={17} />
+          </button>
+        )}
+
+        <label className="pdf-status-field" title="Template status">
+          <span>Status</span>
+          <select value={template.status} onChange={e => setTemplate({ ...template, status: e.target.value })}>
+            <option value="draft">Draft</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </select>
+        </label>
+
+        <button className="btn btn-primary pdf-save-btn" onClick={save} disabled={saving}><Save size={17} />{saving ? 'Saving...' : 'Save'}</button>
       </header>
 
       {/* ── Left Sidebar ── */}
@@ -321,10 +390,28 @@ export default function PdfTemplateEditor() {
         <main className="pdf-canvas-area pdf-html-area">
           <div className="pdf-html-editors">
             <label>HTML
-              <textarea ref={htmlRef} spellCheck={false} value={template.html || ''} onChange={e => setTemplateField('html', e.target.value)} placeholder={'<div class="doc">\n  <h1>{{document.title}}</h1>\n  <p>{{customer.fullName}}</p>\n</div>'} />
+              <Editor
+                value={template.html || ''}
+                onValueChange={code => setTemplateField('html', code)}
+                highlight={code => highlightHtml(code)}
+                padding={12}
+                className="pdf-code-editor"
+                placeholder={'<div class="doc">\n  <h1>{{document.title}}</h1>\n  <p>{{customer.fullName}}</p>\n</div>'}
+                textareaClassName="pdf-code-textarea"
+                style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', fontSize: 13, lineHeight: 1.6, minHeight: 200 }}
+              />
             </label>
             <label>CSS
-              <textarea spellCheck={false} value={template.css || ''} onChange={e => setTemplateField('css', e.target.value)} placeholder={'.doc { font-family: Arial, sans-serif; padding: 32px; }\nh1 { color: #111827; }'} />
+              <Editor
+                value={template.css || ''}
+                onValueChange={code => setTemplateField('css', code)}
+                highlight={code => highlightCss(code)}
+                padding={12}
+                className="pdf-code-editor"
+                placeholder={'.doc { font-family: Arial, sans-serif; padding: 32px; }\nh1 { color: #111827; }'}
+                textareaClassName="pdf-code-textarea"
+                style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', fontSize: 13, lineHeight: 1.6, minHeight: 200 }}
+              />
             </label>
           </div>
           <div className="pdf-html-preview">
@@ -345,6 +432,36 @@ export default function PdfTemplateEditor() {
               );
             })}
           </div>
+          {showCodeView && compiled && (
+            <div className="pdf-designer-code-panel">
+              <div className="pdf-designer-code-tabs">
+                <span className="pdf-code-tab active">Compiled HTML</span>
+              </div>
+              <Editor
+                value={compiled.html}
+                onValueChange={() => {}}
+                highlight={code => highlightHtml(code)}
+                padding={12}
+                className="pdf-code-editor read-only"
+                textareaClassName="pdf-code-textarea"
+                readOnly
+                style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', fontSize: 13, lineHeight: 1.6, minHeight: 150 }}
+              />
+              <div className="pdf-designer-code-tabs">
+                <span className="pdf-code-tab active">Compiled CSS</span>
+              </div>
+              <Editor
+                value={compiled.css}
+                onValueChange={() => {}}
+                highlight={code => highlightCss(code)}
+                padding={12}
+                className="pdf-code-editor read-only"
+                textareaClassName="pdf-code-textarea"
+                readOnly
+                style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', fontSize: 13, lineHeight: 1.6, minHeight: 100 }}
+              />
+            </div>
+          )}
         </main>
       )}
 

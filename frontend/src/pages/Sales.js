@@ -2162,6 +2162,7 @@ function Invoices() {
     const [selectedItem, setSelectedItem] = useState(null);
     const [selectedIds,setSelectedIds]=useState([]);
     const [sendingEmail, setSendingEmail] = useState(null);
+    const [recordingPayment, setRecordingPayment] = useState(false);
     const [invoiceDetails, setInvoiceDetails] = useState(null);
     const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', onConfirm: null });
     const [companyInfo, setCompanyInfo] = useState(null);
@@ -2547,6 +2548,8 @@ function Invoices() {
 
     const handleRecordPayment = async (e) => {
         e.preventDefault();
+        if (recordingPayment) return;
+        setRecordingPayment(true);
         try {
             const invoiceId = selectedItem.id;
             await invoiceAPI.recordPayment(invoiceId, paymentData);
@@ -2564,6 +2567,8 @@ function Invoices() {
             } catch { /* list already refreshed */ }
         } catch (error) {
             toast.error(error.response?.data?.message || 'Failed to record payment');
+        } finally {
+            setRecordingPayment(false);
         }
     };
 
@@ -3185,8 +3190,10 @@ function Invoices() {
                         </div>
 
                         <div className="modal-actions">
-                            <button type="button" className="btn btn-secondary" onClick={() => setShowPaymentModal(false)}>Cancel</button>
-                            <button type="submit" className="btn btn-success">Record Payment</button>
+                            <button type="button" className="btn btn-secondary" onClick={() => setShowPaymentModal(false)} disabled={recordingPayment}>Cancel</button>
+                            <button type="submit" className="btn btn-success" disabled={recordingPayment}>
+                                {recordingPayment ? <><span className="spinner-mini"></span> Recording...</> : 'Record Payment'}
+                            </button>
                         </div>
                     </form>
                 </Modal>

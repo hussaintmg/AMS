@@ -116,7 +116,7 @@ export default function EmailTemplatesPage() {
   };
 
   const handleTestSend = async () => {
-    if (!testEmail || !selectedTemplate) return;
+    if (!testEmail || !selectedTemplate || actionLoading === 'send') return;
     setActionLoading('send');
     try {
       await emailAPI.sendTestEmail({ templateId: selectedTemplate._id, email: testEmail, context: variableMappings });

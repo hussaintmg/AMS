@@ -188,6 +188,8 @@
   border-bottom: 1px solid #e2e8f0;
   z-index: 20;
   min-width: 0;
+  overflow: visible;
+  flex-shrink: 0;
 }
 .pdf-editor-header .icon-btn {
   display: flex;
@@ -228,6 +230,53 @@
   cursor: pointer;
   flex-shrink: 0;
 }
+
+/* Segmented Designer / HTML mode toggle */
+.pdf-mode-toggle {
+  display: inline-flex;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 2px;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.pdf-mode-toggle button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: none;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #64748b;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background .15s, color .15s, box-shadow .15s;
+}
+.pdf-mode-toggle button:hover { color: #1e293b; }
+.pdf-mode-toggle button.active {
+  background: #fff;
+  color: #2563eb;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .12);
+}
+.pdf-codeview-btn.active { background: #dbeafe; color: #2563eb; }
+
+/* Labeled status field */
+.pdf-status-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.pdf-status-field select { text-transform: none; letter-spacing: 0; font-weight: 500; }
+
 .pdf-editor-header .btn-primary {
   margin-left: auto;
   flex-shrink: 0;
@@ -888,7 +937,8 @@
   text-transform: uppercase;
   letter-spacing: .04em;
 }
-.pdf-html-editors textarea {
+.pdf-html-editors textarea,
+.pdf-html-editors .pdf-code-editor {
   flex: 1;
   min-height: 200px;
   resize: vertical;
@@ -903,7 +953,8 @@
   white-space: pre;
   tab-size: 2;
 }
-.pdf-html-editors textarea:focus { outline: 2px solid #2563eb; outline-offset: -1px; }
+.pdf-html-editors textarea:focus,
+.pdf-html-editors .pdf-code-editor:focus-within { outline: 2px solid #2563eb; outline-offset: -1px; }
 .pdf-html-preview {
   display: flex;
   flex-direction: column;
@@ -1024,6 +1075,100 @@
   .pdf-properties { width: 280px; }
   .pdf-html-area { padding: 8px; gap: 8px; }
   .pdf-canvas-area { padding: 8px; }
+  .pdf-save-btn { display: inline-flex; }
+}
+
+/* ── Code editor (react-simple-code-editor) ──────────────────────────── */
+.pdf-code-editor {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #0f172a;
+  color: #e2e8f0;
+  overflow: auto;
+  min-height: 200px;
+}
+.pdf-code-editor:focus-within {
+  outline: 2px solid #2563eb;
+  outline-offset: -1px;
+}
+.pdf-code-editor.read-only {
+  background: #1e293b;
+  opacity: 0.92;
+}
+.pdf-code-editor.read-only:focus-within {
+  outline: none;
+}
+.pdf-code-textarea {
+  outline: none !important;
+  min-height: 200px;
+}
+.pdf-code-textarea::placeholder {
+  color: #475569;
+}
+
+/* ── Save button always visible ─────────────────────────────────────── */
+.pdf-save-btn {
+  margin-left: auto;
+  flex-shrink: 0;
+  white-space: nowrap;
+  position: sticky;
+  right: 0;
+}
+
+/* ── Designer code view panel ───────────────────────────────────────── */
+.pdf-designer-code-panel {
+  margin-top: 12px;
+  border-top: 2px solid #e2e8f0;
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.pdf-designer-code-tabs {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 0 4px;
+}
+.pdf-code-tab {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: #64748b;
+  padding: 4px 10px;
+  border-radius: 4px 4px 0 0;
+}
+.pdf-code-tab.active {
+  color: #2563eb;
+  background: #f1f5f9;
+}
+
+/* ── Sidebar mobile toggle ──────────────────────────────────────────── */
+.pdf-editor-header .icon-btn.active {
+  background: #dbeafe;
+  color: #2563eb;
+}
+
+/* ── Mobile floating save button ────────────────────────────────────── */
+@media (max-width: 600px) {
+  .pdf-save-btn {
+    position: fixed;
+    bottom: 16px;
+    right: 16px;
+    z-index: 999;
+    box-shadow: 0 4px 16px rgba(37, 99, 235, .35);
+    border-radius: 999px;
+    padding: 12px 20px;
+  }
+}
+
+/* ── Editor responsive ──────────────────────────────────────────────── */
+@media (max-width: 900px) {
+  .pdf-html-editors { flex-direction: column; }
+  .pdf-html-editors textarea { min-height: 160px; }
+  .pdf-code-editor { min-height: 160px; }
+  .pdf-code-editor .pdf-code-textarea { min-height: 160px; }
 }
 
 /* ── Management page responsive ────────────────────────────────────────── */

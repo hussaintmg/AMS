@@ -2,7 +2,7 @@
     "name": "ams-frontend",
     "version": "1.0.0",
     "private": true,
-    "homepage": ".",
+    "homepage": "/",
     "proxy": "http://localhost:3002",
     "description": "Auto Management System - Admin Panel",
     "author": "Hussain Developer <hussaintmerng@gmail.com>",
@@ -18,6 +18,8 @@
         "react-hot-toast": "^2.4.1",
         "react-router-dom": "^6.21.1",
         "react-scripts": "5.0.1",
+        "react-simple-code-editor": "^0.13.1",
+        "prismjs": "^1.29.0",
         "socket.io-client": "^4.8.3",
         "xlsx": "^0.18.5"
     },
