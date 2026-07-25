@@ -30,32 +30,80 @@ const normalizePage = p => ({ ...newPage(), ...p, config: { ...newPage().config,
 const highlightHtml = code => Prism.highlight(code, Prism.languages.markup, 'markup');
 const highlightCss = code => Prism.highlight(code, Prism.languages.css, 'css');
 
+const escHtml = (v) => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const escAttr = (v) => escHtml(v).replace(/"/g, '&quot;');
+const STYLE_PROPS = ['left', 'top', 'width', 'height', 'font-size', 'font-weight', 'font-family', 'font-style', 'letter-spacing', 'color', 'text-align', 'background-color', 'border-radius', 'opacity', 'line-height', 'padding', 'border'];
+
+/**
+ * Compile the visual design of a page into raw HTML + CSS. Tokens like
+ * {{customer.fullName}} are kept RAW (not resolved) so the HTML is editable and
+ * can be parsed back into the design. `data-el` markers make the round-trip
+ * lossless for designer-authored templates.
+ */
 function compileDesignToHtml(page) {
   if (!page) return { html: '', css: '' };
   const cfg = page.config || {};
   const w = cfg.width || 794, h = cfg.height || 1123;
   let css = `* { box-sizing: border-box; margin: 0; padding: 0; }\n`;
   css += `.pdf-page { position: relative; width: ${w}px; height: ${h}px; background: ${cfg.backgroundColor || '#ffffff'}; overflow: hidden; font-family: Arial, Helvetica, sans-serif; }\n`;
-  if (page.backgroundImage) {
-    css += `.pdf-page { background-image: url(${page.backgroundImage.substring(0, 80)}...); background-size: ${page.bgSize || 'cover'}; background-position: ${page.bgPosition || 'center center'}; background-repeat: no-repeat; }\n`;
-  }
   let bodyHtml = '<div class="pdf-page">\n';
   (page.elements || []).forEach(el => {
     const s = cssObject(el.css);
-    const pos = ['left', 'top', 'width', 'height', 'font-size', 'font-weight', 'font-family', 'font-style', 'letter-spacing', 'color', 'text-align', 'background-color', 'border-radius', 'opacity', 'line-height', 'padding', 'border'].map(p => s[p] != null ? `${p}: ${s[p]}` : null).filter(Boolean).join('; ');
+    const pos = STYLE_PROPS.map(p => s[p] != null ? `${p}: ${s[p]}` : null).filter(Boolean).join('; ');
     const style = `position: absolute; ${pos}`;
     switch (el.type) {
-      case 'text': bodyHtml += `  <div style="${style}">${resolve(el.text || '')}</div>\n`; break;
-      case 'image': bodyHtml += `  <img src="${resolve(el.imageUrl || '')}" style="${style}" />\n`; break;
-      case 'link': bodyHtml += `  <a href="${resolve(el.url || '#')}" style="${style}">${resolve(el.text || el.url || '')}</a>\n`; break;
-      case 'qr': bodyHtml += `  <div style="${style}"><!-- QR: ${resolve(el.qrValue || '')} --></div>\n`; break;
-      case 'rectangle': bodyHtml += `  <div style="${style}"></div>\n`; break;
-      case 'line': bodyHtml += `  <hr style="${style}" />\n`; break;
-      default: bodyHtml += `  <div style="${style}">${resolve(el.text || '')}</div>\n`;
+      case 'image': bodyHtml += `  <img data-el="image" src="${escAttr(el.imageUrl || '')}" style="${style}" />\n`; break;
+      case 'link': bodyHtml += `  <a data-el="link" href="${escAttr(el.url || '#')}" style="${style}">${escHtml(el.text || el.url || '')}</a>\n`; break;
+      case 'qr': bodyHtml += `  <div data-el="qr" data-qr="${escAttr(el.qrValue || '')}" style="${style}"></div>\n`; break;
+      case 'rectangle': bodyHtml += `  <div data-el="rectangle" style="${style}"></div>\n`; break;
+      case 'line': bodyHtml += `  <hr data-el="line" style="${style}" />\n`; break;
+      default: bodyHtml += `  <div data-el="text" style="${style}">${escHtml(el.text || '')}</div>\n`;
     }
   });
   bodyHtml += '</div>';
   return { html: bodyHtml, css };
+}
+
+/** Parse an inline style string into a css object (dropping `position`). */
+function parseInlineStyle(styleStr) {
+  const obj = {};
+  String(styleStr || '').split(';').forEach(decl => {
+    const i = decl.indexOf(':');
+    if (i < 1) return;
+    const prop = decl.slice(0, i).trim(), val = decl.slice(i + 1).trim();
+    if (prop && val && prop !== 'position') obj[prop] = val;
+  });
+  return obj;
+}
+
+/**
+ * Inverse of compileDesignToHtml: parse raw HTML back into page elements so the
+ * designer reflects edits made in the HTML view. Keeps the existing page config.
+ * Falls back to tag/content heuristics when `data-el` markers are absent.
+ */
+function htmlToDesign(html, baseConfig) {
+  const config = { ...baseConfig };
+  let elements = [];
+  try {
+    const doc = new DOMParser().parseFromString(html || '', 'text/html');
+    const container = doc.querySelector('.pdf-page') || doc.body;
+    elements = Array.from(container.children).map(node => {
+      const tag = node.tagName.toLowerCase();
+      const marker = node.getAttribute('data-el');
+      const css = cssArray(parseInlineStyle(node.getAttribute('style')));
+      const base = { id: uid(), text: '', imageUrl: '', url: '', qrValue: '', css };
+      if (marker === 'image' || tag === 'img') return { ...base, type: 'image', imageUrl: node.getAttribute('src') || '' };
+      if (marker === 'link' || tag === 'a') return { ...base, type: 'link', url: node.getAttribute('href') || '', text: node.textContent || '' };
+      if (marker === 'line' || tag === 'hr') return { ...base, type: 'line' };
+      if (marker === 'qr') return { ...base, type: 'qr', qrValue: node.getAttribute('data-qr') || '' };
+      if (marker === 'rectangle') return { ...base, type: 'rectangle' };
+      // Unmarked <div>: decide by content.
+      const text = (node.textContent || '').trim();
+      if (marker === 'text' || text) return { ...base, type: 'text', text: node.textContent || '' };
+      return { ...base, type: 'rectangle' };
+    });
+  } catch { elements = Array.isArray(baseConfig?.elements) ? baseConfig.elements : []; }
+  return { ...config, elements };
 }
 
 function QrPreview({ value }) {
@@ -259,24 +307,46 @@ export default function PdfTemplateEditor() {
     window.addEventListener('mouseup', up);
   };
 
+  // Keep the designer (designData) and the HTML/CSS in sync so both views show
+  // the same template and a single save persists one coherent template.
+  const syncedTemplate = () => {
+    if (isHtml) {
+      // Editing HTML → rebuild the current page's design from the HTML.
+      const nextPages = template.designData.pages.map((p, i) => i === pageIndex ? htmlToDesign(template.html, p) : p);
+      return { ...template, designData: { ...template.designData, pages: nextPages } };
+    }
+    // Editing in the designer → compile the current page to HTML/CSS.
+    const c = compileDesignToHtml(page);
+    return { ...template, html: c.html, css: c.css };
+  };
+
   const save = async () => {
     setSaving(true);
-    try { await pdfManagementAPI.updateTemplate(id, { name: template.name, status: template.status, description: template.description, designData: template.designData, mode: template.mode || 'designer', html: template.html || '', css: template.css || '' }); toast.success('Template saved'); }
+    try {
+      const payload = syncedTemplate();
+      await pdfManagementAPI.updateTemplate(id, { name: payload.name, status: payload.status, description: payload.description, designData: payload.designData, mode: payload.mode || 'designer', html: payload.html || '', css: payload.css || '' });
+      setTemplate(payload);
+      toast.success('Template saved');
+    }
     catch { toast.error('Save failed'); }
     finally { setSaving(false); }
   };
 
   const switchMode = (newMode) => {
-    if (newMode === (template.mode || 'designer')) return;
-    // First time entering HTML mode with no html yet: seed it from the design.
-    if (newMode === 'html' && !template.html && page) {
-      const compiledNow = compileDesignToHtml(page);
-      setTemplateField('html', compiledNow.html);
-      setTemplateField('css', compiledNow.css);
-      toast.success('Loaded your design into the HTML editor');
-    }
+    const current = template.mode || 'designer';
+    if (newMode === current) return;
     setSelectedId(null);
-    setTemplateField('mode', newMode);
+    if (newMode === 'html') {
+      // Designer → HTML: compile the current design so the HTML reflects it.
+      const c = compileDesignToHtml(page);
+      setTemplate(t => ({ ...t, mode: 'html', html: c.html, css: c.css }));
+    } else {
+      // HTML → Designer: parse the HTML back into the current page.
+      setTemplate(t => {
+        const nextPages = t.designData.pages.map((p, i) => i === pageIndex ? htmlToDesign(t.html, p) : p);
+        return { ...t, mode: 'designer', designData: { ...t.designData, pages: nextPages } };
+      });
+    }
   };
 
   const addPage = () => { setTemplate(t => ({ ...t, designData: { ...t.designData, pages: [...t.designData.pages, newPage()] } })); setPageIndex(pages.length); setSelectedId(null); };

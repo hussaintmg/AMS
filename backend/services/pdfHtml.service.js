@@ -95,4 +95,22 @@ async function buildHtml(pages = [], data = {}) {
 </style></head><body>${pagesHtml}</body></html>`;
 }
 
-module.exports = { buildHtml };
+/**
+ * Wrap a raw HTML/CSS template (mode: 'html') into a printable document, with
+ * tokens resolved against the data bag. Used so HTML-authored templates render
+ * on the server exactly as written.
+ */
+function buildHtmlFromRaw(rawHtml = '', css = '', data = {}, config = {}) {
+  const width = config.width || 794;
+  const height = config.height || 1123;
+  const body = resolveTokens(rawHtml, data);
+  return `<!doctype html><html><head><meta charset="utf-8">
+<style>
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  html, body { margin: 0; background: #ffffff; }
+  @page { size: ${width}px ${height}px; margin: 0; }
+  ${css || ''}
+</style></head><body>${body}</body></html>`;
+}
+
+module.exports = { buildHtml, buildHtmlFromRaw };

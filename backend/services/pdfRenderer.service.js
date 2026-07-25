@@ -9,7 +9,7 @@
  */
 const fs = require('fs');
 const puppeteer = require('puppeteer-core');
-const { buildHtml } = require('./pdfHtml.service');
+const { buildHtml, buildHtmlFromRaw } = require('./pdfHtml.service');
 
 const CHROME_CANDIDATES = [
   process.env.CHROME_PATH,
@@ -44,14 +44,12 @@ async function getBrowser() {
   return browser;
 }
 
-/** Render one template (array of pages) + data bag into a PDF Buffer. */
-async function renderPdf(pages, data, title) {
-  const html = await buildHtml(pages || [], data || {});
-  const config = pages?.[0]?.config || { width: 794, height: 1123 };
+/** Print a full HTML document to a PDF Buffer at the given page size. */
+async function printHtml(fullHtml, config = {}) {
   const browser = await getBrowser();
   const page = await browser.newPage();
   try {
-    await page.setContent(html, { waitUntil: 'networkidle0', timeout: 30000 });
+    await page.setContent(fullHtml, { waitUntil: 'networkidle0', timeout: 30000 });
     const buffer = await page.pdf({
       width: `${config.width || 794}px`,
       height: `${config.height || 1123}px`,
@@ -64,6 +62,19 @@ async function renderPdf(pages, data, title) {
   }
 }
 
+/** Render a designer template (array of pages) + data bag into a PDF Buffer. */
+async function renderPdf(pages, data, title) {
+  const html = await buildHtml(pages || [], data || {});
+  const config = pages?.[0]?.config || { width: 794, height: 1123 };
+  return printHtml(html, config);
+}
+
+/** Render a raw HTML/CSS template (mode: 'html') + data bag into a PDF Buffer. */
+async function renderHtmlPdf(rawHtml, css, data, config) {
+  const full = buildHtmlFromRaw(rawHtml || '', css || '', data || {}, config || {});
+  return printHtml(full, config || { width: 794, height: 1123 });
+}
+
 async function closeBrowser() {
   if (browserPromise) {
     const browser = await browserPromise.catch(() => null);
@@ -72,4 +83,4 @@ async function closeBrowser() {
   }
 }
 
-module.exports = { renderPdf, closeBrowser };
+module.exports = { renderPdf, renderHtmlPdf, closeBrowser };

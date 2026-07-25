@@ -1,7 +1,7 @@
 const archiver = require('archiver');
 const { PassThrough } = require('stream');
 const { PdfTemplate, PdfUsage, PdfVariable } = require('../models');
-const { renderPdf } = require('../services/pdfRenderer.service');
+const { renderPdf, renderHtmlPdf } = require('../services/pdfRenderer.service');
 const { TYPES, buildDataBag, variableCatalog, companyName } = require('../services/pdfData.service');
 const { resolveTokens } = require('../services/pdfFormat.cjs');
 
@@ -166,10 +166,19 @@ exports.resolvedHtml = async (req, res, next) => {
   } catch (error) { next(error); }
 };
 
+/** Render a template to a PDF buffer, honouring its authoring mode. */
+function renderTemplatePdf(template, record) {
+  if (template.mode === 'html' && template.html) {
+    const config = template.designData?.pages?.[0]?.config || {};
+    return renderHtmlPdf(template.html, template.css || '', record.data, config);
+  }
+  return renderPdf(template.designData?.pages || [], record.data, record.name);
+}
+
 exports.downloadOne = async (req, res, next) => {
   try {
     const template = await activeTemplate(req.params.documentType); const record = await loadRecord(req.params.documentType, req.params.id);
-    const buffer = await renderPdf(template.designData?.pages || [], record.data, record.name);
+    const buffer = await renderTemplatePdf(template, record);
     res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="${record.name}.pdf"`, 'Content-Length': buffer.length }).send(buffer);
   } catch (error) { next(error); }
 };
@@ -179,7 +188,7 @@ exports.downloadBulk = async (req, res, next) => {
     const template = await activeTemplate(req.params.documentType); const output = new PassThrough(); const chunks = [];
     output.on('data', (chunk) => chunks.push(chunk)); const completed = new Promise((resolve, reject) => { output.on('end', resolve); output.on('error', reject); });
     const archive = archiver('zip', { zlib: { level: 6 } }); archive.pipe(output);
-    for (const id of ids) { const record = await loadRecord(req.params.documentType, id); archive.append(await renderPdf(template.designData?.pages || [], record.data, record.name), { name: `${record.name}.pdf` }); }
+    for (const id of ids) { const record = await loadRecord(req.params.documentType, id); archive.append(await renderTemplatePdf(template, record), { name: `${record.name}.pdf` }); }
     await archive.finalize(); await completed; const buffer = Buffer.concat(chunks);
     res.set({ 'Content-Type': 'application/zip', 'Content-Disposition': `attachment; filename="${req.params.documentType}-documents.zip"`, 'Content-Length': buffer.length }).send(buffer);
   } catch (error) { next(error); }
