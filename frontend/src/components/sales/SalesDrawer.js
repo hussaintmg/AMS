@@ -201,12 +201,12 @@ export default function SalesDrawer({
                           </tr>
                         </thead>
                         <tbody>
-                          {payments.map((payment) => (
-                            <tr key={payment._id || payment.id}>
-                              <td>{asDate(payment.paymentDate || payment.createdAt)}</td>
-                              <td>{payment.paymentNumber || '-'}</td>
-                              <td>{payment.method?.name || '-'}</td>
-                              <td>{payment.referenceNumber || '-'}</td>
+                          {payments.map((payment, i) => (
+                            <tr key={payment._id || payment.id || i}>
+                              <td>{asDate(payment.payment_date || payment.paymentDate || payment.createdAt)}</td>
+                              <td>{payment.payment_number || payment.paymentNumber || '-'}</td>
+                              <td style={{ textTransform: 'capitalize' }}>{payment.payment_method_name || payment.method?.name || '-'}</td>
+                              <td>{payment.reference_number || payment.referenceNumber || '-'}</td>
                               <td style={{ textAlign: 'right', color: '#16a34a', fontWeight: 600 }}>{money(payment.amount)}</td>
                             </tr>
                           ))}

@@ -12,14 +12,18 @@ const invoiceProvider = {
   ],
   resolve: (vars, context) => {
     const invoice = context?.invoice || {};
+    const currency = (v) => (v == null || v === '' ? '' : `PKR ${Number(v).toLocaleString('en-PK')}`);
+    const date = (v) => (v ? new Date(v).toLocaleDateString('en-GB') : '');
+    const amount = invoice.amount != null ? invoice.amount : invoice.totalAmount;
+    const due = invoice.dueAmount != null ? invoice.dueAmount : invoice.balanceAmount;
     return {
       'invoice.number': invoice.number || invoice.invoiceNumber || '',
-      'invoice.date': invoice.date ? new Date(invoice.date).toLocaleDateString() : '',
-      'invoice.dueDate': invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : '',
-      'invoice.amount': invoice.amount != null ? String(invoice.amount) : '',
+      'invoice.date': date(invoice.date || invoice.invoiceDate || invoice.createdAt),
+      'invoice.dueDate': date(invoice.dueDate),
+      'invoice.amount': currency(amount),
       'invoice.status': invoice.status || '',
-      'invoice.paidAmount': invoice.paidAmount != null ? String(invoice.paidAmount) : '',
-      'invoice.dueAmount': invoice.dueAmount != null ? String(invoice.dueAmount) : '',
+      'invoice.paidAmount': currency(invoice.paidAmount),
+      'invoice.dueAmount': currency(due),
     };
   }
 };

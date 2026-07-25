@@ -10,12 +10,13 @@ const salesOrderProvider = {
   ],
   resolve: (_, context = {}) => {
     const order = context.order || {};
-    const date = (value) => value ? new Date(value).toLocaleDateString() : '';
+    const date = (value) => value ? new Date(value).toLocaleDateString('en-GB') : '';
+    const currency = (v) => (v == null || v === '' ? '' : `PKR ${Number(v).toLocaleString('en-PK')}`);
     return {
       'order.number': order.number || order.orderNumber || '',
       'order.date': date(order.date || order.orderDate || order.createdAt),
       'order.deliveryDate': date(order.deliveryDate || order.expectedDeliveryDate),
-      'order.amount': order.amount != null ? String(order.amount) : String(order.totalAmount || ''),
+      'order.amount': currency(order.amount != null ? order.amount : order.totalAmount),
       'order.status': order.status || '',
     };
   },

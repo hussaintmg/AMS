@@ -11,13 +11,14 @@ const bookingProvider = {
   ],
   resolve: (_, context = {}) => {
     const booking = context.booking || {};
-    const date = (value) => value ? new Date(value).toLocaleDateString() : '';
+    const date = (value) => value ? new Date(value).toLocaleDateString('en-GB') : '';
+    const currency = (v) => (v == null || v === '' ? '' : `PKR ${Number(v).toLocaleString('en-PK')}`);
     return {
       'booking.number': booking.number || booking.bookingNumber || '',
       'booking.date': date(booking.date || booking.bookingDate || booking.createdAt),
       'booking.deliveryDate': date(booking.deliveryDate || booking.expectedDeliveryDate),
-      'booking.amount': booking.amount != null ? String(booking.amount) : String(booking.bookingAmount || ''),
-      'booking.totalAmount': booking.totalAmount != null ? String(booking.totalAmount) : '',
+      'booking.amount': currency(booking.amount != null ? booking.amount : booking.bookingAmount),
+      'booking.totalAmount': currency(booking.totalAmount),
       'booking.status': booking.status || '',
     };
   },

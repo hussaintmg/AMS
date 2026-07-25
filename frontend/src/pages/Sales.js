@@ -2531,11 +2531,20 @@ function Invoices() {
     const handleRecordPayment = async (e) => {
         e.preventDefault();
         try {
-            await invoiceAPI.recordPayment(selectedItem.id, paymentData);
+            const invoiceId = selectedItem.id;
+            await invoiceAPI.recordPayment(invoiceId, paymentData);
             toast.success('Payment recorded successfully');
             setShowPaymentModal(false);
-            setSelectedItem(null);
+            setPaymentData({ amount: '', paymentMethodId: '', referenceNumber: '', notes: '' });
             fetchData();
+            // Re-open the invoice with fresh details so the new payment (method +
+            // reference) shows immediately in the payment history table.
+            try {
+                const res = await invoiceAPI.getById(invoiceId);
+                setInvoiceDetails(res.data?.data);
+                setModalMode('view');
+                setShowModal(true);
+            } catch { /* list already refreshed */ }
         } catch (error) {
             toast.error(error.response?.data?.message || 'Failed to record payment');
         }
@@ -2890,18 +2899,26 @@ function Invoices() {
                                 <div style={{ flex: 1 }}>
                                     <h6 style={{ fontSize: '0.85rem', fontWeight: '600', color: '#374151', marginBottom: '1rem' }}>Payment History</h6>
                                     <div style={{ border: '1px solid #e5e7eb', borderRadius: '6px', overflow: 'hidden' }}>
-                                        {invoiceDetails.payments.map((payment, i) => (
-                                            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.75rem', borderBottom: i < invoiceDetails.payments.length - 1 ? '1px solid #f3f4f6' : 'none', background: '#fff' }}>
-                                                <div>
-                                                    <div style={{ fontWeight: '500', color: '#111827', fontSize: '0.9rem' }}>{payment.payment_method_name || 'Payment'}</div>
-                                                    <div style={{ fontSize: '0.8rem', color: '#9ca3af' }}>{new Date(payment.payment_date).toLocaleDateString()}</div>
-                                                </div>
-                                                <div style={{ textAlign: 'right' }}>
-                                                    <div style={{ fontWeight: '600', color: '#16a34a' }}>PKR {Number(payment.amount).toLocaleString()}</div>
-                                                    <div style={{ fontSize: '0.8rem', color: '#9ca3af' }}>{payment.reference_number || '-'}</div>
-                                                </div>
-                                            </div>
-                                        ))}
+                                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                                            <thead>
+                                                <tr style={{ background: '#f9fafb', color: '#6b7280', textAlign: 'left' }}>
+                                                    <th style={{ padding: '0.5rem 0.75rem', fontWeight: '600' }}>Date</th>
+                                                    <th style={{ padding: '0.5rem 0.75rem', fontWeight: '600' }}>Method</th>
+                                                    <th style={{ padding: '0.5rem 0.75rem', fontWeight: '600' }}>Reference</th>
+                                                    <th style={{ padding: '0.5rem 0.75rem', fontWeight: '600', textAlign: 'right' }}>Amount</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {invoiceDetails.payments.map((payment, i) => (
+                                                    <tr key={payment.id || i} style={{ borderTop: '1px solid #f3f4f6', background: '#fff' }}>
+                                                        <td style={{ padding: '0.5rem 0.75rem', color: '#4b5563' }}>{payment.payment_date ? new Date(payment.payment_date).toLocaleDateString('en-GB') : '—'}</td>
+                                                        <td style={{ padding: '0.5rem 0.75rem', color: '#111827', fontWeight: '500', textTransform: 'capitalize' }}>{payment.payment_method_name || '—'}</td>
+                                                        <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280' }}>{payment.reference_number || '—'}</td>
+                                                        <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right', fontWeight: '600', color: '#16a34a' }}>PKR {Number(payment.amount || 0).toLocaleString()}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
                                     </div>
                                 </div>
                             )}

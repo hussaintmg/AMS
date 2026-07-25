@@ -9,11 +9,12 @@ const authProvider = {
   ],
   resolve: (vars, context) => {
     const origin = context?.origin || process.env.APP_URL || '';
+    const auth = context?.auth || {};
     return {
-      'auth.customerLoginLink': context?.customerLoginLink || `${origin}/login`,
-      'auth.resetPasswordLink': context?.resetPasswordLink || `${origin}/reset-password`,
-      'auth.resetCode': context?.resetCode || '',
-      'auth.loginLink': context?.loginLink || `${origin}/login`,
+      'auth.customerLoginLink': auth.customerLoginLink || context?.customerLoginLink || `${origin}/login`,
+      'auth.resetPasswordLink': auth.resetPasswordLink || context?.resetPasswordLink || `${origin}/reset-password`,
+      'auth.resetCode': auth.resetCode || context?.resetCode || '',
+      'auth.loginLink': auth.loginLink || context?.loginLink || `${origin}/login`,
     };
   }
 };

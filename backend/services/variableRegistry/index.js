@@ -10,6 +10,8 @@ const salesOrderProvider = require('./providers/salesOrderProvider');
 const vehicleProvider = require('./providers/vehicleProvider');
 const serviceProvider = require('./providers/serviceProvider');
 const erpProvider = require('./providers/erpProvider');
+const companyProvider = require('./providers/companyProvider');
+const documentProvider = require('./providers/documentProvider');
 
 const providers = [
   systemProvider,
@@ -24,6 +26,8 @@ const providers = [
   vehicleProvider,
   serviceProvider,
   erpProvider,
+  companyProvider,
+  documentProvider,
 ];
 
 function getAllVariables() {

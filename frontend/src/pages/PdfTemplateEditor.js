@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Save, Type, Square, Minus, Trash2, Copy, Plus, Search, ChevronDown, Image, FilePlus2, Link, QrCode, Variable } from 'lucide-react';
+import { ArrowLeft, Save, Type, Square, Minus, Trash2, Copy, Plus, Search, ChevronDown, Image, FilePlus2, Link, QrCode, Variable, PanelLeftOpen, PanelRightOpen } from 'lucide-react';
 import QRCode from 'qrcode';
 import toast from 'react-hot-toast';
 import { pdfManagementAPI } from '../services/api';
@@ -10,8 +10,15 @@ const FORMATS = { A4: { width: 794, height: 1123 }, A3: { width: 1123, height: 1
 const uid = () => Math.random().toString(36).slice(2, 10);
 const cssObject = (css = []) => Object.fromEntries((Array.isArray(css) ? css : []).filter(Boolean).map(x => [x.property, x.value]));
 const cssArray = obj => Object.entries(obj).map(([property, value]) => ({ property, value: String(value) }));
-const sample = { document: { title: 'QUOTATION', number: 'QT-2026-0001', status: 'draft', totalAmount: 'PKR 5,250,000', taxAmount: 'PKR 250,000', createdAt: '15/07/2026' }, customer: { fullName: 'Muhammad Ahmed', email: 'customer@example.com', phone: '0300-0000000' } };
-const resolve = text => String(text || '').replace(/\{\{\s*([^}]+)\s*\}\}/g, (_, key) => key.trim().split('.').reduce((v, p) => v?.[p], sample) ?? `{{${key}}}`);
+const sample = {
+  document: { title: 'QUOTATION', number: 'QT-2026-000001', status: 'draft', date: '15/07/2026', totalAmount: 'PKR 5,250,000', taxAmount: 'PKR 250,000', subtotal: 'PKR 5,000,000', discountAmount: 'PKR 20,000', discountPercentage: '5', additionalCharges: 'PKR 0', vehiclePrice: 'PKR 5,000,000', validUntil: '22/07/2026', validityDays: '7', bookingDate: '15/07/2026', bookingAmount: 'PKR 500,000', deliveryDate: '30/07/2026', priority: 'high', orderDate: '15/07/2026', paymentMode: 'cash', invoiceDate: '15/07/2026', dueDate: '14/08/2026', paidAmount: 'PKR 2,000,000', balanceAmount: 'PKR 3,250,000', notes: 'Thank you for your business.', itemName: 'Toyota Corolla XLI' },
+  customer: { fullName: 'Muhammad Ahmed', firstName: 'Muhammad', lastName: 'Ahmed', companyName: 'Ahmed Motors', email: 'customer@example.com', phone: '0300-0000000', alternatePhone: '0321-1111111', customerCode: 'CUS-000001', address: 'Fareed Durrani Road', city: 'Karachi', state: 'Sindh', country: 'Pakistan', zipCode: '75730' },
+  vehicle: { name: 'Toyota Corolla XLI', make: 'Toyota', model: 'Corolla', variant: 'XLI', color: 'White', year: '2025', vin: 'VIN-SAMPLE-001' },
+  generator: { fullName: 'Hussain Admin', email: 'sales@company.com', phone: '+92 300 0000000' },
+  company: { name: 'OMODA | JAECOO' },
+  item: { name: 'Toyota Corolla XLI', list: 'Toyota Corolla XLI, Accessories' },
+};
+const resolve = text => String(text || '').replace(/\{\{\s*([^}]+)\s*\}\}/g, (_, key) => { const v = key.trim().split('.').reduce((o, p) => (o == null ? undefined : o[p]), sample); return v == null || v === '' ? `{{${key.trim()}}}` : v; });
 const newPage = () => ({ config: { format: 'A4', width: 794, height: 1123, backgroundColor: '#ffffff' }, backgroundImage: '', bgSize: 'cover', bgPosition: 'center center', elements: [] });
 const normalizePage = p => ({ ...newPage(), ...p, config: { ...newPage().config, ...(p?.config || {}) }, elements: Array.isArray(p?.elements) ? p.elements.map(e => ({ ...e, id: e.id || uid(), css: Array.isArray(e.css) ? e.css : [] })) : [] });
 
@@ -79,7 +86,25 @@ export default function PdfTemplateEditor() {
   const [template, setTemplate] = useState(null), [pageIndex, setPageIndex] = useState(0), [selectedId, setSelectedId] = useState(null), [variables, setVariables] = useState([]), [saving, setSaving] = useState(false), [elementOpen, setElementOpen] = useState(true);
   const [sidebarVarOpen, setSidebarVarOpen] = useState(false);
   const [sidebarVarSearch, setSidebarVarSearch] = useState('');
+  const [varMenuPos, setVarMenuPos] = useState(null);
+  const [leftOpen, setLeftOpen] = useState(false);
+  const [rightOpen, setRightOpen] = useState(false);
   const htmlRef = useRef(null);
+  const sidebarVarBtnRef = useRef(null);
+
+  // Open the Variables popover anchored to its trigger. Using fixed positioning
+  // lets the menu escape the sidebar's overflow:auto (no more clipping).
+  const toggleSidebarVars = () => {
+    setSidebarVarOpen(open => {
+      if (!open && sidebarVarBtnRef.current) {
+        const r = sidebarVarBtnRef.current.getBoundingClientRect();
+        const width = 300;
+        const left = Math.min(r.left, window.innerWidth - width - 12);
+        setVarMenuPos({ top: r.bottom + 4, left: Math.max(8, left), maxHeight: window.innerHeight - r.bottom - 16, width });
+      }
+      return !open;
+    });
+  };
 
   useEffect(() => {
     let live = true;
@@ -115,7 +140,7 @@ export default function PdfTemplateEditor() {
         height: type === 'rectangle' ? '120px' : type === 'line' ? '1px' : type === 'qr' ? '140px' : type === 'image' ? '160px' : '44px',
         'font-size': '16px', 'font-weight': '400',
         color: type === 'link' ? '#2563eb' : '#111827',
-        'background-color': type === 'rectangle' ? '#e2e8f0' : 'transparent',
+        'background-color': type === 'rectangle' ? '#e2e8f0' : type === 'line' ? '#334155' : 'transparent',
         'text-align': 'left', 'border-radius': '0px', opacity: '1'
       })
     };
@@ -147,6 +172,25 @@ export default function PdfTemplateEditor() {
   const setText = text => selectedId && mutateElement(selectedId, el => { el.text = text; });
   const setField = (key, value) => selectedId && mutateElement(selectedId, el => { el[key] = value; });
   const removeElement = () => { if (!selectedId) return; mutatePage(pageIndex, p => { p.elements = p.elements.filter(e => e.id !== selectedId); }); setSelectedId(null); };
+  const nudge = (dx, dy) => selectedId && mutateElement(selectedId, el => { const o = cssObject(el.css); o.left = `${Math.max(0, (parseFloat(o.left) || 0) + dx)}px`; o.top = `${Math.max(0, (parseFloat(o.top) || 0) + dy)}px`; el.css = cssArray(o); });
+
+  // Keyboard shortcuts on the canvas: Delete removes, arrows nudge (Shift = 10px).
+  useEffect(() => {
+    if (isHtml) return undefined;
+    const onKey = e => {
+      const tag = (e.target.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select' || e.target.isContentEditable) return;
+      if (!selectedId) return;
+      const step = e.shiftKey ? 10 : 1;
+      if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); removeElement(); }
+      else if (e.key === 'ArrowLeft') { e.preventDefault(); nudge(-step, 0); }
+      else if (e.key === 'ArrowRight') { e.preventDefault(); nudge(step, 0); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); nudge(0, -step); }
+      else if (e.key === 'ArrowDown') { e.preventDefault(); nudge(0, step); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selectedId, isHtml, pageIndex]);
 
   const insertVariable = v => {
     if (isHtml) { insertIntoHtml(v.reference); return; }
@@ -214,7 +258,7 @@ export default function PdfTemplateEditor() {
       </header>
 
       {/* ── Left Sidebar ── */}
-      <aside className="pdf-tools">
+      <aside className={`pdf-tools${leftOpen ? ' open' : ''}`}>
         <button className="pdf-add-element-trigger" onClick={() => setElementOpen(v => !v)}>
           <span><Plus size={17} />Add Element</span>
           <ChevronDown size={16} className={elementOpen ? 'rotated' : ''} />
@@ -232,26 +276,29 @@ export default function PdfTemplateEditor() {
 
         {/* Sidebar Variables */}
         <div className="pdf-variable-picker">
-          <button className="pdf-variable-trigger" onClick={() => setSidebarVarOpen(v => !v)}>
+          <button ref={sidebarVarBtnRef} className="pdf-variable-trigger" onClick={toggleSidebarVars}>
             <span><Search size={16} />Variables</span>
             <ChevronDown size={16} className={sidebarVarOpen ? 'rotated' : ''} />
           </button>
-          {sidebarVarOpen && (
-            <div className="pdf-variable-menu">
-              <div className="pdf-variable-search">
-                <Search size={15} />
-                <input autoFocus placeholder="Search variables" value={sidebarVarSearch} onChange={e => setSidebarVarSearch(e.target.value)} />
+          {sidebarVarOpen && varMenuPos && (
+            <>
+              <div className="pdf-var-popover-backdrop" onClick={() => setSidebarVarOpen(false)} />
+              <div className="pdf-variable-menu floating" style={{ position: 'fixed', top: varMenuPos.top, left: varMenuPos.left, width: varMenuPos.width, maxHeight: varMenuPos.maxHeight }}>
+                <div className="pdf-variable-search">
+                  <Search size={15} />
+                  <input autoFocus placeholder="Search variables" value={sidebarVarSearch} onChange={e => setSidebarVarSearch(e.target.value)} />
+                </div>
+                <div className="pdf-variable-results">
+                  {filteredSidebarVars.map(v => (
+                    <button key={v.key} draggable onDragStart={e => e.dataTransfer.setData('application/pdf-variable', v.reference)} onClick={() => { insertVariable(v); setSidebarVarOpen(false); }}>
+                      <code>{v.reference}</code>
+                      <small>{v.label || v.category}</small>
+                    </button>
+                  ))}
+                  {!filteredSidebarVars.length && <p>No variables found</p>}
+                </div>
               </div>
-              <div className="pdf-variable-results">
-                {filteredSidebarVars.map(v => (
-                  <button key={v.key} draggable onDragStart={e => e.dataTransfer.setData('application/pdf-variable', v.reference)} onClick={() => insertVariable(v)}>
-                    <code>{v.reference}</code>
-                    <small>{v.label || v.category}</small>
-                  </button>
-                ))}
-                {!filteredSidebarVars.length && <p>No variables found</p>}
-              </div>
-            </div>
+            </>
           )}
         </div>
 
@@ -286,13 +333,13 @@ export default function PdfTemplateEditor() {
           </div>
         </main>
       ) : (
-        <main className="pdf-canvas-area">
+        <main className="pdf-canvas-area" onMouseDown={() => { setLeftOpen(false); setRightOpen(false); }}>
           <div className="pdf-page-meta">Page {pageIndex + 1} of {pages.length} - {page.config.format}</div>
-          <div className="pdf-canvas" style={canvasStyle} onDragOver={e => e.preventDefault()} onDrop={dropVariable} onMouseDown={e => { if (e.target === e.currentTarget) setSelectedId(null); }}>
+          <div className="pdf-canvas" style={canvasStyle} onDragOver={e => e.preventDefault()} onDrop={dropVariable} onMouseDown={e => { if (e.target === e.currentTarget) { setSelectedId(null); setLeftOpen(false); setRightOpen(false); } }}>
             {page.elements.map(el => {
               const s = cssObject(el.css);
               return (
-                <div key={el.id} className={`pdf-element ${selectedId === el.id ? 'selected' : ''} ${el.type}`} onMouseDown={e => beginMove(e, el)} style={{ left: s.left, top: s.top, width: s.width, height: s.height, fontSize: s['font-size'], fontWeight: s['font-weight'], fontFamily: s['font-family'], color: s.color, textAlign: s['text-align'], backgroundColor: s['background-color'], borderRadius: s['border-radius'], opacity: s.opacity, lineHeight: s['line-height'], padding: s.padding, border: s.border }}>
+                <div key={el.id} className={`pdf-element ${selectedId === el.id ? 'selected' : ''} ${el.type}`} onMouseDown={e => beginMove(e, el)} style={{ left: s.left, top: s.top, width: s.width, height: s.height, fontSize: s['font-size'], fontWeight: s['font-weight'], fontFamily: s['font-family'], fontStyle: s['font-style'], letterSpacing: s['letter-spacing'], color: s.color, textAlign: s['text-align'], backgroundColor: s['background-color'], borderRadius: s['border-radius'], opacity: s.opacity, lineHeight: s['line-height'], padding: s.padding, border: s.border }}>
                   {el.type === 'text' ? resolve(el.text) : el.type === 'image' ? (el.imageUrl ? <img src={resolve(el.imageUrl)} alt="Template element" /> : <span className="pdf-image-placeholder"><Image size={28} />Choose image</span>) : el.type === 'link' ? <a href={resolve(el.url)} onClick={e => e.preventDefault()}>{resolve(el.text) || resolve(el.url)}</a> : el.type === 'qr' ? <QrPreview value={el.qrValue} /> : null}
                 </div>
               );
@@ -303,7 +350,7 @@ export default function PdfTemplateEditor() {
 
       {/* ── Right Properties Panel ── */}
       {!isHtml && (
-        <aside className="pdf-properties">
+        <aside className={`pdf-properties${rightOpen ? ' open' : ''}`}>
           {selected ? (
             <>
               <div className="property-title">
@@ -359,6 +406,16 @@ export default function PdfTemplateEditor() {
                 <option value="400">Regular</option>
                 <option value="600">Semi bold</option>
                 <option value="700">Bold</option>
+              </select></label>
+              <label>Font style<select value={style['font-style'] || 'normal'} onChange={e => setStyle('font-style', e.target.value)}>
+                <option value="normal">Normal</option>
+                <option value="italic">Italic</option>
+              </select></label>
+              <label>Font family<select value={style['font-family'] || ''} onChange={e => setStyle('font-family', e.target.value)}>
+                <option value="">Default (Sans)</option>
+                <option value="Helvetica, Arial, sans-serif">Sans (Helvetica)</option>
+                <option value="Georgia, 'Times New Roman', serif">Serif (Georgia/Times)</option>
+                <option value="'Courier New', monospace">Monospace (Courier)</option>
               </select></label>
               <label>Border radius<input value={style['border-radius'] || '0px'} onChange={e => setStyle('border-radius', e.target.value)} /></label>
               <label>Opacity<input type="range" min="0" max="1" step="0.05" value={style.opacity || '1'} onChange={e => setStyle('opacity', e.target.value)} /></label>
@@ -420,6 +477,18 @@ export default function PdfTemplateEditor() {
             </>
           )}
         </aside>
+      )}
+
+      {/* ── Mobile Toggle Buttons ── */}
+      {!isHtml && (
+        <>
+          <button className="pdf-mobile-toggle" style={{ left: 16 }} onClick={() => { setLeftOpen(o => !o); setRightOpen(false); }} title="Toggle tools">
+            <PanelLeftOpen size={20} />
+          </button>
+          <button className="pdf-mobile-toggle" style={{ left: 68 }} onClick={() => { setRightOpen(o => !o); setLeftOpen(false); }} title="Toggle properties">
+            <PanelRightOpen size={20} />
+          </button>
+        </>
       )}
     </div>
   );

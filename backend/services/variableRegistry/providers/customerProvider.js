@@ -17,7 +17,7 @@ const customerProvider = {
       'customer.fullName': [customer.firstName, customer.lastName].filter(Boolean).join(' ') || '',
       'customer.email': customer.email || '',
       'customer.phone': customer.phone || '',
-      'customer.company': customer.company || '',
+      'customer.company': customer.company || customer.companyName || '',
     };
   }
 };

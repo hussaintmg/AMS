@@ -10,11 +10,13 @@ const vehicleProvider = {
   ],
   resolve: (vars, context) => {
     const vehicle = context?.vehicle || {};
+    // In the Vehicle schema make/model/variant are sub-objects ({ name, code }).
+    const nameOf = (v) => (v && typeof v === 'object' ? v.name || '' : v || '');
     return {
-      'vehicle.make': vehicle.make || '',
-      'vehicle.model': vehicle.model || '',
+      'vehicle.make': nameOf(vehicle.make),
+      'vehicle.model': nameOf(vehicle.model),
       'vehicle.year': vehicle.year != null ? String(vehicle.year) : '',
-      'vehicle.plate': vehicle.plate || vehicle.plateNumber || '',
+      'vehicle.plate': vehicle.plate || vehicle.plateNumber || vehicle.registrationNumber || '',
       'vehicle.vin': vehicle.vin || vehicle.chassisNumber || '',
     };
   }

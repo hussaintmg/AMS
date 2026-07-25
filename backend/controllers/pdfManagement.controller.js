@@ -1,14 +1,13 @@
 const archiver = require('archiver');
 const { PassThrough } = require('stream');
-const { PdfTemplate, PdfUsage, PdfVariable, Quotation, Booking, SalesOrder, Invoice } = require('../models');
+const { PdfTemplate, PdfUsage, PdfVariable } = require('../models');
 const { renderPdf } = require('../services/pdfRenderer.service');
+const { TYPES, buildDataBag, variableCatalog, companyName } = require('../services/pdfData.service');
+const { resolveTokens } = require('../services/pdfFormat.cjs');
 
-const TYPES = {
-  quotation: { label: 'Quotation', Model: Quotation, number: 'quotationNumber' },
-  booking: { label: 'Booking', Model: Booking, number: 'bookingNumber' },
-  order: { label: 'Sales Order', Model: SalesOrder, number: 'orderNumber' },
-  invoice: { label: 'Invoice', Model: Invoice, number: 'invoiceNumber' }
-};
+// Set PDF_DEBUG=1 to log resolved variables for each generated document while
+// testing. Left off by default so normal runs stay quiet.
+const PDF_DEBUG = process.env.PDF_DEBUG === '1';
 const userId = (req) => req.user?.id || req.user?._id;
 const defaultPage = () => ({
   config: { format: 'A4', width: 794, height: 1123 },
@@ -82,45 +81,67 @@ exports.assignUsage = async (req, res, next) => {
   } catch (error) { next(error); }
 };
 exports.variables = async (req, res) => {
-  const type = req.query.documentType || 'quotation';
-  const common = ['document.title', 'document.number', 'document.status', 'document.totalAmount', 'document.taxAmount', 'document.discountAmount', 'document.createdAt', 'customer.fullName', 'customer.firstName', 'customer.lastName', 'customer.email', 'customer.phone'];
-  const extra = type === 'invoice' ? ['document.invoiceDate', 'document.dueDate', 'document.subtotal', 'document.paidAmount', 'document.balanceAmount'] : type === 'booking' ? ['document.bookingDate', 'document.deliveryDate', 'document.bookingAmount', 'document.priority'] : type === 'order' ? ['document.orderDate', 'document.deliveryDate', 'document.subtotal', 'document.paidAmount', 'document.balanceAmount'] : ['document.validUntil', 'document.vehiclePrice', 'document.validityDays'];
-  const builtIns = [...common, ...extra].map((key) => ({ key, reference: `{{${key}}}`, category: key.split('.')[0], label: key }));
+  const type = TYPES[req.query.documentType] ? req.query.documentType : 'quotation';
+  const builtIns = variableCatalog(type).map((v) => ({ ...v, builtIn: true }));
   const custom = await PdfVariable.find({ documentType: type }).sort({ key: 1 }).lean();
-  res.json({ success: true, data: { variables: [...builtIns, ...custom.map((v) => ({ ...v, reference: `{{${v.key}}}` }))] } });
+  res.json({ success: true, data: { variables: [...builtIns, ...custom.map((v) => ({ ...v, id: String(v._id), reference: `{{${v.key}}}` }))] } });
 };
 exports.createVariable = async (req,res,next) => { try { const {key,label,category='custom',documentType}=req.body; if(!key||!TYPES[documentType]) return res.status(400).json({success:false,message:'Key and document type are required'}); const variable=await PdfVariable.create({key:key.replace(/^{{|}}$/g,'').trim(),label,category,documentType}); res.status(201).json({success:true,data:{variable}}); } catch(e){next(e);} };
+exports.deleteVariable = async (req, res, next) => {
+  try {
+    const deleted = await PdfVariable.findByIdAndDelete(req.params.id);
+    if (!deleted) return res.status(404).json({ success: false, message: 'Variable not found' });
+    res.json({ success: true, message: 'Variable removed' });
+  } catch (e) { next(e); }
+};
+
+/**
+ * Resolve every catalog variable against the most recent real record of the
+ * type, so the UI can show a live sample value beside each variable and users
+ * can confirm the variable actually returns real data.
+ */
+exports.variablePreview = async (req, res, next) => {
+  try {
+    const type = TYPES[req.params.documentType] ? req.params.documentType : 'quotation';
+    const config = TYPES[type];
+    const query = config.Model.findOne().sort({ createdAt: -1 })
+      .populate('customer')
+      .populate('createdBy', 'firstName lastName fullName email phone designation employeeId');
+    if (config.Model.schema.path('vehicle')) query.populate('vehicle');
+    const record = await query.lean();
+    const samples = {};
+    if (record) {
+      const data = buildDataBag(type, record, { companyName: await companyName() });
+      [...variableCatalog(type), ...(await PdfVariable.find({ documentType: type }).lean()).map((v) => ({ key: v.key }))]
+        .forEach(({ key }) => { samples[key] = resolveTokens(`{{${key}}}`, data); });
+    }
+    res.json({ success: true, data: { sourceNumber: record?.[config.number] || null, samples } });
+  } catch (e) { next(e); }
+};
 exports.bulkVariables = async (req,res,next) => { try { const {documentType,variables=[]}=req.body; if(!TYPES[documentType]||!Array.isArray(variables)) return res.status(400).json({success:false,message:'Invalid import data'}); let count=0; for(const v of variables){const key=String(v.key||v.name||'').replace(/^{{|}}$/g,'').trim(); if(key){await PdfVariable.updateOne({documentType,key},{$set:{key,label:v.label||v.name||key,category:v.category||'custom',documentType}},{upsert:true});count++;}} res.json({success:true,data:{count}}); } catch(e){next(e);} };
 
 async function loadRecord(type, id) {
   const config = TYPES[type]; if (!config) throw Object.assign(new Error('Invalid document type'), { statusCode: 400 });
-  const record = await config.Model.findById(id).populate('customer').populate('vehicle').lean();
+  const query = config.Model.findById(id)
+    .populate('customer')
+    .populate('createdBy', 'firstName lastName fullName email phone designation employeeId');
+  if (config.Model.schema.path('vehicle')) query.populate('vehicle');
+  const record = await query.lean();
   if (!record) throw Object.assign(new Error(`${config.label} not found`), { statusCode: 404 });
-  const customer = record.customer || {};
-  return { raw: record, data: { document: { ...record, title: config.label, number: record[config.number] }, customer: { ...customer, fullName: [customer.firstName, customer.lastName].filter(Boolean).join(' ') || customer.name || '' }, vehicle: record.vehicle || {} }, name: record[config.number] || id };
+  const data = buildDataBag(type, record, { companyName: await companyName() });
+  if (PDF_DEBUG) {
+    const flat = {};
+    variableCatalog(type).forEach(({ key }) => { flat[key] = resolveTokens(`{{${key}}}`, data); });
+    console.log(`\n[PDF_DEBUG] ${config.label} ${record[config.number] || id} resolved variables:`);
+    console.table(flat);
+  }
+  return { raw: record, data, name: record[config.number] || id };
 }
 async function activeTemplate(type) {
   await ensureUsages(); const usage = await PdfUsage.findOne({ documentType: type }).populate('template').lean();
   if (!usage?.template || usage.template.status !== 'active') throw Object.assign(new Error(`No active PDF template assigned for ${TYPES[type]?.label || type}`), { statusCode: 404 });
   return usage.template;
 }
-/** Resolve {{token}} placeholders in a string against a document data bag. */
-const getPath = (source, key) => key.split('.').reduce((value, part) => (value == null ? undefined : value[part]), source);
-const formatToken = (value, key) => {
-  if (value == null) return '';
-  if (value instanceof Date || /date|until|createdAt|updatedAt/i.test(key)) {
-    const date = new Date(value);
-    if (!Number.isNaN(date.getTime())) return date.toLocaleDateString('en-GB');
-  }
-  if (typeof value === 'object') {
-    return Array.isArray(value)
-      ? value.map((item) => item.description || item.name || JSON.stringify(item)).join(', ')
-      : JSON.stringify(value);
-  }
-  return String(value);
-};
-const resolveTokens = (text, data) => String(text || '')
-  .replace(/\{\{\s*([^}]+)\s*\}\}/g, (_, key) => formatToken(getPath(data, key.trim()), key.trim()));
 
 /**
  * Return an HTML-mode template with its placeholders filled in. The client

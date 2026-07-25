@@ -1,6 +1,7 @@
 const { EmailUsage, EmailTemplate, EmailComponent, EmailTemplateVersion, EmailVariable } = require('../models');
 const variableRegistry = require('./variableRegistry');
 const sanitizer = require('./emailSanitizer.service');
+const { enrichContext } = require('./emailContext');
 const logger = require('../utils/logger');
 
 const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -49,13 +50,18 @@ function resolvePlaceholders(text, context = {}, adminVarDefaults = {}) {
     }
 
     if (resolved === undefined || resolved === null || resolved === '') {
-      return defaultValue !== '' ? defaultValue : varPath;
+      // Never leak the raw token (e.g. "company.phone") into a real email —
+      // use the inline default if provided, otherwise render nothing.
+      return defaultValue;
     }
 
     if (resolved instanceof Date) {
       return formatDate(resolved);
     }
-    if (typeof resolved === 'string' && resolved.length > 5 && /[^\d]/.test(resolved)) {
+    // Only auto-format strings that are unambiguously ISO dates. The old
+    // heuristic parsed any string with digits, turning document numbers like
+    // "QT-2026-000002" into "Feb 1, 2026". Providers already format dates.
+    if (typeof resolved === 'string' && /^\d{4}-\d{2}-\d{2}(?:[T ]\d|\b)/.test(resolved)) {
       const parsed = Date.parse(resolved);
       if (!isNaN(parsed)) {
         return formatDate(resolved);
@@ -85,10 +91,13 @@ async function renderEmail(usageKey, context = {}, options = {}) {
   return renderWithTemplate(template, usage, context);
 }
 
-async function renderWithTemplate(template, usage, context = {}) {
+async function renderWithTemplate(template, usage, rawContext = {}) {
   let html = template.html || '';
   let subject = template.subject || '';
   let plainText = template.plainText || '';
+
+  // Enrich once so company.*, document.* and customer.company always resolve.
+  const context = await enrichContext(rawContext);
 
   html = await resolveGlobalComponents(html, context?.components || {});
 

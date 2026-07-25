@@ -10,11 +10,14 @@ const quotationProvider = {
   ],
   resolve: (vars, context) => {
     const quotation = context?.quotation || {};
+    const currency = (v) => (v == null || v === '' ? '' : `PKR ${Number(v).toLocaleString('en-PK')}`);
+    const date = (v) => (v ? new Date(v).toLocaleDateString('en-GB') : '');
+    const amount = quotation.amount != null ? quotation.amount : quotation.totalAmount;
     return {
       'quotation.number': quotation.number || quotation.quotationNumber || '',
-      'quotation.date': quotation.date ? new Date(quotation.date).toLocaleDateString() : '',
-      'quotation.validUntil': quotation.validUntil ? new Date(quotation.validUntil).toLocaleDateString() : '',
-      'quotation.amount': quotation.amount != null ? String(quotation.amount) : '',
+      'quotation.date': date(quotation.date || quotation.quotationDate || quotation.createdAt),
+      'quotation.validUntil': date(quotation.validUntil),
+      'quotation.amount': currency(amount),
       'quotation.status': quotation.status || '',
     };
   }
