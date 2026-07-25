@@ -18,6 +18,7 @@ export default function EmailUsage() {
   const [search, setSearch] = useState('');
   const [validationResult, setValidationResult] = useState(null);
   const [detailItem, setDetailItem] = useState(null);
+  const [actionLoading, setActionLoading] = useState('');
 
   useEffect(() => {
     loadUsages();
@@ -74,12 +75,15 @@ export default function EmailUsage() {
 
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return;
+    setActionLoading('delete');
     const deleted = usages.find(u => u._id === deleteTarget);
     removeUsage(deleteTarget);
     try { await emailAPI.deleteUsage(deleteTarget); toast.success('Usage deleted'); setDeleteTarget(null); } catch (e) { if (deleted) addUsage(deleted); toast.error('Delete failed'); }
+    finally { setActionLoading(''); }
   }, [deleteTarget, usages, removeUsage, addUsage]);
 
   const handleValidate = async (id) => {
+    setActionLoading('validate');
     try {
       const r = await emailAPI.validateUsage(id);
       setValidationResult(r.data?.data || r.data);
@@ -87,12 +91,15 @@ export default function EmailUsage() {
     } catch (e) {
       setValidationResult({ valid: false, errors: ['Validation failed'] });
       toast.error('Validation failed');
+    } finally {
+      setActionLoading('');
     }
   };
 
   const handleTemplateAssign = async (usage, templateId) => {
     const previous = usage.template;
     const selectedTemplate = activeTemplates.find(t => t._id === templateId);
+    setActionLoading(`assign-${usage._id}`);
     updateUsage(usage._id, { template: selectedTemplate || templateId || null });
     try {
       const payload = {
@@ -110,6 +117,8 @@ export default function EmailUsage() {
     } catch (e) {
       updateUsage(usage._id, { template: previous });
       toast.error('Template assignment failed');
+    } finally {
+      setActionLoading('');
     }
   };
 
@@ -166,6 +175,7 @@ export default function EmailUsage() {
                   value={u.template?._id || u.template || ''}
                   onChange={(e) => handleTemplateAssign(u, e.target.value)}
                   onClick={(e) => e.stopPropagation()}
+                  disabled={actionLoading === `assign-${u._id}`}
                 >
                   <option value="">Use default/fallback</option>
                   {activeTemplates.map(t => (
@@ -182,7 +192,9 @@ export default function EmailUsage() {
             <div className="email-card-actions">
               <button className="btn btn-sm" onClick={() => setDetailItem(u)}>Detail</button>
               <button className="btn btn-sm" onClick={() => handleEdit(u)}>Edit</button>
-              <button className="btn btn-sm btn-primary" onClick={() => handleValidate(u._id)}>Validate</button>
+              <button className="btn btn-sm btn-primary" onClick={() => handleValidate(u._id)} disabled={actionLoading === 'validate'}>
+                {actionLoading === 'validate' ? <><span className="spinner-mini"></span></> : 'Validate'}
+              </button>
               <button className="btn btn-sm btn-danger" onClick={() => setDeleteTarget(u._id)}>Delete</button>
             </div>
           </div>
@@ -273,7 +285,7 @@ export default function EmailUsage() {
       </EmailDrawer>
 
       <ConfirmModal isOpen={!!deleteTarget} title="Delete Usage" message="Delete this usage mapping?"
-        onConfirm={handleDelete} onCancel={() => setDeleteTarget(null)} confirmText="Delete" cancelText="Cancel" type="danger" />
+        onConfirm={handleDelete} onCancel={() => setDeleteTarget(null)} confirmText="Delete" cancelText="Cancel" type="danger" loading={actionLoading === 'delete'} />
     </div>
   );
 }

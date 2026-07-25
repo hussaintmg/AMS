@@ -2,7 +2,7 @@ import React from 'react';
 import useModalKeyboard from '../hooks/useModalKeyboard';
 import '../styles/userManagement.css';
 
-const ConfirmModal = ({ isOpen, title, message, onConfirm, onCancel, confirmText = 'Confirm', cancelText = 'Cancel', type = 'danger' }) => {
+const ConfirmModal = ({ isOpen, title, message, onConfirm, onCancel, confirmText = 'Confirm', cancelText = 'Cancel', type = 'danger', loading = false }) => {
     useModalKeyboard(isOpen, onCancel, onConfirm);
 
     if (!isOpen) return null;
@@ -18,12 +18,13 @@ const ConfirmModal = ({ isOpen, title, message, onConfirm, onCancel, confirmText
                     <p>{message}</p>
                 </div>
                 <div className="modal-footer" style={{ borderTop: 'none', paddingTop: 0 }}>
-                    <button className="btn btn-secondary" onClick={onCancel}>{cancelText}</button>
+                    <button className="btn btn-secondary" onClick={onCancel} disabled={loading}>{cancelText}</button>
                     <button
                         className={`btn btn-${type === 'danger' ? 'danger' : 'primary'}`}
                         onClick={onConfirm}
+                        disabled={loading}
                     >
-                        {confirmText}
+                        {loading ? <><span className="spinner-mini"></span> Processing...</> : confirmText}
                     </button>
                 </div>
             </div>

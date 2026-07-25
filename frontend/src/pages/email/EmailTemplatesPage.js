@@ -29,6 +29,7 @@ export default function EmailTemplatesPage() {
   const [versions, setVersions] = useState([]);
   const [variableMappings, setVariableMappings] = useState({});
   const [showVariableSelector, setShowVariableSelector] = useState(false);
+  const [actionLoading, setActionLoading] = useState('');
 
   useEffect(() => {
     loadTemplates({ status: filterStatus !== 'all' ? filterStatus : undefined });
@@ -84,6 +85,7 @@ export default function EmailTemplatesPage() {
 
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return;
+    setActionLoading('delete');
     const deleted = templates.find(t => t._id === deleteTarget);
     removeTemplate(deleteTarget);
     if (selectedTemplate?._id === deleteTarget) setSelectedTemplate(null);
@@ -94,10 +96,13 @@ export default function EmailTemplatesPage() {
     } catch (e) {
       if (deleted) addTemplate(deleted);
       toast.error('Delete failed');
+    } finally {
+      setActionLoading('');
     }
   }, [deleteTarget, templates, selectedTemplate, removeTemplate, addTemplate]);
 
   const handlePreview = async (tmpl) => {
+    setActionLoading('preview');
     try {
       const r = await emailAPI.previewEmail({ templateId: tmpl._id, context: variableMappings });
       setPreviewHtml(r.data?.data?.rendered?.html || '<p>No preview available</p>');
@@ -105,21 +110,27 @@ export default function EmailTemplatesPage() {
       setShowPreview(true);
     } catch (e) {
       toast.error('Preview failed');
+    } finally {
+      setActionLoading('');
     }
   };
 
   const handleTestSend = async () => {
     if (!testEmail || !selectedTemplate) return;
+    setActionLoading('send');
     try {
       await emailAPI.sendTestEmail({ templateId: selectedTemplate._id, email: testEmail, context: variableMappings });
       toast.success('Test email sent');
       setShowTest(false);
     } catch (e) {
       toast.error('Send failed');
+    } finally {
+      setActionLoading('');
     }
   };
 
   const loadVersions = async (tmpl) => {
+    setActionLoading('versions');
     try {
       const r = await emailAPI.getVersions(tmpl._id);
       setVersions(r.data?.data?.versions || []);
@@ -127,10 +138,13 @@ export default function EmailTemplatesPage() {
       setShowVersions(true);
     } catch (e) {
       toast.error('Failed to load versions');
+    } finally {
+      setActionLoading('');
     }
   };
 
   const handleRestore = async (versionId) => {
+    setActionLoading('restore');
     try {
       await emailAPI.restoreVersion(versionId);
       toast.success('Version restored');
@@ -138,11 +152,14 @@ export default function EmailTemplatesPage() {
       setShowVersions(false);
     } catch (e) {
       toast.error('Restore failed');
+    } finally {
+      setActionLoading('');
     }
   };
 
   const handleToggleActive = async (tmpl) => {
     const prevActive = tmpl.isActive || tmpl.active;
+    setActionLoading('toggle');
     updateTemplate(tmpl._id, { isActive: !prevActive });
     try {
       if (prevActive) {
@@ -155,6 +172,8 @@ export default function EmailTemplatesPage() {
     } catch (e) {
       updateTemplate(tmpl._id, { isActive: prevActive });
       toast.error('Toggle failed');
+    } finally {
+      setActionLoading('');
     }
   };
 
@@ -217,11 +236,17 @@ export default function EmailTemplatesPage() {
             </div>
             <div className="email-card-actions">
               <button className="btn btn-sm btn-primary" onClick={(e) => { e.stopPropagation(); navigate(`/email/templates/${t._id}/editor`); }}>Builder</button>
-              <button className="btn btn-sm btn-primary" onClick={(e) => { e.stopPropagation(); handlePreview(t); }}>Preview</button>
+              <button className="btn btn-sm btn-primary" onClick={(e) => { e.stopPropagation(); handlePreview(t); }} disabled={actionLoading === 'preview'}>
+                {actionLoading === 'preview' ? <><span className="spinner-mini"></span> Loading...</> : 'Preview'}
+              </button>
               <button className="btn btn-sm btn-secondary" onClick={(e) => { e.stopPropagation(); setSelectedTemplate(t); setShowTest(true); }}>Test</button>
-              <button className="btn btn-sm" onClick={(e) => { e.stopPropagation(); loadVersions(t); }}>Versions</button>
+              <button className="btn btn-sm" onClick={(e) => { e.stopPropagation(); loadVersions(t); }} disabled={actionLoading === 'versions'}>
+                {actionLoading === 'versions' ? <><span className="spinner-mini"></span></> : 'Versions'}
+              </button>
               <button className="btn btn-sm" onClick={(e) => { e.stopPropagation(); handleEdit(t); }}>Edit</button>
-              <button className="btn btn-sm" onClick={(e) => { e.stopPropagation(); handleToggleActive(t); }}>{(t.isActive || t.active) ? 'Deactivate' : 'Activate'}</button>
+              <button className="btn btn-sm" onClick={(e) => { e.stopPropagation(); handleToggleActive(t); }} disabled={actionLoading === 'toggle'}>
+                {actionLoading === 'toggle' ? <><span className="spinner-mini"></span></> : ((t.isActive || t.active) ? 'Deactivate' : 'Activate')}
+              </button>
               <button className="btn btn-sm btn-danger" onClick={(e) => { e.stopPropagation(); setDeleteTarget(t._id); }}>Delete</button>
             </div>
           </div>
@@ -277,7 +302,9 @@ export default function EmailTemplatesPage() {
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setShowTest(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={handleTestSend} disabled={!testEmail}>Send</button>
+              <button className="btn btn-primary" onClick={handleTestSend} disabled={!testEmail || actionLoading === 'send'}>
+                {actionLoading === 'send' ? <><span className="spinner-mini"></span> Sending...</> : 'Send'}
+              </button>
             </div>
           </div>
         </div>
@@ -296,7 +323,9 @@ export default function EmailTemplatesPage() {
                       <td>v{v.versionNumber || v.version}</td>
                       <td><span className={`email-card-badge ${v.status === 'published' ? 'email-badge-published' : 'email-badge-draft'}`}>{v.status}</span></td>
                       <td>{new Date(v.createdAt).toLocaleString()}</td>
-                      <td><button className="btn btn-sm btn-primary" onClick={() => handleRestore(v._id)}>Restore</button></td>
+                      <td><button className="btn btn-sm btn-primary" onClick={() => handleRestore(v._id)} disabled={actionLoading === 'restore'}>
+                        {actionLoading === 'restore' ? <><span className="spinner-mini"></span></> : 'Restore'}
+                      </button></td>
                     </tr>
                   ))}
                 </tbody>
@@ -333,7 +362,7 @@ export default function EmailTemplatesPage() {
       )}
 
       <ConfirmModal isOpen={!!deleteTarget} title="Delete Template" message="Delete this template and all its versions?"
-        onConfirm={handleDelete} onCancel={() => setDeleteTarget(null)} confirmText="Delete" cancelText="Cancel" type="danger" />
+        onConfirm={handleDelete} onCancel={() => setDeleteTarget(null)} confirmText="Delete" cancelText="Cancel" type="danger" loading={actionLoading === 'delete'} />
     </div>
   );
 }

@@ -10,28 +10,37 @@ export default function EmailQueue() {
   const [search, setSearch] = useState('');
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [selectedItem, setSelectedItem] = useState(null);
+  const [actionLoading, setActionLoading] = useState('');
 
   useEffect(() => {
     loadQueue({ status: filter !== 'all' ? filter : undefined });
   }, [filter]);
 
   const handleRetry = async (id) => {
+    setActionLoading(`retry-${id}`);
     updateQueueItem(id, { status: 'pending' });
     try { await emailAPI.retryQueueItem(id); toast.success('Retry initiated'); loadQueue(); } catch (e) { updateQueueItem(id, { status: 'failed' }); toast.error('Retry failed'); }
+    finally { setActionLoading(''); }
   };
 
   const handleRetryAll = async () => {
+    setActionLoading('retryAll');
     try { await emailAPI.retryAllQueue(); toast.success('Retry all initiated'); loadQueue(); } catch (e) { toast.error('Retry all failed'); }
+    finally { setActionLoading(''); }
   };
 
   const handleClearSent = async () => {
+    setActionLoading('clearSent');
     try { await emailAPI.clearSentQueue(); toast.success('Sent items cleared'); loadQueue(); } catch (e) { toast.error('Clear failed'); }
+    finally { setActionLoading(''); }
   };
 
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return;
+    setActionLoading('delete');
     removeQueueItem(deleteTarget);
     try { await emailAPI.deleteQueueItem(deleteTarget); toast.success('Item deleted'); setDeleteTarget(null); } catch (e) { toast.error('Delete failed'); loadQueue(); }
+    finally { setActionLoading(''); }
   }, [deleteTarget, removeQueueItem, loadQueue]);
 
   const getStatusBadge = (status) => {
@@ -49,8 +58,12 @@ export default function EmailQueue() {
       <div className="email-module-header">
         <h2>Email Queue</h2>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn btn-sm btn-secondary" onClick={handleRetryAll}>Retry All Failed</button>
-          <button className="btn btn-sm btn-secondary" onClick={handleClearSent}>Clear Sent</button>
+          <button className="btn btn-sm btn-secondary" onClick={handleRetryAll} disabled={actionLoading === 'retryAll'}>
+            {actionLoading === 'retryAll' ? <><span className="spinner-mini"></span> Retrying...</> : 'Retry All Failed'}
+          </button>
+          <button className="btn btn-sm btn-secondary" onClick={handleClearSent} disabled={actionLoading === 'clearSent'}>
+            {actionLoading === 'clearSent' ? <><span className="spinner-mini"></span> Clearing...</> : 'Clear Sent'}
+          </button>
         </div>
       </div>
 
@@ -89,7 +102,9 @@ export default function EmailQueue() {
               <td data-label="Error" style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', fontSize: '0.8rem' }}>{q.errorMessage || '-'}</td>
               <td data-label="Created" style={{ fontSize: '0.8rem' }}>{new Date(q.createdAt).toLocaleString()}</td>
               <td data-label="Actions">
-                {q.status === 'failed' && <button className="btn btn-sm btn-primary" onClick={() => handleRetry(q._id)}>Retry</button>}
+                {q.status === 'failed' && <button className="btn btn-sm btn-primary" onClick={() => handleRetry(q._id)} disabled={actionLoading === `retry-${q._id}`}>
+                  {actionLoading === `retry-${q._id}` ? <><span className="spinner-mini"></span></> : 'Retry'}
+                </button>}
                 <button className="btn btn-sm btn-danger" onClick={() => setDeleteTarget(q._id)}>Delete</button>
                 <button className="btn btn-sm" onClick={() => setSelectedItem(q)}>Detail</button>
               </td>
@@ -123,7 +138,7 @@ export default function EmailQueue() {
       )}
 
       <ConfirmModal isOpen={!!deleteTarget} title="Delete Queue Item" message="Delete this queue item?"
-        onConfirm={handleDelete} onCancel={() => setDeleteTarget(null)} confirmText="Delete" cancelText="Cancel" type="danger" />
+        onConfirm={handleDelete} onCancel={() => setDeleteTarget(null)} confirmText="Delete" cancelText="Cancel" type="danger" loading={actionLoading === 'delete'} />
     </div>
   );
 }

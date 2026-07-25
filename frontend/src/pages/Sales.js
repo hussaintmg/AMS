@@ -190,6 +190,7 @@ function Quotations() {
     const [modalMode, setModalMode] = useState('create');
     const [selectedItem, setSelectedItem] = useState(null);
     const [selectedIds,setSelectedIds]=useState([]);
+    const [sendingEmail, setSendingEmail] = useState(null);
     const { templateHtml, templateLoading } = useSalesHtmlTemplate(
         'quotation',
         companyInfo?.id,
@@ -456,11 +457,14 @@ function Quotations() {
     };
 
     const handleSendEmail = async (item) => {
+        setSendingEmail(item.id);
         try {
             await salesAPI.sendQuotationEmail(item.id);
             toast.success(`Quotation emailed to ${item.customer_name}`);
         } catch (error) {
             toast.error(error.response?.data?.message || 'Failed to email quotation');
+        } finally {
+            setSendingEmail(null);
         }
     };
 
@@ -473,7 +477,7 @@ function Quotations() {
 
     return (
         <div className="card sales-page">
-            <ConfirmModal {...confirmModal} onCancel={() => setConfirmModal({ ...confirmModal, isOpen: false })} />
+            <ConfirmModal {...confirmModal} loading={sendingEmail} onCancel={() => setConfirmModal({ ...confirmModal, isOpen: false })} />
             <div className="card-header d-flex justify-content-between align-items-center">
                 <h3>Quotations</h3>
                 <div className="sales-header-actions">{canCreate && <button className="btn btn-primary" onClick={() => openModal('create')}>+ New Quotation</button>}</div>
@@ -521,7 +525,7 @@ function Quotations() {
                                         onDelete={canDelete && q.status === 'draft' ? () => handleDeleteClick(q.id) : null}
                                         customActions={[
                                             ...(canDownloadPdf ? [{ icon: <Download size={18} />, title: 'Download PDF', onClick: () => downloadSalesPdf('quotation', q.id, q.quotation_number), className: 'btn-info' }] : []),
-                                            ...(canSendEmail ? [{ icon: <Send size={18} className="action-icon" />, title: 'Send quotation email', onClick: () => handleSendEmail(q), className: 'btn-info' }] : []),
+                                            ...(canSendEmail ? [{ icon: <Send size={18} className="action-icon" />, title: 'Send quotation email', onClick: () => handleSendEmail(q), className: 'btn-info', disabled: sendingEmail === q.id, loading: sendingEmail === q.id }] : []),
                                             ...(q.status === 'sent' || q.status === 'accepted' ? [{ icon: <span className="material-icons">shopping_cart</span>, title: 'Convert', onClick: () => handleConvertClick(q), className: 'btn-success' }] : [])
                                         ]}
                                     />
@@ -557,7 +561,7 @@ function Quotations() {
                                         onEdit={canEdit && q.status === 'draft' ? () => openModal('edit', q) : null}
                                         onDelete={canEdit && q.status === 'draft' ? () => handleDeleteClick(q.id) : null}
                                         customActions={[
-                                            ...(canSendEmail ? [{ icon: <Send size={18} className="action-icon" />, title: 'Send quotation email', onClick: () => handleSendEmail(q), className: 'btn-info' }] : []),
+                                            ...(canSendEmail ? [{ icon: <Send size={18} className="action-icon" />, title: 'Send quotation email', onClick: () => handleSendEmail(q), className: 'btn-info', disabled: sendingEmail === q.id, loading: sendingEmail === q.id }] : []),
                                             ...(q.status === 'sent' || q.status === 'accepted' ? [{ icon: <span className="material-icons">shopping_cart</span>, title: 'Convert', onClick: () => handleConvertClick(q), className: 'btn-success' }] : [])
                                         ]}
                                     />
@@ -752,6 +756,7 @@ function Bookings() {
     const [modalMode, setModalMode] = useState('create');
     const [selectedItem, setSelectedItem] = useState(null);
     const [selectedIds,setSelectedIds]=useState([]);
+    const [sendingEmail, setSendingEmail] = useState(null);
     const { templateHtml, templateLoading } = useSalesHtmlTemplate(
         'booking',
         companyInfo?.id,
@@ -945,11 +950,14 @@ function Bookings() {
     // Allocate Vehicle Modal Logic could go here...
 
     const handleSendEmail = async (item) => {
+        setSendingEmail(item.id);
         try {
             await salesAPI.sendBookingEmail(item.id);
             toast.success(`Booking emailed to ${item.customer_name}`);
         } catch (error) {
             toast.error(error.response?.data?.message || 'Failed to email booking');
+        } finally {
+            setSendingEmail(null);
         }
     };
 
@@ -1021,7 +1029,7 @@ function Bookings() {
                                         showView={true}
                                         onView={() => openModal('view', b)}
                                         onEdit={canAction && !['cancelled', 'completed'].includes(b.status) ? () => openModal('edit', b) : null}
-                                        customActions={[...(canDownloadPdf ? [{ icon: <Download size={18}/>, title: 'Download PDF', onClick: () => downloadSalesPdf('booking', b.id, b.booking_number), className: 'btn-info' }] : []), ...(canSendEmail ? [{ icon: <Send size={18} className="action-icon" />, title: 'Send booking email', onClick: () => handleSendEmail(b), className: 'btn-info' }] : [])]}
+                                        customActions={[...(canDownloadPdf ? [{ icon: <Download size={18}/>, title: 'Download PDF', onClick: () => downloadSalesPdf('booking', b.id, b.booking_number), className: 'btn-info' }] : []), ...(canSendEmail ? [{ icon: <Send size={18} className="action-icon" />, title: 'Send booking email', onClick: () => handleSendEmail(b), className: 'btn-info', disabled: sendingEmail === b.id, loading: sendingEmail === b.id }] : [])]}
                                     />
                                 </td>
                             </tr>
@@ -1053,7 +1061,7 @@ function Bookings() {
                                         showView={true}
                                         onView={() => openModal('view', b)}
                                         onEdit={canAction && !['cancelled', 'completed'].includes(b.status) ? () => openModal('edit', b) : null}
-                                        customActions={canSendEmail ? [{ icon: <Send size={18} className="action-icon" />, title: 'Send booking email', onClick: () => handleSendEmail(b), className: 'btn-info' }] : []}
+                                        customActions={canSendEmail ? [{ icon: <Send size={18} className="action-icon" />, title: 'Send booking email', onClick: () => handleSendEmail(b), className: 'btn-info', disabled: sendingEmail === b.id, loading: sendingEmail === b.id }] : []}
                                     />
                                 </div>
                             </div>
@@ -1233,6 +1241,7 @@ function SalesOrders() {
     const [modalMode, setModalMode] = useState('create');
     const [selectedItem, setSelectedItem] = useState(null);
     const [selectedIds,setSelectedIds]=useState([]);
+    const [sendingEmail, setSendingEmail] = useState(null);
     const { templateHtml, templateLoading } = useSalesHtmlTemplate(
         'order',
         companyInfo?.id,
@@ -1534,11 +1543,14 @@ function SalesOrders() {
     };
 
     const handleSendEmail = async (item) => {
+        setSendingEmail(item.id);
         try {
             await salesAPI.sendOrderEmail(item.id);
             toast.success(`Sales order emailed to ${item.customer_name}`);
         } catch (error) {
             toast.error(error.response?.data?.message || 'Failed to email sales order');
+        } finally {
+            setSendingEmail(null);
         }
     };
 
@@ -1688,7 +1700,7 @@ function SalesOrders() {
                                         onDelete={() => handleCancelClick(o)}
                                         customActions={[
                                             ...(canDownloadPdf ? [{ icon: <Download size={18}/>, title: 'Download PDF', onClick: () => downloadSalesPdf('order', o.id, o.order_number), className: 'btn-info' }] : []),
-                                            ...(canSendEmail ? [{ icon: <Send size={18} className="action-icon" />, title: 'Send sales order email', onClick: () => handleSendEmail(o), className: 'btn-info' }] : []),
+                                            ...(canSendEmail ? [{ icon: <Send size={18} className="action-icon" />, title: 'Send sales order email', onClick: () => handleSendEmail(o), className: 'btn-info', disabled: sendingEmail === o.id, loading: sendingEmail === o.id }] : []),
                                             ...(canDeliverOrInvoice && !o.invoice_number && o.status === 'confirmed' ? [{
                                                 icon: <FileText size={18} className="action-icon" />,
                                                 title: 'Generate Invoice',
@@ -1759,7 +1771,7 @@ function SalesOrders() {
                                         onEdit={() => openModal('edit', o)}
                                         onDelete={() => handleCancelClick(o)}
                                         customActions={[
-                                            ...(canSendEmail ? [{ icon: <Send size={18} className="action-icon" />, title: 'Send sales order email', onClick: () => handleSendEmail(o), className: 'btn-info' }] : []),
+                                            ...(canSendEmail ? [{ icon: <Send size={18} className="action-icon" />, title: 'Send sales order email', onClick: () => handleSendEmail(o), className: 'btn-info', disabled: sendingEmail === o.id, loading: sendingEmail === o.id }] : []),
                                             ...(canDeliverOrInvoice && !o.invoice_number && o.status === 'confirmed' ? [{
                                                 icon: <FileText size={18} className="action-icon" />,
                                                 title: 'Generate Invoice',
@@ -1818,6 +1830,7 @@ function SalesOrders() {
                 confirmText={confirmModal.confirmText}
                 onConfirm={confirmModal.onConfirm}
                 onCancel={() => setConfirmModal({ isOpen: false })}
+                loading={sendingEmail}
             />
 
             {showModal && (
@@ -2148,6 +2161,7 @@ function Invoices() {
     const [modalMode, setModalMode] = useState('view');
     const [selectedItem, setSelectedItem] = useState(null);
     const [selectedIds,setSelectedIds]=useState([]);
+    const [sendingEmail, setSendingEmail] = useState(null);
     const [invoiceDetails, setInvoiceDetails] = useState(null);
     const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', onConfirm: null });
     const [companyInfo, setCompanyInfo] = useState(null);
@@ -2508,6 +2522,7 @@ function Invoices() {
             type: 'primary',
             confirmText: 'Send Email',
             onConfirm: async () => {
+                setSendingEmail(item.id);
                 try {
                     await invoiceAPI.sendEmail(item.id);
                     toast.success('Invoice emailed successfully');
@@ -2515,6 +2530,8 @@ function Invoices() {
                     fetchData();
                 } catch (error) {
                     toast.error(error.response?.data?.message || 'Failed to email invoice');
+                } finally {
+                    setSendingEmail(null);
                 }
             }
         });
@@ -2649,7 +2666,9 @@ function Invoices() {
                                                 icon: <Send size={18} className="action-icon" />,
                                                 title: 'Send invoice email',
                                                 onClick: () => handleSendClick(inv),
-                                                className: 'btn-info'
+                                                className: 'btn-info',
+                                                disabled: sendingEmail === inv.id,
+                                                loading: sendingEmail === inv.id
                                             }] : []),
                                             ...(canRecordPayment && inv.status !== 'paid' && inv.status !== 'cancelled' && inv.balance_amount > 0 ? [{
                                                 icon: <DollarSign size={18} className="action-icon" />,
@@ -2701,7 +2720,9 @@ function Invoices() {
                                                 icon: <Send size={18} className="action-icon" />,
                                                 title: 'Send invoice email',
                                                 onClick: () => handleSendClick(inv),
-                                                className: 'btn-info'
+                                                className: 'btn-info',
+                                                disabled: sendingEmail === inv.id,
+                                                loading: sendingEmail === inv.id
                                             }] : []),
                                             ...(canRecordPayment && inv.status !== 'paid' && inv.status !== 'cancelled' && inv.balance_amount > 0 ? [{
                                                 icon: <DollarSign size={18} className="action-icon" />,
@@ -2735,6 +2756,7 @@ function Invoices() {
                 confirmText={confirmModal.confirmText}
                 onConfirm={confirmModal.onConfirm}
                 onCancel={() => setConfirmModal({ isOpen: false })}
+                loading={sendingEmail}
             />
 
             <SalesDrawer
@@ -2929,8 +2951,8 @@ function Invoices() {
                     <div className="modal-actions" style={{ marginTop: '2rem' }}>
                         <button className="btn btn-secondary" onClick={closeModal}>Close</button>
                         {canSend && invoiceDetails.status === 'draft' && (
-                            <button className="btn btn-info" onClick={() => { closeModal(); handleSendClick(invoiceDetails); }}>
-                                Send Invoice
+                            <button className="btn btn-info" onClick={() => { closeModal(); handleSendClick(invoiceDetails); }} disabled={sendingEmail === invoiceDetails.id}>
+                                {sendingEmail === invoiceDetails.id ? <><span className="spinner-mini"></span> Sending...</> : 'Send Invoice'}
                             </button>
                         )}
                         {canRecordPayment && invoiceDetails.status !== 'paid' && invoiceDetails.status !== 'cancelled' && invoiceDetails.balance_amount > 0 && (

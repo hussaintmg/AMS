@@ -60,10 +60,11 @@ const ActionButtons = ({
                 <button
                     key={index}
                     className={`btn-action ${action.className || ''}`}
-                    onClick={(e) => { e.stopPropagation(); action.onClick(e); }}
+                    onClick={(e) => { e.stopPropagation(); if (!action.disabled) action.onClick(e); }}
                     title={action.title}
+                    disabled={action.disabled || false}
                 >
-                    {action.icon}
+                    {action.loading ? <span className="spinner-mini"></span> : action.icon}
                 </button>
             ))}
 

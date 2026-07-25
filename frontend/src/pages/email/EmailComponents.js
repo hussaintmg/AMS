@@ -20,6 +20,7 @@ export default function EmailComponents() {
   const [search, setSearch] = useState('');
   const [filterCat, setFilterCat] = useState('all');
   const [detailItem, setDetailItem] = useState(null);
+  const [actionLoading, setActionLoading] = useState('');
 
   useEffect(() => { loadComponents(); }, []);
 
@@ -71,22 +72,27 @@ export default function EmailComponents() {
 
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return;
+    setActionLoading('delete');
     const deleted = components.find(c => c._id === deleteTarget);
     removeComponent(deleteTarget);
     try { await emailAPI.deleteComponent(deleteTarget); toast.success('Component deleted'); setDeleteTarget(null); } catch (e) { if (deleted) addComponent(deleted); toast.error('Delete failed'); }
+    finally { setActionLoading(''); }
   }, [deleteTarget, components, removeComponent, addComponent]);
 
   const handleDuplicate = async (id) => {
+    setActionLoading(`dup-${id}`);
     try {
       const r = await emailAPI.duplicateComponent(id);
       const dup = r.data?.data?.component || r.data?.data;
       if (dup) addComponent(dup);
       toast.success('Component duplicated');
     } catch (e) { toast.error('Duplicate failed'); }
+    finally { setActionLoading(''); }
   };
 
   const handleToggleActive = async (comp) => {
     const prevActive = comp.isActive;
+    setActionLoading(`toggle-${comp._id}`);
     updateComponent(comp._id, { isActive: !prevActive });
     try {
       await emailAPI.updateComponent(comp._id, { isActive: !prevActive });
@@ -94,6 +100,8 @@ export default function EmailComponents() {
     } catch (e) {
       updateComponent(comp._id, { isActive: prevActive });
       toast.error('Toggle failed');
+    } finally {
+      setActionLoading('');
     }
   };
 
@@ -142,8 +150,12 @@ export default function EmailComponents() {
               <button className="btn btn-sm btn-primary" onClick={() => navigate(`/email/components/${c._id}/editor`)}>Open Editor</button>
               <button className="btn btn-sm" onClick={() => setDetailItem(c)}>Detail</button>
               <button className="btn btn-sm" onClick={() => handleEdit(c)}>Edit</button>
-              <button className="btn btn-sm" onClick={() => handleDuplicate(c._id)}>Duplicate</button>
-              <button className="btn btn-sm" onClick={() => handleToggleActive(c)}>{c.isActive ? 'Deactivate' : 'Activate'}</button>
+              <button className="btn btn-sm" onClick={() => handleDuplicate(c._id)} disabled={actionLoading === `dup-${c._id}`}>
+                {actionLoading === `dup-${c._id}` ? <><span className="spinner-mini"></span></> : 'Duplicate'}
+              </button>
+              <button className="btn btn-sm" onClick={() => handleToggleActive(c)} disabled={actionLoading === `toggle-${c._id}`}>
+                {actionLoading === `toggle-${c._id}` ? <><span className="spinner-mini"></span></> : (c.isActive ? 'Deactivate' : 'Activate')}
+              </button>
               <button className="btn btn-sm btn-danger" onClick={() => setDeleteTarget(c._id)}>Delete</button>
             </div>
           </div>
@@ -246,7 +258,7 @@ export default function EmailComponents() {
       </EmailDrawer>
 
       <ConfirmModal isOpen={!!deleteTarget} title="Delete Component" message="Delete this component?"
-        onConfirm={handleDelete} onCancel={() => setDeleteTarget(null)} confirmText="Delete" cancelText="Cancel" type="danger" />
+        onConfirm={handleDelete} onCancel={() => setDeleteTarget(null)} confirmText="Delete" cancelText="Cancel" type="danger" loading={actionLoading === 'delete'} />
     </div>
   );
 }

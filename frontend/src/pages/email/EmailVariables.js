@@ -22,6 +22,7 @@ export default function EmailVariables() {
   const [detailItem, setDetailItem] = useState(null);
   const [showImport, setShowImport] = useState(false);
   const [categories, setCategories] = useState([]);
+  const [actionLoading, setActionLoading] = useState('');
   const limit = 20;
 
   useEffect(() => { loadVariables({ page, limit }); }, [page]);
@@ -87,13 +88,16 @@ export default function EmailVariables() {
 
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return;
+    setActionLoading('delete');
     const deleted = variables.find(v => v._id === deleteTarget);
     removeVariable(deleteTarget);
     try { await emailAPI.deleteVariable(deleteTarget); toast.success('Variable deleted'); setDeleteTarget(null); } catch (e) { if (deleted) addVariable(deleted); toast.error('Delete failed'); }
+    finally { setActionLoading(''); }
   }, [deleteTarget, variables, removeVariable, addVariable]);
 
   const handleToggle = async (variable) => {
     const prev = { ...variable };
+    setActionLoading(`toggle-${variable._id}`);
     updateVariable(variable._id, { isActive: !variable.isActive });
     try {
       await emailAPI.toggleVariable(variable._id);
@@ -101,6 +105,8 @@ export default function EmailVariables() {
     } catch (e) {
       updateVariable(variable._id, { isActive: prev.isActive });
       toast.error('Toggle failed');
+    } finally {
+      setActionLoading('');
     }
   };
 
@@ -166,7 +172,9 @@ export default function EmailVariables() {
                 <td data-label="Created">{v.createdAt ? new Date(v.createdAt).toLocaleDateString() : '-'}</td>
                 <td data-label="Actions">
                   <button className="btn btn-sm" onClick={() => handleEdit(v)}>Edit</button>
-                  <button className="btn btn-sm" onClick={() => handleToggle(v)}>{v.isActive ? 'Deactivate' : 'Activate'}</button>
+                  <button className="btn btn-sm" onClick={() => handleToggle(v)} disabled={actionLoading === `toggle-${v._id}`}>
+                    {actionLoading === `toggle-${v._id}` ? <><span className="spinner-mini"></span></> : (v.isActive ? 'Deactivate' : 'Activate')}
+                  </button>
                   <button className="btn btn-sm btn-danger" onClick={() => setDeleteTarget(v._id)}>Delete</button>
                 </td>
               </tr>
@@ -195,7 +203,9 @@ export default function EmailVariables() {
             <div className="email-card-actions">
               <button className="btn btn-sm" onClick={() => setDetailItem(v)}>Detail</button>
               <button className="btn btn-sm" onClick={() => handleEdit(v)}>Edit</button>
-              <button className="btn btn-sm" onClick={() => handleToggle(v)}>{v.isActive ? 'Deactivate' : 'Activate'}</button>
+              <button className="btn btn-sm" onClick={() => handleToggle(v)} disabled={actionLoading === `toggle-${v._id}`}>
+                {actionLoading === `toggle-${v._id}` ? <><span className="spinner-mini"></span></> : (v.isActive ? 'Deactivate' : 'Activate')}
+              </button>
               <button className="btn btn-sm btn-danger" onClick={() => setDeleteTarget(v._id)}>Delete</button>
             </div>
           </div>
@@ -286,7 +296,7 @@ export default function EmailVariables() {
       </EmailDrawer>
 
       <ConfirmModal isOpen={!!deleteTarget} title="Delete Variable" message="Delete this variable?"
-        onConfirm={handleDelete} onCancel={() => setDeleteTarget(null)} confirmText="Delete" cancelText="Cancel" type="danger" />
+        onConfirm={handleDelete} onCancel={() => setDeleteTarget(null)} confirmText="Delete" cancelText="Cancel" type="danger" loading={actionLoading === 'delete'} />
     </div>
   );
 }
