@@ -14,7 +14,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { authenticate, authorize } = require('../middleware/auth');
+const { authenticate, authorizeAction } = require('../middleware/auth');
 const salesController = require('../controllers/salesManagement.controller');
 const bulkPermission = require('../middleware/bulkSalesPermission');
 
@@ -86,9 +86,9 @@ router.get('/:id', authenticate, salesController.getBookingById);
  *               expectedDeliveryDate: { type: string, format: date }
  *               priority: { type: string, enum: [normal, high, vip] }
  */
-router.post('/', authenticate, authorize('super_admin', 'sales_manager', 'sales_executive'), salesController.createBooking);
+router.post('/', authenticate, authorizeAction('bookings', 'create'), salesController.createBooking);
 
-router.post('/:id/send-email', authenticate, authorize('super_admin', 'admin', 'sales_manager', 'sales_executive'), salesController.sendBookingEmail);
+router.post('/:id/send-email', authenticate, authorizeAction('bookings', 'sendEmail'), salesController.sendBookingEmail);
 
 /**
  * @swagger
@@ -98,7 +98,7 @@ router.post('/:id/send-email', authenticate, authorize('super_admin', 'admin', '
  *     summary: Update booking
  *     security: [{ bearerAuth: [] }]
  */
-router.put('/:id', authenticate, authorize('super_admin', 'sales_manager'), salesController.updateBooking);
+router.put('/:id', authenticate, authorizeAction('bookings', 'edit'), salesController.updateBooking);
 
 /**
  * @swagger
@@ -108,7 +108,7 @@ router.put('/:id', authenticate, authorize('super_admin', 'sales_manager'), sale
  *     summary: Cancel booking
  *     security: [{ bearerAuth: [] }]
  */
-router.delete('/:id', authenticate, authorize('super_admin', 'sales_manager'), salesController.deleteBooking);
+router.delete('/:id', authenticate, authorizeAction('bookings', 'delete'), salesController.deleteBooking);
 
 /**
  * @swagger
@@ -118,7 +118,7 @@ router.delete('/:id', authenticate, authorize('super_admin', 'sales_manager'), s
  *     summary: Allocate vehicle to booking
  *     security: [{ bearerAuth: [] }]
  */
-router.post('/:id/allocate', authenticate, authorize('super_admin', 'sales_manager'), salesController.allocateVehicle);
+router.post('/:id/allocate', authenticate, authorizeAction('bookings', 'edit'), salesController.allocateVehicle);
 
 /**
  * @swagger
@@ -128,6 +128,6 @@ router.post('/:id/allocate', authenticate, authorize('super_admin', 'sales_manag
  *     summary: Convert booking to sales order
  *     security: [{ bearerAuth: [] }]
  */
-router.post('/:id/convert', authenticate, authorize('super_admin', 'sales_manager'), salesController.convertBookingToOrder);
+router.post('/:id/convert', authenticate, authorizeAction('bookings', 'edit'), salesController.convertBookingToOrder);
 
 module.exports = router;

@@ -6,7 +6,7 @@
 const express = require('express');
 const router = express.Router();
 const controller = require('../controllers/global-search.controller');
-const { authenticate, authorize } = require('../middleware/auth');
+const { authenticate, authorizeAction } = require('../middleware/auth');
 const searchRateLimit = require('../middleware/searchRateLimit');
 
 /**
@@ -112,7 +112,7 @@ router.get('/popular', authenticate, controller.popular);
  *     security:
  *       - bearerAuth: []
  */
-router.get('/analytics', authenticate, authorize('super_admin'), controller.analytics);
+router.get('/analytics', authenticate, authorizeAction('search', 'view'), controller.analytics);
 
 /**
  * @swagger
@@ -134,7 +134,7 @@ router.get('/config', authenticate, controller.config);
  *     security:
  *       - bearerAuth: []
  */
-router.put('/config', authenticate, authorize('super_admin'), controller.saveConfig);
+router.put('/config', authenticate, authorizeAction('search', 'edit'), controller.saveConfig);
 
 /**
  * @swagger
@@ -156,6 +156,6 @@ router.get('/modules', authenticate, controller.modulesConfig);
  *     security:
  *       - bearerAuth: []
  */
-router.post('/rebuild', authenticate, authorize('super_admin'), controller.rebuild);
+router.post('/rebuild', authenticate, authorizeAction('search', 'edit'), controller.rebuild);
 
 module.exports = router;

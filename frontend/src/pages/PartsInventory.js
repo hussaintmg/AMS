@@ -876,6 +876,7 @@ const PartsInventory = () => {
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "space-between",
+                          flexDirection:'row'
                         }}
                       >
                         <InfoLabel
@@ -924,6 +925,7 @@ const PartsInventory = () => {
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "space-between",
+                          flexDirection:'row'
                         }}
                       >
                         <InfoLabel

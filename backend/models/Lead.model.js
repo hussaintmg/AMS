@@ -44,7 +44,7 @@ const leadSchema = new mongoose.Schema({
   source: { type: mongoose.Schema.Types.ObjectId, ref: 'LeadSource', default: null },
   type: { type: mongoose.Schema.Types.ObjectId, ref: 'LeadType', default: null },
   priority: { type: mongoose.Schema.Types.ObjectId, ref: 'LeadPriority', default: null },
-  status: { type: String, default: '' },
+  status: { type: String, default: 'new', required: [true, 'Lead status is required'] },
   leadValue: { type: Number, default: 0 },
   probability: { type: Number, default: 0, min: 0, max: 100 },
   expectedCloseDate: { type: Date, default: null },

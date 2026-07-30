@@ -7,6 +7,24 @@ const searchService = require('../services/searchIndex.service');
 
 const text = value => String(value || '').trim();
 
+const escapeRegex = (value) => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+function scoreFor(query, values = []) {
+  const normalizedQuery = text(query).toLowerCase();
+  const terms = normalizedQuery.split(/\s+/).filter(Boolean);
+  if (!terms.length) return 0;
+  let best = 0;
+  values.forEach((value) => {
+    const candidate = text(value).toLowerCase();
+    if (!candidate || !terms.every((term) => candidate.includes(term))) return;
+    if (candidate === normalizedQuery) best = Math.max(best, /[\d-]/.test(candidate) ? 0.98 : 1);
+    else if (candidate.startsWith(normalizedQuery)) best = Math.max(best, 0.9);
+    else if (terms.length === 1 && candidate.split(/\s+/).some((word) => word.startsWith(terms[0]))) best = Math.max(best, 0.75);
+    else best = Math.max(best, 0.6);
+  });
+  return best;
+}
+
 async function search(req, res, next) {
   try {
     const query = text(req.query.q || req.query.query);
@@ -178,4 +196,6 @@ module.exports = {
   saveConfig,
   modulesConfig,
   rebuild,
+  scoreFor,
+  escapeRegex,
 };

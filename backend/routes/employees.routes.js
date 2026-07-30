@@ -1,18 +1,16 @@
 const express = require('express');
 const router = express.Router();
-const { authenticate, authorize } = require('../middleware/auth');
+const { authenticate, authorizeAction } = require('../middleware/auth');
 const employees = require('../controllers/employees.controller');
 
-const roles = ['super_admin', 'admin', 'hr_admin'];
-
-router.get('/stats', authenticate, authorize(...roles), employees.getStats);
-router.get('/', authenticate, authorize(...roles), employees.listEmployees);
-router.patch('/bulk/deactivate', authenticate, authorize(...roles), employees.bulkDeactivateEmployees);
-router.delete('/bulk', authenticate, authorize(...roles), employees.bulkDeleteEmployees);
-router.get('/:id', authenticate, authorize(...roles), employees.getEmployee);
-router.post('/', authenticate, authorize(...roles), employees.createEmployee);
-router.put('/:id', authenticate, authorize(...roles), employees.updateEmployee);
-router.patch('/:id/toggle', authenticate, authorize(...roles), employees.toggleEmployeeStatus);
-router.delete('/:id', authenticate, authorize(...roles), employees.deleteEmployee);
+router.get('/stats', authenticate, authorizeAction('employees', 'view'), employees.getStats);
+router.get('/', authenticate, authorizeAction('employees', 'view'), employees.listEmployees);
+router.patch('/bulk/deactivate', authenticate, authorizeAction('employees', 'edit'), employees.bulkDeactivateEmployees);
+router.delete('/bulk', authenticate, authorizeAction('employees', 'delete'), employees.bulkDeleteEmployees);
+router.get('/:id', authenticate, authorizeAction('employees', 'view'), employees.getEmployee);
+router.post('/', authenticate, authorizeAction('employees', 'create'), employees.createEmployee);
+router.put('/:id', authenticate, authorizeAction('employees', 'edit'), employees.updateEmployee);
+router.patch('/:id/toggle', authenticate, authorizeAction('employees', 'edit'), employees.toggleEmployeeStatus);
+router.delete('/:id', authenticate, authorizeAction('employees', 'delete'), employees.deleteEmployee);
 
 module.exports = router;

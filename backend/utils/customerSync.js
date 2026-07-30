@@ -54,6 +54,7 @@ async function recordCustomerActivity({
   spentDelta = 0,
   paidDelta = 0,
   outstandingDelta = 0,
+  session = null,
 }) {
   if (!customerId) return;
   try {
@@ -86,7 +87,7 @@ async function recordCustomerActivity({
     };
     if (Object.keys(inc).length) update.$inc = inc;
 
-    await Customer.updateOne({ _id: customerId }, update);
+    await Customer.updateOne({ _id: customerId }, update, session ? { session } : {});
   } catch (error) {
     logger.error(`Customer sync failed for customer ${customerId} (${docType} ${number}):`, error);
   }

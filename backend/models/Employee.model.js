@@ -2,9 +2,9 @@ const mongoose = require('mongoose');
 const searchPlugin = require('../plugins/searchPlugin');
 
 const employeeSchema = new mongoose.Schema({
-  employeeCode: { type: String, trim: true },
+  employeeCode: { type: String, trim: true, required: [true, 'Employee code is required'] },
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-  firstName: { type: String, trim: true },
+  firstName: { type: String, trim: true, required: [true, 'First name is required'] },
   lastName: { type: String, trim: true },
   email: {
     type: String,
@@ -22,7 +22,7 @@ const employeeSchema = new mongoose.Schema({
   designation: { type: String, trim: true },
   joiningDate: { type: Date },
   salary: { type: Number, min: [0, 'Salary cannot be negative'] },
-  status: { type: String, trim: true },
+  status: { type: String, trim: true, required: [true, 'Employee status is required'] },
   isActive: { type: Boolean, default: true },
   isDeleted: { type: Boolean, default: false },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },

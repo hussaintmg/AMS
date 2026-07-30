@@ -3,7 +3,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { authenticate } = require('../middleware/auth');
-const { authorizePage } = require('../middleware/auth');
+const { authorizeAction } = require('../middleware/auth');
 
 const templatesCtrl = require('../controllers/emailTemplates.controller');
 const usageCtrl = require('../controllers/emailUsage.controller');
@@ -57,7 +57,7 @@ const uploadDataFile = multer({
   limits: { fileSize: 5 * 1024 * 1024 }
 });
 
-const authAndPage = [authenticate, authorizePage('email_templates')];
+const authAndPage = [authenticate, authorizeAction('email_templates', 'view')];
 
 /**
  * @swagger

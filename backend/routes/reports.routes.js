@@ -1,32 +1,32 @@
 const express = require('express');
 const router = express.Router();
 const reportsController = require('../controllers/reports.controller');
-const { authenticate, authorize } = require('../middleware/auth');
+const { authenticate, authorizeAction } = require('../middleware/auth');
 
 // Routes
-router.post('/', authenticate, authorize('super_admin', 'admin', 'manager'), reportsController.createReport);
-router.post('/:id/execute', authenticate, authorize('super_admin', 'admin', 'manager'), reportsController.executeReport); // New Execution Route
-router.get('/', authenticate, authorize('super_admin', 'admin', 'manager', 'sales_manager', 'sales_executive'), reportsController.getReports);
+router.post('/', authenticate, authorizeAction('reports', 'create'), reportsController.createReport);
+router.post('/:id/execute', authenticate, authorizeAction('reports', 'create'), reportsController.executeReport);
+router.get('/', authenticate, authorizeAction('reports', 'view'), reportsController.getReports);
 // Simple Predefined Reports Routes (Must be before parameterized routes to avoid ID conflict)
-router.get('/sales-performance', authenticate, authorize('super_admin', 'admin', 'manager', 'sales_manager', 'sales_executive'), reportsController.getSalesPerformance);
-router.get('/sales-by-model', authenticate, authorize('super_admin', 'admin', 'manager', 'sales_manager', 'sales_executive'), reportsController.getSalesByModel);
-router.get('/inventory-health', authenticate, authorize('super_admin', 'admin', 'manager', 'inventory_manager'), reportsController.getInventoryHealth);
-router.get('/inventory-stock-movement', authenticate, authorize('super_admin', 'admin', 'manager', 'inventory_manager'), reportsController.getInventoryStockMovement);
-router.get('/inventory-stock-snapshot', authenticate, authorize('super_admin', 'admin', 'manager', 'inventory_manager'), reportsController.getInventoryStockSnapshot);
-router.get('/pending-deliveries', authenticate, authorize('super_admin', 'admin', 'manager', 'sales_manager', 'sales_executive'), reportsController.getPendingDeliveries);
-router.get('/customer-receivables', authenticate, authorize('super_admin', 'admin', 'manager', 'accountant', 'sales_manager'), reportsController.getCustomerReceivables);
-router.get('/receivables-aging', authenticate, authorize('super_admin', 'admin', 'manager', 'accountant', 'sales_manager'), reportsController.getReceivablesAging);
-router.get('/lead-statistics', authenticate, authorize('super_admin', 'admin', 'manager', 'sales_manager', 'sales_executive'), reportsController.getLeadStatistics);
-router.get('/service-analytics', authenticate, authorize('super_admin', 'admin', 'manager', 'service_manager', 'service_advisor'), reportsController.getServiceAnalytics);
-router.get('/service-kpi-detail', authenticate, authorize('super_admin', 'admin', 'manager', 'service_manager', 'service_advisor'), reportsController.getServiceKpiDetail);
-router.get('/low-stock-parts', authenticate, authorize('super_admin', 'admin', 'manager', 'inventory_manager'), reportsController.getLowStockParts);
-router.get('/expenses', authenticate, authorize('super_admin', 'admin', 'manager', 'accountant'), reportsController.getExpenseReport);
-router.get('/payments', authenticate, authorize('super_admin', 'admin', 'manager', 'accountant'), reportsController.getPaymentReport);
-router.get('/employees', authenticate, authorize('super_admin', 'admin', 'manager', 'hr_admin'), reportsController.getEmployeeReport);
+router.get('/sales-performance', authenticate, authorizeAction('reports', 'view'), reportsController.getSalesPerformance);
+router.get('/sales-by-model', authenticate, authorizeAction('reports', 'view'), reportsController.getSalesByModel);
+router.get('/inventory-health', authenticate, authorizeAction('reports', 'view'), reportsController.getInventoryHealth);
+router.get('/inventory-stock-movement', authenticate, authorizeAction('reports', 'view'), reportsController.getInventoryStockMovement);
+router.get('/inventory-stock-snapshot', authenticate, authorizeAction('reports', 'view'), reportsController.getInventoryStockSnapshot);
+router.get('/pending-deliveries', authenticate, authorizeAction('reports', 'view'), reportsController.getPendingDeliveries);
+router.get('/customer-receivables', authenticate, authorizeAction('reports', 'view'), reportsController.getCustomerReceivables);
+router.get('/receivables-aging', authenticate, authorizeAction('reports', 'view'), reportsController.getReceivablesAging);
+router.get('/lead-statistics', authenticate, authorizeAction('reports', 'view'), reportsController.getLeadStatistics);
+router.get('/service-analytics', authenticate, authorizeAction('reports', 'view'), reportsController.getServiceAnalytics);
+router.get('/service-kpi-detail', authenticate, authorizeAction('reports', 'view'), reportsController.getServiceKpiDetail);
+router.get('/low-stock-parts', authenticate, authorizeAction('reports', 'view'), reportsController.getLowStockParts);
+router.get('/expenses', authenticate, authorizeAction('reports', 'view'), reportsController.getExpenseReport);
+router.get('/payments', authenticate, authorizeAction('reports', 'view'), reportsController.getPaymentReport);
+router.get('/employees', authenticate, authorizeAction('reports', 'view'), reportsController.getEmployeeReport);
 
 // Parameterized Routes
-router.get('/:id', authenticate, authorize('super_admin', 'admin', 'manager'), reportsController.getReportById);
-router.put('/:id', authenticate, authorize('super_admin', 'admin', 'manager'), reportsController.updateReport);
-router.delete('/:id', authenticate, authorize('super_admin', 'admin'), reportsController.deleteReport);
+router.get('/:id', authenticate, authorizeAction('reports', 'view'), reportsController.getReportById);
+router.put('/:id', authenticate, authorizeAction('reports', 'edit'), reportsController.updateReport);
+router.delete('/:id', authenticate, authorizeAction('reports', 'delete'), reportsController.deleteReport);
 
 module.exports = router;

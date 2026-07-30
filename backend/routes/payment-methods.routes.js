@@ -11,7 +11,7 @@
 const express = require('express');
 const router = express.Router();
 const paymentMethodsController = require('../controllers/paymentMethods.controller');
-const { authenticate, authorize } = require('../middleware/auth');
+const { authenticate, authorizeAction } = require('../middleware/auth');
 
 /**
  * @swagger
@@ -154,7 +154,7 @@ router.get('/:id', authenticate, paymentMethodsController.getById);
  *       400:
  *         description: Invalid input or duplicate name
  */
-router.post('/', authenticate, authorize('super_admin', 'accountant'), paymentMethodsController.create);
+router.post('/', authenticate, authorizeAction('payment_methods', 'create'), paymentMethodsController.create);
 
 /**
  * @swagger
@@ -194,7 +194,7 @@ router.post('/', authenticate, authorize('super_admin', 'accountant'), paymentMe
  *       404:
  *         description: Payment method not found
  */
-router.put('/:id', authenticate, authorize('super_admin', 'accountant'), paymentMethodsController.update);
+router.put('/:id', authenticate, authorizeAction('payment_methods', 'edit'), paymentMethodsController.update);
 
 /**
  * @swagger
@@ -216,7 +216,7 @@ router.put('/:id', authenticate, authorize('super_admin', 'accountant'), payment
  *       404:
  *         description: Payment method not found
  */
-router.patch('/:id/toggle', authenticate, authorize('super_admin', 'accountant'), paymentMethodsController.toggleStatus);
+router.patch('/:id/toggle', authenticate, authorizeAction('payment_methods', 'edit'), paymentMethodsController.toggleStatus);
 
 /**
  * @swagger
@@ -240,6 +240,6 @@ router.patch('/:id/toggle', authenticate, authorize('super_admin', 'accountant')
  *       404:
  *         description: Payment method not found
  */
-router.delete('/:id', authenticate, authorize('super_admin', 'accountant'), paymentMethodsController.remove);
+router.delete('/:id', authenticate, authorizeAction('payment_methods', 'delete'), paymentMethodsController.remove);
 
 module.exports = router;

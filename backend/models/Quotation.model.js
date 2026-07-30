@@ -10,7 +10,7 @@ const quotationItemSchema = new mongoose.Schema({
 }, { _id: false });
 
 const quotationSchema = new mongoose.Schema({
-  quotationNumber: { type: String, trim: true },
+  quotationNumber: { type: String, trim: true, required: [true, 'Quotation number is required'] },
   customer: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer' },
   lead: { type: mongoose.Schema.Types.ObjectId, ref: 'Lead' },
   vehicle: { type: mongoose.Schema.Types.ObjectId, ref: 'Vehicle' },
@@ -20,7 +20,7 @@ const quotationSchema = new mongoose.Schema({
   part: { type: mongoose.Schema.Types.ObjectId, ref: 'Part', default: null },
   serviceType: { type: mongoose.Schema.Types.ObjectId, ref: 'ServiceType', default: null },
   partQuantity: { type: Number, default: 1 },
-  status: { type: String, trim: true },
+  status: { type: String, trim: true, required: [true, 'Quotation status is required'] },
   vehiclePrice: { type: Number, default: 0 },
   discountAmount: { type: Number, default: 0 },
   discountPercentage: { type: Number, default: 0 },

@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 
 const vehicleMakeSchema = new mongoose.Schema({
   name: { type: String, required: [true, 'Brand name is required'], trim: true },
+  normalized_name: { type: String, trim: true, default: '' },
   country: { type: String, trim: true, default: '' },
   logo: { type: String, trim: true, default: '' },
   description: { type: String, trim: true, default: '' },
@@ -11,11 +12,16 @@ const vehicleMakeSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 vehicleMakeSchema.index({ name: 1 });
+vehicleMakeSchema.index(
+  { normalized_name: 1 },
+  { unique: true, partialFilterExpression: { normalized_name: { $type: 'string', $gt: '' } } }
+);
 vehicleMakeSchema.index({ is_active: 1 });
 
 const vehicleModelSchema = new mongoose.Schema({
   make_id: { type: mongoose.Schema.Types.ObjectId, ref: 'VehicleMake', required: [true, 'Make is required'] },
   name: { type: String, required: [true, 'Model name is required'], trim: true },
+  normalized_name: { type: String, trim: true, default: '' },
   year: { type: Number, default: new Date().getFullYear() },
   body_type: { type: String, trim: true, default: 'sedan' },
   fuel_type: { type: String, trim: true, default: 'petrol' },
@@ -27,11 +33,16 @@ const vehicleModelSchema = new mongoose.Schema({
 
 vehicleModelSchema.index({ name: 1 });
 vehicleModelSchema.index({ make_id: 1 });
+vehicleModelSchema.index(
+  { make_id: 1, normalized_name: 1 },
+  { unique: true, partialFilterExpression: { normalized_name: { $type: 'string', $gt: '' } } }
+);
 vehicleModelSchema.index({ is_active: 1 });
 
 const vehicleVariantSchema = new mongoose.Schema({
   model_id: { type: mongoose.Schema.Types.ObjectId, ref: 'VehicleModel', required: [true, 'Model is required'] },
   name: { type: String, required: [true, 'Variant name is required'], trim: true },
+  normalized_name: { type: String, trim: true, default: '' },
   base_price: { type: Number, default: 0 },
   features: { type: String, trim: true, default: '' },
   specifications: { type: mongoose.Schema.Types.Mixed, default: null },
@@ -40,10 +51,15 @@ const vehicleVariantSchema = new mongoose.Schema({
 
 vehicleVariantSchema.index({ name: 1 });
 vehicleVariantSchema.index({ model_id: 1 });
+vehicleVariantSchema.index(
+  { model_id: 1, normalized_name: 1 },
+  { unique: true, partialFilterExpression: { normalized_name: { $type: 'string', $gt: '' } } }
+);
 vehicleVariantSchema.index({ is_active: 1 });
 
 const vehicleColorSchema = new mongoose.Schema({
   name: { type: String, required: [true, 'Color name is required'], trim: true },
+  normalized_name: { type: String, trim: true, default: '' },
   hex_code: { type: String, trim: true, default: '#000000' },
   is_metallic: { type: Boolean, default: false },
   additional_cost: { type: Number, default: 0 },
@@ -51,6 +67,10 @@ const vehicleColorSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 vehicleColorSchema.index({ name: 1 });
+vehicleColorSchema.index(
+  { normalized_name: 1 },
+  { unique: true, partialFilterExpression: { normalized_name: { $type: 'string', $gt: '' } } }
+);
 vehicleColorSchema.index({ is_active: 1 });
 
 const partCategorySchema = new mongoose.Schema({

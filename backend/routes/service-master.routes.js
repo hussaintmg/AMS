@@ -1,8 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const ctrl = require('../controllers/serviceMasterController');
-const { authenticate, authorize } = require('../middleware/auth');
-const writeRoles = ['super_admin', 'admin', 'service_manager'];
+const { authenticate, authorizeAction } = require('../middleware/auth');
 
 /**
  * @swagger
@@ -102,7 +101,7 @@ router.get('/types', authenticate, ctrl.getServiceTypes);
  *       201:
  *         description: Created
  */
-router.post('/types', authenticate, authorize(...writeRoles), ctrl.createServiceType);
+router.post('/types', authenticate, authorizeAction('service_master', 'create'), ctrl.createServiceType);
 
 /**
  * @swagger
@@ -132,8 +131,8 @@ router.post('/types', authenticate, authorize(...writeRoles), ctrl.createService
  *       200:
  *         description: Deleted
  */
-router.put('/types/:id', authenticate, authorize(...writeRoles), ctrl.updateServiceType);
-router.delete('/types/:id', authenticate, authorize(...writeRoles), ctrl.deleteServiceType);
+router.put('/types/:id', authenticate, authorizeAction('service_master', 'edit'), ctrl.updateServiceType);
+router.delete('/types/:id', authenticate, authorizeAction('service_master', 'delete'), ctrl.deleteServiceType);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // LABOR RATES
@@ -185,7 +184,7 @@ router.delete('/types/:id', authenticate, authorize(...writeRoles), ctrl.deleteS
  *         description: Created
  */
 router.get('/labor-rates', authenticate, ctrl.getLaborRates);
-router.post('/labor-rates', authenticate, authorize(...writeRoles), ctrl.createLaborRate);
+router.post('/labor-rates', authenticate, authorizeAction('service_master', 'create'), ctrl.createLaborRate);
 
 /**
  * @swagger
@@ -215,8 +214,8 @@ router.post('/labor-rates', authenticate, authorize(...writeRoles), ctrl.createL
  *       200:
  *         description: Deleted
  */
-router.put('/labor-rates/:id', authenticate, authorize(...writeRoles), ctrl.updateLaborRate);
-router.delete('/labor-rates/:id', authenticate, authorize(...writeRoles), ctrl.deleteLaborRate);
+router.put('/labor-rates/:id', authenticate, authorizeAction('service_master', 'edit'), ctrl.updateLaborRate);
+router.delete('/labor-rates/:id', authenticate, authorizeAction('service_master', 'delete'), ctrl.deleteLaborRate);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SERVICE PACKAGES
@@ -276,7 +275,7 @@ router.delete('/labor-rates/:id', authenticate, authorize(...writeRoles), ctrl.d
  *         description: Created
  */
 router.get('/packages', authenticate, ctrl.getServicePackages);
-router.post('/packages', authenticate, authorize(...writeRoles), ctrl.createServicePackage);
+router.post('/packages', authenticate, authorizeAction('service_master', 'create'), ctrl.createServicePackage);
 
 /**
  * @swagger
@@ -319,8 +318,8 @@ router.post('/packages', authenticate, authorize(...writeRoles), ctrl.createServ
  *         description: Deleted
  */
 router.get('/packages/:id', authenticate, ctrl.getPackageById);
-router.put('/packages/:id', authenticate, authorize(...writeRoles), ctrl.updateServicePackage);
-router.delete('/packages/:id', authenticate, authorize(...writeRoles), ctrl.deleteServicePackage);
+router.put('/packages/:id', authenticate, authorizeAction('service_master', 'edit'), ctrl.updateServicePackage);
+router.delete('/packages/:id', authenticate, authorizeAction('service_master', 'delete'), ctrl.deleteServicePackage);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // WARRANTY TYPES
@@ -373,7 +372,7 @@ router.delete('/packages/:id', authenticate, authorize(...writeRoles), ctrl.dele
  *         description: Created
  */
 router.get('/warranties', authenticate, ctrl.getWarrantyTypes);
-router.post('/warranties', authenticate, authorize(...writeRoles), ctrl.createWarrantyType);
+router.post('/warranties', authenticate, authorizeAction('service_master', 'create'), ctrl.createWarrantyType);
 
 /**
  * @swagger
@@ -403,7 +402,7 @@ router.post('/warranties', authenticate, authorize(...writeRoles), ctrl.createWa
  *       200:
  *         description: Deleted
  */
-router.put('/warranties/:id', authenticate, authorize(...writeRoles), ctrl.updateWarrantyType);
-router.delete('/warranties/:id', authenticate, authorize(...writeRoles), ctrl.deleteWarrantyType);
+router.put('/warranties/:id', authenticate, authorizeAction('service_master', 'edit'), ctrl.updateWarrantyType);
+router.delete('/warranties/:id', authenticate, authorizeAction('service_master', 'delete'), ctrl.deleteWarrantyType);
 
 module.exports = router;

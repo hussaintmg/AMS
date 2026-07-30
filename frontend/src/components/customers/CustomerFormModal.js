@@ -14,7 +14,7 @@ const TABS = [
   { key: 'details', label: 'Details' },
 ];
 
-const LABEL_STYLE = { display: 'flex', alignItems: 'center', justifyContent: 'space-between' };
+const LABEL_STYLE = { display: 'flex', alignItems: 'center', justifyContent: 'space-between' ,flexDirection:'row'};
 
 export default function CustomerFormModal({ customer, onClose, onSaved }) {
   const { createCustomer, updateCustomer, meta, loadMeta } = useCustomers();

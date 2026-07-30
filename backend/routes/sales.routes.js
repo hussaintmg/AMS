@@ -15,7 +15,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { authenticate, authorize } = require('../middleware/auth');
+const { authenticate, authorizeAction } = require('../middleware/auth');
 const salesController = require('../controllers/salesManagement.controller');
 const bulkPermission = require('../middleware/bulkSalesPermission');
 
@@ -39,6 +39,10 @@ router.post('/bulk', authenticate, bulkPermission('sales_orders'), salesControll
  *     security: [{ bearerAuth: [] }]
  */
 router.get('/order-stats', authenticate, salesController.getOrderStats);
+
+router.get('/dispatch-stats', authenticate, salesController.getDispatchStats);
+
+router.get('/dispatched', authenticate, salesController.getDispatchedOrders);
 
 /**
  * @swagger
@@ -127,7 +131,7 @@ router.get('/:id/history', authenticate, salesController.getSalesOrderHistory);
  *               paidAmount: { type: number }
  *               paymentMode: { type: string, enum: [cash, bank_finance, lease, exchange] }
  */
-router.post('/', authenticate, authorize('super_admin', 'sales_manager'), salesController.createSalesOrder);
+router.post('/', authenticate, authorizeAction('sales_orders', 'create'), salesController.createSalesOrder);
 
 /**
  * @swagger
@@ -162,9 +166,9 @@ router.post('/', authenticate, authorize('super_admin', 'sales_manager'), salesC
  *               expectedDeliveryDate: { type: string, format: date }
  *               notes: { type: string }
  */
-router.post('/direct', authenticate, authorize('super_admin', 'admin', 'sales_manager'), salesController.createDirectSalesOrder);
+router.post('/direct', authenticate, authorizeAction('sales_orders', 'create'), salesController.createDirectSalesOrder);
 
-router.post('/:id/send-email', authenticate, authorize('super_admin', 'admin', 'sales_manager', 'sales_executive'), salesController.sendSalesOrderEmail);
+router.post('/:id/send-email', authenticate, authorizeAction('sales_orders', 'sendEmail'), salesController.sendSalesOrderEmail);
 
 /**
  * @swagger
@@ -174,7 +178,7 @@ router.post('/:id/send-email', authenticate, authorize('super_admin', 'admin', '
  *     summary: Update sales order
  *     security: [{ bearerAuth: [] }]
  */
-router.put('/:id', authenticate, authorize('super_admin', 'sales_manager'), salesController.updateSalesOrder);
+router.put('/:id', authenticate, authorizeAction('sales_orders', 'edit'), salesController.updateSalesOrder);
 
 /**
  * @swagger
@@ -194,7 +198,7 @@ router.put('/:id', authenticate, authorize('super_admin', 'sales_manager'), sale
  *               status: { type: string, enum: [confirmed, invoiced, delivered, cancelled] }
  *               notes: { type: string, description: Reason or notes for status change }
  */
-router.put('/:id/status', authenticate, authorize('super_admin', 'admin', 'sales_manager'), salesController.updateSalesOrderStatus);
+router.put('/:id/status', authenticate, authorizeAction('sales_orders', 'edit'), salesController.updateSalesOrderStatus);
 
 /**
  * @swagger
@@ -204,7 +208,7 @@ router.put('/:id/status', authenticate, authorize('super_admin', 'admin', 'sales
  *     summary: Cancel sales order
  *     security: [{ bearerAuth: [] }]
  */
-router.delete('/:id', authenticate, authorize('super_admin'), salesController.deleteSalesOrder);
+router.delete('/:id', authenticate, authorizeAction('sales_orders', 'delete'), salesController.deleteSalesOrder);
 
 /**
  * @swagger
@@ -214,7 +218,7 @@ router.delete('/:id', authenticate, authorize('super_admin'), salesController.de
  *     summary: Mark order as delivered
  *     security: [{ bearerAuth: [] }]
  */
-router.post('/:id/deliver', authenticate, authorize('super_admin', 'sales_manager'), salesController.deliverSalesOrder);
+router.post('/:id/deliver', authenticate, authorizeAction('sales_orders', 'edit'), salesController.deliverSalesOrder);
 
 /**
  * @swagger
@@ -231,6 +235,6 @@ router.post('/:id/deliver', authenticate, authorize('super_admin', 'sales_manage
  *             properties:
  *               dueDays: { type: integer, default: 30, description: Number of days until invoice is due }
  */
-router.post('/:id/invoice', authenticate, authorize('super_admin', 'admin', 'sales_manager', 'accountant'), salesController.generateInvoiceFromOrder);
+router.post('/:id/invoice', authenticate, authorizeAction('sales_orders', 'create'), salesController.generateInvoiceFromOrder);
 
 module.exports = router;

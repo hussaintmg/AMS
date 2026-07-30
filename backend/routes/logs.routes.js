@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const logController = require("../controllers/logController");
-const { authenticate, authorize } = require("../middleware/auth");
+const { authenticate, authorizeAction } = require("../middleware/auth");
 
 /**
  * @swagger
@@ -225,7 +225,7 @@ router.get("/:id", authenticate, logController.getLogById);
 router.delete(
   "/:id",
   authenticate,
-  authorize("super_admin"),
+  authorizeAction("logs", "delete"),
   logController.deleteLog,
 );
 
@@ -236,7 +236,7 @@ router.get("/api-logs/:id", authenticate, logController.getLogById);
 router.delete(
   "/api-logs/:id",
   authenticate,
-  authorize("super_admin"),
+  authorizeAction("logs", "delete"),
   logController.deleteLog,
 );
 router.get("/audit-logs", authenticate, logController.queryLogs);
@@ -245,7 +245,7 @@ router.get("/audit-logs/:id", authenticate, logController.getLogById);
 router.delete(
   "/audit-logs/:id",
   authenticate,
-  authorize("super_admin"),
+  authorizeAction("logs", "delete"),
   logController.deleteLog,
 );
 

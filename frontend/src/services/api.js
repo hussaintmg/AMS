@@ -342,6 +342,9 @@ export const salesAPI = {
     bulkOrders: (operation, ids) => api.post('/sales/bulk', { operation, ids }),
     getSalesStats: () => api.get('/sales/stats'),
     getOrderStats: () => api.get('/sales/order-stats'),
+    // Dispatch
+    getDispatchedOrders: (params) => api.get('/sales/dispatched', { params }),
+    getDispatchStats: (params) => api.get('/sales/dispatch-stats', { params }),
 
     // Master Data Lookups (backward compat)
     getQuotationStatuses: (params) => api.get('/sales-master/quotation-statuses', { params }),
@@ -723,39 +726,6 @@ export const searchAPI = {
     rebuild: () => api.post('/search/rebuild'),
 };
 
-// Order Form Customers API
-export const ofCustomerAPI = {
-    getAll: (params) => api.get('/of-customers', { params }),
-    getById: (id) => api.get(`/of-customers/${id}`),
-    create: (data) => api.post('/of-customers', data),
-    update: (id, data) => api.put(`/of-customers/${id}`, data),
-    delete: (id) => api.delete(`/of-customers/${id}`),
-    getStats: () => api.get('/of-customers/stats')
-};
-
-// Order Form Products API
-export const ofProductAPI = {
-    getAll: (params) => api.get('/of-products', { params }),
-    getById: (id) => api.get(`/of-products/${id}`),
-    create: (data) => api.post('/of-products', data),
-    update: (id, data) => api.put(`/of-products/${id}`, data),
-    delete: (id) => api.delete(`/of-products/${id}`),
-    getStats: () => api.get('/of-products/stats')
-};
-
-// Order Form Orders API
-export const ofOrderAPI = {
-    getAll: (params) => api.get('/of-orders', { params }),
-    getById: (id) => api.get(`/of-orders/${id}`),
-    create: (data) => api.post('/of-orders', data),
-    update: (id, data) => api.put(`/of-orders/${id}`, data),
-    delete: (id) => api.delete(`/of-orders/${id}`),
-    getStats: () => api.get('/of-orders/stats'),
-    getCustomersList: () => api.get('/of-orders/customers/list'),
-    getProductsList: () => api.get('/of-orders/products/list'),
-    getDeliveryMonths: () => api.get('/of-orders/delivery-months/list')
-};
-
 /** HR & Finance */
 export const employeeAPI = {
     list: (params) => api.get('/employees', { params }),
@@ -914,6 +884,21 @@ export const emailAPI = {
   getEmailLogs: (params) => api.get('/email/logs', { params }),
   getEmailLogStats: () => api.get('/email/logs/stats'),
   getEmailLog: (id) => api.get(`/email/logs/${id}`),
+};
+
+// Uploader (Dealer Pro XLSX import)
+export const uploaderAPI = {
+  detectFileType: (formData) => api.post('/uploader/detect', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+  uploadBatch: (formData, config = {}) => api.post('/uploader/batch', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    ...config,
+  }),
+  previewBatch: (formData, config = {}) => api.post('/uploader/batch', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    ...config,
+  }),
 };
 
 export default api;

@@ -3,7 +3,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const controller = require('../controllers/serverManagement.controller');
-const { authenticate, authorize } = require('../middleware/auth');
+const { authenticate, authorizeAction } = require('../middleware/auth');
 
 const router = express.Router();
 const uploadDir = path.join(__dirname, '..', 'uploads', 'branding');
@@ -26,7 +26,7 @@ const upload = multer({
   limits: { fileSize: 5 * 1024 * 1024 }
 });
 
-const requireSuperAdmin = [authenticate, authorize('super_admin')];
+const requireSuperAdmin = [authenticate, authorizeAction('server_management', 'edit')];
 
 /**
  * @swagger

@@ -14,7 +14,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { authenticate, authorize } = require('../middleware/auth');
+const { authenticate, authorizeAction } = require('../middleware/auth');
 const invoiceController = require('../controllers/invoiceManagement.controller');
 const bulkPermission = require('../middleware/bulkSalesPermission');
 
@@ -123,7 +123,7 @@ router.get('/:id/qr-data', authenticate, invoiceController.getQRCodeData);
  *               notes: { type: string }
  *               items: { type: array }
  */
-router.post('/', authenticate, authorize('super_admin', 'sales_manager', 'accountant'), invoiceController.createInvoice);
+router.post('/', authenticate, authorizeAction('invoices', 'create'), invoiceController.createInvoice);
 
 /**
  * @swagger
@@ -143,7 +143,7 @@ router.post('/', authenticate, authorize('super_admin', 'sales_manager', 'accoun
  *               salesOrderId: { type: integer }
  *               dueDays: { type: integer, default: 30 }
  */
-router.post('/from-sales-order', authenticate, authorize('super_admin', 'sales_manager'), invoiceController.createFromSalesOrder);
+router.post('/from-sales-order', authenticate, authorizeAction('invoices', 'create'), invoiceController.createFromSalesOrder);
 
 /**
  * @swagger
@@ -164,7 +164,7 @@ router.post('/from-sales-order', authenticate, authorize('super_admin', 'sales_m
  *               notes: { type: string }
  *               termsAndConditions: { type: string }
  */
-router.put('/:id', authenticate, authorize('super_admin', 'sales_manager', 'accountant'), invoiceController.updateInvoice);
+router.put('/:id', authenticate, authorizeAction('invoices', 'edit'), invoiceController.updateInvoice);
 
 /**
  * @swagger
@@ -174,7 +174,7 @@ router.put('/:id', authenticate, authorize('super_admin', 'sales_manager', 'acco
  *     summary: Cancel invoice
  *     security: [{ bearerAuth: [] }]
  */
-router.delete('/:id', authenticate, authorize('super_admin', 'sales_manager'), invoiceController.deleteInvoice);
+router.delete('/:id', authenticate, authorizeAction('invoices', 'delete'), invoiceController.deleteInvoice);
 
 /**
  * @swagger
@@ -193,7 +193,7 @@ router.delete('/:id', authenticate, authorize('super_admin', 'sales_manager'), i
  *             properties:
  *               status: { type: string, enum: [draft, sent, partial, paid, overdue, cancelled] }
  */
-router.put('/:id/status', authenticate, authorize('super_admin', 'sales_manager', 'accountant'), invoiceController.updateInvoiceStatus);
+router.put('/:id/status', authenticate, authorizeAction('invoices', 'edit'), invoiceController.updateInvoiceStatus);
 
 /**
  * @swagger
@@ -215,7 +215,7 @@ router.put('/:id/status', authenticate, authorize('super_admin', 'sales_manager'
  *               unitPrice: { type: number }
  *               taxId: { type: integer }
  */
-router.post('/:id/items', authenticate, authorize('super_admin', 'sales_manager', 'accountant'), invoiceController.addInvoiceItem);
+router.post('/:id/items', authenticate, authorizeAction('invoices', 'edit'), invoiceController.addInvoiceItem);
 
 /**
  * @swagger
@@ -225,7 +225,7 @@ router.post('/:id/items', authenticate, authorize('super_admin', 'sales_manager'
  *     summary: Update invoice item
  *     security: [{ bearerAuth: [] }]
  */
-router.put('/:id/items/:itemId', authenticate, authorize('super_admin', 'sales_manager', 'accountant'), invoiceController.updateInvoiceItem);
+router.put('/:id/items/:itemId', authenticate, authorizeAction('invoices', 'edit'), invoiceController.updateInvoiceItem);
 
 /**
  * @swagger
@@ -235,7 +235,7 @@ router.put('/:id/items/:itemId', authenticate, authorize('super_admin', 'sales_m
  *     summary: Remove invoice item
  *     security: [{ bearerAuth: [] }]
  */
-router.delete('/:id/items/:itemId', authenticate, authorize('super_admin', 'sales_manager', 'accountant'), invoiceController.removeInvoiceItem);
+router.delete('/:id/items/:itemId', authenticate, authorizeAction('invoices', 'delete'), invoiceController.removeInvoiceItem);
 
 /**
  * @swagger
@@ -257,7 +257,7 @@ router.delete('/:id/items/:itemId', authenticate, authorize('super_admin', 'sale
  *               referenceNumber: { type: string }
  *               notes: { type: string }
  */
-router.post('/:id/payments', authenticate, authorize('super_admin', 'sales_manager', 'accountant'), invoiceController.recordPayment);
+router.post('/:id/payments', authenticate, authorizeAction('invoices', 'edit'), invoiceController.recordPayment);
 
 /**
  * @swagger
@@ -267,9 +267,9 @@ router.post('/:id/payments', authenticate, authorize('super_admin', 'sales_manag
  *     summary: Send invoice to customer (changes status to sent)
  *     security: [{ bearerAuth: [] }]
  */
-router.post('/:id/send', authenticate, authorize('super_admin', 'admin', 'sales_manager', 'accountant'), invoiceController.sendInvoice);
+router.post('/:id/send', authenticate, authorizeAction('invoices', 'sendEmail'), invoiceController.sendInvoice);
 
-router.post('/:id/send-email', authenticate, authorize('super_admin', 'admin', 'sales_manager', 'accountant'), invoiceController.sendInvoiceEmail);
+router.post('/:id/send-email', authenticate, authorizeAction('invoices', 'sendEmail'), invoiceController.sendInvoiceEmail);
 
 /**
  * @swagger

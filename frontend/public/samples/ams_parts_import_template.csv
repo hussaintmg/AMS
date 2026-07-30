@@ -1,0 +1,2 @@
+﻿"part_number","name","purchase_price","selling_price","category_name","description","brand","source_type","supplier_name","unit","current_stock","minimum_stock","maximum_stock","reorder_level","warehouse_name","bin_location"
+"SPARE-001","Sample Brake Pad","1500","2500","sadsa","OEM quality brake pad set","OEM","manufacturer","thfhgf","piece","0","2","50","5","","A-01"

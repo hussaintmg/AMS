@@ -2,13 +2,14 @@
  * Sequential document number generator for MongoDB collections.
  * Produces numbers like SO-2026-000001, scoped per calendar year.
  */
-async function nextDocNumber(Model, field, prefix, pad = 6) {
+async function nextDocNumber(Model, field, prefix, pad = 6, { session = null } = {}) {
   const year = new Date().getFullYear();
   const yearPrefix = `${prefix}-${year}-`;
-  const last = await Model.findOne({ [field]: { $regex: `^${yearPrefix}` } })
+  let query = Model.findOne({ [field]: { $regex: `^${yearPrefix}` } })
     .sort({ [field]: -1 })
-    .select(field)
-    .lean();
+    .select(field);
+  if (session) query = query.session(session);
+  const last = await query.lean();
 
   let sequence = 1;
   if (last && last[field]) {

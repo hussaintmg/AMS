@@ -10,7 +10,7 @@ const path = require("path");
 // This is important on aaPanel/PM2, where cwd can differ between restarts.
 require("dotenv").config({
   path: path.resolve(__dirname, "..", ".env"),
-  override: true,
+  override: false,
 });
 
 const express = require("express");

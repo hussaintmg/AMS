@@ -51,12 +51,15 @@ const displayStatus = (invoice) => {
 const mapInvoiceRow = (inv) => ({
     id: inv._id,
     invoice_number: inv.invoiceNumber,
+    external_invoice_number: inv.externalInvoiceNumber || '',
     invoice_type: inv.invoiceType || 'sales',
     sales_order_id: inv.salesOrder?._id || inv.salesOrder || null,
     order_number: inv.salesOrder?.orderNumber || null,
+    booking_number: inv.salesOrder?.bookingNo || inv.salesOrder?.pboNo || '',
     job_card_id: inv.jobCard || null,
     customer_id: inv.customer?._id || inv.customer || null,
     customer_name: customerName(inv.customer),
+    sale_person: inv.salePerson || inv.salesOrder?.salePerson || '',
     status: displayStatus(inv),
     invoice_date: inv.invoiceDate || inv.createdAt,
     due_date: inv.dueDate || null,
@@ -115,13 +118,27 @@ const getAllInvoices = async (req, res, next) => {
         }
         if (search) {
             const regex = new RegExp(String(search).trim().split(/\s+/).map(escapeRegex).join('|'), 'i');
-            const customers = await Customer.find({
-                $or: [{ firstName: regex }, { lastName: regex }, { companyName: regex }, { phone: regex }, { customerCode: regex }],
-            }).select('_id').limit(500).lean();
+            const [customers, orders] = await Promise.all([
+                Customer.find({
+                    $or: [{ firstName: regex }, { lastName: regex }, { companyName: regex }, { phone: regex }, { customerCode: regex }],
+                }).select('_id').limit(500).lean(),
+                SalesOrder.find({
+                    $or: [
+                        { orderNumber: regex },
+                        { externalOrderNumber: regex },
+                        { pboNo: regex },
+                        { bookingNo: regex },
+                        { salePerson: regex },
+                    ],
+                }).select('_id').limit(500).lean(),
+            ]);
             filter.$or = [
                 { invoiceNumber: regex },
+                { externalInvoiceNumber: regex },
+                { salePerson: regex },
                 { 'items.description': regex },
                 ...(customers.length ? [{ customer: { $in: customers.map((c) => c._id) } }] : []),
+                ...(orders.length ? [{ salesOrder: { $in: orders.map((order) => order._id) } }] : []),
             ];
         }
 
@@ -137,7 +154,7 @@ const getAllInvoices = async (req, res, next) => {
         const [invoices, total] = await Promise.all([
             Invoice.find(filter)
                 .populate('customer', 'firstName lastName companyName phone customerCode')
-                .populate('salesOrder', 'orderNumber')
+                .populate('salesOrder', 'orderNumber externalOrderNumber pboNo bookingNo salePerson')
                 .sort({ [sortField]: sortDir })
                 .skip((pageNum - 1) * limitNum)
                 .limit(limitNum)
@@ -166,7 +183,7 @@ const getInvoiceById = async (req, res, next) => {
     try {
         const invoice = await Invoice.findById(sanitizeId(req.params.id))
             .populate('customer', 'firstName lastName companyName phone email address city customerCode')
-            .populate('salesOrder', 'orderNumber')
+            .populate('salesOrder', 'orderNumber externalOrderNumber pboNo bookingNo salePerson')
             .lean();
         if (!invoice) throw new AppError('Invoice not found', 404);
 

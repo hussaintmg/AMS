@@ -1,23 +1,21 @@
 const express = require('express');
 const router = express.Router();
-const { authenticate, authorize } = require('../middleware/auth');
+const { authenticate, authorizeAction } = require('../middleware/auth');
 const expenses = require('../controllers/expenses.controller');
 
-const fin = ['super_admin', 'admin', 'accountant', 'hr_admin'];
+router.get('/categories', authenticate, authorizeAction('expenses', 'view'), expenses.listCategories);
+router.post('/categories', authenticate, authorizeAction('expenses', 'create'), expenses.createCategory);
+router.patch('/categories/:id', authenticate, authorizeAction('expenses', 'edit'), expenses.updateCategory);
 
-router.get('/categories', authenticate, authorize(...fin), expenses.listCategories);
-router.post('/categories', authenticate, authorize('super_admin', 'admin', 'accountant'), expenses.createCategory);
-router.patch('/categories/:id', authenticate, authorize('super_admin', 'admin', 'accountant'), expenses.updateCategory);
-
-router.get('/stats', authenticate, authorize(...fin), expenses.getStats);
-router.get('/', authenticate, authorize(...fin), expenses.listExpenses);
-router.patch('/bulk/deactivate', authenticate, authorize('super_admin', 'admin', 'accountant'), expenses.bulkDeactivateExpenses);
-router.delete('/bulk', authenticate, authorize(...fin), expenses.bulkDeleteExpenses);
-router.get('/:id', authenticate, authorize(...fin), expenses.getExpense);
-router.post('/', authenticate, authorize(...fin), expenses.createExpense);
-router.put('/:id', authenticate, authorize(...fin), expenses.updateExpense);
-router.patch('/:id/status', authenticate, authorize('super_admin', 'admin', 'accountant'), expenses.toggleExpenseStatus);
-router.post('/:id/post', authenticate, authorize('super_admin', 'admin', 'accountant'), expenses.postExpense);
-router.delete('/:id', authenticate, authorize(...fin), expenses.deleteExpense);
+router.get('/stats', authenticate, authorizeAction('expenses', 'view'), expenses.getStats);
+router.get('/', authenticate, authorizeAction('expenses', 'view'), expenses.listExpenses);
+router.patch('/bulk/deactivate', authenticate, authorizeAction('expenses', 'edit'), expenses.bulkDeactivateExpenses);
+router.delete('/bulk', authenticate, authorizeAction('expenses', 'delete'), expenses.bulkDeleteExpenses);
+router.get('/:id', authenticate, authorizeAction('expenses', 'view'), expenses.getExpense);
+router.post('/', authenticate, authorizeAction('expenses', 'create'), expenses.createExpense);
+router.put('/:id', authenticate, authorizeAction('expenses', 'edit'), expenses.updateExpense);
+router.patch('/:id/status', authenticate, authorizeAction('expenses', 'edit'), expenses.toggleExpenseStatus);
+router.post('/:id/post', authenticate, authorizeAction('expenses', 'edit'), expenses.postExpense);
+router.delete('/:id', authenticate, authorizeAction('expenses', 'delete'), expenses.deleteExpense);
 
 module.exports = router;

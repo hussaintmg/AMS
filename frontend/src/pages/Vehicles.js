@@ -45,6 +45,7 @@ const Vehicles = () => {
   const [search, setSearch] = useState(urlSearch);
   const [statusFilter, setStatusFilter] = useState("");
   const [makeFilter, setMakeFilter] = useState("");
+  const [dispatchFilter, setDispatchFilter] = useState("");
 
   // Modal states
   const [showModal, setShowModal] = useState(false);
@@ -137,6 +138,7 @@ const Vehicles = () => {
         ...(search && { search }),
         ...(statusFilter && { status: statusFilter }),
         ...(makeFilter && { makeId: makeFilter }),
+        ...(dispatchFilter && { dispatchStatus: dispatchFilter }),
       };
 
       const response = await vehicleAPI.getAll(params);
@@ -151,7 +153,7 @@ const Vehicles = () => {
     } finally {
       setLoading(false);
     }
-  }, [page, limit, search, statusFilter, makeFilter]);
+  }, [page, limit, search, statusFilter, makeFilter, dispatchFilter]);
 
   // Fetch reference data
   const fetchReferenceData = useCallback(async () => {
@@ -176,7 +178,8 @@ const Vehicles = () => {
     ]);
 
     const valueOf = (result, fallback) => {
-      if (result.status === "fulfilled") return result.value?.data?.data ?? fallback;
+      if (result.status === "fulfilled")
+        return result.value?.data?.data ?? fallback;
       console.error("Error fetching reference data:", result.reason);
       return fallback;
     };
@@ -237,7 +240,9 @@ const Vehicles = () => {
     }
   }, [urlSearch]);
 
-  useEffect(() => { if (searchParams.get('action') === 'create') openModal('create'); }, []);
+  useEffect(() => {
+    if (searchParams.get("action") === "create") openModal("create");
+  }, []);
 
   // Debounce search
   useEffect(() => {
@@ -522,9 +527,14 @@ const Vehicles = () => {
       render: (row) => (
         <div className="vehicle-info">
           <span className="vehicle-name">
-            {row.make_name} {row.model_name}
+            {[row.make_name, row.model_name].filter(Boolean).join(' ')
+              || row.vehicle_name
+              || row.chassis_number
+              || row.vin
+              || row.engine_number
+              || '—'}
           </span>
-          <span className="vehicle-variant">{row.variant_name}</span>
+          <span className="vehicle-variant">{row.variant_name || ''}</span>
         </div>
       ),
     },
@@ -553,6 +563,31 @@ const Vehicles = () => {
           </span>
         );
       },
+    },
+    {
+      header: "Dispatch",
+      accessor: "dispatch_no",
+      render: (row) =>
+        row.is_dispatched ? (
+          <div className="vehicle-info">
+            <span className="badge" style={{ background: "#ede9fe", color: "#6d28d9" }}>
+              🚚 {row.dispatch_no}
+            </span>
+            <span className="vehicle-variant">
+              {[
+                row.dispatch_date ? new Date(row.dispatch_date).toLocaleDateString() : "",
+                row.dispatch_pbo_no,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </span>
+          </div>
+        ) : (
+          <span className="badge" style={{ background: "#f1f5f9", color: "#64748b" }}>
+            Not dispatched
+          </span>
+        ),
+      hideOnMobile: true,
     },
     { header: "Condition", accessor: "condition_type" },
     {
@@ -672,7 +707,7 @@ const Vehicles = () => {
             </span>
             <input
               type="text"
-              placeholder="Search by VIN, engine number, brand..."
+              placeholder="Search by chassis/VIN, engine, brand, dispatch no, PBO..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="search-input"
@@ -718,8 +753,24 @@ const Vehicles = () => {
           </SearchableSelect>
         </div>
 
+        <div className="filter-field">
+          <label>Dispatch</label>
+          <SearchableSelect
+            value={dispatchFilter}
+            onChange={(e) => {
+              setDispatchFilter(e.target.value);
+              setPage(1);
+            }}
+            className="filter-select"
+          >
+            <option value="">All Vehicles</option>
+            <option value="dispatched">Dispatched</option>
+            <option value="not_dispatched">Not Dispatched</option>
+          </SearchableSelect>
+        </div>
+
         <div className="filter-field filter-field-actions">
-          {(search || statusFilter || makeFilter) && (
+          {(search || statusFilter || makeFilter || dispatchFilter) && (
             <button
               type="button"
               className="btn btn-sm btn-outline filter-reset-btn"
@@ -727,6 +778,7 @@ const Vehicles = () => {
                 setSearch("");
                 setStatusFilter("");
                 setMakeFilter("");
+                setDispatchFilter("");
                 setPage(1);
               }}
               title="Reset all filters"
@@ -887,6 +939,7 @@ const Vehicles = () => {
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "space-between",
+                          flexDirection: "row",
                         }}
                       >
                         Brand *
@@ -917,6 +970,7 @@ const Vehicles = () => {
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "space-between",
+                          flexDirection: "row",
                         }}
                       >
                         Model *
@@ -950,6 +1004,7 @@ const Vehicles = () => {
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "space-between",
+                          flexDirection: "row",
                         }}
                       >
                         Variant *
@@ -981,6 +1036,7 @@ const Vehicles = () => {
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "space-between",
+                          flexDirection: "row",
                         }}
                       >
                         Color *
@@ -1026,6 +1082,7 @@ const Vehicles = () => {
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "space-between",
+                          flexDirection: "row",
                         }}
                       >
                         Condition

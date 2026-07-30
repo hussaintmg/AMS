@@ -52,7 +52,12 @@ const batchResolveIds = async (vehicles) => {
 const mapVehicleFlat = (v, idMaps) => ({
     id: v._id,
     vin: v.vin,
+    chassis_number: v.chassisNumber || v.vin || '',
     engine_number: v.engineNumber,
+    // Make + Model + Variant; legacy/imported vehicles without master names
+    // must still show an identifying label (chassis/engine), never blank.
+    vehicle_name: [v.make?.name, v.model?.name, v.variant?.name].filter(Boolean).join(' ')
+        || v.chassisNumber || v.vin || v.engineNumber || '',
     year: v.year,
     status: v.status,
     condition_type: v.conditionType,
@@ -68,6 +73,21 @@ const mapVehicleFlat = (v, idMaps) => ({
     location: v.location,
     arrival_date: v.arrivalDate,
     notes: v.notes,
+    is_stock_out: Boolean(v.isStockOut),
+    stock_out_date: v.stockOutDate || null,
+    // ── Dispatch evidence (Dealer Pro Dispatch Report) ──
+    is_dispatched: Boolean(v.dispatch?.dispatchNo),
+    dispatch_no: v.dispatch?.dispatchNo || '',
+    dispatch_date: v.dispatch?.dispatchDate || null,
+    dispatch_pbo_no: v.dispatch?.pboNo || '',
+    dispatch_invoice_no: v.dispatch?.invoiceNo || '',
+    dispatch_sap_order_no: v.dispatch?.sapOrderNo || '',
+    dispatch_transport_company: v.dispatch?.transportCompany || '',
+    dispatch_builty_no: v.dispatch?.builtyNo || '',
+    dispatch_ship_from: v.dispatch?.shipFrom || '',
+    dispatch_ship_to: v.dispatch?.shipTo || '',
+    dispatch_sales_order_id: v.dispatch?.salesOrder || null,
+    dispatch_source: v.dispatch?.source || '',
     created_at: v.createdAt,
     make_id: idMaps.makeMap[v.make?.name] || null,
     model_id: idMaps.modelMap[v.model?.name] || null,
@@ -88,6 +108,7 @@ const getAllVehicles = async (req, res, next) => {
             year = '',
             warehouseId = '',
             conditionType = '',
+            dispatchStatus = '',
             sortBy = 'created_at',
             sortOrder = 'DESC'
         } = req.query;
@@ -131,13 +152,25 @@ const getAllVehicles = async (req, res, next) => {
             matchFilter.conditionType = conditionType;
         }
 
+        // dispatched   → has dispatch evidence from the Dispatch Report
+        // not_dispatched → still in stock, never dispatched
+        if (dispatchStatus === 'dispatched') {
+            matchFilter['dispatch.dispatchNo'] = { $exists: true, $nin: [null, ''] };
+        } else if (dispatchStatus === 'not_dispatched') {
+            matchFilter['dispatch.dispatchNo'] = { $in: [null, ''] };
+        }
+
         if (search) {
             const regex = new RegExp(search, 'i');
             matchFilter.$or = [
                 { vin: regex },
+                { chassisNumber: regex },
                 { engineNumber: regex },
                 { 'make.name': regex },
-                { 'model.name': regex }
+                { 'model.name': regex },
+                { 'variant.name': regex },
+                { 'dispatch.dispatchNo': regex },
+                { 'dispatch.pboNo': regex }
             ];
         }
 

@@ -3,6 +3,7 @@
  * job cards) so the "invoice ready" rule is enforced everywhere a sale
  * happens. Shared by sales, service and invoice controllers.
  */
+const SalesOrder = require('../models/SalesOrder.model');
 const Invoice = require('../models/Invoice.model');
 const { nextDocNumber } = require('./docNumber');
 const { recordCustomerActivity } = require('./customerSync');
@@ -20,9 +21,28 @@ function statusForPayment(totalAmount, paidAmount) {
  * Create an invoice for a sales order (idempotent — returns the existing
  * active invoice if one was already generated for the order).
  */
-async function createInvoiceForOrder(order, { dueDays = 30, userId = null } = {}) {
-  const existing = await Invoice.findOne({ salesOrder: order._id, status: { $ne: 'cancelled' } });
-  if (existing) return { invoice: existing, created: false };
+async function createInvoiceForOrder(order, {
+  dueDays = 30,
+  userId = null,
+  session = null,
+  invoiceDate = null,
+  externalInvoiceNumber = '',
+  seller = null,
+  sellerEmployee = null,
+  salePerson = '',
+  importKey = '',
+} = {}) {
+  let existingQuery = Invoice.findOne({ salesOrder: order._id, status: { $ne: 'cancelled' } });
+  if (session) existingQuery = existingQuery.session(session);
+  const existing = await existingQuery;
+  if (existing) {
+    if (!order.invoice || String(order.invoice) !== String(existing._id)) {
+      let linkQuery = SalesOrder.findByIdAndUpdate(order._id, { $set: { invoice: existing._id } }, { new: true });
+      if (session) linkQuery = linkQuery.session(session);
+      await linkQuery;
+    }
+    return { invoice: existing, created: false };
+  }
 
   const items = (order.items || []).map((item) => ({
     description: item.description,
@@ -53,14 +73,23 @@ async function createInvoiceForOrder(order, { dueDays = 30, userId = null } = {}
   const paidAmount = round2(Number(order.paidAmount) || 0);
   const balanceAmount = round2(totalAmount - paidAmount);
 
-  const invoiceNumber = await nextDocNumber(Invoice, 'invoiceNumber', 'INV');
-  const now = new Date();
+  const invoiceNumber = await nextDocNumber(Invoice, 'invoiceNumber', 'INV', 6, { session });
+  const now = invoiceDate || new Date();
 
-  const invoice = await Invoice.create({
+  const resolvedSeller = seller || order.seller || null;
+  const resolvedSellerEmployee = sellerEmployee || order.sellerEmployee || null;
+  const resolvedSalePerson = String(salePerson || order.salePerson || '').trim();
+
+  const invoiceDocument = {
     invoiceNumber,
+    importKey,
+    externalInvoiceNumber,
     invoiceType: order.saleType === 'parts' ? 'parts' : 'sales',
     salesOrder: order._id,
     customer: order.customer,
+    seller: resolvedSeller,
+    sellerEmployee: resolvedSellerEmployee,
+    salePerson: resolvedSalePerson,
     status: statusForPayment(totalAmount, paidAmount),
     invoiceDate: now,
     dueDate: new Date(now.getTime() + (Number(dueDays) || 30) * 24 * 60 * 60 * 1000),
@@ -73,7 +102,13 @@ async function createInvoiceForOrder(order, { dueDays = 30, userId = null } = {}
     items,
     notes: order.exchangeVehicleDetails ? `Trade-in: ${order.exchangeVehicleDetails}` : '',
     createdBy: userId,
-  });
+  };
+  const invoice = session
+    ? (await Invoice.create([invoiceDocument], { session }))[0]
+    : await Invoice.create(invoiceDocument);
+  let linkQuery = SalesOrder.findByIdAndUpdate(order._id, { $set: { invoice: invoice._id } }, { new: true });
+  if (session) linkQuery = linkQuery.session(session);
+  await linkQuery;
 
   await recordCustomerActivity({
     customerId: order.customer,
@@ -84,6 +119,7 @@ async function createInvoiceForOrder(order, { dueDays = 30, userId = null } = {}
     description: `Invoice ${invoiceNumber} for sales order ${order.orderNumber}`,
     userId,
     outstandingDelta: balanceAmount,
+    session,
   });
 
   logger.info(`Invoice ${invoiceNumber} generated for sales order ${order.orderNumber}`);

@@ -29,7 +29,7 @@ const TABS = [
   { key: 'assignment', label: 'Assignment' },
 ];
 
-const LABEL_STYLE = { display: 'flex', alignItems: 'center', justifyContent: 'space-between' };
+const LABEL_STYLE = { display: 'flex', alignItems: 'center', justifyContent: 'space-between' ,flexDirection:'row'};
 
 export default function LeadFormModal({ lead, onClose, onSaved }) {
   const { createLead, updateLead, meta, loadMeta } = useLeads();

@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const leadMasterController = require('../controllers/leadMaster.controller');
-const { authenticate, authorizePage } = require('../middleware/auth');
+const { authenticate, authorizeAction } = require('../middleware/auth');
 
 /**
  * @swagger
@@ -118,10 +118,10 @@ const { authenticate, authorizePage } = require('../middleware/auth');
  *       404: { description: Not found }
  */
 
-router.get('/stats', authenticate, authorizePage('lead-master'), leadMasterController.getStats);
-router.get('/:type', authenticate, authorizePage('lead-master'), leadMasterController.getAll);
-router.post('/:type', authenticate, authorizePage('lead-master'), leadMasterController.create);
-router.put('/:type/:id', authenticate, authorizePage('lead-master'), leadMasterController.update);
-router.delete('/:type/:id', authenticate, authorizePage('lead-master'), leadMasterController.remove);
+router.get('/stats', authenticate, authorizeAction('lead_master', 'view'), leadMasterController.getStats);
+router.get('/:type', authenticate, authorizeAction('lead_master', 'view'), leadMasterController.getAll);
+router.post('/:type', authenticate, authorizeAction('lead_master', 'create'), leadMasterController.create);
+router.put('/:type/:id', authenticate, authorizeAction('lead_master', 'edit'), leadMasterController.update);
+router.delete('/:type/:id', authenticate, authorizeAction('lead_master', 'delete'), leadMasterController.remove);
 
 module.exports = router;

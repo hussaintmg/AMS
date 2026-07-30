@@ -1,58 +1,95 @@
 const express = require('express');
-const router = express.Router();
 const multer = require('multer');
-const { authenticate, authorize } = require('../middleware/auth');
+const path = require('path');
 const uploaderController = require('../controllers/uploader.controller');
+const { authenticate, authorizeAction } = require('../middleware/auth');
+const { FILE_DEFINITIONS, MAX_FILE_SIZE } = require('../services/imports/spreadsheetMapper');
 
-// Configure multer for memory storage (we don't need to save the file locally, just process it)
+const router = express.Router();
 const storage = multer.memoryStorage();
-const upload = multer({
-    storage: storage,
-    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB file limit
-    fileFilter: (req, file, cb) => {
-        const allowedMimetypes = [
-            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // xlsx
-            'text/csv', // csv
-            'application/csv'
-        ];
 
-        if (allowedMimetypes.includes(file.mimetype) || file.originalname.endsWith('.xlsx') || file.originalname.endsWith('.csv')) {
-            cb(null, true);
-        } else {
-            cb(new Error('Invalid file type. Only XLSX and CSV are allowed.'), false);
-        }
+// A dealer can hand over several workbooks per report type (e.g. one Dispatch
+// Report per month), so every slot accepts a batch of files.
+const MAX_FILES_PER_TYPE = 25;
+const MAX_FILES_PER_BATCH = MAX_FILES_PER_TYPE * Object.keys(FILE_DEFINITIONS).length;
+
+const upload = multer({
+  storage,
+  limits: { fileSize: MAX_FILE_SIZE, files: MAX_FILES_PER_BATCH },
+  fileFilter: (_req, file, callback) => {
+    const extension = path.extname(file.originalname || '').toLowerCase();
+    if (!['.xlsx', '.csv'].includes(extension)) {
+      const error = new multer.MulterError('LIMIT_UNEXPECTED_FILE', file.fieldname);
+      error.message = 'Only .xlsx and .csv files are supported.';
+      return callback(error);
     }
+    return callback(null, true);
+  },
 });
 
+const batchFields = Object.values(FILE_DEFINITIONS).map((definition) => ({
+  name: definition.fieldName,
+  maxCount: MAX_FILES_PER_TYPE,
+}));
+
+function handleMulter(middleware) {
+  return (req, res, next) => middleware(req, res, (error) => {
+    if (!error) return next();
+    if (!(error instanceof multer.MulterError)) return next(error);
+    const errorType = error.code === 'LIMIT_FILE_SIZE'
+      ? 'FILE_TOO_LARGE'
+      : error.code === 'LIMIT_FILE_COUNT'
+        ? 'TOO_MANY_FILES'
+        : error.code === 'LIMIT_UNEXPECTED_FILE'
+          ? 'DUPLICATE_OR_UNSUPPORTED_FILE'
+          : error.code;
+    return res.status(400).json({
+      success: false,
+      status: 'validation_failed',
+      message: error.message,
+      errors: [{
+        fileType: error.field || '',
+        errorType,
+        message: error.message,
+      }],
+    });
+  });
+}
+
+function authorizeSelectedImports(req, res, next) {
+  const definitions = Object.values(FILE_DEFINITIONS).filter((definition) => (req.files?.[definition.fieldName] || []).length);
+  let index = 0;
+  const authorizeNext = (error) => {
+    if (error) return next(error);
+    if (index >= definitions.length) return next();
+    const definition = definitions[index];
+    index += 1;
+    return authorizeAction(definition.permission, 'create')(req, res, authorizeNext);
+  };
+  return authorizeNext();
+}
+
 /**
- * @swagger
- * /api/uploader/order-form:
- *   post:
- *     summary: Upload and process Order Form Excel/CSV files
- *     tags: [Uploader]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         multipart/form-data:
- *           schema:
- *             type: object
- *             properties:
- *               file:
- *                 type: string
- *                 format: binary
- *     responses:
- *       200:
- *         description: Successfully processed upload
- *       400:
- *         description: Bad Request / Invalid File
+ * POST /api/uploader/batch
+ * Multipart fields: orderIntake, orderSales, dispatch — each accepts up to
+ * MAX_FILES_PER_TYPE workbooks. Files run grouped in Intake → Sales → Dispatch
+ * order and share one batch context, so rows repeated across files of the same
+ * type resolve to a single record.
  */
-router.post('/order-form',
-    authenticate,
-    authorize('super_admin', 'admin', 'manager'),
-    upload.single('file'),
-    uploaderController.uploadOrderForm
+router.post(
+  '/batch',
+  authenticate,
+  handleMulter(upload.fields(batchFields)),
+  authorizeSelectedImports,
+  uploaderController.uploadBatch,
+);
+
+
+router.post(
+  '/detect',
+  authenticate,
+  handleMulter(upload.single('file')),
+  uploaderController.detectFileType,
 );
 
 module.exports = router;

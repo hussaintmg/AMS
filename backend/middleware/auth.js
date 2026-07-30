@@ -161,9 +161,35 @@ const generateRefreshToken = (userId) => {
   );
 };
 
+/**
+ * Permission-based authorization middleware.
+ * Flow:
+ *   1. Super admin → always allowed
+ *   2. Resolve page access: customPermissions > role.permissions (via canAccessTarget)
+ *   3. Resolve action permission: role.jobs (via canDo)
+ *   Both must pass for access to be granted.
+ */
+const authorizeAction = (pageKey, action = 'view') => {
+  return (req, res, next) => {
+    if (!req.user) return next(new AppError('Authentication required', 401));
+    if (req.user.isSuperAdmin) return next();
+
+    if (!canAccessTarget(req.user, { pageKey, path: pageKey, module: pageKey })) {
+      return next(new AppError(`Access denied: no access to ${pageKey}`, 403));
+    }
+
+    if (!canDo(req.user, pageKey, action)) {
+      return next(new AppError(`Permission denied: cannot ${action} ${pageKey}`, 403));
+    }
+
+    next();
+  };
+};
+
 module.exports = {
   authenticate,
   authorize,
+  authorizeAction,
   authorizePage,
   checkPermission,
   generateToken,

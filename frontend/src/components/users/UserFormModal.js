@@ -226,6 +226,7 @@ function UserFormModal({
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "space-between",
+                    flexDirection:'row'
                   }}
                 >
                   Role *
@@ -267,6 +268,7 @@ function UserFormModal({
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "space-between",
+                    flexDirection:'row'
                   }}
                 >
                   Department

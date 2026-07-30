@@ -411,6 +411,8 @@ function Quotations() {
     };
 
     const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', onConfirm: null });
+    const [conversionForm, setConversionForm] = useState(null);
+    const [converting, setConverting] = useState(false);
 
     const handleDeleteClick = (id) => {
         setConfirmModal({
@@ -433,27 +435,38 @@ function Quotations() {
         }
     };
 
-    const handleConvertClick = async (item) => {
-        setConfirmModal({
-            isOpen: true,
-            title: 'Convert to Booking',
-            message: `Convert Quotation ${item.quotation_number} to Booking? This will create a new booking record.`,
-            type: 'primary',
-            confirmText: 'Convert',
-            onConfirm: async () => {
-                try {
-                    await salesAPI.convertQuotation(item.id, {
-                        bookingAmount: item.total_amount * 0.1, // Default 10%
-                        expectedDeliveryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] // Default 30 days
-                    });
-                    toast.success('Converted to Booking');
-                    setConfirmModal({ isOpen: false });
-                    fetchData();
-                } catch (error) {
-                    toast.error(error.response?.data?.message || 'Conversion failed');
-                }
-            }
+    const handleConvertClick = (item) => {
+        setConversionForm({
+            item,
+            vehicleId: '',
+            bookingAmount: String(Number(item.total_amount || 0) * 0.1),
+            expectedDeliveryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
         });
+    };
+
+    const handleConvertConfirm = async (event) => {
+        event.preventDefault();
+        if (!conversionForm?.item) return;
+        if (conversionForm.item.sale_type !== 'parts' && !conversionForm.vehicleId) {
+            toast.error('Select the actual inventory Vehicle for this Booking.');
+            return;
+        }
+        setConverting(true);
+        try {
+            await salesAPI.convertQuotation(conversionForm.item.id, {
+                vehicleId: conversionForm.vehicleId || undefined,
+                bookingAmount: Number(conversionForm.bookingAmount),
+                expectedDeliveryDate: conversionForm.expectedDeliveryDate,
+            });
+            toast.success('Converted to Booking');
+            setConversionForm(null);
+            fetchData();
+            fetchDropdowns();
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Conversion failed');
+        } finally {
+            setConverting(false);
+        }
     };
 
     const handleSendEmail = async (item) => {
@@ -478,6 +491,57 @@ function Quotations() {
     return (
         <div className="card sales-page">
             <ConfirmModal {...confirmModal} loading={sendingEmail} onCancel={() => setConfirmModal({ ...confirmModal, isOpen: false })} />
+            {conversionForm && (
+                <Modal title={`Convert ${conversionForm.item.quotation_number} to Booking`} onClose={() => !converting && setConversionForm(null)}>
+                    <form onSubmit={handleConvertConfirm}>
+                        {conversionForm.item.sale_type !== 'parts' && (
+                            <div className="form-group">
+                                <label>Actual inventory Vehicle *</label>
+                                <SearchableSelect
+                                    name="vehicleId"
+                                    value={conversionForm.vehicleId}
+                                    onChange={(event) => setConversionForm((prev) => ({ ...prev, vehicleId: event.target.value }))}
+                                    required
+                                >
+                                    <option value="">Select available Vehicle</option>
+                                    {vehicles
+                                        .filter((vehicle) => ['available', 'at_yard', 'in_stock', 'ready'].includes(String(vehicle.status || '').toLowerCase()))
+                                        .map((vehicle) => (
+                                            <option key={vehicle.id || vehicle._id} value={vehicle.id || vehicle._id}>
+                                                {vehicle.make_name} {vehicle.model_name} {vehicle.variant_name} ({vehicle.color_name || vehicle.color}) — {vehicle.chassis_number || vehicle.vin || vehicle.vehicle_code}
+                                            </option>
+                                        ))}
+                                </SearchableSelect>
+                            </div>
+                        )}
+                        <div className="form-row">
+                            <div className="form-group">
+                                <label>Booking Amount *</label>
+                                <input
+                                    type="number"
+                                    min="0.01"
+                                    step="0.01"
+                                    value={conversionForm.bookingAmount}
+                                    onChange={(event) => setConversionForm((prev) => ({ ...prev, bookingAmount: event.target.value }))}
+                                    required
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label>Expected Delivery</label>
+                                <input
+                                    type="date"
+                                    value={conversionForm.expectedDeliveryDate}
+                                    onChange={(event) => setConversionForm((prev) => ({ ...prev, expectedDeliveryDate: event.target.value }))}
+                                />
+                            </div>
+                        </div>
+                        <div className="modal-actions">
+                            <button type="button" className="btn btn-secondary" onClick={() => setConversionForm(null)} disabled={converting}>Cancel</button>
+                            <button type="submit" className="btn btn-primary" disabled={converting}>{converting ? 'Converting...' : 'Convert'}</button>
+                        </div>
+                    </form>
+                </Modal>
+            )}
             <div className="card-header d-flex justify-content-between align-items-center">
                 <h3>Quotations</h3>
                 <div className="sales-header-actions">{canCreate && <button className="btn btn-primary" onClick={() => openModal('create')}>+ New Quotation</button>}</div>
@@ -724,7 +788,7 @@ function Quotations() {
                 fields={[
                     { label: 'Date', value: drawerItem?.created_at ? new Date(drawerItem.created_at).toLocaleDateString('en-GB') : '-' },
                     { label: 'Customer', value: drawerItem?.customer_name },
-                    { label: 'Item', value: drawerItem?.item_name || drawerItem?.vehicle_full_name },
+                    { label: 'Item', value: drawerItem?.item_name || drawerItem?.vehicle_full_name || drawerItem?.chassis_number || drawerItem?.engine_number || '—' },
                     { label: 'Total', value: drawerItem?.total_amount != null ? `PKR ${Number(drawerItem.total_amount).toLocaleString()}` : '-' },
                     { label: 'Valid Until', value: drawerItem?.valid_until ? new Date(drawerItem.valid_until).toLocaleDateString('en-GB') : '-' },
                     { label: 'Notes', value: drawerItem?.notes, full: true },
@@ -766,7 +830,7 @@ function Bookings() {
     const [vehicles, setVehicles] = useState([]);
 
     const [formData, setFormData] = useState({
-        customerId: '', saleType: 'vehicle', vehicleVariantId: '', bookingAmount: '',
+        customerId: '', saleType: 'vehicle', vehicleId: '', vehicleVariantId: '', bookingAmount: '',
         totalAmount: '', taxAmount: '0', expectedDeliveryDate: '', priority: 'normal', notes: ''
     });
 
@@ -895,6 +959,7 @@ function Bookings() {
             setFormData({
                 customerId: item.customer_id || '',
                 saleType: item.sale_type || 'vehicle',
+                vehicleId: item.vehicle_id || '',
                 vehicleVariantId: item.vehicle_variant_id || '',
                 bookingAmount: item.booking_amount || '',
                 totalAmount: item.total_amount || '',
@@ -905,7 +970,7 @@ function Bookings() {
             });
         } else {
             setFormData({
-                customerId: '', saleType: 'vehicle', vehicleVariantId: '', bookingAmount: '',
+                customerId: '', saleType: 'vehicle', vehicleId: '', vehicleVariantId: '', bookingAmount: '',
                 totalAmount: '', taxAmount: '0', expectedDeliveryDate: '', priority: 'normal', notes: ''
             });
         }
@@ -917,7 +982,12 @@ function Bookings() {
     const handleChange = (e) => {
         const { name, value } = e.target;
         if (name === 'saleType') {
-            setFormData(prev => ({ ...prev, saleType: value, vehicleVariantId: '' }));
+            setFormData(prev => ({ ...prev, saleType: value, vehicleId: '', vehicleVariantId: '' }));
+            return;
+        }
+        if (name === 'vehicleId') {
+            const vehicle = vehicles.find((entry) => String(entry.id || entry._id) === String(value));
+            setFormData(prev => ({ ...prev, vehicleId: value, vehicleVariantId: vehicle?.variant_id || vehicle?.vehicle_variant_id || prev.vehicleVariantId }));
             return;
         }
         setFormData(prev => ({ ...prev, [name]: value }));
@@ -958,6 +1028,21 @@ function Bookings() {
             toast.error(error.response?.data?.message || 'Failed to email booking');
         } finally {
             setSendingEmail(null);
+        }
+    };
+
+    const [convertingId, setConvertingId] = useState(null);
+    const handleConvertToOrder = async (item) => {
+        if (!window.confirm(`Convert booking ${item.booking_number} to a sales order?`)) return;
+        setConvertingId(item.id);
+        try {
+            const res = await salesAPI.convertBooking(item.id, {});
+            toast.success(`Booking converted to order ${res.data?.data?.orderNumber || ''}`);
+            fetchData();
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Failed to convert booking');
+        } finally {
+            setConvertingId(null);
         }
     };
 
@@ -1018,8 +1103,14 @@ function Bookings() {
                         {data.map(b => (
                             <tr key={b.id} onClick={() => openDrawer(b)} style={{ cursor: 'pointer' }} className={selectedIds.includes(b.id)?'selected-row':''}>
                                 <td className="sales-select-cell" onClick={e=>e.stopPropagation()}><input type="checkbox" checked={selectedIds.includes(b.id)} onChange={e=>setSelectedIds(ids=>e.target.checked?[...new Set([...ids,b.id])]:ids.filter(id=>id!==b.id))}/></td>
-                                <td><strong>{b.booking_number}</strong></td>
-                                <td>{b.customer_name}</td>
+                                <td>
+                                    <strong>{b.booking_number}</strong>
+                                    {b.external_order_number && <div className="text-muted small">{b.external_order_number}</div>}
+                                </td>
+                                <td>
+                                    {b.customer_name}
+                                    {b.sale_person && <div className="text-muted small">{b.sale_person}</div>}
+                                </td>
                                 <td>{b.item_name || b.vehicle_full_name || 'Parts/Services'}</td>
                                 <td>PKR {Number(b.booking_amount).toLocaleString()}</td>
                                 <td>{b.expected_delivery_date ? new Date(b.expected_delivery_date).toLocaleDateString() : '-'}</td>
@@ -1029,7 +1120,11 @@ function Bookings() {
                                         showView={true}
                                         onView={() => openModal('view', b)}
                                         onEdit={canAction && !['cancelled', 'completed'].includes(b.status) ? () => openModal('edit', b) : null}
-                                        customActions={[...(canDownloadPdf ? [{ icon: <Download size={18}/>, title: 'Download PDF', onClick: () => downloadSalesPdf('booking', b.id, b.booking_number), className: 'btn-info' }] : []), ...(canSendEmail ? [{ icon: <Send size={18} className="action-icon" />, title: 'Send booking email', onClick: () => handleSendEmail(b), className: 'btn-info', disabled: sendingEmail === b.id, loading: sendingEmail === b.id }] : [])]}
+                                        customActions={[
+                                            ...(canAction && !['cancelled', 'completed', 'converted'].includes(b.status) ? [{ icon: <Truck size={18}/>, title: 'Convert to Sales Order', onClick: () => handleConvertToOrder(b), className: 'btn-success', disabled: convertingId === b.id, loading: convertingId === b.id }] : []),
+                                            ...(canDownloadPdf ? [{ icon: <Download size={18}/>, title: 'Download PDF', onClick: () => downloadSalesPdf('booking', b.id, b.booking_number), className: 'btn-info' }] : []),
+                                            ...(canSendEmail ? [{ icon: <Send size={18} className="action-icon" />, title: 'Send booking email', onClick: () => handleSendEmail(b), className: 'btn-info', disabled: sendingEmail === b.id, loading: sendingEmail === b.id }] : [])
+                                        ]}
                                     />
                                 </td>
                             </tr>
@@ -1061,7 +1156,10 @@ function Bookings() {
                                         showView={true}
                                         onView={() => openModal('view', b)}
                                         onEdit={canAction && !['cancelled', 'completed'].includes(b.status) ? () => openModal('edit', b) : null}
-                                        customActions={canSendEmail ? [{ icon: <Send size={18} className="action-icon" />, title: 'Send booking email', onClick: () => handleSendEmail(b), className: 'btn-info', disabled: sendingEmail === b.id, loading: sendingEmail === b.id }] : []}
+                                        customActions={[
+                                            ...(canAction && !['cancelled', 'completed', 'converted'].includes(b.status) ? [{ icon: <Truck size={18}/>, title: 'Convert to Sales Order', onClick: () => handleConvertToOrder(b), className: 'btn-success', disabled: convertingId === b.id, loading: convertingId === b.id }] : []),
+                                            ...(canSendEmail ? [{ icon: <Send size={18} className="action-icon" />, title: 'Send booking email', onClick: () => handleSendEmail(b), className: 'btn-info', disabled: sendingEmail === b.id, loading: sendingEmail === b.id }] : [])
+                                        ]}
                                     />
                                 </div>
                             </div>
@@ -1150,11 +1248,18 @@ function Bookings() {
                                 {formData.saleType === 'vehicle' ? (
                                 <div className="form-group">
                                     <label>Vehicle *</label>
-                                    <SearchableSelect name="vehicleVariantId" value={formData.vehicleVariantId} onChange={handleChange} required>
-                                        <option value="">Select Vehicle</option>
-                                        {vehicles.map(v => (
-                                            <option key={v.id} value={v.variant_id || v.id}>{v.make_name} {v.model_name} {v.variant_name} ({v.color_name || v.color})</option>
-                                        ))}
+                                    <SearchableSelect name="vehicleId" value={formData.vehicleId} onChange={handleChange} required>
+                                        <option value="">Select allocated Vehicle</option>
+                                        {vehicles
+                                            .filter((vehicle) => (
+                                                String(vehicle.id || vehicle._id) === String(formData.vehicleId)
+                                                || ['available', 'at_yard', 'in_stock', 'ready'].includes(String(vehicle.status || '').toLowerCase())
+                                            ))
+                                            .map((vehicle) => (
+                                                <option key={vehicle.id || vehicle._id} value={vehicle.id || vehicle._id}>
+                                                    {vehicle.make_name} {vehicle.model_name} {vehicle.variant_name} ({vehicle.color_name || vehicle.color}) — {vehicle.chassis_number || vehicle.vin || vehicle.vehicle_code || vehicle.id}
+                                                </option>
+                                            ))}
                                     </SearchableSelect>
                                 </div>
                                 ) : null}
@@ -1208,7 +1313,10 @@ function Bookings() {
                 subtitle={drawerItem?.customer_name}
                 fields={[
                     { label: 'Customer', value: drawerItem?.customer_name },
-                    { label: 'Item', value: drawerItem?.item_name || drawerItem?.vehicle_full_name },
+                    { label: 'External Order', value: drawerItem?.external_order_number },
+                    { label: 'Sales Order', value: drawerItem?.sales_order_number },
+                    { label: 'Salesman', value: drawerItem?.sale_person },
+                    { label: 'Item', value: drawerItem?.item_name || drawerItem?.vehicle_full_name || drawerItem?.chassis_number || drawerItem?.engine_number || '—' },
                     { label: 'Booking Amount', value: drawerItem?.booking_amount != null ? `PKR ${Number(drawerItem.booking_amount).toLocaleString()}` : '-' },
                     { label: 'Expected Delivery', value: drawerItem?.expected_delivery_date ? new Date(drawerItem.expected_delivery_date).toLocaleDateString('en-GB') : '-' },
                     { label: 'Notes', value: drawerItem?.notes, full: true },
@@ -1675,16 +1783,26 @@ function SalesOrders() {
                         {data.map(o => (
                             <tr key={o.id} onClick={() => openDrawer(o)} style={{ cursor: 'pointer' }} className={[selectedIds.includes(o.id)?'selected-row':'', Number(o.grand_total) > 0 && Number(o.paid_amount) >= Number(o.grand_total) ? 'sales-row-settled' : ''].filter(Boolean).join(' ')}>
                                 <td className="sales-select-cell" onClick={e=>e.stopPropagation()}><input type="checkbox" checked={selectedIds.includes(o.id)} onChange={e=>setSelectedIds(ids=>e.target.checked?[...new Set([...ids,o.id])]:ids.filter(id=>id!==o.id))}/></td>
-                                <td><strong>{o.order_number}</strong></td>
+                                <td>
+                                    <strong>{o.order_number}</strong>
+                                    {o.external_order_number && <div className="text-muted small">{o.external_order_number}</div>}
+                                    {o.booking_number && <div className="text-muted small">Booking {o.booking_number}</div>}
+                                </td>
                                 <td>{new Date(o.created_at).toLocaleDateString()}</td>
-                                <td>{o.customer_name}</td>
+                                <td>
+                                    {o.customer_name}
+                                    {o.sale_person && <div className="text-muted small">{o.sale_person}</div>}
+                                </td>
                                 <td><span className={`badge badge-${o.sale_type === 'parts' ? 'secondary' : o.sale_type === 'service' ? 'info' : 'primary'}`} style={{ fontSize: '0.8em' }}>{(o.sale_type || 'vehicle').toUpperCase()}</span></td>
                                 <td>{o.item_name || `${o.make_name || ''} ${o.model_name || ''} ${o.variant_name || ''}`.trim() || 'Parts/Services'}</td>
                                 <td>PKR {Number(o.grand_total).toLocaleString()}</td>
                                 <td>PKR {Number(o.paid_amount).toLocaleString()}</td>
                                 <td>
                                     {o.invoice_number ? (
-                                        <span className="badge badge-success" title={`Status: ${o.invoice_status}`}>{o.invoice_number}</span>
+                                        <span className="badge badge-success" title={`Status: ${o.invoice_status}`}>
+                                            {o.invoice_number}
+                                            {o.external_invoice_reference && <small style={{ display: 'block' }}>{o.external_invoice_reference}</small>}
+                                        </span>
                                     ) : (
                                         <span className="badge badge-secondary">Not Generated</span>
                                     )}
@@ -1707,7 +1825,7 @@ function SalesOrders() {
                                                 onClick: () => handleGenerateInvoice(o),
                                                 className: 'btn-info'
                                             }] : []),
-                                            ...(canDeliverOrInvoice && o.status === 'invoiced' ? [{
+                                            ...(canDeliverOrInvoice && o.status === 'dispatched' ? [{
                                                 icon: <Truck size={18} className="action-icon" />,
                                                 title: 'Mark Delivered',
                                                 onClick: () => handleDeliverClick(o),
@@ -1778,7 +1896,7 @@ function SalesOrders() {
                                                 onClick: () => handleGenerateInvoice(o),
                                                 className: 'btn-info'
                                             }] : []),
-                                            ...(canDeliverOrInvoice && o.status === 'invoiced' ? [{
+                                            ...(canDeliverOrInvoice && o.status === 'dispatched' ? [{
                                                 icon: <Truck size={18} className="action-icon" />,
                                                 title: 'Mark Delivered',
                                                 onClick: () => handleDeliverClick(o),
@@ -2118,9 +2236,15 @@ function SalesOrders() {
                 fields={[
                     { label: 'Date', value: drawerItem?.created_at ? new Date(drawerItem.created_at).toLocaleDateString('en-GB') : '-' },
                     { label: 'Customer', value: drawerItem?.customer_name },
+                    { label: 'External Order', value: drawerItem?.external_order_number },
+                    { label: 'Booking', value: drawerItem?.booking_number },
+                    { label: 'Salesman', value: drawerItem?.sale_person },
                     { label: 'Sale Type', value: drawerItem?.sale_type },
                     { label: 'Item', value: drawerItem?.item_name },
                     { label: 'Invoice', value: drawerItem?.invoice_number || 'Not generated' },
+                    { label: 'External Invoice', value: drawerItem?.external_invoice_reference || drawerItem?.external_invoice_number },
+                    { label: 'Dispatch', value: drawerItem?.dispatch_number },
+                    { label: 'Chassis / VIN', value: drawerItem?.chassis_number || drawerItem?.vin },
                     { label: 'Notes', value: drawerItem?.notes, full: true },
                 ]}
                 items={drawerItem?.items || []}
@@ -2646,10 +2770,16 @@ function Invoices() {
                                 ].filter(Boolean).join(' ')}
                             >
                                 <td className="sales-select-cell" onClick={e=>e.stopPropagation()}><input type="checkbox" checked={selectedIds.includes(inv.id)} onChange={e=>setSelectedIds(ids=>e.target.checked?[...new Set([...ids,inv.id])]:ids.filter(id=>id!==inv.id))}/></td>
-                                <td><strong>{inv.invoice_number}</strong></td>
+                                <td>
+                                    <strong>{inv.invoice_number}</strong>
+                                    {inv.external_invoice_number && <div className="text-muted small">{inv.external_invoice_number}</div>}
+                                </td>
                                 <td>{new Date(inv.invoice_date).toLocaleDateString()}</td>
                                 <td>{new Date(inv.due_date).toLocaleDateString()}</td>
-                                <td>{inv.customer_name}</td>
+                                <td>
+                                    {inv.customer_name}
+                                    {inv.sale_person && <div className="text-muted small">{inv.sale_person}</div>}
+                                </td>
                                 <td><span className="badge badge-info">{inv.invoice_type?.toUpperCase()}</span></td>
                                 <td>PKR {Number(inv.total_amount).toLocaleString()}</td>
                                 <td>PKR {Number(inv.paid_amount || 0).toLocaleString()}</td>
@@ -2772,6 +2902,10 @@ function Invoices() {
                 subtitle={drawerInvoice?.customer_name}
                 fields={[
                     { label: 'Invoice Date', value: drawerInvoice?.invoice_date ? new Date(drawerInvoice.invoice_date).toLocaleDateString('en-GB') : '-' },
+                    { label: 'External Invoice', value: drawerInvoice?.external_invoice_number },
+                    { label: 'Sales Order', value: drawerInvoice?.order_number },
+                    { label: 'Booking', value: drawerInvoice?.booking_number },
+                    { label: 'Salesman', value: drawerInvoice?.sale_person },
                     { label: 'Due Date', value: drawerInvoice?.due_date ? new Date(drawerInvoice.due_date).toLocaleDateString('en-GB') : '-' },
                     { label: 'Customer', value: drawerInvoice?.customer_name },
                     { label: 'Type', value: drawerInvoice?.invoice_type },

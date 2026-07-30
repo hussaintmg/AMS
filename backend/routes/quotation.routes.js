@@ -14,7 +14,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { authenticate, authorize } = require('../middleware/auth');
+const { authenticate, authorizeAction } = require('../middleware/auth');
 const salesController = require('../controllers/salesManagement.controller');
 const bulkPermission = require('../middleware/bulkSalesPermission');
 
@@ -89,9 +89,9 @@ router.get('/:id', authenticate, salesController.getQuotationById);
  *               taxAmount: { type: number }
  *               validityDays: { type: integer, default: 7 }
  */
-router.post('/', authenticate, authorize('super_admin', 'sales_manager', 'sales_executive'), salesController.createQuotation);
+router.post('/', authenticate, authorizeAction('quotations', 'create'), salesController.createQuotation);
 
-router.post('/:id/send-email', authenticate, authorize('super_admin', 'admin', 'sales_manager', 'sales_executive'), salesController.sendQuotationEmail);
+router.post('/:id/send-email', authenticate, authorizeAction('quotations', 'sendEmail'), salesController.sendQuotationEmail);
 
 /**
  * @swagger
@@ -101,7 +101,7 @@ router.post('/:id/send-email', authenticate, authorize('super_admin', 'admin', '
  *     summary: Update quotation
  *     security: [{ bearerAuth: [] }]
  */
-router.put('/:id', authenticate, authorize('super_admin', 'sales_manager'), salesController.updateQuotation);
+router.put('/:id', authenticate, authorizeAction('quotations', 'edit'), salesController.updateQuotation);
 
 /**
  * @swagger
@@ -111,7 +111,7 @@ router.put('/:id', authenticate, authorize('super_admin', 'sales_manager'), sale
  *     summary: Delete (cancel) quotation
  *     security: [{ bearerAuth: [] }]
  */
-router.delete('/:id', authenticate, authorize('super_admin', 'sales_manager'), salesController.deleteQuotation);
+router.delete('/:id', authenticate, authorizeAction('quotations', 'delete'), salesController.deleteQuotation);
 
 /**
  * @swagger
@@ -121,7 +121,7 @@ router.delete('/:id', authenticate, authorize('super_admin', 'sales_manager'), s
  *     summary: Update quotation status
  *     security: [{ bearerAuth: [] }]
  */
-router.patch('/:id/status', authenticate, authorize('super_admin', 'sales_manager'), salesController.updateQuotationStatus);
+router.patch('/:id/status', authenticate, authorizeAction('quotations', 'edit'), salesController.updateQuotationStatus);
 
 /**
  * @swagger
@@ -131,6 +131,6 @@ router.patch('/:id/status', authenticate, authorize('super_admin', 'sales_manage
  *     summary: Convert quotation to booking
  *     security: [{ bearerAuth: [] }]
  */
-router.post('/:id/convert', authenticate, authorize('super_admin', 'sales_manager'), salesController.convertQuotationToBooking);
+router.post('/:id/convert', authenticate, authorizeAction('quotations', 'edit'), salesController.convertQuotationToBooking);
 
 module.exports = router;

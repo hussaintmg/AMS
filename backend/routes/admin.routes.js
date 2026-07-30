@@ -20,7 +20,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { authenticate, authorize, authorizePage } = require('../middleware/auth');
+const { authenticate, authorizeAction } = require('../middleware/auth');
 
 // Import Controllers
 const userController = require('../controllers/userManagement.controller');
@@ -28,67 +28,67 @@ const roleController = require('../controllers/roleManagement.controller');
 const departmentController = require('../controllers/departmentManagement.controller');
 const statusController = require('../controllers/statusManagement.controller');
 
-// ── User Management (read: users page permission, write: super_admin) ──
-router.get('/users/stats', authenticate, authorizePage('users'), userController.getUserStats);
-router.get('/users', authenticate, authorizePage('users'), userController.getAllUsers);
-router.post('/users/fix-fullname', authenticate, authorize('super_admin'), userController.fixAllUsersFullName);
-router.post('/users', authenticate, authorize('super_admin'), userController.createUser);
-router.get('/users/:id', authenticate, authorizePage('users'), userController.getUserById);
-router.put('/users/:id', authenticate, authorize('super_admin'), userController.updateUser);
-router.delete('/users/:id', authenticate, authorize('super_admin'), userController.deleteUser);
-router.patch('/users/:id/status', authenticate, authorize('super_admin'), userController.toggleUserStatus);
-router.patch('/users/:id/role', authenticate, authorize('super_admin'), userController.assignRole);
-router.patch('/users/:id/department', authenticate, authorize('super_admin'), userController.assignDepartment);
-router.delete('/users/:id/department/:deptId', authenticate, authorize('super_admin'), userController.removeDepartment);
-router.post('/users/:id/reset-password', authenticate, authorize('super_admin'), userController.resetPassword);
+// ── User Management ──
+router.get('/users/stats', authenticate, authorizeAction('user_management', 'view'), userController.getUserStats);
+router.get('/users', authenticate, authorizeAction('user_management', 'view'), userController.getAllUsers);
+router.post('/users/fix-fullname', authenticate, authorizeAction('user_management', 'edit'), userController.fixAllUsersFullName);
+router.post('/users', authenticate, authorizeAction('user_management', 'create'), userController.createUser);
+router.get('/users/:id', authenticate, authorizeAction('user_management', 'view'), userController.getUserById);
+router.put('/users/:id', authenticate, authorizeAction('user_management', 'edit'), userController.updateUser);
+router.delete('/users/:id', authenticate, authorizeAction('user_management', 'delete'), userController.deleteUser);
+router.patch('/users/:id/status', authenticate, authorizeAction('user_management', 'edit'), userController.toggleUserStatus);
+router.patch('/users/:id/role', authenticate, authorizeAction('user_management', 'edit'), userController.assignRole);
+router.patch('/users/:id/department', authenticate, authorizeAction('user_management', 'edit'), userController.assignDepartment);
+router.delete('/users/:id/department/:deptId', authenticate, authorizeAction('user_management', 'edit'), userController.removeDepartment);
+router.post('/users/:id/reset-password', authenticate, authorizeAction('user_management', 'edit'), userController.resetPassword);
 
-// ── Role Management (read: roles page permission, write: super_admin) ──
-router.get('/roles', authenticate, authorizePage('roles'), roleController.getAllRoles);
-router.get('/roles/:id', authenticate, authorizePage('roles'), roleController.getRoleById);
-router.post('/roles', authenticate, authorize('super_admin'), roleController.createRole);
-router.put('/roles/:id', authenticate, authorize('super_admin'), roleController.updateRole);
-router.delete('/roles/:id', authenticate, authorize('super_admin'), roleController.deleteRole);
-router.put('/roles/:id/permissions', authenticate, authorize('super_admin'), roleController.assignPermissions);
+// ── Role Management ──
+router.get('/roles', authenticate, authorizeAction('role_management', 'view'), roleController.getAllRoles);
+router.get('/roles/:id', authenticate, authorizeAction('role_management', 'view'), roleController.getRoleById);
+router.post('/roles', authenticate, authorizeAction('role_management', 'create'), roleController.createRole);
+router.put('/roles/:id', authenticate, authorizeAction('role_management', 'edit'), roleController.updateRole);
+router.delete('/roles/:id', authenticate, authorizeAction('role_management', 'delete'), roleController.deleteRole);
+router.put('/roles/:id/permissions', authenticate, authorizeAction('role_management', 'edit'), roleController.assignPermissions);
 
-// ── Permissions (super_admin only) ──
-router.get('/permissions', authenticate, authorize('super_admin'), roleController.getAllPermissions);
-router.get('/permissions/matrix', authenticate, authorize('super_admin'), roleController.getPermissionMatrix);
-router.get('/permissions/modules', authenticate, authorize('super_admin'), roleController.getPermissionModules);
+// ── Permissions ──
+router.get('/permissions', authenticate, authorizeAction('role_management', 'view'), roleController.getAllPermissions);
+router.get('/permissions/matrix', authenticate, authorizeAction('role_management', 'view'), roleController.getPermissionMatrix);
+router.get('/permissions/modules', authenticate, authorizeAction('role_management', 'view'), roleController.getPermissionModules);
 
-// ── Department Management (read: departments page permission, write: super_admin) ──
-router.get('/departments/stats', authenticate, authorizePage('departments'), departmentController.getDepartmentStats);
-router.get('/departments', authenticate, authorizePage('departments'), departmentController.getAllDepartments);
-router.get('/departments/:id', authenticate, authorizePage('departments'), departmentController.getDepartmentById);
-router.post('/departments', authenticate, authorize('super_admin'), departmentController.createDepartment);
-router.put('/departments/:id', authenticate, authorize('super_admin'), departmentController.updateDepartment);
-router.delete('/departments/:id', authenticate, authorize('super_admin'), departmentController.deleteDepartment);
-router.patch('/departments/:id/status', authenticate, authorize('super_admin'), departmentController.toggleDepartmentStatus);
-router.patch('/departments/:id/manager', authenticate, authorize('super_admin'), departmentController.assignManager);
+// ── Department Management ──
+router.get('/departments/stats', authenticate, authorizeAction('department_management', 'view'), departmentController.getDepartmentStats);
+router.get('/departments', authenticate, authorizeAction('department_management', 'view'), departmentController.getAllDepartments);
+router.get('/departments/:id', authenticate, authorizeAction('department_management', 'view'), departmentController.getDepartmentById);
+router.post('/departments', authenticate, authorizeAction('department_management', 'create'), departmentController.createDepartment);
+router.put('/departments/:id', authenticate, authorizeAction('department_management', 'edit'), departmentController.updateDepartment);
+router.delete('/departments/:id', authenticate, authorizeAction('department_management', 'delete'), departmentController.deleteDepartment);
+router.patch('/departments/:id/status', authenticate, authorizeAction('department_management', 'edit'), departmentController.toggleDepartmentStatus);
+router.patch('/departments/:id/manager', authenticate, authorizeAction('department_management', 'edit'), departmentController.assignManager);
 
-// ── Status Management (read: statuses page permission, write: super_admin) ──
+// ── Status Management ──
 // New collection-based endpoints
-router.get('/status-collections/stats', authenticate, authorizePage('statuses'), statusController.getCollectionStats);
-router.get('/status-collections', authenticate, authorizePage('statuses'), statusController.getAllCollections);
-router.get('/status-collections/:id', authenticate, authorizePage('statuses'), statusController.getCollectionById);
-router.post('/status-collections', authenticate, authorize('super_admin'), statusController.createCollection);
-router.put('/status-collections/:id', authenticate, authorize('super_admin'), statusController.updateCollection);
-router.delete('/status-collections/:id', authenticate, authorize('super_admin'), statusController.deleteCollection);
-router.get('/status-collections/:id/items', authenticate, authorizePage('statuses'), statusController.getCollectionItems);
-router.post('/status-collections/:id/items', authenticate, authorize('super_admin'), statusController.createCollectionItem);
-router.put('/status-items/:itemId', authenticate, authorize('super_admin'), statusController.updateStatusItem);
-router.delete('/status-items/:itemId', authenticate, authorize('super_admin'), statusController.deleteStatusItem);
-router.patch('/status-items/:itemId/toggle', authenticate, authorize('super_admin'), statusController.toggleStatusItem);
-router.patch('/status-items/:itemId/default', authenticate, authorize('super_admin'), statusController.setDefaultStatusItem);
+router.get('/status-collections/stats', authenticate, authorizeAction('status_management', 'view'), statusController.getCollectionStats);
+router.get('/status-collections', authenticate, authorizeAction('status_management', 'view'), statusController.getAllCollections);
+router.get('/status-collections/:id', authenticate, authorizeAction('status_management', 'view'), statusController.getCollectionById);
+router.post('/status-collections', authenticate, authorizeAction('status_management', 'create'), statusController.createCollection);
+router.put('/status-collections/:id', authenticate, authorizeAction('status_management', 'edit'), statusController.updateCollection);
+router.delete('/status-collections/:id', authenticate, authorizeAction('status_management', 'delete'), statusController.deleteCollection);
+router.get('/status-collections/:id/items', authenticate, authorizeAction('status_management', 'view'), statusController.getCollectionItems);
+router.post('/status-collections/:id/items', authenticate, authorizeAction('status_management', 'create'), statusController.createCollectionItem);
+router.put('/status-items/:itemId', authenticate, authorizeAction('status_management', 'edit'), statusController.updateStatusItem);
+router.delete('/status-items/:itemId', authenticate, authorizeAction('status_management', 'delete'), statusController.deleteStatusItem);
+router.patch('/status-items/:itemId/toggle', authenticate, authorizeAction('status_management', 'edit'), statusController.toggleStatusItem);
+router.patch('/status-items/:itemId/default', authenticate, authorizeAction('status_management', 'edit'), statusController.setDefaultStatusItem);
 
 // Old backward-compatible status table routes (kept for existing integrations)
-router.get('/statuses/tables', authenticate, authorizePage('statuses'), statusController.getAvailableTables);
-router.get('/statuses/analytics', authenticate, authorizePage('statuses'), statusController.getStatusAnalytics);
-router.get('/statuses', authenticate, authorizePage('statuses'), statusController.getAllStatuses);
-router.get('/statuses/table/:tableName', authenticate, authorizePage('statuses'), statusController.getStatusesByTable);
-router.get('/statuses/detail/:id', authenticate, authorizePage('statuses'), statusController.getStatusById);
-router.post('/statuses', authenticate, authorize('super_admin'), statusController.createStatus);
-router.put('/statuses/:id', authenticate, authorize('super_admin'), statusController.updateStatus);
-router.delete('/statuses/:id', authenticate, authorize('super_admin'), statusController.deleteStatus);
-router.put('/statuses/:tableName/reorder', authenticate, authorize('super_admin'), statusController.reorderStatuses);
+router.get('/statuses/tables', authenticate, authorizeAction('status_management', 'view'), statusController.getAvailableTables);
+router.get('/statuses/analytics', authenticate, authorizeAction('status_management', 'view'), statusController.getStatusAnalytics);
+router.get('/statuses', authenticate, authorizeAction('status_management', 'view'), statusController.getAllStatuses);
+router.get('/statuses/table/:tableName', authenticate, authorizeAction('status_management', 'view'), statusController.getStatusesByTable);
+router.get('/statuses/detail/:id', authenticate, authorizeAction('status_management', 'view'), statusController.getStatusById);
+router.post('/statuses', authenticate, authorizeAction('status_management', 'create'), statusController.createStatus);
+router.put('/statuses/:id', authenticate, authorizeAction('status_management', 'edit'), statusController.updateStatus);
+router.delete('/statuses/:id', authenticate, authorizeAction('status_management', 'delete'), statusController.deleteStatus);
+router.put('/statuses/:tableName/reorder', authenticate, authorizeAction('status_management', 'edit'), statusController.reorderStatuses);
 
 module.exports = router;

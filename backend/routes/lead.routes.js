@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const leadController = require('../controllers/leadManagement.controller');
-const { authenticate, authorizePage } = require('../middleware/auth');
+const { authenticate, authorizeAction } = require('../middleware/auth');
 
 /**
  * @swagger
@@ -290,22 +290,22 @@ const { authenticate, authorizePage } = require('../middleware/auth');
  *       200: { description: Lead marked lost }
  */
 
-router.get('/meta', authenticate, authorizePage('leads'), leadController.getLeadMeta);
-router.get('/stats', authenticate, authorizePage('leads'), leadController.getLeadStats);
-router.post('/seed', authenticate, authorizePage('leads'), leadController.seedDefaults);
+router.get('/meta', authenticate, authorizeAction('leads', 'view'), leadController.getLeadMeta);
+router.get('/stats', authenticate, authorizeAction('leads', 'view'), leadController.getLeadStats);
+router.post('/seed', authenticate, authorizeAction('leads', 'create'), leadController.seedDefaults);
 
-router.get('/', authenticate, authorizePage('leads'), leadController.getLeads);
-router.post('/', authenticate, authorizePage('leads'), leadController.createLead);
+router.get('/', authenticate, authorizeAction('leads', 'view'), leadController.getLeads);
+router.post('/', authenticate, authorizeAction('leads', 'create'), leadController.createLead);
 
-router.get('/:id', authenticate, authorizePage('leads'), leadController.getLeadById);
-router.put('/:id', authenticate, authorizePage('leads'), leadController.updateLead);
-router.delete('/:id', authenticate, authorizePage('leads'), leadController.deleteLead);
+router.get('/:id', authenticate, authorizeAction('leads', 'view'), leadController.getLeadById);
+router.put('/:id', authenticate, authorizeAction('leads', 'edit'), leadController.updateLead);
+router.delete('/:id', authenticate, authorizeAction('leads', 'delete'), leadController.deleteLead);
 
-router.put('/:id/assign', authenticate, authorizePage('leads'), leadController.assignLead);
-router.put('/:id/status', authenticate, authorizePage('leads'), leadController.changeStatus);
-router.post('/:id/notes', authenticate, authorizePage('leads'), leadController.addNote);
-router.get('/:id/activities', authenticate, authorizePage('leads'), leadController.getActivities);
-router.post('/:id/convert', authenticate, authorizePage('leads'), leadController.convertToCustomer);
-router.post('/:id/lost', authenticate, authorizePage('leads'), leadController.markLost);
+router.put('/:id/assign', authenticate, authorizeAction('leads', 'edit'), leadController.assignLead);
+router.put('/:id/status', authenticate, authorizeAction('leads', 'edit'), leadController.changeStatus);
+router.post('/:id/notes', authenticate, authorizeAction('leads', 'edit'), leadController.addNote);
+router.get('/:id/activities', authenticate, authorizeAction('leads', 'view'), leadController.getActivities);
+router.post('/:id/convert', authenticate, authorizeAction('leads', 'edit'), leadController.convertToCustomer);
+router.post('/:id/lost', authenticate, authorizeAction('leads', 'edit'), leadController.markLost);
 
 module.exports = router;

@@ -6,7 +6,7 @@
 const express = require('express');
 const multer = require('multer');
 const router = express.Router();
-const { authenticate, authorize } = require('../middleware/auth');
+const { authenticate, authorizeAction } = require('../middleware/auth');
 const bulkImportController = require('../controllers/bulkImport.controller');
 
 const storage = multer.memoryStorage();
@@ -49,36 +49,24 @@ router.use(authenticate);
 /** Any authenticated user may download templates (instructions + column layout). */
 router.get('/template/:type', bulkImportController.downloadTemplate);
 
-const CRM_ROLES = [
-    'super_admin',
-    'admin',
-    'manager',
-    'sales_manager',
-    'sales_executive',
-    'service_manager',
-    'service_advisor'
-];
+router.post('/leads', authorizeAction('leads', 'create'), uploadSingle('file'), bulkImportController.importLeads);
 
-const INVENTORY_ROLES = ['super_admin', 'admin', 'inventory_manager', 'manager', 'sales_manager'];
+router.post('/customers', authorizeAction('customers', 'create'), uploadSingle('file'), bulkImportController.importCustomers);
 
-router.post('/leads', authorize(...CRM_ROLES), uploadSingle('file'), bulkImportController.importLeads);
+router.post('/vehicles', authorizeAction('vehicles', 'create'), uploadSingle('file'), bulkImportController.importVehicles);
 
-router.post('/customers', authorize(...CRM_ROLES), uploadSingle('file'), bulkImportController.importCustomers);
-
-router.post('/vehicles', authorize(...INVENTORY_ROLES), uploadSingle('file'), bulkImportController.importVehicles);
-
-router.post('/parts', authorize(...INVENTORY_ROLES), uploadSingle('file'), bulkImportController.importParts);
+router.post('/parts', authorizeAction('parts', 'create'), uploadSingle('file'), bulkImportController.importParts);
 
 router.post(
     '/sales-orders',
-    authorize('super_admin', 'admin', 'sales_manager'),
+    authorizeAction('sales_orders', 'create'),
     uploadSingle('file'),
     bulkImportController.importSalesOrders
 );
 
 router.post(
     '/employees',
-    authorize('super_admin', 'admin', 'hr_admin'),
+    authorizeAction('employees', 'create'),
     uploadSingle('file'),
     bulkImportController.importEmployees
 );

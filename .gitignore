@@ -19,11 +19,8 @@ coverage/
 *.log
 docs/
 tests/
+test/
 .agents
 md
 
 db_backup/
-TESTING-REPORT.md
-TESTING-REPORT-2.md
-TESTING-REPORT-PART2-DESTRUCTIVE.md
-FIX-PROGRESS.md

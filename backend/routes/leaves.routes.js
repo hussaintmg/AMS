@@ -1,19 +1,16 @@
 const express = require('express');
 const router = express.Router();
-const { authenticate, authorize } = require('../middleware/auth');
+const { authenticate, authorizeAction } = require('../middleware/auth');
 const leaves = require('../controllers/leaves.controller');
 
-const read = ['super_admin', 'admin', 'hr_admin', 'manager'];
-const write = ['super_admin', 'admin', 'hr_admin'];
-
-router.get('/stats', authenticate, authorize(...read), leaves.getStats);
-router.get('/', authenticate, authorize(...read), leaves.listLeaves);
-router.patch('/bulk/deactivate', authenticate, authorize(...write), leaves.bulkDeactivateLeaves);
-router.delete('/bulk', authenticate, authorize(...write), leaves.bulkDeleteLeaves);
-router.get('/:id', authenticate, authorize(...read), leaves.getLeave);
-router.post('/', authenticate, authorize(...write), leaves.createLeave);
-router.put('/:id', authenticate, authorize(...write), leaves.updateLeave);
-router.patch('/:id/status', authenticate, authorize(...write), leaves.approveRejectLeave);
-router.delete('/:id', authenticate, authorize(...write), leaves.deleteLeave);
+router.get('/stats', authenticate, authorizeAction('leaves', 'view'), leaves.getStats);
+router.get('/', authenticate, authorizeAction('leaves', 'view'), leaves.listLeaves);
+router.patch('/bulk/deactivate', authenticate, authorizeAction('leaves', 'edit'), leaves.bulkDeactivateLeaves);
+router.delete('/bulk', authenticate, authorizeAction('leaves', 'delete'), leaves.bulkDeleteLeaves);
+router.get('/:id', authenticate, authorizeAction('leaves', 'view'), leaves.getLeave);
+router.post('/', authenticate, authorizeAction('leaves', 'create'), leaves.createLeave);
+router.put('/:id', authenticate, authorizeAction('leaves', 'edit'), leaves.updateLeave);
+router.patch('/:id/status', authenticate, authorizeAction('leaves', 'edit'), leaves.approveRejectLeave);
+router.delete('/:id', authenticate, authorizeAction('leaves', 'delete'), leaves.deleteLeave);
 
 module.exports = router;

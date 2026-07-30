@@ -14,7 +14,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { authenticate, authorize } = require('../middleware/auth');
+const { authenticate, authorizeAction } = require('../middleware/auth');
 const erpSettings = require('../controllers/erpSettings.controller');
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -98,7 +98,7 @@ router.get('/companies/:id', authenticate, erpSettings.getCompanyById);
  *               country: { type: string }
  *               currencyCode: { type: string, default: PKR }
  */
-router.post('/companies', authenticate, authorize('super_admin'), erpSettings.createCompany);
+router.post('/companies', authenticate, authorizeAction('settings', 'create'), erpSettings.createCompany);
 
 /**
  * @swagger
@@ -108,7 +108,7 @@ router.post('/companies', authenticate, authorize('super_admin'), erpSettings.cr
  *     summary: Update company
  *     security: [{ bearerAuth: [] }]
  */
-router.put('/companies/:id', authenticate, authorize('super_admin'), erpSettings.updateCompany);
+router.put('/companies/:id', authenticate, authorizeAction('settings', 'edit'), erpSettings.updateCompany);
 
 /**
  * @swagger
@@ -118,7 +118,7 @@ router.put('/companies/:id', authenticate, authorize('super_admin'), erpSettings
  *     summary: Deactivate company
  *     security: [{ bearerAuth: [] }]
  */
-router.delete('/companies/:id', authenticate, authorize('super_admin'), erpSettings.deleteCompany);
+router.delete('/companies/:id', authenticate, authorizeAction('settings', 'delete'), erpSettings.deleteCompany);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // BRANCH ROUTES
@@ -181,7 +181,7 @@ router.get('/branches/:id', authenticate, erpSettings.getBranchById);
  *               address: { type: string }
  *               city: { type: string }
  */
-router.post('/branches', authenticate, authorize('super_admin'), erpSettings.createBranch);
+router.post('/branches', authenticate, authorizeAction('settings', 'create'), erpSettings.createBranch);
 
 /**
  * @swagger
@@ -191,7 +191,7 @@ router.post('/branches', authenticate, authorize('super_admin'), erpSettings.cre
  *     summary: Update branch
  *     security: [{ bearerAuth: [] }]
  */
-router.put('/branches/:id', authenticate, authorize('super_admin'), erpSettings.updateBranch);
+router.put('/branches/:id', authenticate, authorizeAction('settings', 'edit'), erpSettings.updateBranch);
 
 /**
  * @swagger
@@ -201,7 +201,7 @@ router.put('/branches/:id', authenticate, authorize('super_admin'), erpSettings.
  *     summary: Deactivate branch
  *     security: [{ bearerAuth: [] }]
  */
-router.delete('/branches/:id', authenticate, authorize('super_admin'), erpSettings.deleteBranch);
+router.delete('/branches/:id', authenticate, authorizeAction('settings', 'delete'), erpSettings.deleteBranch);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SYSTEM SETTINGS ROUTES
@@ -254,7 +254,7 @@ router.get('/settings/categories', authenticate, erpSettings.getSettingCategorie
  *                     key: { type: string }
  *                     value: { type: string }
  */
-router.put('/settings', authenticate, authorize('super_admin'), erpSettings.updateSettings);
+router.put('/settings', authenticate, authorizeAction('settings', 'edit'), erpSettings.updateSettings);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CURRENCY ROUTES
@@ -295,7 +295,7 @@ router.get('/currencies', authenticate, erpSettings.getAllCurrencies);
  *               exchangeRate: { type: number }
  *               isDefault: { type: boolean }
  */
-router.post('/currencies', authenticate, authorize('super_admin'), erpSettings.createCurrency);
+router.post('/currencies', authenticate, authorizeAction('settings', 'create'), erpSettings.createCurrency);
 
 /**
  * @swagger
@@ -305,7 +305,7 @@ router.post('/currencies', authenticate, authorize('super_admin'), erpSettings.c
  *     summary: Update currency
  *     security: [{ bearerAuth: [] }]
  */
-router.put('/currencies/:id', authenticate, authorize('super_admin'), erpSettings.updateCurrency);
+router.put('/currencies/:id', authenticate, authorizeAction('settings', 'edit'), erpSettings.updateCurrency);
 
 /**
  * @swagger
@@ -315,7 +315,7 @@ router.put('/currencies/:id', authenticate, authorize('super_admin'), erpSetting
  *     summary: Deactivate currency
  *     security: [{ bearerAuth: [] }]
  */
-router.delete('/currencies/:id', authenticate, authorize('super_admin'), erpSettings.deleteCurrency);
+router.delete('/currencies/:id', authenticate, authorizeAction('settings', 'delete'), erpSettings.deleteCurrency);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TAX CONFIGURATION ROUTES
@@ -360,7 +360,7 @@ router.get('/taxes', authenticate, erpSettings.getAllTaxes);
  *               description: { type: string }
  *               isCompound: { type: boolean }
  */
-router.post('/taxes', authenticate, authorize('super_admin'), erpSettings.createTax);
+router.post('/taxes', authenticate, authorizeAction('settings', 'create'), erpSettings.createTax);
 
 /**
  * @swagger
@@ -370,7 +370,7 @@ router.post('/taxes', authenticate, authorize('super_admin'), erpSettings.create
  *     summary: Update tax configuration
  *     security: [{ bearerAuth: [] }]
  */
-router.put('/taxes/:id', authenticate, authorize('super_admin'), erpSettings.updateTax);
+router.put('/taxes/:id', authenticate, authorizeAction('settings', 'edit'), erpSettings.updateTax);
 
 /**
  * @swagger
@@ -380,18 +380,18 @@ router.put('/taxes/:id', authenticate, authorize('super_admin'), erpSettings.upd
  *     summary: Deactivate tax configuration
  *     security: [{ bearerAuth: [] }]
  */
-router.delete('/taxes/:id', authenticate, authorize('super_admin'), erpSettings.deleteTax);
+router.delete('/taxes/:id', authenticate, authorizeAction('settings', 'delete'), erpSettings.deleteTax);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // DOCUMENT HTML TEMPLATES (sales print / PDF source)
 // ═══════════════════════════════════════════════════════════════════════════
 
-router.get('/document-templates', authenticate, authorize('super_admin'), erpSettings.getAllDocumentTemplates);
+router.get('/document-templates', authenticate, authorizeAction('settings', 'view'), erpSettings.getAllDocumentTemplates);
 router.get('/document-templates/default/:documentType', authenticate, erpSettings.getDefaultDocumentTemplate);
-router.get('/document-templates/:id', authenticate, authorize('super_admin'), erpSettings.getDocumentTemplateById);
-router.post('/document-templates', authenticate, authorize('super_admin'), erpSettings.createDocumentTemplate);
-router.put('/document-templates/:id', authenticate, authorize('super_admin'), erpSettings.updateDocumentTemplate);
-router.delete('/document-templates/:id', authenticate, authorize('super_admin'), erpSettings.deleteDocumentTemplate);
-router.post('/document-templates/seed-defaults', authenticate, authorize('super_admin'), erpSettings.seedDocumentTemplates);
+router.get('/document-templates/:id', authenticate, authorizeAction('settings', 'view'), erpSettings.getDocumentTemplateById);
+router.post('/document-templates', authenticate, authorizeAction('settings', 'create'), erpSettings.createDocumentTemplate);
+router.put('/document-templates/:id', authenticate, authorizeAction('settings', 'edit'), erpSettings.updateDocumentTemplate);
+router.delete('/document-templates/:id', authenticate, authorizeAction('settings', 'delete'), erpSettings.deleteDocumentTemplate);
+router.post('/document-templates/seed-defaults', authenticate, authorizeAction('settings', 'create'), erpSettings.seedDocumentTemplates);
 
 module.exports = router;

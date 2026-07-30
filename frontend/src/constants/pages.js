@@ -22,7 +22,8 @@ const pages = [
   { key: 'lead_master', label: 'Lead Master Data', path: '/lead-master', module: 'lead-master', icon: 'ListTree', group: 'Master Data', isCore: false, isActive: true },
   { key: 'sales_master', label: 'Sales Master Data', path: '/sales-master', module: 'sales-master', icon: 'PanelTop', group: 'Master Data', isCore: false, isActive: true },
   { key: 'profile', label: 'Profile', path: '/profile', module: 'profile', icon: 'UserCircle', group: 'Account', isCore: false, isActive: true },
-  { key: 'order_form_upload', label: 'Order Form Upload', path: '/uploader/order-form', module: 'uploader', icon: 'UploadCloud', group: 'Uploader', isCore: false, isActive: true },
+  { key: 'data_import', label: 'Data Import', path: '/data-import', module: 'uploader', icon: 'UploadCloud', group: 'Uploader', isCore: false, isActive: true },
+  { key: 'dispatch', label: 'Dispatch Report', path: '/dispatch', module: 'dispatch', icon: 'Truck', group: 'Sales', isCore: false, isActive: true },
   { key: 'server_management', label: 'Server Management', path: '/server-management', module: 'server-management', icon: 'ServerCog', group: 'System', isCore: true, isActive: true },
   { key: 'email_templates', label: 'Email Templates', path: '/email', module: 'email', icon: 'Mail', group: 'Communication', isCore: false, isActive: true }
   ,{ key: 'pdf_management', label: 'PDF Management', path: '/pdf-management', module: 'pdf', icon: 'FileDown', group: 'Communication', isCore: false, isActive: true }

@@ -8,6 +8,8 @@ const paymentMethodSchema = new mongoose.Schema({
 
 const paymentSchema = new mongoose.Schema({
   paymentNumber: { type: String, trim: true },
+  importKey: { type: String, trim: true, default: '' },
+  installmentNo: { type: Number, default: null },
   invoice: { type: mongoose.Schema.Types.ObjectId, ref: 'Invoice' },
   customer: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer' },
   methodRef: { type: mongoose.Schema.Types.ObjectId, ref: 'PaymentMethod', default: null },
@@ -23,6 +25,10 @@ const paymentSchema = new mongoose.Schema({
 });
 
 paymentSchema.index({ paymentNumber: 1 });
+paymentSchema.index(
+  { importKey: 1 },
+  { unique: true, partialFilterExpression: { importKey: { $type: 'string', $gt: '' } } }
+);
 paymentSchema.index({ invoice: 1 });
 paymentSchema.index({ customer: 1 });
 

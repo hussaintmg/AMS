@@ -2,16 +2,17 @@ const mongoose = require('mongoose');
 const searchPlugin = require('../plugins/searchPlugin');
 
 const expenseSchema = new mongoose.Schema({
-  expenseNumber: { type: String, trim: true },
-  category: { type: String, trim: true },
+  expenseNumber: { type: String, trim: true, required: [true, 'Expense number is required'] },
+  category: { type: String, trim: true, required: [true, 'Expense category is required'] },
   account: { type: String, trim: true },
   employee: { type: mongoose.Schema.Types.ObjectId, ref: 'Employee' },
   amount: {
     type: Number,
     default: 0,
+    required: [true, 'Amount is required'],
     min: [0.01, 'Amount must be greater than zero']
   },
-  expenseDate: { type: Date },
+  expenseDate: { type: Date, required: [true, 'Expense date is required'] },
   description: { type: String },
   vendor: { type: String, trim: true },
   status: { type: String, enum: ['draft', 'submitted', 'approved', 'posted'], default: 'draft', trim: true },

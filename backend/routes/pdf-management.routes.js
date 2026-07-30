@@ -1,8 +1,8 @@
 const express = require('express');
 const controller = require('../controllers/pdfManagement.controller');
-const { authenticate, authorize } = require('../middleware/auth');
+const { authenticate, authorizeAction } = require('../middleware/auth');
 const router = express.Router();
-const admin = [authenticate, authorize('super_admin')];
+const admin = [authenticate, authorizeAction('pdf_management', 'edit')];
 
 router.get('/templates', admin, controller.listTemplates);
 router.post('/templates', admin, controller.createTemplate);

@@ -28,8 +28,9 @@ const salesSummarySchema = new mongoose.Schema({
 }, { _id: false });
 
 const customerSchema = new mongoose.Schema({
-  customerCode: { type: String, unique: true, trim: true },
-  firstName: { type: String, trim: true, default: '' },
+  customerCode: { type: String, unique: true, trim: true, required: [true, 'Customer code is required'] },
+  importIdentityKey: { type: String, trim: true, default: '' },
+  firstName: { type: String, trim: true, default: '', required: [true, 'Customer name is required'] },
   lastName: { type: String, trim: true, default: '' },
   email: { type: String, trim: true, lowercase: true, default: '' },
   phone: { type: String, trim: true, default: '' },
@@ -37,6 +38,7 @@ const customerSchema = new mongoose.Schema({
   customerType: { type: String, enum: ['individual', 'corporate'], default: 'individual' },
   companyName: { type: String, trim: true, default: '' },
   source: { type: mongoose.Schema.Types.ObjectId, ref: 'LeadSource', default: null },
+  importSource: { type: String, trim: true, default: '' },
   type: { type: mongoose.Schema.Types.ObjectId, ref: 'LeadType', default: null },
   status: { type: String, default: '' },
   description: { type: String, trim: true, default: '' },
@@ -47,6 +49,14 @@ const customerSchema = new mongoose.Schema({
   state: { type: String, trim: true, default: '' },
   country: { type: String, trim: true, default: 'Pakistan' },
   zipCode: { type: String, trim: true, default: '' },
+
+  // ── Dealer Pro XLSX Import: Customer Identity ──
+  relation: { type: String, trim: true, default: '' },
+  dob: { type: Date, default: null },
+  cnic: { type: String, trim: true, default: '' },
+  ntn: { type: String, trim: true, default: '' },
+  atlStatus: { type: String, trim: true, default: '' },
+
   leadRef: { type: mongoose.Schema.Types.ObjectId, ref: 'Lead', default: null },
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   salesSummary: { type: salesSummarySchema, default: () => ({}) },
@@ -66,7 +76,13 @@ customerSchema.virtual('name').get(function () {
 });
 
 customerSchema.index({ email: 1 });
+customerSchema.index(
+  { importIdentityKey: 1 },
+  { unique: true, partialFilterExpression: { importIdentityKey: { $type: 'string', $gt: '' } } }
+);
 customerSchema.index({ phone: 1 });
+customerSchema.index({ cnic: 1 });
+customerSchema.index({ ntn: 1 });
 customerSchema.index({ isActive: 1, deletedAt: 1 });
 customerSchema.index({ customerType: 1 });
 customerSchema.index({ source: 1 });

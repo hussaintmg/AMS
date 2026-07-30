@@ -11,12 +11,17 @@ const invoiceItemSchema = new mongoose.Schema({
 }, { _id: true });
 
 const invoiceSchema = new mongoose.Schema({
-  invoiceNumber: { type: String, trim: true },
+  invoiceNumber: { type: String, trim: true, required: [true, 'Invoice number is required'] },
+  importKey: { type: String, trim: true, default: '' },
+  externalInvoiceNumber: { type: String, trim: true, default: '' },
   invoiceType: { type: String, trim: true, default: 'sales' }, // sales | service | parts
   salesOrder: { type: mongoose.Schema.Types.ObjectId, ref: 'SalesOrder' },
   jobCard: { type: mongoose.Schema.Types.ObjectId, ref: 'JobCard' },
   customer: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer' },
-  status: { type: String, trim: true },
+  seller: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  sellerEmployee: { type: mongoose.Schema.Types.ObjectId, ref: 'Employee', default: null },
+  salePerson: { type: String, trim: true, default: '' },
+  status: { type: String, trim: true, required: [true, 'Invoice status is required'] },
   invoiceDate: { type: Date },
   dueDate: { type: Date },
   subtotal: { type: Number, default: 0 },
@@ -36,6 +41,14 @@ const invoiceSchema = new mongoose.Schema({
 });
 
 invoiceSchema.index({ invoiceNumber: 1 });
+invoiceSchema.index(
+  { importKey: 1 },
+  { unique: true, partialFilterExpression: { importKey: { $type: 'string', $gt: '' } } }
+);
+invoiceSchema.index(
+  { externalInvoiceNumber: 1 },
+  { unique: true, partialFilterExpression: { externalInvoiceNumber: { $type: 'string', $gt: '' } } }
+);
 invoiceSchema.index({ customer: 1 });
 invoiceSchema.index({ salesOrder: 1 });
 invoiceSchema.index({ status: 1 });
