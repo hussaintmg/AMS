@@ -37,6 +37,9 @@ const partSchema = new mongoose.Schema({
   reorderLevel: { type: Number, default: 0, min: [0, 'Reorder level cannot be negative'] },
   binLocation: { type: String, trim: true, default: '' },
   sourceType: { type: String, trim: true, default: 'manufacturer' },
+  // Scannable identity, unique across parts and vehicles. Assigned on create by
+  // utils/barcode.js; the scan page resolves a scanned code back to this part.
+  barcode: { type: String, trim: true, default: '' },
   isActive: { type: Boolean, default: true },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
@@ -46,6 +49,10 @@ const partSchema = new mongoose.Schema({
 
 partSchema.index({ partCode: 1 });
 partSchema.index({ sku: 1 });
+partSchema.index(
+  { barcode: 1 },
+  { unique: true, partialFilterExpression: { barcode: { $type: 'string', $gt: '' } } }
+);
 partSchema.index({ name: 1 });
 partSchema.index({ isActive: 1 });
 partSchema.index({ sourceType: 1 });

@@ -8,6 +8,7 @@ const Invoice = require('../models/Invoice.model');
 const { nextDocNumber } = require('./docNumber');
 const { recordCustomerActivity } = require('./customerSync');
 const { currentAudit } = require('../services/imports/importDebugAudit');
+const { applyInvoiceStock } = require('../services/stockLedger.service');
 const logger = require('./logger');
 
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
@@ -45,13 +46,33 @@ async function createInvoiceForOrder(order, {
     return { invoice: existing, created: false };
   }
 
-  const items = (order.items || []).map((item) => ({
+  // Every product on the order carries through to the invoice, keeping the
+  // vehicle/part references so the invoice is what moves stock.
+  const lineItems = (order.lineItems || []).map((line) => ({
+    itemType: line.itemType,
+    vehicle: line.vehicle || null,
+    vehicleVariant: line.vehicleVariant || null,
+    vehicleColor: line.vehicleColor || null,
+    part: line.part || null,
+    serviceType: line.serviceType || null,
+    code: line.code || '',
+    barcode: line.barcode || '',
+    name: line.name || '',
+    description: line.description || '',
+    quantity: line.quantity || 1,
+    unitPrice: line.unitPrice || 0,
+    discountAmount: line.discountAmount || 0,
+    taxAmount: line.taxAmount || 0,
+    totalPrice: line.totalPrice || 0,
+  }));
+
+  const items = (lineItems.length ? lineItems : (order.items || [])).map((item) => ({
     description: item.description,
     quantity: item.quantity || 1,
     unitPrice: item.unitPrice || 0,
-    taxAmount: 0,
+    taxAmount: item.taxAmount || 0,
     totalPrice: item.totalPrice || 0,
-    type: item.type || order.saleType,
+    type: item.itemType || item.type || order.saleType,
   }));
 
   const chargeLines = [
@@ -101,12 +122,28 @@ async function createInvoiceForOrder(order, {
     paidAmount,
     balanceAmount,
     items,
+    lineItems,
     notes: order.exchangeVehicleDetails ? `Trade-in: ${order.exchangeVehicleDetails}` : '',
     createdBy: userId,
   };
   const invoice = session
     ? (await Invoice.create([invoiceDocument], { session }))[0]
     : await Invoice.create(invoiceDocument);
+
+  // The invoice is the point of sale: parts leave stock and vehicles become
+  // sold here, exactly once (guarded by Invoice.stockApplied).
+  try {
+    const result = await applyInvoiceStock(invoice, { userId, session });
+    if (result.applied) {
+      invoice.stockApplied = true;
+      invoice.stockAppliedAt = new Date();
+      await invoice.save({ session });
+    }
+  } catch (stockError) {
+    // Nothing was consumed if this threw, so the invoice must not stand either.
+    await Invoice.deleteOne({ _id: invoice._id }).session(session || null);
+    throw stockError;
+  }
   let linkQuery = SalesOrder.findByIdAndUpdate(order._id, { $set: { invoice: invoice._id } }, { returnDocument: 'after' });
   if (session) linkQuery = linkQuery.session(session);
   await linkQuery;

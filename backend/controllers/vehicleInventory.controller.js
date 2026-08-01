@@ -4,6 +4,22 @@ const Warehouse = require('../models/Warehouse.model');
 const SalesOrder = require('../models/SalesOrder.model');
 const { AppError } = require('../middleware/errorHandler');
 const logger = require('../utils/logger');
+const { nextBarcode } = require('../utils/barcode');
+
+/** Next free VEH-NNNNN code. Scans the highest existing rather than counting,
+ *  so a deleted vehicle can never cause a duplicate. */
+async function nextVehicleCode() {
+    const latest = await Vehicle.find({ vehicleCode: /^VEH-\d+$/ })
+        .select('vehicleCode').sort({ vehicleCode: -1 }).limit(1).lean();
+    const match = latest[0]?.vehicleCode?.match(/^VEH-(\d+)$/);
+    let next = match ? Number(match[1]) + 1 : 1;
+    for (let attempt = 0; attempt < 1000; attempt += 1) {
+        const candidate = `VEH-${String(next).padStart(5, '0')}`;
+        if (!(await Vehicle.exists({ vehicleCode: candidate }))) return candidate;
+        next += 1;
+    }
+    throw new Error('Could not allocate a free vehicle code');
+}
 
 const VALID_SORT_COLUMNS = {
     created_at: 'createdAt',
@@ -54,6 +70,7 @@ const mapVehicleFlat = (v, idMaps) => ({
     vin: v.vin,
     chassis_number: v.chassisNumber || v.vin || '',
     engine_number: v.engineNumber,
+    barcode: v.barcode || '',
     // Make + Model + Variant; legacy/imported vehicles without master names
     // must still show an identifying label (chassis/engine), never blank.
     vehicle_name: [v.make?.name, v.model?.name, v.variant?.name].filter(Boolean).join(' ')
@@ -306,7 +323,12 @@ const createVehicle = async (req, res, next) => {
         }
 
         const vehicleData = {
+            // Mongoose validates before the schema's pre-save hook can fill this
+            // in, so the code is allocated here — without it every create failed
+            // with "Vehicle code is required".
+            vehicleCode: await nextVehicleCode(),
             vin: vin.toUpperCase().trim(),
+            chassisNumber: vin.toUpperCase().trim(),
             engineNumber: engineNumber.trim(),
             year: parseInt(year),
             status: status || 'at_yard',
@@ -343,7 +365,9 @@ const createVehicle = async (req, res, next) => {
                 code: color.name.substring(0, 3).toUpperCase(),
                 hexCode: color.hex_code
             },
-            warehouse: warehouseData
+            warehouse: warehouseData,
+            // Every new unit is scannable from the moment it exists.
+            barcode: await nextBarcode(Vehicle, 'vehicle'),
         };
 
         const newVehicle = await Vehicle.create(vehicleData);

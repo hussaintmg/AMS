@@ -295,6 +295,16 @@ export const partsAPI = {
     deleteSourceType: (id) => api.delete(`/parts/source-types/${id}`)
 };
 
+// Inventory barcodes (parts + vehicles)
+export const barcodeAPI = {
+    // Resolve a scanned barcode / part code / chassis number to a line item.
+    scan: (code) => api.post('/barcode/scan', { code }),
+    assign: (kind, id) => api.post(`/barcode/${kind}/${id}`),
+    svgUrl: (kind, id, download = false) => `/api/barcode/${kind}/${id}/svg${download ? '?download=true' : ''}`,
+    labelUrl: (kind, id) => `/api/barcode/${kind}/${id}/label`,
+    backfill: (kind) => api.post(`/barcode/${kind}/backfill`),
+};
+
 // Warehouse Management
 export const warehouseAPI = {
     getAll: (params) => api.get('/warehouses', { params }),
@@ -317,6 +327,10 @@ export const salesAPI = {
     updateQuotationStatus: (id, status) => api.patch(`/quotations/${id}/status`, { status }),
     convertQuotation: (id, data) => api.post(`/quotations/${id}/convert`, data),
     sendQuotationEmail: (id) => api.post(`/quotations/${id}/send-email`),
+    approveQuotation: (id, decision = 'approved', notes = '') => api.post(`/quotations/${id}/approve`, { decision, notes }),
+    // Estimate: a customer-facing PDF listing every product on the quotation.
+    downloadEstimate: (id) => api.get(`/quotations/${id}/estimate/pdf`, { responseType: 'blob' }),
+    emailEstimate: (id, to) => api.post(`/quotations/${id}/estimate/email`, to ? { to } : {}),
     bulkQuotations: (operation, ids) => api.post('/quotations/bulk', { operation, ids }),
     getQuotationStats: () => api.get('/quotations/stats'),
     // Bookings

@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const searchPlugin = require('../plugins/searchPlugin');
+const lineItemSchema = require('./lineItem.schema');
 
 const salesOrderItemSchema = new mongoose.Schema({
   description: { type: String },
@@ -64,6 +65,8 @@ const salesOrderSchema = new mongoose.Schema({
   deliveredAt: { type: Date, default: null },
   cancelledAt: { type: Date, default: null },
   items: { type: [salesOrderItemSchema], default: [] },
+  // Every sellable line (vehicles and/or parts).
+  lineItems: { type: [lineItemSchema], default: [] },
   notes: { type: String },
 
   // ── Dealer Pro XLSX Import: Order/Booking Tracking ──

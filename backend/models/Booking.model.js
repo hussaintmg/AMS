@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const searchPlugin = require('../plugins/searchPlugin');
+const lineItemSchema = require('./lineItem.schema');
 
 const bookingSchema = new mongoose.Schema({
   bookingNumber: { type: String, trim: true, required: [true, 'Booking number is required'] },
@@ -20,6 +21,9 @@ const bookingSchema = new mongoose.Schema({
   serviceType: { type: mongoose.Schema.Types.ObjectId, ref: 'ServiceType', default: null },
   partQuantity: { type: Number, default: 1 },
   itemDescription: { type: String, trim: true, default: '' },
+  // Every sellable line (vehicles and/or parts) carried over from the quotation
+  // or entered directly. Booking never moves stock — see the invoice stage.
+  lineItems: { type: [lineItemSchema], default: [] },
   status: { type: String, trim: true, required: [true, 'Booking status is required'] },
   priority: { type: String, trim: true, default: 'normal' },
   // bookingAmount = paid at booking time ("On Booking"); paidAmount also

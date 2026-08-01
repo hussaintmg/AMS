@@ -31,6 +31,8 @@ const roleJobSchema = new mongoose.Schema({
     sendEmail: { type: Boolean, default: false },
     downloadPdf: { type: Boolean, default: false },
     export: { type: Boolean, default: false },
+    // Sign-off actions: approving a quotation is what lets it become a booking.
+    approve: { type: Boolean, default: false },
   },
   dataScope: {
     mode: { type: String, enum: ['own', 'selected_roles', 'selected_users', 'all'], default: 'own' },

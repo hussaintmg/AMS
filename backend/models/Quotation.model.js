@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const searchPlugin = require('../plugins/searchPlugin');
+const lineItemSchema = require('./lineItem.schema');
 
 const quotationItemSchema = new mongoose.Schema({
   description: { type: String },
@@ -30,6 +31,17 @@ const quotationSchema = new mongoose.Schema({
   validityDays: { type: Number, default: 7 },
   validUntil: { type: Date },
   items: { type: [quotationItemSchema], default: [] },
+  // Every sellable line (vehicles and/or parts). `items` above stays as the
+  // printable one-line-per-entry summary the older PDF variables read.
+  lineItems: { type: [lineItemSchema], default: [] },
+  subtotal: { type: Number, default: 0 },
+  // A quotation only becomes a Booking once someone with the right permission
+  // approves it — see approveQuotation in salesManagement.controller.js.
+  approvalStatus: { type: String, trim: true, enum: ['pending', 'approved', 'rejected'], default: 'pending' },
+  approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  approvedAt: { type: Date, default: null },
+  approvalNotes: { type: String, trim: true, default: '' },
+  estimateSentAt: { type: Date, default: null },
   termsAndConditions: { type: String },
   notes: { type: String },
   cancelledAt: { type: Date, default: null },

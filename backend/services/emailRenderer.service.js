@@ -4,6 +4,8 @@ const sanitizer = require('./emailSanitizer.service');
 const { enrichContext } = require('./emailContext');
 const logger = require('../utils/logger');
 
+const { expandBlocks, hasBlocks } = require('./templateLoops.cjs');
+
 const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 function resolveNestedPath(obj, path) {
@@ -25,8 +27,13 @@ function formatDate(value) {
 }
 
 function resolvePlaceholders(text, context = {}, adminVarDefaults = {}) {
-  const varRegex = /\{\{([^}]+)\}\}/g;
-  return text.replace(varRegex, (match, inner) => {
+  // Multi-product emails repeat a row per line item. Blocks expand first, so
+  // the single-token pass below only ever sees plain markup.
+  const source = hasBlocks(text)
+    ? expandBlocks(text, context, (value) => (value == null ? '' : (value instanceof Date ? formatDate(value) : String(value))))
+    : text;
+  const varRegex = /\{\{([^#/}][^}]*)\}\}/g;
+  return source.replace(varRegex, (match, inner) => {
     const trimmed = inner.trim();
 
     if (trimmed.startsWith('component:') || trimmed.startsWith('param.') || trimmed.startsWith('param:')) return match;

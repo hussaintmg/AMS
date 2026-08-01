@@ -958,6 +958,7 @@ exports.saveRoleJobs = async (req, res, next) => {
           sendEmail: job.actions?.sendEmail === true,
           downloadPdf: job.actions?.downloadPdf === true,
           export: job.actions?.export === true,
+          approve: job.actions?.approve === true,
         },
         dataScope: {
           mode,

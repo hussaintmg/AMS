@@ -17,6 +17,21 @@ const requireJob = (pageKey, action = 'view') => (req, res, next) => {
   next();
 };
 
+/** Ids of every super admin — never included in another role's data scope. */
+async function superAdminIds() {
+  const { Role } = require('../models');
+  const roles = await Role.find({ name: 'super_admin' }).select('_id').lean();
+  if (!roles.length) return [];
+  const users = await User.find({ role: { $in: roles.map((role) => role._id) } }).select('_id').lean();
+  return users.map((user) => String(user._id));
+}
+
+/**
+ * Which users' records this user may see on a page.
+ * `null` means no restriction (super admin, or dataScope "all").
+ * Otherwise it is always own data plus whatever the scope adds — and never a
+ * super admin's data, whatever the scope says.
+ */
 async function allowedOwnerIds(user, pageKey) {
   const ownId = String(user?.id || user?._id || '');
   const job = getJob(user, pageKey);
@@ -28,6 +43,12 @@ async function allowedOwnerIds(user, pageKey) {
     const users = await User.find({ role: { $in: roleIds }, isActive: true }).select('_id').lean();
     users.forEach((item) => ids.add(String(item._id)));
   }
+  if (ids.size > (ownId ? 1 : 0)) {
+    // Enforced here, not only hidden in the picker: a scope must never reach a
+    // super admin's records.
+    const superAdmins = await superAdminIds();
+    superAdmins.forEach((id) => { if (id !== ownId) ids.delete(id); });
+  }
   return [...ids];
 }
 
@@ -38,4 +59,4 @@ async function scopeFilter(user, pageKey, ownerFields = ['createdBy']) {
   return { $or: fields.map((field) => ({ [field]: { $in: ids } })) };
 }
 
-module.exports = { getJob, canDo, requireJob, allowedOwnerIds, scopeFilter };
+module.exports = { getJob, canDo, requireJob, allowedOwnerIds, scopeFilter, superAdminIds };

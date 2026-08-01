@@ -125,10 +125,48 @@ router.patch('/:id/status', authenticate, authorizeAction('quotations', 'edit'),
 
 /**
  * @swagger
+ * /api/quotations/{id}/approve:
+ *   post:
+ *     tags: [Quotations]
+ *     summary: Approve or reject a quotation (required before it can become a booking)
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               decision: { type: string, enum: [approved, rejected, pending] }
+ *               notes: { type: string }
+ */
+router.post('/:id/approve', authenticate, authorizeAction('quotations', 'approve'), salesController.approveQuotation);
+
+/**
+ * @swagger
+ * /api/quotations/{id}/estimate/pdf:
+ *   get:
+ *     tags: [Quotations]
+ *     summary: Download the estimate PDF (lists every product on the quotation)
+ *     security: [{ bearerAuth: [] }]
+ */
+router.get('/:id/estimate/pdf', authenticate, authorizeAction('quotations', 'downloadPdf'), salesController.downloadQuotationEstimate);
+
+/**
+ * @swagger
+ * /api/quotations/{id}/estimate/email:
+ *   post:
+ *     tags: [Quotations]
+ *     summary: Email the estimate (PDF attached, all products itemised) to the customer
+ *     security: [{ bearerAuth: [] }]
+ */
+router.post('/:id/estimate/email', authenticate, authorizeAction('quotations', 'sendEmail'), salesController.sendQuotationEstimateEmail);
+
+/**
+ * @swagger
  * /api/quotations/{id}/convert:
  *   post:
  *     tags: [Quotations]
- *     summary: Convert quotation to booking
+ *     summary: Convert an approved quotation to a booking
  *     security: [{ bearerAuth: [] }]
  */
 router.post('/:id/convert', authenticate, authorizeAction('quotations', 'edit'), salesController.convertQuotationToBooking);

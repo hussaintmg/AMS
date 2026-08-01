@@ -26,9 +26,16 @@ const { nextDocNumber } = require('../utils/docNumber');
 const { recordCustomerActivity } = require('../utils/customerSync');
 const { createInvoiceForOrder } = require('../utils/invoiceFactory');
 const { applyVehicleLifecycle, canonicalStatus } = require('../utils/vehicleLifecycle');
-const { sendTemplateEmail } = require('../services/emailSender.service');
+const { sendTemplateEmail, sendRawEmail } = require('../services/emailSender.service');
+const { buildEstimatePdf, buildEstimateEmailContext, defaultEstimateEmailHtml } = require('../services/estimate.service');
+const { companyName } = require('../services/pdfData.service');
 const { canDo } = require('../utils/roleJobs');
 const { allowedOwnerIds } = require('../utils/roleJobs');
+const {
+    readRequestedItems, resolveLineItems, summarizeLineItems,
+    legacyFieldsFromLines, linesToRequested, mapLineItem, round2,
+} = require('../services/lineItems.service');
+const { reserveBookingVehicles, releaseBookingVehicles, revertInvoiceStock } = require('../services/stockLedger.service');
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SHARED HELPERS
@@ -146,68 +153,6 @@ async function sendCustomerDocumentEmail({ Model, id, usageKey, documentKey, bui
     return { document, recipient: document.customer.email };
 }
 
-/**
- * Resolve a human readable line-item description for a sale.
- * `vehicleVariantId` may be a VehicleVariant (master data) id or an
- * inventory Vehicle id — the sales forms send either depending on source.
- */
-async function resolveSaleItem({ saleType, vehicleId, vehicleVariantId, vehicleColorId, partId, serviceTypeId, partQuantity }) {
-    const result = { description: '', variantId: null, colorId: null, vehicleId: null, partId: null, serviceTypeId: null, unitPrice: 0 };
-
-    if (saleType === 'parts') {
-        const part = await Part.findById(partId).lean();
-        if (!part) throw new AppError('Part not found', 404);
-        const qty = Math.max(1, num(partQuantity, 1));
-        result.partId = part._id;
-        result.unitPrice = num(part.sellingPrice);
-        result.description = `${part.name || 'Part'}${part.partCode ? ` (${part.partCode})` : ''} x ${qty}`;
-        return result;
-    }
-
-    if (saleType === 'service') {
-        const service = await ServiceType.findOne({ _id: serviceTypeId, isActive: true }).lean();
-        if (!service) throw new AppError('Active service is required', 400);
-        result.serviceTypeId = service._id;
-        result.unitPrice = num(service.basePrice);
-        result.description = service.name || 'Service';
-        return result;
-    }
-
-    const variant = vehicleVariantId ? await VehicleVariant.findById(vehicleVariantId).populate({
-        path: 'model_id',
-        select: 'name make_id',
-        populate: { path: 'make_id', select: 'name' },
-    }).lean() : null;
-    if (vehicleVariantId && !variant) throw new AppError('Vehicle variant master not found', 404);
-    if (variant) {
-        result.variantId = variant._id;
-        result.unitPrice = num(variant.base_price);
-        const makeName = variant.model_id?.make_id?.name || '';
-        const modelName = variant.model_id?.name || '';
-        let colorName = '';
-        if (vehicleColorId) {
-            const color = await VehicleColor.findById(vehicleColorId).select('name').lean();
-            if (!color) throw new AppError('Vehicle colour master not found', 404);
-            result.colorId = color._id;
-            colorName = color.name;
-        }
-        result.description = [makeName, modelName, variant.name, colorName ? `(${colorName})` : ''].filter(Boolean).join(' ');
-    }
-
-    if (vehicleId) {
-        const vehicle = await Vehicle.findById(vehicleId).lean();
-        if (!vehicle) throw new AppError('Vehicle not found', 404);
-        result.vehicleId = vehicle._id;
-        result.unitPrice = num(vehicle.salePrice) || result.unitPrice;
-        result.description = [
-            vehicle.make?.name, vehicle.model?.name, vehicle.variant?.name,
-            vehicle.color?.name ? `(${vehicle.color.name})` : '',
-        ].filter(Boolean).join(' ') || vehicle.vin || 'Vehicle';
-    }
-    if (!result.variantId && !result.vehicleId) throw new AppError('Vehicle variant master or allocated Vehicle is required', 400);
-    return result;
-}
-
 async function requireCustomer(customerId) {
     if (!sanitizeId(customerId)) throw new AppError('Customer is required', 400);
     const customer = await Customer.findOne({ _id: customerId, deletedAt: null }).lean();
@@ -230,8 +175,14 @@ const mapQuotation = (q) => ({
     part_id: q.part?._id || q.part || null,
     service_type_id: q.serviceType?._id || q.serviceType || null,
     part_quantity: q.partQuantity || 1,
-    item_name: q.items?.[0]?.description || '',
-    vehicle_full_name: q.items?.[0]?.description || '',
+    item_name: q.lineItems?.[0]?.description || q.items?.[0]?.description || '',
+    vehicle_full_name: q.lineItems?.[0]?.description || q.items?.[0]?.description || '',
+    line_items: (q.lineItems || []).map(mapLineItem),
+    item_count: (q.lineItems || []).length,
+    approval_status: q.approvalStatus || 'pending',
+    approved_at: q.approvedAt || null,
+    approval_notes: q.approvalNotes || '',
+    estimate_sent_at: q.estimateSentAt || null,
     vehicle_price: q.vehiclePrice || 0,
     discount_amount: q.discountAmount || 0,
     discount_percentage: q.discountPercentage || 0,
@@ -324,45 +275,103 @@ const sendQuotationEmail = async (req, res, next) => {
     } catch (error) { next(error); }
 };
 
-const quotationTotals = (body) => {
-    const vehiclePrice = num(body.vehiclePrice);
-    const discountAmount = num(body.discountAmount);
-    const taxAmount = num(body.taxAmount);
+/**
+ * Document money from the priced lines plus the document-level adjustments.
+ * `vehiclePrice` keeps its old meaning — the pre-adjustment subtotal — so every
+ * existing reader and PDF variable still shows the right figure now that the
+ * subtotal can come from several products instead of one.
+ */
+/**
+ * Download the quotation as a customer-facing Estimate PDF listing every
+ * product. Works with or without a designed PDF template.
+ */
+const downloadQuotationEstimate = async (req, res, next) => {
+    try {
+        const { buffer, fileName } = await buildEstimatePdf(sanitizeId(req.params.id));
+        res.set({
+            'Content-Type': 'application/pdf',
+            'Content-Disposition': `attachment; filename="${fileName}"`,
+            'Content-Length': buffer.length,
+        }).send(buffer);
+    } catch (error) { next(error); }
+};
+
+/**
+ * Email the Estimate to the quotation's customer with the PDF attached and
+ * every product itemised in the body.
+ */
+const sendQuotationEstimateEmail = async (req, res, next) => {
+    try {
+        const quotationId = sanitizeId(req.params.id);
+        const { buffer, fileName, quotation } = await buildEstimatePdf(quotationId);
+        const recipient = String(req.body?.to || quotation.customer?.email || '').trim();
+        if (!recipient) throw new AppError('This customer has no email address; add one first', 400);
+
+        const context = buildEstimateEmailContext(quotation, { companyName: await companyName() });
+        const attachments = [{ filename: fileName, content: buffer, contentType: 'application/pdf' }];
+
+        // Use the dealer's own estimate template when one is configured; the
+        // built-in body keeps the feature working before anyone designs one.
+        let result;
+        try {
+            result = await sendTemplateEmail({
+                usageKey: 'quotation_estimate',
+                to: recipient,
+                sentBy: req.user.id,
+                attachments,
+                context,
+            });
+        } catch (templateError) {
+            logger.info(`No quotation_estimate email template (${templateError.message}); sending the built-in estimate body`);
+            result = await sendRawEmail({
+                to: recipient,
+                subject: `Estimate ${quotation.quotationNumber} — ${context.company.name || 'Your estimate'}`,
+                html: defaultEstimateEmailHtml(context),
+                attachments,
+                sentBy: req.user.id,
+                usageKey: 'quotation_estimate',
+            });
+        }
+        if (result.status !== 'sent') throw new AppError(result.errorMessage || 'Email could not be sent', 502);
+
+        await Quotation.updateOne({ _id: quotationId }, { $set: { estimateSentAt: new Date(), updatedBy: req.user.id } });
+        res.json({ success: true, message: `Estimate ${quotation.quotationNumber} emailed to ${recipient}` });
+    } catch (error) { next(error); }
+};
+
+const quotationTotals = (body, lines = []) => {
+    const summary = summarizeLineItems(lines);
+    const vehiclePrice = lines.length ? summary.subtotal : num(body.vehiclePrice);
+    const discountAmount = num(body.discountAmount) + (lines.length ? summary.lineDiscountAmount : 0);
+    const taxAmount = num(body.taxAmount) + (lines.length ? summary.lineTaxAmount : 0);
     const additionalCharges = num(body.additionalCharges);
     return {
-        vehiclePrice, discountAmount, taxAmount, additionalCharges,
+        vehiclePrice,
+        subtotal: vehiclePrice,
+        discountAmount,
+        taxAmount,
+        additionalCharges,
         totalAmount: vehiclePrice - discountAmount + taxAmount + additionalCharges,
     };
 };
 
 const createQuotation = async (req, res, next) => {
     try {
-        const {
-            customerId, leadId, saleType, vehicleVariantId, vehicleColorId,
-            partId, serviceTypeId, partQuantity, discountPercentage, validityDays, termsAndConditions, notes,
-        } = req.body;
+        const { customerId, leadId, discountPercentage, validityDays, termsAndConditions, notes } = req.body;
 
-        if (saleType === 'service') throw new AppError('Services are managed from Service Management', 400);
-
-        if (saleType === 'parts') {
-            if (!sanitizeId(partId)) throw new AppError('Part is required for parts sales', 400);
-        } else if (saleType === 'service') {
-            if (!sanitizeId(serviceTypeId)) throw new AppError('Service is required for service sales', 400);
-        } else if (!sanitizeId(vehicleVariantId) || !num(req.body.vehiclePrice)) {
-            throw new AppError('Vehicle variant and price are required', 400);
+        const requested = readRequestedItems(req.body);
+        if (!requested.length) throw new AppError('Add at least one vehicle or part to the quotation', 400);
+        if (requested.some((item) => String(item.itemType || '').toLowerCase() === 'service')) {
+            throw new AppError('Services are managed from Service Management', 400);
         }
 
         const customer = await requireCustomer(customerId);
-        const item = await resolveSaleItem({ saleType, vehicleVariantId, vehicleColorId, partId, serviceTypeId, partQuantity });
+        // A quotation is an offer, not a commitment: stock is never checked or
+        // touched here, and no inventory unit has to be allocated yet.
+        const lines = await resolveLineItems(requested, { checkStock: false, requireInventoryVehicle: false });
+        const legacy = legacyFieldsFromLines(lines);
 
-        const totals = quotationTotals(req.body);
-        if (!totals.vehiclePrice && item.unitPrice) {
-            const qty = ['parts', 'service'].includes(saleType) ? Math.max(1, num(partQuantity, 1)) : 1;
-            totals.vehiclePrice = item.unitPrice * qty;
-            totals.totalAmount = totals.vehiclePrice - totals.discountAmount + totals.taxAmount + totals.additionalCharges;
-        }
-
-        const qty = ['parts', 'service'].includes(saleType) ? Math.max(1, num(partQuantity, 1)) : 1;
+        const totals = quotationTotals(req.body, lines);
         const quotationNumber = await nextDocNumber(Quotation, 'quotationNumber', 'QT');
         const validity = Math.max(1, num(validityDays, 7));
 
@@ -370,25 +379,14 @@ const createQuotation = async (req, res, next) => {
             quotationNumber,
             customer: customer._id,
             lead: sanitizeId(leadId),
-            vehicle: item.vehicleId,
-            saleType: ['parts', 'service'].includes(saleType) ? saleType : 'vehicle',
-            vehicleVariant: item.variantId,
-            vehicleColor: item.colorId,
-            part: item.partId,
-            serviceType: item.serviceTypeId,
-            partQuantity: qty,
+            ...legacy,
+            lineItems: lines,
             status: 'draft',
+            approvalStatus: 'pending',
             ...totals,
             discountPercentage: num(discountPercentage),
             validityDays: validity,
             validUntil: new Date(Date.now() + validity * 24 * 60 * 60 * 1000),
-            items: [{
-                description: item.description,
-                quantity: qty,
-                unitPrice: qty ? totals.vehiclePrice / qty : totals.vehiclePrice,
-                totalPrice: totals.vehiclePrice,
-                type: ['parts', 'service'].includes(saleType) ? saleType : 'vehicle',
-            }],
             termsAndConditions,
             notes,
             createdBy: req.user.id,
@@ -400,7 +398,7 @@ const createQuotation = async (req, res, next) => {
             docId: quotation._id,
             number: quotationNumber,
             amount: totals.totalAmount,
-            description: `Quotation ${quotationNumber} — ${item.description}`,
+            description: `Quotation ${quotationNumber} — ${legacy.itemDescription}`,
             userId: req.user.id,
         });
 
@@ -422,58 +420,46 @@ const updateQuotation = async (req, res, next) => {
         if (!quotation) throw new AppError('Quotation not found', 404);
         if (quotation.status === 'converted') throw new AppError('Converted quotations cannot be edited', 400);
 
-        const {
-            customerId, saleType, vehicleVariantId, vehicleColorId, partId, serviceTypeId, partQuantity,
-            discountPercentage, validityDays, status, termsAndConditions, notes,
-        } = req.body;
-
-        if (saleType === 'service' || (!saleType && quotation.saleType === 'service')) {
-            throw new AppError('Services are managed from Service Management', 400);
-        }
+        const { customerId, discountPercentage, validityDays, status, termsAndConditions, notes } = req.body;
 
         if (sanitizeId(customerId)) {
             const customer = await requireCustomer(customerId);
             quotation.customer = customer._id;
         }
 
-        const effectiveSaleType = ['parts', 'service'].includes(saleType) ? saleType : 'vehicle';
-        const item = await resolveSaleItem({
-            saleType: effectiveSaleType,
-            vehicleVariantId: sanitizeId(vehicleVariantId) || quotation.vehicleVariant || quotation.vehicle,
-            vehicleColorId: sanitizeId(vehicleColorId),
-            partId: sanitizeId(partId) || quotation.part,
-            serviceTypeId: sanitizeId(serviceTypeId) || quotation.serviceType,
-            partQuantity,
-        });
+        // An edit that does not mention products keeps the ones already on the
+        // quotation, so a note-only change cannot silently empty the document.
+        const requested = readRequestedItems(req.body);
+        const lines = await resolveLineItems(
+            requested.length ? requested : linesToRequested(quotation.lineItems),
+            { checkStock: false, requireInventoryVehicle: false },
+        );
+        if (lines.some((line) => line.itemType === 'service')) {
+            throw new AppError('Services are managed from Service Management', 400);
+        }
+        const legacy = legacyFieldsFromLines(lines);
 
-        const totals = quotationTotals(req.body);
-        const qty = ['parts', 'service'].includes(effectiveSaleType) ? Math.max(1, num(partQuantity, 1)) : 1;
+        const totals = quotationTotals(req.body, lines);
         const validity = Math.max(1, num(validityDays, quotation.validityDays || 7));
 
         Object.assign(quotation, {
-            saleType: effectiveSaleType,
-            vehicleVariant: item.variantId,
-            vehicleColor: item.colorId,
-            vehicle: item.vehicleId,
-            part: item.partId,
-            serviceType: item.serviceTypeId,
-            partQuantity: qty,
+            ...legacy,
+            lineItems: lines,
             ...totals,
             discountPercentage: num(discountPercentage, quotation.discountPercentage),
             validityDays: validity,
             validUntil: new Date(quotation.createdAt.getTime() + validity * 24 * 60 * 60 * 1000),
-            items: [{
-                description: item.description,
-                quantity: qty,
-                unitPrice: qty ? totals.vehiclePrice / qty : totals.vehiclePrice,
-                totalPrice: totals.vehiclePrice,
-                type: effectiveSaleType,
-            }],
             ...(status ? { status } : {}),
             termsAndConditions: termsAndConditions !== undefined ? termsAndConditions : quotation.termsAndConditions,
             notes: notes !== undefined ? notes : quotation.notes,
             updatedBy: req.user.id,
         });
+        // Changing what is being quoted invalidates an earlier approval.
+        if (requested.length && quotation.approvalStatus === 'approved') {
+            quotation.approvalStatus = 'pending';
+            quotation.approvedBy = null;
+            quotation.approvedAt = null;
+        }
         await quotation.save();
 
         logger.info(`Quotation ${req.params.id} updated by user ${req.user.id}`);
@@ -521,41 +507,82 @@ const updateQuotationStatus = async (req, res, next) => {
     }
 };
 
+/**
+ * Approve or reject a quotation. Only an approved quotation may become a
+ * Booking (see convertQuotationToBooking) — that is the gate the client asked
+ * for, and it is enforced on the server, not just hidden in the UI.
+ */
+const approveQuotation = async (req, res, next) => {
+    try {
+        const { decision = 'approved', notes = '' } = req.body;
+        if (!['approved', 'rejected', 'pending'].includes(decision)) {
+            throw new AppError('Decision must be approved, rejected or pending', 400);
+        }
+        const quotation = await Quotation.findById(sanitizeId(req.params.id));
+        if (!quotation) throw new AppError('Quotation not found', 404);
+        if (quotation.status === 'converted') throw new AppError('Quotation is already converted', 400);
+        if (quotation.status === 'cancelled') throw new AppError('Cancelled quotations cannot be approved', 400);
+
+        quotation.approvalStatus = decision;
+        quotation.approvalNotes = String(notes || '').trim();
+        quotation.approvedBy = decision === 'pending' ? null : req.user.id;
+        quotation.approvedAt = decision === 'pending' ? null : new Date();
+        // The visible status follows the decision so the list reads correctly.
+        if (decision === 'approved' && ['draft', 'sent'].includes(quotation.status)) quotation.status = 'accepted';
+        if (decision === 'rejected') quotation.status = 'rejected';
+        quotation.updatedBy = req.user.id;
+        await quotation.save();
+
+        logger.info(`Quotation ${quotation.quotationNumber} ${decision} by user ${req.user.id}`);
+        res.json({
+            success: true,
+            message: `Quotation ${decision}`,
+            data: { id: quotation._id, approvalStatus: quotation.approvalStatus, status: quotation.status },
+        });
+    } catch (error) { next(error); }
+};
+
 const convertQuotationToBooking = async (req, res, next) => {
     try {
-        const { vehicleId, bookingAmount, expectedDeliveryDate, priority, notes } = req.body;
+        const { bookingAmount, expectedDeliveryDate, priority, notes } = req.body;
 
         const quotation = await Quotation.findById(req.params.id).populate('customer', 'firstName lastName companyName');
         if (!quotation) throw new AppError('Quotation not found', 404);
         if (quotation.status === 'converted') throw new AppError('Quotation already converted', 400);
-        if (quotation.saleType === 'service') throw new AppError('Services are managed from Service Management', 400);
+        if (quotation.status === 'cancelled') throw new AppError('Cancelled quotations cannot be converted', 400);
+        // The approval gate: nothing moves to a Booking until someone approves.
+        if (quotation.approvalStatus !== 'approved') {
+            throw new AppError('This quotation must be approved before it can become a booking', 409);
+        }
         if (!num(bookingAmount)) throw new AppError('Booking amount is required', 400);
-        if (quotation.saleType === 'vehicle' && !sanitizeId(vehicleId)) {
-            throw new AppError('An actual inventory Vehicle is required to convert a vehicle quotation', 400);
-        }
-        const allocatedVehicle = quotation.saleType === 'vehicle' ? await Vehicle.findById(vehicleId).lean() : null;
-        if (quotation.saleType === 'vehicle' && !allocatedVehicle) throw new AppError('Inventory Vehicle not found', 404);
-        if (allocatedVehicle && canonicalStatus(allocatedVehicle.status) !== 'available') {
-            throw new AppError(`Inventory Vehicle is not available (current status: ${allocatedVehicle.status})`, 400);
-        }
+
+        // Vehicles must be actual inventory units by booking time; the client may
+        // re-send the lines with allocations filled in, otherwise the quotation's
+        // own lines are used as they stand.
+        const requested = readRequestedItems(req.body);
+        const lines = await resolveLineItems(
+            requested.length ? requested : linesToRequested(quotation.lineItems),
+            { checkStock: false, requireInventoryVehicle: true, vehicleStatuses: ['available', 'booked'] },
+        );
+        const legacy = legacyFieldsFromLines(lines);
+        const summary = summarizeLineItems(lines);
 
         const bookingNumber = await nextDocNumber(Booking, 'bookingNumber', 'BK');
         const booking = await Booking.create({
             bookingNumber,
             quotation: quotation._id,
             customer: quotation.customer?._id || quotation.customer,
-            vehicle: allocatedVehicle?._id || null,
-            saleType: quotation.saleType,
-            vehicleVariant: null,
-            vehicleColor: null,
-            part: quotation.part,
-            serviceType: quotation.serviceType,
-            partQuantity: quotation.partQuantity,
-            itemDescription: quotation.items?.[0]?.description || '',
+            ...legacy,
+            lineItems: lines,
             status: 'pending',
             priority: priority || 'normal',
             bookingAmount: num(bookingAmount),
-            totalAmount: quotation.totalAmount,
+            // The quotation's agreed total carries over — a booking does not
+            // re-price what the customer already accepted.
+            totalAmount: num(quotation.totalAmount) || summary.lineTotal,
+            taxAmount: num(quotation.taxAmount),
+            balanceAmount: Math.max(0, (num(quotation.totalAmount) || summary.lineTotal) - num(bookingAmount)),
+            paidAmount: num(bookingAmount),
             bookingDate: new Date(),
             deliveryDate: expectedDeliveryDate ? new Date(expectedDeliveryDate) : null,
             notes,
@@ -564,18 +591,12 @@ const convertQuotationToBooking = async (req, res, next) => {
             salePerson: [req.user.firstName, req.user.lastName].filter(Boolean).join(' '),
         });
 
-        if (allocatedVehicle) {
-            try {
-                await applyVehicleLifecycle(allocatedVehicle, 'reserved', {
-                    sourceType: 'booking',
-                    sourceId: booking._id,
-                    reference: bookingNumber,
-                    userId: req.user.id,
-                });
-            } catch (error) {
-                await Booking.deleteOne({ _id: booking._id });
-                throw error;
-            }
+        // Vehicles are reserved; parts stay on the shelf until the invoice.
+        try {
+            await reserveBookingVehicles(booking, { userId: req.user.id });
+        } catch (error) {
+            await Booking.deleteOne({ _id: booking._id });
+            throw error;
         }
 
         quotation.status = 'converted';
@@ -632,6 +653,8 @@ const mapBooking = (b, order = null) => ({
     part_quantity: b.partQuantity || 1,
     item_name: b.itemDescription || bookingVehicleName(b),
     vehicle_full_name: bookingVehicleName(b) || b.itemDescription || '',
+    line_items: (b.lineItems || []).map(mapLineItem),
+    item_count: (b.lineItems || []).length,
     booking_amount: b.bookingAmount || 0,
     total_amount: b.totalAmount || 0,
     tax_amount: b.taxAmount || 0,
@@ -746,62 +769,45 @@ const sendBookingEmail = async (req, res, next) => {
 const createBooking = async (req, res, next) => {
     try {
         const {
-            quotationId, customerId, saleType, vehicleId, vehicleVariantId, vehicleColorId,
-            partId, serviceTypeId, partQuantity, bookingAmount, totalAmount, taxAmount, expectedDeliveryDate, priority, notes,
+            quotationId, customerId, bookingAmount, totalAmount, taxAmount,
+            expectedDeliveryDate, priority, notes,
         } = req.body;
 
-        if (saleType === 'service') throw new AppError('Services are managed from Service Management', 400);
-
-        if (saleType === 'parts') {
-            if (!sanitizeId(customerId) || !sanitizeId(partId) || !num(bookingAmount)) {
-                throw new AppError('Customer, part, and booking amount are required for parts sales', 400);
-            }
-        } else if (saleType === 'service') {
-            if (!sanitizeId(customerId) || !sanitizeId(serviceTypeId) || !num(bookingAmount)) {
-                throw new AppError('Customer, service, and booking amount are required for service sales', 400);
-            }
-        } else if (!sanitizeId(customerId) || !sanitizeId(vehicleId) || !num(bookingAmount)) {
-            throw new AppError('Customer, actual inventory Vehicle, and booking amount are required', 400);
+        if (!sanitizeId(customerId) || !num(bookingAmount)) {
+            throw new AppError('Customer and booking amount are required', 400);
         }
+        const requested = readRequestedItems(req.body);
+        if (!requested.length) throw new AppError('Add at least one vehicle or part to the booking', 400);
 
         const customer = await requireCustomer(customerId);
-        const effectiveSaleType = ['parts', 'service'].includes(saleType) ? saleType : 'vehicle';
-        let allocatedVehicle = null;
-        if (effectiveSaleType === 'vehicle') {
-            allocatedVehicle = await Vehicle.findById(vehicleId).lean();
-            if (!allocatedVehicle) throw new AppError('Inventory Vehicle not found', 404);
-            if (canonicalStatus(allocatedVehicle.status) !== 'available') {
-                throw new AppError(`Inventory Vehicle is not available (current status: ${allocatedVehicle.status})`, 400);
-            }
-        }
-        const item = await resolveSaleItem({
-            saleType: effectiveSaleType,
-            vehicleId,
-            vehicleVariantId: null,
-            vehicleColorId: null,
-            partId,
-            serviceTypeId,
-            partQuantity,
+        // Vehicles must be real inventory units at booking time so they can be
+        // reserved; part stock is deliberately not checked or moved here.
+        const lines = await resolveLineItems(requested, {
+            checkStock: false,
+            requireInventoryVehicle: true,
+            vehicleStatuses: ['available', 'booked'],
         });
+        if (lines.some((line) => line.itemType === 'service')) {
+            throw new AppError('Services are managed from Service Management', 400);
+        }
+        const legacy = legacyFieldsFromLines(lines);
+        const summary = summarizeLineItems(lines);
+        const documentTotal = num(totalAmount) || summary.lineTotal;
 
         const bookingNumber = await nextDocNumber(Booking, 'bookingNumber', 'BK');
         const booking = await Booking.create({
             bookingNumber,
             quotation: sanitizeId(quotationId),
             customer: customer._id,
-            vehicle: item.vehicleId,
-            saleType: effectiveSaleType,
-            vehicleVariant: item.variantId,
-            vehicleColor: item.colorId,
-            part: item.partId,
-            serviceType: item.serviceTypeId,
-            partQuantity: Math.max(1, num(partQuantity, 1)),
-            itemDescription: item.description,
+            ...legacy,
+            lineItems: lines,
             status: 'pending',
             priority: priority || 'normal',
             bookingAmount: num(bookingAmount),
-            totalAmount: num(totalAmount, item.unitPrice * Math.max(1, num(partQuantity, 1))),
+            paidAmount: num(bookingAmount),
+            totalAmount: documentTotal,
             taxAmount: num(taxAmount),
+            balanceAmount: Math.max(0, documentTotal - num(bookingAmount)),
             bookingDate: new Date(),
             deliveryDate: expectedDeliveryDate ? new Date(expectedDeliveryDate) : null,
             notes,
@@ -810,18 +816,11 @@ const createBooking = async (req, res, next) => {
             createdBy: req.user.id,
         });
 
-        if (allocatedVehicle) {
-            try {
-                await applyVehicleLifecycle(allocatedVehicle, 'reserved', {
-                    sourceType: 'booking',
-                    sourceId: booking._id,
-                    reference: bookingNumber,
-                    userId: req.user.id,
-                });
-            } catch (error) {
-                await Booking.deleteOne({ _id: booking._id });
-                throw error;
-            }
+        try {
+            await reserveBookingVehicles(booking, { userId: req.user.id });
+        } catch (error) {
+            await Booking.deleteOne({ _id: booking._id });
+            throw error;
         }
 
         await recordCustomerActivity({
@@ -830,7 +829,7 @@ const createBooking = async (req, res, next) => {
             docId: booking._id,
             number: bookingNumber,
             amount: booking.totalAmount || booking.bookingAmount,
-            description: `Booking ${bookingNumber} — ${item.description} (deposit PKR ${num(bookingAmount).toLocaleString()})`,
+            description: `Booking ${bookingNumber} — ${legacy.itemDescription} (deposit PKR ${num(bookingAmount).toLocaleString()})`,
             userId: req.user.id,
         });
 
@@ -850,8 +849,8 @@ const updateBooking = async (req, res, next) => {
         }
 
         const {
-            customerId, saleType, vehicleId, vehicleVariantId, vehicleColorId, partId, serviceTypeId, partQuantity,
-            bookingAmount, totalAmount, taxAmount, expectedDeliveryDate, status, priority, notes,
+            customerId, bookingAmount, totalAmount, taxAmount,
+            expectedDeliveryDate, status, priority, notes,
         } = req.body;
         const nextStatus = status
             ? assertDocumentStatusTransition('booking', booking.status, status)
@@ -865,39 +864,35 @@ const updateBooking = async (req, res, next) => {
             booking.customer = customer._id;
         }
 
-        const effectiveSaleType = saleType === 'service' || (!saleType && booking.saleType === 'service')
-            ? 'service'
-            : (saleType === 'parts' ? 'parts' : (saleType || booking.saleType || 'vehicle'));
-        if (effectiveSaleType === 'service') throw new AppError('Services are managed from Service Management', 400);
-        const requestedVehicleId = sanitizeId(vehicleId);
-        const targetVehicleId = requestedVehicleId || booking.vehicle || null;
-        if (booking.vehicle && requestedVehicleId && String(booking.vehicle) !== String(requestedVehicleId)) {
-            throw new AppError('A Booking inventory allocation cannot be replaced; cancel it and create a new Booking.', 409);
-        }
-        const hasItem = effectiveSaleType === 'parts'
-            ? sanitizeId(partId) || booking.part
-            : targetVehicleId;
-        if (hasItem) {
-            const item = await resolveSaleItem({
-                saleType: effectiveSaleType,
-                vehicleId: targetVehicleId,
-                vehicleVariantId: null,
-                vehicleColorId: null,
-                partId: sanitizeId(partId) || booking.part,
-                serviceTypeId: sanitizeId(serviceTypeId) || booking.serviceType,
-                partQuantity,
+        const requested = readRequestedItems(req.body);
+        if (requested.length) {
+            const previousVehicles = new Set((booking.lineItems || [])
+                .filter((line) => line.itemType === 'vehicle' && line.vehicle)
+                .map((line) => String(line.vehicle)));
+            const lines = await resolveLineItems(requested, {
+                checkStock: false,
+                requireInventoryVehicle: true,
+                vehicleStatuses: ['available', 'booked'],
             });
-            booking.vehicleVariant = item.variantId;
-            booking.vehicleColor = item.colorId;
-            booking.vehicle = item.vehicleId || null;
-            booking.part = item.partId;
-            booking.serviceType = item.serviceTypeId;
-            booking.itemDescription = item.description;
+            if (lines.some((line) => line.itemType === 'service')) {
+                throw new AppError('Services are managed from Service Management', 400);
+            }
+            const nextVehicles = new Set(lines
+                .filter((line) => line.itemType === 'vehicle' && line.vehicle)
+                .map((line) => String(line.vehicle)));
+            // Swapping an already-reserved unit hides which chassis the customer
+            // was promised; cancelling and re-booking keeps that history honest.
+            const removed = [...previousVehicles].filter((id) => !nextVehicles.has(id));
+            if (removed.length) {
+                throw new AppError('A reserved vehicle cannot be removed or replaced on a booking; cancel it and create a new Booking.', 409);
+            }
+            Object.assign(booking, legacyFieldsFromLines(lines));
+            booking.lineItems = lines;
+            // Newly added vehicles get reserved; parts still do not move stock.
+            await reserveBookingVehicles(booking, { userId: req.user.id });
         }
 
         Object.assign(booking, {
-            saleType: effectiveSaleType,
-            partQuantity: Math.max(1, num(partQuantity, booking.partQuantity || 1)),
             bookingAmount: num(bookingAmount, booking.bookingAmount),
             totalAmount: num(totalAmount, booking.totalAmount),
             taxAmount: num(taxAmount, booking.taxAmount),
@@ -907,6 +902,8 @@ const updateBooking = async (req, res, next) => {
             notes: notes !== undefined ? notes : booking.notes,
             updatedBy: req.user.id,
         });
+        booking.paidAmount = num(booking.bookingAmount) + num(booking.subsequentPayments);
+        booking.balanceAmount = Math.max(0, num(booking.totalAmount) - num(booking.paidAmount));
         await booking.save();
 
         res.json({ success: true, message: 'Booking updated successfully' });
@@ -929,18 +926,9 @@ const deleteBooking = async (req, res, next) => {
         if (linkedOrder) {
             throw new AppError(`Booking is linked to sales order ${linkedOrder.orderNumber} and cannot be cancelled independently`, 409);
         }
-        if (booking.vehicle) {
-            const vehicle = await Vehicle.findById(booking.vehicle).lean();
-            if (vehicle && canonicalStatus(vehicle.status) === 'booked') {
-                await applyVehicleLifecycle(vehicle, 'available', {
-                    force: true,
-                    sourceType: 'booking_cancellation',
-                    sourceId: booking._id,
-                    reference: booking.bookingNumber,
-                    userId: req.user.id,
-                });
-            }
-        }
+        // Every reserved unit on the booking goes back to available. No part
+        // stock has to be returned — a booking never took any.
+        await releaseBookingVehicles(booking);
 
         booking.status = 'cancelled';
         booking.cancellationReason = cancellationReason || '';
@@ -980,6 +968,26 @@ const allocateVehicle = async (req, res, next) => {
         });
 
         booking.vehicle = vehicle._id;
+        // Fill the allocation into the first unallocated vehicle line so the
+        // multi-product list and the legacy field agree on what was allocated.
+        const openLine = (booking.lineItems || []).find((line) => line.itemType === 'vehicle' && !line.vehicle);
+        if (openLine) {
+            openLine.vehicle = vehicle._id;
+            openLine.code = vehicle.chassisNumber || vehicle.vin || vehicle.vehicleCode || '';
+            openLine.barcode = vehicle.barcode || '';
+        } else if (!(booking.lineItems || []).length) {
+            booking.lineItems = [{
+                itemType: 'vehicle',
+                vehicle: vehicle._id,
+                code: vehicle.chassisNumber || vehicle.vin || vehicle.vehicleCode || '',
+                barcode: vehicle.barcode || '',
+                name: booking.itemDescription || 'Vehicle',
+                description: booking.itemDescription || 'Vehicle',
+                quantity: 1,
+                unitPrice: num(booking.totalAmount),
+                totalPrice: num(booking.totalAmount),
+            }];
+        }
         booking.status = 'in_progress';
         booking.updatedBy = req.user.id;
         await booking.save();
@@ -1007,7 +1015,9 @@ const mapOrder = (o, invoice = null) => ({
     vehicle_id: o.vehicle?._id || o.vehicle || null,
     part_id: o.part || null,
     part_quantity: o.partQuantity || 1,
-    item_name: o.items?.[0]?.description || '',
+    item_name: o.lineItems?.[0]?.description || o.items?.[0]?.description || '',
+    line_items: (o.lineItems || []).map(mapLineItem),
+    item_count: (o.lineItems || []).length,
     make_name: o.vehicle?.make?.name || hierarchyName(o.vehicleMake),
     model_name: o.vehicle?.model?.name || hierarchyName(o.vehicleModel),
     variant_name: o.vehicle?.variant?.name || hierarchyName(o.vehicleVariant),
@@ -1229,46 +1239,30 @@ async function createOrderInternal({
     salePerson = '',
 }) {
     const {
-        customerId, saleType = 'vehicle', vehicleId, partId, serviceTypeId, partQuantity,
-        paymentMode, financeCompany, financeAmount, exchangeVehicleDetails,
+        customerId, paymentMode, financeCompany, financeAmount, exchangeVehicleDetails,
         expectedDeliveryDate, notes,
     } = body;
 
-    if (saleType === 'service') throw new AppError('Services are managed from Service Management', 400);
-
     const customer = await requireCustomer(customerId);
 
-    let vehicle = null;
-    let part = null;
-    let service = null;
-    const qty = Math.max(1, num(partQuantity, 1));
+    const requested = readRequestedItems(body);
+    if (!requested.length) throw new AppError('Add at least one vehicle or part to the sales order', 400);
 
-    if (saleType === 'vehicle') {
-        if (!sanitizeId(vehicleId)) throw new AppError('Vehicle is required for vehicle sales', 400);
-        vehicle = await Vehicle.findById(vehicleId);
-        if (!vehicle) throw new AppError('Vehicle not found', 404);
-        if (!['available', 'booked'].includes(canonicalStatus(vehicle.status))) {
-            throw new AppError(`Vehicle is not available (current status: ${vehicle.status})`, 400);
-        }
-    } else if (saleType === 'parts') {
-        if (!sanitizeId(partId)) throw new AppError('Part is required for parts sales', 400);
-        part = await Part.findById(partId);
-        if (!part) throw new AppError('Part not found', 404);
-        if (num(part.currentStock) < qty) {
-            throw new AppError(`Insufficient stock. Available: ${part.currentStock}`, 400);
-        }
-    } else if (saleType === 'service') {
-        if (!sanitizeId(serviceTypeId)) throw new AppError('Service is required for service sales', 400);
-        service = await ServiceType.findOne({ _id: serviceTypeId, isActive: true });
-        if (!service) throw new AppError('Active service not found', 404);
-    } else {
-        throw new AppError('Invalid sale type', 400);
+    // Availability is checked so the order cannot promise a unit that is gone,
+    // but nothing is consumed here — parts leave stock and vehicles become sold
+    // only once the invoice is raised (services/stockLedger.service.js).
+    const lines = await resolveLineItems(requested, {
+        checkStock: true,
+        requireInventoryVehicle: true,
+        vehicleStatuses: ['available', 'booked'],
+    });
+    if (lines.some((line) => line.itemType === 'service')) {
+        throw new AppError('Services are managed from Service Management', 400);
     }
+    const legacy = legacyFieldsFromLines(lines);
+    const summary = summarizeLineItems(lines);
 
-    let basePrice = num(body.vehiclePrice);
-    if (!basePrice) {
-        basePrice = saleType === 'vehicle' ? num(vehicle.salePrice) : saleType === 'parts' ? num(part.sellingPrice) * qty : num(service.basePrice) * qty;
-    }
+    const basePrice = num(body.vehiclePrice) || summary.subtotal;
     if (basePrice <= 0) throw new AppError('Valid price is required', 400);
 
     const totals = orderTotals({ ...body, vehiclePrice: basePrice });
@@ -1276,17 +1270,15 @@ async function createOrderInternal({
     if (totals.paidAmount < 0) {
         throw new AppError('Paid amount cannot be negative', 400);
     }
-    // An overpayment would post a negative balance and corrupt receivables.
-    if (totals.paidAmount > totals.totalAmount) {
-        throw new AppError(
-            `Paid amount (${totals.paidAmount}) cannot exceed the order total (${totals.totalAmount})`,
-            400
-        );
-    }
+    // Handing over more than the total is normal at a counter: only the amount
+    // owed is applied, and the surplus is change to return. Recording the full
+    // tender as "paid" would post a negative balance and corrupt receivables.
+    const amountTendered = totals.paidAmount;
+    const changeDue = round2(Math.max(0, amountTendered - totals.totalAmount));
+    if (changeDue > 0) totals.paidAmount = totals.totalAmount;
+    totals.balanceAmount = round2(totals.totalAmount - totals.paidAmount);
 
-    const description = saleType === 'vehicle'
-        ? ([vehicle.make?.name, vehicle.model?.name, vehicle.variant?.name, vehicle.year].filter(Boolean).join(' ') || 'Vehicle')
-        : saleType === 'parts' ? `${part.name || 'Part'}${part.partCode ? ` (${part.partCode})` : ''}` : service.name;
+    const description = legacy.itemDescription;
 
     const orderNumber = await nextDocNumber(SalesOrder, 'orderNumber', 'SO');
     const now = new Date();
@@ -1296,11 +1288,8 @@ async function createOrderInternal({
         booking: sanitizeId(bookingId),
         quotation: sanitizeId(quotationId),
         customer: customer._id,
-        vehicle: saleType === 'vehicle' ? vehicle._id : undefined,
-        saleType,
-        part: saleType === 'parts' ? part._id : null,
-        serviceType: saleType === 'service' ? service._id : null,
-        partQuantity: qty,
+        ...legacy,
+        lineItems: lines,
         status: 'confirmed',
         ...totals,
         paymentMode: paymentMode || 'cash',
@@ -1309,13 +1298,6 @@ async function createOrderInternal({
         exchangeVehicleDetails: exchangeVehicleDetails || '',
         orderDate: now,
         deliveryDate: expectedDeliveryDate ? new Date(expectedDeliveryDate) : null,
-        items: [{
-            description,
-            quantity: ['parts', 'service'].includes(saleType) ? qty : 1,
-            unitPrice: ['parts', 'service'].includes(saleType) ? basePrice / qty : basePrice,
-            totalPrice: basePrice,
-            type: saleType,
-        }],
         notes,
         seller: sanitizeId(sellerId),
         sellerEmployee: sanitizeId(sellerEmployeeId),
@@ -1323,17 +1305,8 @@ async function createOrderInternal({
         createdBy: userId,
     });
 
-    // Cross-model: inventory
-    if (saleType === 'parts') {
-        await Part.findByIdAndUpdate(part._id, { $inc: { currentStock: -qty } });
-    } else if (saleType === 'vehicle') {
-        await applyVehicleLifecycle(vehicle.toObject(), 'sold', {
-            sourceType: 'sales_order',
-            sourceId: order._id,
-            reference: orderNumber,
-            userId,
-        });
-    }
+    // No stock moves here on purpose. The order confirms intent; the invoice
+    // created below is what decrements parts and marks vehicles sold.
 
     // Cross-model: customer document
     await recordCustomerActivity({
@@ -1389,19 +1362,27 @@ async function createOrderInternal({
         }
     }
 
-    return { order, invoice, orderNumber };
+    // Change is recorded on the invoice so it can be printed on the receipt /
+    // shown on the generated list, and nowhere else in the money figures.
+    if (invoice && changeDue > 0) {
+        invoice.amountTendered = amountTendered;
+        invoice.changeDue = changeDue;
+        await invoice.save();
+    }
+
+    return { order, invoice, orderNumber, amountTendered, changeDue };
 }
 
 const createSalesOrder = async (req, res, next) => {
     try {
-        const { order, orderNumber } = await createOrderInternal({
+        const { order, orderNumber, changeDue } = await createOrderInternal({
             body: req.body,
             userId: req.user.id,
             bookingId: req.body.bookingId,
             sellerId: req.user.id,
             salePerson: [req.user.firstName, req.user.lastName].filter(Boolean).join(' '),
         });
-        res.status(201).json({ success: true, data: { id: order._id, orderNumber } });
+        res.status(201).json({ success: true, data: { id: order._id, orderNumber, changeDue } });
     } catch (error) {
         next(error);
     }
@@ -1409,7 +1390,7 @@ const createSalesOrder = async (req, res, next) => {
 
 const createDirectSalesOrder = async (req, res, next) => {
     try {
-        const { order, invoice, orderNumber } = await createOrderInternal({
+        const { order, invoice, orderNumber, amountTendered, changeDue } = await createOrderInternal({
             body: req.body,
             userId: req.user.id,
             sellerId: req.user.id,
@@ -1418,8 +1399,16 @@ const createDirectSalesOrder = async (req, res, next) => {
         logger.info(`Direct sales order ${orderNumber} created by user ${req.user.id}`);
         res.status(201).json({
             success: true,
-            data: { id: order._id, orderNumber, invoiceNumber: invoice?.invoiceNumber || null },
-            message: 'Sales order created successfully',
+            data: {
+                id: order._id,
+                orderNumber,
+                invoiceNumber: invoice?.invoiceNumber || null,
+                amountTendered,
+                changeDue,
+            },
+            message: changeDue > 0
+                ? `Sales order created. Return change of PKR ${changeDue.toLocaleString('en-PK')}`
+                : 'Sales order created successfully',
         });
     } catch (error) {
         logger.error('Error creating direct sales order:', error);
@@ -1441,29 +1430,23 @@ const convertBookingToOrder = async (req, res, next) => {
             throw new AppError(`Booking is already linked to sales order ${existingOrder.orderNumber}`, 409);
         }
 
-        const targetVehicleId = sanitizeId(vehicleId) || booking.vehicle;
-        if (!['parts', 'service'].includes(booking.saleType) && !targetVehicleId) {
-            throw new AppError('Vehicle must be allocated first', 400);
-        }
-        if (!['parts', 'service'].includes(booking.saleType)) {
-            const vehicle = await Vehicle.findById(targetVehicleId);
-            if (!vehicle) throw new AppError('Allocated Vehicle was not found', 404);
-            if (!['available', 'booked'].includes(canonicalStatus(vehicle.status))) {
-                throw new AppError(`Allocated Vehicle is not available for conversion (current status: ${vehicle.status})`, 400);
-            }
-            if (booking.vehicle && String(booking.vehicle) !== String(vehicle._id)) {
-                throw new AppError('Booking allocation conflicts with the requested Vehicle', 409);
-            }
+        // Every line carries over. A vehicle line still missing its inventory
+        // unit can be filled from `vehicleId` for the single-vehicle case the
+        // older UI sends.
+        const bookingLines = linesToRequested(booking.lineItems);
+        const fallbackVehicleId = sanitizeId(vehicleId) || (booking.vehicle ? String(booking.vehicle) : null);
+        bookingLines.forEach((line) => {
+            if (line.itemType === 'vehicle' && !line.vehicleId && fallbackVehicleId) line.vehicleId = fallbackVehicleId;
+        });
+        if (!bookingLines.length) throw new AppError('This booking has no products to convert', 400);
+        if (bookingLines.some((line) => line.itemType === 'vehicle' && !line.vehicleId)) {
+            throw new AppError('Every vehicle on the booking must be allocated an inventory unit first', 400);
         }
 
         const { order, orderNumber } = await createOrderInternal({
             body: {
                 customerId: booking.customer,
-                saleType: booking.saleType || 'vehicle',
-                vehicleId: targetVehicleId,
-        partId: booking.part,
-        serviceTypeId: booking.serviceType,
-                partQuantity: booking.partQuantity,
+                lineItems: bookingLines,
                 vehiclePrice: booking.totalAmount,
                 registrationCharges,
                 insuranceCharges,
@@ -1480,7 +1463,7 @@ const convertBookingToOrder = async (req, res, next) => {
             salePerson: booking.salePerson || [req.user.firstName, req.user.lastName].filter(Boolean).join(' '),
         });
 
-        if (!['parts', 'service'].includes(booking.saleType)) booking.vehicle = targetVehicleId;
+        if (fallbackVehicleId && !booking.vehicle) booking.vehicle = fallbackVehicleId;
         booking.status = 'completed';
         booking.updatedBy = req.user.id;
         await booking.save();
@@ -1590,26 +1573,13 @@ const deleteSalesOrder = async (req, res, next) => {
         order.updatedBy = req.user.id;
         await order.save();
 
-        // Restore inventory
-        if (order.saleType === 'parts' && order.part) {
-            await Part.findByIdAndUpdate(order.part, { $inc: { currentStock: order.partQuantity || 1 } });
-        } else if (order.vehicle) {
-            const vehicle = await Vehicle.findById(order.vehicle).lean();
-            if (vehicle) {
-                await applyVehicleLifecycle(vehicle, 'at_yard', {
-                    sourceType: 'sales_order_cancelled',
-                    sourceId: order._id,
-                    reference: order.orderNumber,
-                    userId: req.user.id,
-                    force: true,
-                });
-            }
-        }
-
-        // Cancel the linked unpaid invoice
+        // Cancel the linked unpaid invoice. That invoice is what took the stock,
+        // so returning it is handled there — the order itself took nothing.
         const invoice = await Invoice.findOne({ salesOrder: order._id, status: { $nin: ['cancelled', 'paid'] } });
         if (invoice) {
             const outstandingDelta = -num(invoice.balanceAmount);
+            await revertInvoiceStock(invoice);
+            invoice.stockApplied = false;
             invoice.status = 'cancelled';
             invoice.cancelledAt = new Date();
             invoice.updatedBy = req.user.id;
@@ -2027,6 +1997,7 @@ module.exports = {
     // Quotations
     getAllQuotations, getQuotationById, createQuotation, updateQuotation,
     deleteQuotation, updateQuotationStatus, convertQuotationToBooking, getQuotationStats, sendQuotationEmail,
+    approveQuotation, downloadQuotationEstimate, sendQuotationEstimateEmail,
     // Bookings
     getAllBookings, getBookingById, createBooking, updateBooking,
     deleteBooking, allocateVehicle, convertBookingToOrder, getBookingStats, sendBookingEmail,

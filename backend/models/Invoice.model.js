@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const searchPlugin = require('../plugins/searchPlugin');
+const lineItemSchema = require('./lineItem.schema');
 
 const invoiceItemSchema = new mongoose.Schema({
   description: { type: String },
@@ -31,6 +32,16 @@ const invoiceSchema = new mongoose.Schema({
   paidAmount: { type: Number, default: 0 },
   balanceAmount: { type: Number, default: 0 },
   items: { type: [invoiceItemSchema], default: [] },
+  // Every sellable line (vehicles and/or parts). Reaching an invoice is what
+  // moves stock: parts decrement here, vehicles become sold here.
+  lineItems: { type: [lineItemSchema], default: [] },
+  // Set once stock has been applied so a re-save or a retry cannot double-count.
+  stockApplied: { type: Boolean, default: false },
+  stockAppliedAt: { type: Date, default: null },
+  // Cash handed over above the invoice total. Held for the receipt/list only —
+  // it is never added to paidAmount and never reduces the balance.
+  amountTendered: { type: Number, default: 0 },
+  changeDue: { type: Number, default: 0 },
   notes: { type: String },
   termsAndConditions: { type: String },
   cancelledAt: { type: Date, default: null },

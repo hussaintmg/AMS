@@ -110,6 +110,9 @@ const vehicleSchema = new mongoose.Schema({
   lifecycleHistory: { type: [lifecycleEntrySchema], default: [] },
   isStockOut: { type: Boolean, default: false, index: true },
   stockOutDate: { type: Date, default: null },
+  // Scannable identity, unique across parts and vehicles. Assigned by
+  // utils/barcode.js; the scan page resolves a scanned code back to this unit.
+  barcode: { type: String, trim: true, default: '' },
   isActive: { type: Boolean, default: true },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
@@ -124,6 +127,10 @@ vehicleSchema.index(
 );
 vehicleSchema.index({ chassisNumber: 1 });
 vehicleSchema.index({ engineNumber: 1 });
+vehicleSchema.index(
+  { barcode: 1 },
+  { unique: true, partialFilterExpression: { barcode: { $type: 'string', $gt: '' } } }
+);
 vehicleSchema.index({ 'dispatch.dispatchNo': 1 });
 vehicleSchema.index({ registrationNumber: 1 });
 vehicleSchema.index({ status: 1 });

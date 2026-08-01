@@ -12,11 +12,12 @@ import SearchableSelect from '../components/SearchableSelect';
 import { Routes, Route, useNavigate, useSearchParams } from 'react-router-dom';
 import { salesAPI, invoiceAPI, customerAPI, vehicleAPI, partsAPI, serviceMasterAPI, paymentMethodsAPI, erpSettingsAPI, reportsAPI, adminAPI, pdfManagementAPI } from '../services/api';
 import toast from 'react-hot-toast';
+import LineItemsEditor from '../components/sales/LineItemsEditor';
 import ActionButtons from '../components/ActionButtons';
 import ConfirmModal from '../components/ConfirmModal';
 import CustomerQuickCreate from '../components/customers/CustomerQuickCreate';
 import { useAuth } from '../context/AuthContext';
-import { Send, DollarSign, FileText, Truck, Eye, Pencil, Trash2, Upload, X, Download } from 'lucide-react';
+import { Send, DollarSign, FileText, Truck, Eye, Pencil, Trash2, Upload, X, Download, Mail, CheckCircle } from 'lucide-react';
 import BulkUploadModal from '../components/BulkUploadModal';
 import ServerPagination from '../components/ServerPagination';
 
@@ -203,9 +204,11 @@ function Quotations() {
     const [vehicleVariants, setVehicleVariants] = useState([]);
     const [parts, setParts] = useState([]);
 
+    // A quotation may quote any mix of vehicles and parts; lineItems is the
+    // source of truth and vehiclePrice below is only the derived subtotal.
+    const [lineItems, setLineItems] = useState([]);
     const [formData, setFormData] = useState({
-        customerId: '', saleType: 'vehicle_inventory', vehicleVariantId: '', vehicleColorId: '',
-        partId: '', partQuantity: '1', vehiclePrice: '', discountAmount: '0',
+        customerId: '', vehiclePrice: '', discountAmount: '0',
         taxAmount: '0', additionalCharges: '0', validityDays: '7', notes: '', termsAndConditions: ''
     });
 
@@ -340,13 +343,20 @@ function Quotations() {
         setModalMode(mode);
         setSelectedItem(item);
         if (item) {
+            setLineItems((item.line_items || []).map((line, index) => ({
+                key: `saved-${index}`,
+                itemType: line.item_type === 'part' ? 'part' : 'vehicle',
+                vehicleId: line.vehicle_id || '',
+                vehicleVariantId: line.vehicle_variant_id || '',
+                partId: line.part_id || '',
+                quantity: line.quantity || 1,
+                unitPrice: line.unit_price ?? '',
+                discountAmount: line.discount_amount || 0,
+                taxAmount: line.tax_amount || 0,
+                description: line.description || '',
+            })));
             setFormData({
                 customerId: item.customer_id || '',
-                saleType: item.sale_type === 'parts' ? 'parts' : 'vehicle_inventory',
-                vehicleVariantId: item.vehicle_variant_id || '',
-                vehicleColorId: item.vehicle_color_id || '',
-                partId: item.part_id || '',
-                partQuantity: item.part_quantity || '1',
                 vehiclePrice: item.vehicle_price || '',
                 discountAmount: item.discount_amount || '0',
                 taxAmount: item.tax_amount || '0',
@@ -356,9 +366,9 @@ function Quotations() {
                 termsAndConditions: item.terms_and_conditions || ''
             });
         } else {
+            setLineItems([]);
             setFormData({
-                customerId: '', saleType: 'vehicle_inventory', vehicleVariantId: '', vehicleColorId: '',
-                partId: '', partQuantity: '1', vehiclePrice: '', discountAmount: '0',
+                customerId: '', vehiclePrice: '', discountAmount: '0',
                 taxAmount: '0', additionalCharges: '0', validityDays: '7', notes: '', termsAndConditions: ''
             });
         }
@@ -369,29 +379,42 @@ function Quotations() {
 
     const handleChange = (e) => {
         const { name, value } = e.target;
-
-        if (name === 'saleType') {
-            setFormData((prev) => ({
-                ...prev,
-                saleType: value,
-                vehicleVariantId: '',
-                vehicleColorId: '',
-                partId: '',
-                partQuantity: '1',
-                vehiclePrice: ''
-            }));
-            return;
-        }
         setFormData({ ...formData, [name]: value });
     };
+
+    // Document subtotal always follows the products; nobody retypes it.
+    const lineSubtotal = lineItems.reduce(
+        (sum, line) => sum + (Number(line.unitPrice) || 0) * (Number(line.quantity) || 1),
+        0,
+    );
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         try {
-            const baseAmount = Math.max(0, Number(formData.vehiclePrice || 0) - Number(formData.discountAmount || 0));
+            if (!lineItems.length) {
+                toast.error('Add at least one vehicle or part');
+                return;
+            }
+            const missing = lineItems.find((line) => (line.itemType === 'part' ? !line.partId : (!line.vehicleId && !line.vehicleVariantId)));
+            if (missing) {
+                toast.error('Every product line needs a product selected');
+                return;
+            }
+            const baseAmount = Math.max(0, lineSubtotal - Number(formData.discountAmount || 0));
             const payload = {
                 ...formData,
-                saleType: formData.saleType === 'parts' ? 'parts' : 'vehicle',
+                vehiclePrice: lineSubtotal,
+                lineItems: lineItems.map((line) => ({
+                    itemType: line.itemType,
+                    vehicleId: line.vehicleId || undefined,
+                    vehicleVariantId: line.vehicleVariantId || undefined,
+                    partId: line.partId || undefined,
+                    quantity: Number(line.quantity) || 1,
+                    unitPrice: Number(line.unitPrice) || 0,
+                    discountAmount: Number(line.discountAmount) || 0,
+                    taxAmount: Number(line.taxAmount) || 0,
+                    description: line.description || undefined,
+                })),
                 taxAmount: Number(formData.taxAmount) > 0 || !salesTax
                     ? Number(formData.taxAmount || 0)
                     : calculateConfiguredTax(baseAmount, salesTax)
@@ -432,6 +455,59 @@ function Quotations() {
             fetchData();
         } catch (error) {
             toast.error('Failed to delete quotation');
+        }
+    };
+
+    const canApprove = policyAllows(user, 'quotations', 'approve', ['super_admin','admin','sales_manager'].includes(user?.role));
+    const [approvingId, setApprovingId] = useState(null);
+    const [estimateId, setEstimateId] = useState(null);
+
+    /** Approve (or reject) — an unapproved quotation cannot become a booking. */
+    const handleApprove = async (item, decision = 'approved') => {
+        setApprovingId(item.id);
+        try {
+            await salesAPI.approveQuotation(item.id, decision);
+            toast.success(`Quotation ${decision}`);
+            fetchData();
+        } catch (error) {
+            toast.error(error.response?.data?.message || `Could not ${decision === 'approved' ? 'approve' : 'reject'} the quotation`);
+        } finally {
+            setApprovingId(null);
+        }
+    };
+
+    /** Estimate PDF: every product on the quotation, in one document. */
+    const handleDownloadEstimate = async (item) => {
+        setEstimateId(item.id);
+        try {
+            const res = await salesAPI.downloadEstimate(item.id);
+            const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `Estimate-${item.quotation_number}.pdf`;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            window.URL.revokeObjectURL(url);
+            toast.success('Estimate downloaded');
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Could not build the estimate');
+        } finally {
+            setEstimateId(null);
+        }
+    };
+
+    /** Email the estimate with the PDF attached and every product itemised. */
+    const handleEmailEstimate = async (item) => {
+        setEstimateId(item.id);
+        try {
+            const res = await salesAPI.emailEstimate(item.id);
+            toast.success(res?.data?.message || 'Estimate emailed');
+            fetchData();
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Could not email the estimate');
+        } finally {
+            setEstimateId(null);
         }
     };
 
@@ -590,7 +666,10 @@ function Quotations() {
                                         customActions={[
                                             ...(canDownloadPdf ? [{ icon: <Download size={18} />, title: 'Download PDF', onClick: () => downloadSalesPdf('quotation', q.id, q.quotation_number), className: 'btn-info' }] : []),
                                             ...(canSendEmail ? [{ icon: <Send size={18} className="action-icon" />, title: 'Send quotation email', onClick: () => handleSendEmail(q), className: 'btn-info', disabled: sendingEmail === q.id, loading: sendingEmail === q.id }] : []),
-                                            ...(q.status === 'sent' || q.status === 'accepted' ? [{ icon: <span className="material-icons">shopping_cart</span>, title: 'Convert', onClick: () => handleConvertClick(q), className: 'btn-success' }] : [])
+                                            ...(canDownloadPdf ? [{ icon: <FileText size={18} />, title: 'Estimate PDF (all products)', onClick: () => handleDownloadEstimate(q), className: 'btn-info', disabled: estimateId === q.id, loading: estimateId === q.id }] : []),
+                                            ...(canSendEmail ? [{ icon: <Mail size={18} />, title: 'Email estimate to customer', onClick: () => handleEmailEstimate(q), className: 'btn-info', disabled: estimateId === q.id, loading: estimateId === q.id }] : []),
+                                            ...(canApprove && q.approval_status !== 'approved' && !['converted', 'cancelled'].includes(q.status) ? [{ icon: <CheckCircle size={18} />, title: 'Approve quotation', onClick: () => handleApprove(q, 'approved'), className: 'btn-success', disabled: approvingId === q.id, loading: approvingId === q.id }] : []),
+                                            ...(q.approval_status === 'approved' && q.status !== 'converted' ? [{ icon: <span className="material-icons">shopping_cart</span>, title: 'Convert to booking', onClick: () => handleConvertClick(q), className: 'btn-success' }] : [])
                                         ]}
                                     />
                                 </td>
@@ -626,7 +705,10 @@ function Quotations() {
                                         onDelete={canEdit && q.status === 'draft' ? () => handleDeleteClick(q.id) : null}
                                         customActions={[
                                             ...(canSendEmail ? [{ icon: <Send size={18} className="action-icon" />, title: 'Send quotation email', onClick: () => handleSendEmail(q), className: 'btn-info', disabled: sendingEmail === q.id, loading: sendingEmail === q.id }] : []),
-                                            ...(q.status === 'sent' || q.status === 'accepted' ? [{ icon: <span className="material-icons">shopping_cart</span>, title: 'Convert', onClick: () => handleConvertClick(q), className: 'btn-success' }] : [])
+                                            ...(canDownloadPdf ? [{ icon: <FileText size={18} />, title: 'Estimate PDF (all products)', onClick: () => handleDownloadEstimate(q), className: 'btn-info', disabled: estimateId === q.id, loading: estimateId === q.id }] : []),
+                                            ...(canSendEmail ? [{ icon: <Mail size={18} />, title: 'Email estimate to customer', onClick: () => handleEmailEstimate(q), className: 'btn-info', disabled: estimateId === q.id, loading: estimateId === q.id }] : []),
+                                            ...(canApprove && q.approval_status !== 'approved' && !['converted', 'cancelled'].includes(q.status) ? [{ icon: <CheckCircle size={18} />, title: 'Approve quotation', onClick: () => handleApprove(q, 'approved'), className: 'btn-success', disabled: approvingId === q.id, loading: approvingId === q.id }] : []),
+                                            ...(q.approval_status === 'approved' && q.status !== 'converted' ? [{ icon: <span className="material-icons">shopping_cart</span>, title: 'Convert to booking', onClick: () => handleConvertClick(q), className: 'btn-success' }] : [])
                                         ]}
                                     />
                                 </div>
@@ -712,44 +794,19 @@ function Quotations() {
                                     {customers.map(c => <option key={c.id} value={c.id}>{customerOptionLabel(c)}</option>)}
                                 </SearchableSelect>
                             </div>
-                            <div className="form-group">
-                                <label>Sale Type</label>
-                                <SearchableSelect name="saleType" value={formData.saleType} onChange={handleChange}>
-                                    <option value="vehicle_inventory">Vehicle Inventory</option>
-                                    <option value="parts">Parts</option>
-                                </SearchableSelect>
-                            </div>
-
-                            {formData.saleType === 'vehicle_inventory' ? (
-                                <div className="form-group">
-                                    <label>Vehicle (Inventory) *</label>
-                                    <SearchableSelect name="vehicleVariantId" value={formData.vehicleVariantId} onChange={handleChange} required>
-                                        <option value="">Select Vehicle</option>
-                                        {vehicles.map(v => (
-                                            <option key={v.id} value={v.variant_id || v.id}>{v.make_name} {v.model_name} {v.variant_name} ({v.color_name || v.color})</option>
-                                        ))}
-                                    </SearchableSelect>
-                                </div>
-                            ) : (
-                                <div className="form-row">
-                                    <div className="form-group">
-                                        <label>Part *</label>
-                                        <SearchableSelect name="partId" value={formData.partId} onChange={handleChange} required>
-                                            <option value="">Select Part</option>
-                                            {parts.map(p => <option key={p.id} value={p.id}>{p.name || p.part_name} ({p.part_number})</option>)}
-                                        </SearchableSelect>
-                                    </div>
-                                    <div className="form-group">
-                                        <label>Quantity</label>
-                                        <input type="number" name="partQuantity" value={formData.partQuantity} onChange={handleChange} />
-                                    </div>
-                                </div>
-                            )}
+                            <LineItemsEditor
+                                value={lineItems}
+                                onChange={setLineItems}
+                                vehicles={vehicles}
+                                parts={parts}
+                                variants={vehicleVariants}
+                                currencyCode={currency.code}
+                            />
 
                             <div className="form-row">
                                 <div className="form-group">
-                                    <label>Price ({currency.code}) *</label>
-                                    <input type="number" name="vehiclePrice" value={formData.vehiclePrice} onChange={handleChange} required placeholder="Base Price" />
+                                    <label>Subtotal ({currency.code})</label>
+                                    <input type="number" value={lineSubtotal} readOnly title="Sum of every product line" />
                                 </div>
                                 <div className="form-group">
                                     <label>Discount</label>
@@ -828,9 +885,12 @@ function Bookings() {
     );
     const [customers, setCustomers] = useState([]);
     const [vehicles, setVehicles] = useState([]);
+    const [parts, setParts] = useState([]);
 
+    // A booking can reserve several vehicles and order several parts at once.
+    const [bookingLines, setBookingLines] = useState([]);
     const [formData, setFormData] = useState({
-        customerId: '', saleType: 'vehicle', vehicleId: '', vehicleVariantId: '', bookingAmount: '',
+        customerId: '', bookingAmount: '',
         totalAmount: '', taxAmount: '0', expectedDeliveryDate: '', priority: 'normal', notes: ''
     });
 
@@ -922,10 +982,12 @@ function Bookings() {
         try {
             const results = await Promise.allSettled([
                 fetchAllCustomersForDropdown(),
-                vehicleAPI.getAll({ limit: 200 })
+                vehicleAPI.getAll({ limit: 200 }),
+                partsAPI.getAll({ limit: 500 })
             ]);
             setCustomers(results[0].status === 'fulfilled' ? results[0].value || [] : []);
             setVehicles(results[1].status === 'fulfilled' && results[1].value?.data?.data?.vehicles ? results[1].value?.data?.data?.vehicles : []);
+            setParts(results[2].status === 'fulfilled' ? results[2].value?.data?.data?.parts || [] : []);
         } catch (error) {
             console.error('Error fetching dropdowns:', error);
         }
@@ -956,11 +1018,19 @@ function Bookings() {
         setModalMode(mode);
         setSelectedItem(item);
         if (item) {
+            setBookingLines((item.line_items || []).map((line, index) => ({
+                key: `saved-${index}`,
+                itemType: line.item_type === 'part' ? 'part' : 'vehicle',
+                vehicleId: line.vehicle_id || '',
+                partId: line.part_id || '',
+                quantity: line.quantity || 1,
+                unitPrice: line.unit_price ?? '',
+                discountAmount: line.discount_amount || 0,
+                taxAmount: line.tax_amount || 0,
+                description: line.description || '',
+            })));
             setFormData({
                 customerId: item.customer_id || '',
-                saleType: item.sale_type || 'vehicle',
-                vehicleId: item.vehicle_id || '',
-                vehicleVariantId: item.vehicle_variant_id || '',
                 bookingAmount: item.booking_amount || '',
                 totalAmount: item.total_amount || '',
                 taxAmount: item.tax_amount || '0',
@@ -969,8 +1039,9 @@ function Bookings() {
                 notes: item.notes || ''
             });
         } else {
+            setBookingLines([]);
             setFormData({
-                customerId: '', saleType: 'vehicle', vehicleId: '', vehicleVariantId: '', bookingAmount: '',
+                customerId: '', bookingAmount: '',
                 totalAmount: '', taxAmount: '0', expectedDeliveryDate: '', priority: 'normal', notes: ''
             });
         }
@@ -981,24 +1052,40 @@ function Bookings() {
 
     const handleChange = (e) => {
         const { name, value } = e.target;
-        if (name === 'saleType') {
-            setFormData(prev => ({ ...prev, saleType: value, vehicleId: '', vehicleVariantId: '' }));
-            return;
-        }
-        if (name === 'vehicleId') {
-            const vehicle = vehicles.find((entry) => String(entry.id || entry._id) === String(value));
-            setFormData(prev => ({ ...prev, vehicleId: value, vehicleVariantId: vehicle?.variant_id || vehicle?.vehicle_variant_id || prev.vehicleVariantId }));
-            return;
-        }
         setFormData(prev => ({ ...prev, [name]: value }));
     };
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         try {
-            const baseAmount = Number(formData.totalAmount || 0);
+            if (!bookingLines.length) {
+                toast.error('Add at least one vehicle or part');
+                return;
+            }
+            const missing = bookingLines.find((line) => (line.itemType === 'part' ? !line.partId : !line.vehicleId));
+            if (missing) {
+                toast.error('Every product line needs a product selected');
+                return;
+            }
+            const lineTotal = bookingLines.reduce(
+                (sum, line) => sum + (Number(line.unitPrice) || 0) * (Number(line.quantity) || 1)
+                    - (Number(line.discountAmount) || 0) + (Number(line.taxAmount) || 0),
+                0,
+            );
+            const baseAmount = Number(formData.totalAmount || 0) || lineTotal;
             const payload = {
                 ...formData,
+                totalAmount: baseAmount,
+                lineItems: bookingLines.map((line) => ({
+                    itemType: line.itemType,
+                    vehicleId: line.vehicleId || undefined,
+                    partId: line.partId || undefined,
+                    quantity: Number(line.quantity) || 1,
+                    unitPrice: Number(line.unitPrice) || 0,
+                    discountAmount: Number(line.discountAmount) || 0,
+                    taxAmount: Number(line.taxAmount) || 0,
+                    description: line.description || undefined,
+                })),
                 taxAmount: Number(formData.taxAmount) > 0 || !salesTax
                     ? Number(formData.taxAmount || 0)
                     : calculateConfiguredTax(baseAmount, salesTax)
@@ -1239,30 +1326,19 @@ function Bookings() {
                                         {customers.map(c => <option key={c.id} value={c.id}>{customerOptionLabel(c)}</option>)}
                                     </SearchableSelect>
                                 </div>
-                                <div className="form-group">
-                                    <label>Sale Type *</label>
-                                    <SearchableSelect name="saleType" value={formData.saleType} onChange={handleChange} required>
-                                        <option value="vehicle">Vehicle</option>
-                                    </SearchableSelect>
-                                </div>
-                                {formData.saleType === 'vehicle' ? (
-                                <div className="form-group">
-                                    <label>Vehicle *</label>
-                                    <SearchableSelect name="vehicleId" value={formData.vehicleId} onChange={handleChange} required>
-                                        <option value="">Select allocated Vehicle</option>
-                                        {vehicles
-                                            .filter((vehicle) => (
-                                                String(vehicle.id || vehicle._id) === String(formData.vehicleId)
-                                                || ['available', 'at_yard', 'in_stock', 'ready'].includes(String(vehicle.status || '').toLowerCase())
-                                            ))
-                                            .map((vehicle) => (
-                                                <option key={vehicle.id || vehicle._id} value={vehicle.id || vehicle._id}>
-                                                    {vehicle.make_name} {vehicle.model_name} {vehicle.variant_name} ({vehicle.color_name || vehicle.color}) — {vehicle.chassis_number || vehicle.vin || vehicle.vehicle_code || vehicle.id}
-                                                </option>
-                                            ))}
-                                    </SearchableSelect>
-                                </div>
-                                ) : null}
+                                {/* A booking reserves real inventory units, so vehicle
+                                    lines must be actual vehicles, not catalogue models. */}
+                                <LineItemsEditor
+                                    value={bookingLines}
+                                    onChange={setBookingLines}
+                                    vehicles={vehicles.filter((vehicle) => (
+                                        bookingLines.some((line) => String(line.vehicleId) === String(vehicle.id))
+                                        || ['available', 'at_yard', 'in_stock', 'ready'].includes(String(vehicle.status || '').toLowerCase())
+                                    ))}
+                                    parts={parts}
+                                    currencyCode={currency.code}
+                                    requireInventoryVehicle
+                                />
                                 <div className="form-row">
                                     <div className="form-group">
                                         <label>Booking Amount ({currency.code}) *</label>

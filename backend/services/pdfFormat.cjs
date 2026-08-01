@@ -5,6 +5,8 @@
  * variable renders the same way in the live preview and the server PDF.
  */
 
+const { expandBlocks, hasBlocks } = require('./templateLoops.cjs');
+
 // Numeric fields that should render as currency (e.g. PKR 1,250,000).
 const AMOUNT_RE = /(amount|price|subtotal|balance|paid|charge|deposit|total)/i;
 // ...unless they are really counts/ratios, which stay as plain numbers.
@@ -39,7 +41,17 @@ function formatValue(value, key = '') {
 }
 
 function resolveTokens(text, data) {
-  return String(text == null ? '' : text).replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_, key) => formatValue(getValue(data, key.trim()), key.trim()));
+  // Multi-product documents repeat a row per line item, so block helpers run
+  // first and hand back plain markup for the single-token pass below.
+  const expanded = hasBlocks(text) ? expandBlocks(text, data, formatValue) : String(text == null ? '' : text);
+  return expanded.replace(/\{\{\s*([^#/}][^}]*?)\s*\}\}/g, (match, key) => {
+    const trimmed = key.trim();
+    const value = getValue(data, trimmed);
+    // A token that resolves to nothing (e.g. a row field left over from a loop
+    // that produced no rows) renders empty rather than leaking "{{this.name}}".
+    if (value === undefined && trimmed.startsWith('this.')) return '';
+    return formatValue(value, trimmed);
+  });
 }
 
 module.exports = { getValue, formatCurrency, formatValue, resolveTokens };

@@ -4,6 +4,7 @@ const Warehouse = require('../models/Warehouse.model');
 const { PartCategory, Supplier } = require('../models/VehicleMaster.model');
 const { AppError } = require('../middleware/errorHandler');
 const logger = require('../utils/logger');
+const { nextBarcode } = require('../utils/barcode');
 
 const DEFAULT_SOURCE_TYPES = [
   { value: 'manufacturer', name: 'Manufacturer (OEM)', sortOrder: 1, isSystem: true },
@@ -129,6 +130,7 @@ const flattenPart = (p) => ({
     warehouse_id: p.warehouseId || null,
     warehouse_name: p.warehouse?.name || '',
     source_type: p.sourceType || 'manufacturer',
+    barcode: p.barcode || '',
     stock_status: p.currentStock === 0
         ? 'out_of_stock'
         : p.currentStock <= (p.reorderLevel || p.minStock || 0)
@@ -224,6 +226,7 @@ const getAllParts = async (req, res, next) => {
                 warehouse_id: null,
                 warehouse_name: p.warehouse?.name || '',
                 source_type: p.sourceType || 'manufacturer',
+                barcode: p.barcode || '',
                 stock_status: stockStatus ? computedStatus : undefined,
                 is_active: p.isActive,
                 created_at: p.createdAt,
@@ -335,6 +338,8 @@ const createPart = async (req, res, next) => {
             binLocation: binLocation || '',
             isActive: true,
             sourceType: await resolveSourceType(sourceType),
+            // Every new part is scannable from the moment it exists.
+            barcode: await nextBarcode(Part, 'part'),
             createdBy: req.user?.id || null,
             updatedBy: req.user?.id || null
         });

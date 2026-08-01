@@ -20,6 +20,8 @@ const Customer = require('../models/Customer.model');
 const { nextDocNumber } = require('../utils/docNumber');
 const { recordCustomerActivity } = require('../utils/customerSync');
 const { createInvoiceForOrder, round2 } = require('../utils/invoiceFactory');
+const { mapLineItem } = require('../services/lineItems.service');
+const { revertInvoiceStock } = require('../services/stockLedger.service');
 const { sendTemplateEmail } = require('../services/emailSender.service');
 const { allowedOwnerIds } = require('../utils/roleJobs');
 
@@ -69,6 +71,11 @@ const mapInvoiceRow = (inv) => ({
     total_amount: inv.totalAmount || 0,
     paid_amount: inv.paidAmount || 0,
     balance_amount: inv.balanceAmount || 0,
+    line_items: (inv.lineItems || []).map(mapLineItem),
+    item_count: (inv.lineItems || []).length,
+    stock_applied: inv.stockApplied === true,
+    amount_tendered: inv.amountTendered || 0,
+    change_due: inv.changeDue || 0,
     notes: inv.notes || '',
     terms_and_conditions: inv.termsAndConditions || '',
     created_at: inv.createdAt,
@@ -382,6 +389,10 @@ const deleteInvoice = async (req, res, next) => {
         if (invoice.status === 'cancelled') throw new AppError('Invoice already cancelled', 400);
 
         const outstandingDelta = -num(invoice.balanceAmount);
+        // The invoice is what took the stock, so cancelling it is what returns
+        // parts to the shelf and un-sells the vehicles.
+        await revertInvoiceStock(invoice);
+        invoice.stockApplied = false;
         invoice.status = 'cancelled';
         invoice.cancelledAt = new Date();
         invoice.updatedBy = req.user.id;
@@ -594,15 +605,23 @@ const removeInvoiceItem = (req, res, next) => applyItemMutation(req, res, next, 
 const recordPayment = async (req, res, next) => {
     try {
         const { amount, paymentMethodId, referenceNumber, notes } = req.body;
-        const paymentAmount = num(amount);
-        if (paymentAmount <= 0) throw new AppError('Payment amount must be greater than zero', 400);
+        // The counter enters one number — what the customer handed over. Nobody
+        // has to work out per-product amounts.
+        const tendered = num(amount);
+        if (tendered <= 0) throw new AppError('Payment amount must be greater than zero', 400);
 
         const invoice = await Invoice.findById(sanitizeId(req.params.id));
         if (!invoice) throw new AppError('Invoice not found', 404);
         if (invoice.status === 'cancelled') throw new AppError('Cannot record payment on a cancelled invoice', 400);
-        if (paymentAmount > num(invoice.balanceAmount)) {
-            throw new AppError('Payment amount cannot exceed the outstanding balance', 400);
-        }
+
+        // Paying over the outstanding balance is normal at a cash counter. Only
+        // what the invoice is owed is applied; the surplus is change handed
+        // back, recorded on the invoice so it can be printed on the receipt —
+        // it never inflates paidAmount and never makes the balance negative.
+        const outstanding = round2(num(invoice.balanceAmount));
+        const paymentAmount = Math.min(tendered, outstanding);
+        const changeDue = round2(tendered - paymentAmount);
+        if (outstanding <= 0) throw new AppError('This invoice is already settled', 400);
 
         let method = null;
         if (sanitizeId(paymentMethodId)) {
@@ -628,6 +647,8 @@ const recordPayment = async (req, res, next) => {
         invoice.paidAmount = round2(num(invoice.paidAmount) + paymentAmount);
         invoice.balanceAmount = round2(num(invoice.totalAmount) - invoice.paidAmount);
         invoice.status = invoice.balanceAmount <= 0 ? 'paid' : 'partial';
+        invoice.amountTendered = round2(num(invoice.amountTendered) + tendered);
+        invoice.changeDue = changeDue;
         invoice.updatedBy = req.user.id;
         await invoice.save();
 
@@ -655,11 +676,21 @@ const recordPayment = async (req, res, next) => {
             outstandingDelta: -paymentAmount,
         });
 
-        logger.info(`Payment ${paymentNumber} of ${paymentAmount} recorded on invoice ${invoice.invoiceNumber}`);
+        logger.info(`Payment ${paymentNumber} of ${paymentAmount} recorded on invoice ${invoice.invoiceNumber}${changeDue ? ` (change ${changeDue})` : ''}`);
         res.status(201).json({
             success: true,
-            data: { id: payment._id, paymentNumber, invoiceStatus: invoice.status },
-            message: 'Payment recorded successfully',
+            data: {
+                id: payment._id,
+                paymentNumber,
+                invoiceStatus: invoice.status,
+                amountTendered: tendered,
+                amountApplied: paymentAmount,
+                changeDue,
+                balanceAmount: invoice.balanceAmount,
+            },
+            message: changeDue > 0
+                ? `Payment recorded. Return change of PKR ${changeDue.toLocaleString('en-PK')}`
+                : 'Payment recorded successfully',
         });
     } catch (error) {
         logger.error('Error recording payment:', error);
