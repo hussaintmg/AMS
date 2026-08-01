@@ -18,6 +18,25 @@ let rebuildTimer = null;
 let suggestionCache = new Map();
 let configCache = null;
 
+// A Dealer Pro import saves six or more documents per row, and every save used to
+// add its own round trip to the search index — thousands of writes that only
+// matter once the batch is done. Bulk callers pause indexing and rebuild at the
+// end instead. The counter keeps concurrent batches from un-pausing each other.
+let indexingPauseDepth = 0;
+
+function pauseIndexing() {
+  indexingPauseDepth += 1;
+}
+
+function resumeIndexing({ rebuildAfter = true, actor = null } = {}) {
+  indexingPauseDepth = Math.max(0, indexingPauseDepth - 1);
+  if (indexingPauseDepth === 0 && rebuildAfter) scheduleRebuild(actor);
+}
+
+function isIndexingPaused() {
+  return indexingPauseDepth > 0;
+}
+
 async function getSearchConfig() {
   if (configCache) return configCache;
   try {
@@ -37,6 +56,7 @@ function invalidateConfigCache() {
 }
 
 async function upsertDocument(entityType, doc) {
+  if (indexingPauseDepth > 0) return null;
   const moduleConfig = registry.getModule(entityType);
   if (!moduleConfig || moduleConfig.searchEnabled === false) return null;
   const searchDoc = registry.buildSearchDocument(entityType, doc);
@@ -64,6 +84,7 @@ async function upsertDocument(entityType, doc) {
 }
 
 async function removeDocument(entityType, entityId) {
+  if (indexingPauseDepth > 0) return;
   try {
     await SearchDocument.updateOne(
       { entityType, entityId },
@@ -650,6 +671,9 @@ module.exports = {
   upsertDocument,
   removeDocument,
   hardDeleteDocument,
+  pauseIndexing,
+  resumeIndexing,
+  isIndexingPaused,
   rebuild,
   rebuildWithLog,
   scheduleRebuild,

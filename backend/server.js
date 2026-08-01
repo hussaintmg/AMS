@@ -301,6 +301,14 @@ const startServer = async () => {
     const emailQueue = require('./services/emailQueue.service');
     emailQueue.startQueue();
 
+    // A full Dealer Pro batch (three workbooks, ~4,000 rows) commits for several
+    // minutes on one connection. Node's 300 s default requestTimeout would abort
+    // the upload mid-import and the browser would show a failure for work the
+    // server was still doing, so the ceiling is raised for long imports.
+    server.requestTimeout = 30 * 60 * 1000;
+    server.headersTimeout = 31 * 60 * 1000;
+    server.setTimeout(30 * 60 * 1000);
+
     server.listen(PORT, () => {
       logger.info(`AMS API Server running on port ${PORT}`);
       logger.info(`API Documentation: http://localhost:${PORT}/api-documentation`);

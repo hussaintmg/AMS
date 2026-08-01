@@ -5,7 +5,7 @@ import toast from 'react-hot-toast';
 
 function SupplierFormModal({ isOpen, onClose, onSupplierCreated }) {
   const [formData, setFormData] = useState({
-    supplierCode: '', name: '', type: 'local', contactPerson: '',
+    supplierCode: '', name: '', type: 'oem', contactPerson: '',
     email: '', phone: '', isActive: true,
   });
   const [errors, setErrors] = useState({});
@@ -14,7 +14,7 @@ function SupplierFormModal({ isOpen, onClose, onSupplierCreated }) {
   useEffect(() => {
     if (!isOpen) return;
     setFormData({
-      supplierCode: '', name: '', type: 'local', contactPerson: '',
+      supplierCode: '', name: '', type: 'oem', contactPerson: '',
       email: '', phone: '', isActive: true,
     });
     setErrors({});
@@ -111,10 +111,9 @@ function SupplierFormModal({ isOpen, onClose, onSupplierCreated }) {
                   }}
                   className={errors.type ? 'form-control error' : 'form-control'}
                 >
-                  <option value="local">Local</option>
-                  <option value="international">International</option>
-                  <option value="manufacturer">Manufacturer</option>
-                  <option value="wholesaler">Wholesaler</option>
+                  <option value="oem">OEM (Manufacturer)</option>
+                  <option value="distributor">Distributor</option>
+                  <option value="local_vendor">Local Vendor</option>
                 </select>
                 {errors.type && <small style={{ color: '#dc2626' }}>{errors.type}</small>}
               </div>

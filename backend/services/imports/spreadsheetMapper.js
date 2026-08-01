@@ -3,7 +3,9 @@ const path = require('path');
 const xlsx = require('xlsx');
 const { debugEvent } = require('./importDebugAudit');
 
-const MAX_FILE_SIZE = 10 * 1024 * 1024;
+// A single Dealer Pro Orders Report already reaches ~6 MB for half a year of
+// sales (174 columns per row), so the ceiling has room for a full-year export.
+const MAX_FILE_SIZE = 25 * 1024 * 1024;
 const FILE_TYPE_ORDER = ['orderIntake', 'orderSales', 'dispatch'];
 
 const column = (key, aliases, entity, target, options = {}) => ({
@@ -122,7 +124,22 @@ const FILE_DEFINITIONS = {
       column('orderCategory', ['Order Type', 'Type', 'Order Category'], 'SalesOrder', 'orderCategory'),
       column('deferredPayment', ['Deferred Payment', 'Deferred Amount'], 'SalesOrder', 'deferredPayment'),
       column('adminChargesPercent', ['Admin Charges %', 'Admin Charge %', 'Administration Charges %'], 'SalesOrder', 'adminChargesPercent'),
-      column('adminCharges', ['Admin Charges', 'Admin Charge', 'Administration Charges'], 'SalesOrder', 'adminCharges'),
+      column('adminCharges', ['Admin Charges', 'Admin Charge', 'Administration Charges', 'Administrative Charges'], 'SalesOrder', 'adminCharges'),
+      column('sapOrderNumber', ['SAP Sales Order No', 'SAP Sales Order Number', 'SAP Order No', 'SAP Order Number'], 'SalesOrder', 'sapOrderNo'),
+      column('dispatchNumber', ['Dispatch No', 'Dispatch Number'], 'SalesOrder', 'dispatchNo'),
+      column('dispatchDate', ['Dispatch Date', 'PGI Date'], 'SalesOrder', 'dispatchDate'),
+      // Columns the Orders Report carries that this ERP deliberately does not store
+      // (OEM-side document checklist counters, tax breakdowns already covered by
+      // Advance Tax, and OEM logistics references). Listing them here keeps them out
+      // of the "no safe target mapping" warnings — they are ignored on purpose.
+      column('oemReferenceColumns', [
+        'SAP Customer No', 'Balance Due Date', 'Tax U/S 153(1)(a) WHT', '1/5 of GST', 'STRN',
+        'Document Approval Status', 'Document Upload Status', 'Signed & Stamped PBO',
+        'Partial Amount Pay Order', 'Partial Amount Deposit Slip', 'Purchase Order',
+        'Sales Tax Undertaking', 'Price Ack. Undertaking', 'Balance Amount Pay Order',
+        'Balance Amount Deposit Slip', 'Others', 'Document Remarks', 'OEM Remarks', 'FPM',
+        'Arrival No', 'Arrival Date', 'PDI Request No', 'PDI Request Date', 'D.O. No', 'D.O. Date',
+      ], null, null, { ignored: true }),
       column('totalReceivable', ['Total Receivable', 'Grand Total', 'Total Amount'], 'SalesOrder', 'totalAmount'),
       column('premium', ['Premium', 'Premium Amount'], 'SalesOrder', 'premium'),
       column('discount', ['Discount', 'Discount Amount'], 'SalesOrder', 'discountAmount'),
@@ -141,6 +158,10 @@ const FILE_DEFINITIONS = {
       ['pboNo', 'chassisNumber', 'externalInvoiceNumber', 'sapOrderNumber'],
     ],
     columns: [
+      column('sequence', ['S #', 'S No', 'Sr No', 'Serial No', 'Serial Number'], null, null, { ignored: true }),
+      // The OEM's production batch reference; kept out of the warning list rather
+      // than stored, since nothing in the ERP keys off it.
+      column('batchNumber', ['Batch No', 'Batch Number'], null, null, { ignored: true }),
       column('dispatchNumber', ['Dispatch No', 'Dispatch Number', 'Dispatch #'], 'SalesOrder', 'dispatchNo'),
       column('dispatchDate', ['Dispatch Date', 'Shipping Date'], 'SalesOrder', 'dispatchDate'),
       column('externalOrderNumber', ['Order No', 'Order Number', 'Order #'], 'SalesOrder', 'externalOrderNumber'),
@@ -237,10 +258,26 @@ function mapHeaderRow(headerRow, definition) {
     const mapped = lookup.get(normalized) || (definition === FILE_DEFINITIONS.orderSales ? paymentColumn(normalized) : null);
     if (!mapped) return { index, sourceHeader: source, normalizedHeader: normalized, status: 'unmapped' };
 
-    const status = mapped.ignored ? 'ignored' : mapped.recognizedUnmapped ? 'recognized_unmapped' : 'mapped';
+    let status = mapped.ignored ? 'ignored' : mapped.recognizedUnmapped ? 'recognized_unmapped' : 'mapped';
+    let reason = mapped.reason || '';
     if (status === 'mapped') {
-      if (seen.has(mapped.key)) duplicateFields.push({ key: mapped.key, first: seen.get(mapped.key), second: source });
-      else seen.set(mapped.key, source);
+      // Dealer Pro repeats header names in its document-checklist block ("CNIC",
+      // "NTN", "ATL Status" there hold attachment counts, not customer data).
+      // The real column always comes first, so later repeats are dropped rather
+      // than failing the whole file.
+      if (seen.has(mapped.key)) {
+        duplicateFields.push({
+          key: mapped.key,
+          first: seen.get(mapped.key).sourceHeader,
+          firstColumn: seen.get(mapped.key).index + 1,
+          second: source,
+          secondColumn: index + 1,
+        });
+        status = 'duplicate_ignored';
+        reason = `Duplicate of the "${seen.get(mapped.key).sourceHeader}" column already mapped to ${mapped.key}; this later column is ignored.`;
+      } else {
+        seen.set(mapped.key, { sourceHeader: source, index });
+      }
     }
     return {
       index,
@@ -250,7 +287,7 @@ function mapHeaderRow(headerRow, definition) {
       entity: mapped.entity || null,
       targetField: mapped.target || null,
       status,
-      reason: mapped.reason || '',
+      reason,
       installment: mapped.installment,
       paymentField: mapped.paymentField,
     };
@@ -368,13 +405,6 @@ function parseSpreadsheet(file, logicalType) {
       });
       return;
     }
-    if (candidate.duplicateFields.length) {
-      throw new ImportFileError('DUPLICATE_HEADERS', `Sheet "${sheetName}" maps multiple columns to the same field.`, {
-        sheetName,
-        duplicateFields: candidate.duplicateFields,
-      });
-    }
-
     matchedSheets.push(sheetName);
     mappingReport.push({
       sheetName,
@@ -384,7 +414,15 @@ function parseSpreadsheet(file, logicalType) {
       recognizedUnmappedColumns: candidate.columns
         .filter((entry) => entry.status === 'recognized_unmapped')
         .map((entry) => ({ column: entry.sourceHeader, reason: entry.reason })),
+      duplicateColumns: candidate.duplicateFields,
     });
+    if (candidate.duplicateFields.length) {
+      debugEvent('file.sheet.duplicate_headers_ignored', {
+        uploadedFilename: file.originalname || '',
+        sheetName,
+        duplicateFields: candidate.duplicateFields,
+      });
+    }
     debugEvent('file.sheet.parsed', {
       uploadedFilename: file.originalname || '',
       detectedSourceType: logicalType,

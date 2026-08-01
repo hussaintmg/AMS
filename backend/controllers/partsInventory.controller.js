@@ -1,8 +1,112 @@
 const Part = require('../models/Part.model');
+const PartSourceType = require('../models/PartSourceType.model');
 const Warehouse = require('../models/Warehouse.model');
 const { PartCategory, Supplier } = require('../models/VehicleMaster.model');
 const { AppError } = require('../middleware/errorHandler');
 const logger = require('../utils/logger');
+
+const DEFAULT_SOURCE_TYPES = [
+  { value: 'manufacturer', name: 'Manufacturer (OEM)', sortOrder: 1, isSystem: true },
+  { value: 'third_party', name: '3rd Party', sortOrder: 2, isSystem: true },
+];
+
+// Imports and older records store free text ("OEM", "3rd Party"). Without folding
+// these into the built-ins, each spelling becomes its own tab meaning the same thing.
+const SOURCE_TYPE_ALIASES = {
+    oem: 'manufacturer',
+    manufacturer_oem: 'manufacturer',
+    oem_manufacturer: 'manufacturer',
+    '3rd_party': 'third_party',
+    '3rdparty': 'third_party',
+    thirdparty: 'third_party',
+    third: 'third_party',
+    aftermarket: 'third_party',
+};
+
+const slugifySourceType = (value) => String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+
+const normalizeSourceType = (value) => {
+    const slug = slugifySourceType(value);
+    return SOURCE_TYPE_ALIASES[slug] || slug;
+};
+
+const titleizeSourceType = (value) => String(value || '')
+    .split('_')
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+
+// Keeps the source-type list authoritative: the two built-ins always exist, and any
+// value already sitting on a part (legacy rows, bulk imports) is registered too so
+// no part can end up invisible to every tab.
+const ensureSourceTypes = async () => {
+    for (const preset of DEFAULT_SOURCE_TYPES) {
+        await PartSourceType.updateOne(
+            { value: preset.value },
+            { $setOnInsert: preset },
+            { upsert: true }
+        );
+    }
+
+    // An alias never gets its own type — it always folds into the built-in it means.
+    await PartSourceType.deleteMany({
+        value: { $in: Object.keys(SOURCE_TYPE_ALIASES) },
+        isSystem: { $ne: true },
+    });
+
+    const known = new Set((await PartSourceType.find().select('value').lean()).map((type) => type.value));
+    const used = await Part.distinct('sourceType', { sourceType: { $nin: [null, ''] } });
+    for (const value of used) {
+        const slug = normalizeSourceType(value);
+        if (!slug) continue;
+        // Rewrite the stored spelling so the part answers to its tab's filter.
+        if (slug !== value) {
+            await Part.updateMany({ sourceType: value }, { $set: { sourceType: slug } });
+        }
+        if (known.has(slug)) continue;
+        await PartSourceType.updateOne(
+            { value: slug },
+            { $setOnInsert: { value: slug, name: titleizeSourceType(slug), sortOrder: 100 } },
+            { upsert: true }
+        );
+        known.add(slug);
+    }
+};
+
+const listSourceTypes = async () => {
+    await ensureSourceTypes();
+    return PartSourceType.find({ isActive: true }).sort({ sortOrder: 1, name: 1 }).lean();
+};
+
+// Accepts whatever the caller sent (slug or label) and guarantees the returned value
+// exists in the source-type list, registering it when it does not.
+const resolveSourceType = async (value) => {
+    const slug = normalizeSourceType(value);
+    if (!slug) return DEFAULT_SOURCE_TYPES[0].value;
+    const existing = await PartSourceType.findOne({ value: slug }).select('value').lean();
+    if (!existing) {
+        await PartSourceType.updateOne(
+            { value: slug },
+            { $setOnInsert: { value: slug, name: titleizeSourceType(slug), sortOrder: 100 } },
+            { upsert: true }
+        );
+    }
+    return slug;
+};
+
+const flattenSourceType = (type) => ({
+    id: type._id,
+    value: type.value,
+    name: type.name,
+    description: type.description || '',
+    sort_order: type.sortOrder,
+    is_system: type.isSystem === true,
+    is_active: type.isActive !== false,
+});
 
 const flattenPart = (p) => ({
     id: p._id,
@@ -230,7 +334,7 @@ const createPart = async (req, res, next) => {
             reorderLevel: reorderLevel || 10,
             binLocation: binLocation || '',
             isActive: true,
-            sourceType: sourceType || 'manufacturer',
+            sourceType: await resolveSourceType(sourceType),
             createdBy: req.user?.id || null,
             updatedBy: req.user?.id || null
         });
@@ -303,7 +407,7 @@ const updatePart = async (req, res, next) => {
         if (name !== undefined) part.name = name;
         if (description !== undefined) part.description = description;
         if (brand !== undefined) part.brand = brand;
-        if (sourceType !== undefined) part.sourceType = sourceType;
+        if (sourceType !== undefined) part.sourceType = await resolveSourceType(sourceType);
         if (unit !== undefined) part.unit = unit;
         if (purchasePrice !== undefined) part.costPrice = purchasePrice;
         if (sellingPrice !== undefined) part.sellingPrice = sellingPrice;
@@ -396,18 +500,21 @@ const adjustStock = async (req, res, next) => {
 
 const getPartStats = async (req, res, next) => {
     try {
+        const [sourceTypes, countsBySource] = await Promise.all([
+            listSourceTypes(),
+            Part.aggregate([
+                { $match: { isActive: true } },
+                { $group: { _id: { $ifNull: ['$sourceType', 'manufacturer'] }, count: { $sum: 1 } } },
+            ]),
+        ]);
+        const countOf = new Map(countsBySource.map((entry) => [entry._id, entry.count]));
+
         const results = await Part.aggregate([
             { $match: { isActive: true } },
             {
                 $group: {
                     _id: null,
                     total_parts: { $sum: 1 },
-                    manufacturer_parts: {
-                        $sum: { $cond: [{ $eq: ['$sourceType', 'manufacturer'] }, 1, 0] }
-                    },
-                    third_party_parts: {
-                        $sum: { $cond: [{ $eq: ['$sourceType', 'third_party'] }, 1, 0] }
-                    },
                     low_stock_count: {
                         $sum: {
                             $cond: [
@@ -431,12 +538,21 @@ const getPartStats = async (req, res, next) => {
 
         const stats = results[0] || {
             total_parts: 0,
-            manufacturer_parts: 0,
-            third_party_parts: 0,
             low_stock_count: 0,
             total_inventory_value: 0
         };
         delete stats._id;
+
+        // One entry per configured source type so the UI can render a card/tab per
+        // type without knowing which ones the dealer created.
+        stats.by_source = sourceTypes.map((type) => ({
+            value: type.value,
+            name: type.name,
+            count: countOf.get(type.value) || 0,
+        }));
+        // Kept for callers that still read the two original figures by name.
+        stats.manufacturer_parts = countOf.get('manufacturer') || 0;
+        stats.third_party_parts = countOf.get('third_party') || 0;
 
         res.json({
             success: true,
@@ -444,6 +560,116 @@ const getPartStats = async (req, res, next) => {
         });
     } catch (error) {
         logger.error('Error fetching part stats:', error);
+        next(error);
+    }
+};
+
+const getSourceTypes = async (req, res, next) => {
+    try {
+        const types = await listSourceTypes();
+        res.json({ success: true, data: types.map(flattenSourceType) });
+    } catch (error) {
+        logger.error('Error fetching source types:', error);
+        next(error);
+    }
+};
+
+const createSourceType = async (req, res, next) => {
+    try {
+        const { name, value, description, sortOrder } = req.body;
+
+        if (!name || !String(name).trim()) {
+            throw new AppError('Source type name is required', 400);
+        }
+
+        const slug = normalizeSourceType(value || name);
+        if (!slug) {
+            throw new AppError('Source type name must contain at least one letter or number', 400);
+        }
+
+        await ensureSourceTypes();
+
+        const existing = await PartSourceType.findOne({ value: slug });
+        if (existing) {
+            // Re-activating beats erroring out: the client deleted it, then re-added it.
+            if (existing.isActive === false) {
+                existing.isActive = true;
+                existing.name = String(name).trim();
+                existing.updatedBy = req.user?.id || null;
+                await existing.save();
+                return res.status(201).json({ success: true, message: 'Source type restored', data: flattenSourceType(existing.toObject()) });
+            }
+            throw new AppError(`Source type "${existing.name}" already exists`, 409);
+        }
+
+        const created = await PartSourceType.create({
+            value: slug,
+            name: String(name).trim(),
+            description: description || '',
+            sortOrder: sortOrder ?? 100,
+            createdBy: req.user?.id || null,
+            updatedBy: req.user?.id || null,
+        });
+
+        logger.info(`Part source type created: ${slug} by ${req.user?.email || 'system'}`);
+
+        res.status(201).json({ success: true, message: 'Source type created successfully', data: flattenSourceType(created.toObject()) });
+    } catch (error) {
+        logger.error('Error creating source type:', error);
+        next(error);
+    }
+};
+
+const updateSourceType = async (req, res, next) => {
+    try {
+        const { name, description, sortOrder, isActive } = req.body;
+        const type = await PartSourceType.findById(req.params.id);
+        if (!type) {
+            throw new AppError('Source type not found', 404);
+        }
+
+        if (type.isSystem && isActive === false) {
+            throw new AppError('Built-in source types cannot be deactivated', 400);
+        }
+
+        if (name !== undefined) type.name = String(name).trim() || type.name;
+        if (description !== undefined) type.description = description;
+        if (sortOrder !== undefined) type.sortOrder = sortOrder;
+        if (isActive !== undefined) type.isActive = isActive;
+        type.updatedBy = req.user?.id || null;
+        await type.save();
+
+        res.json({ success: true, message: 'Source type updated successfully', data: flattenSourceType(type.toObject()) });
+    } catch (error) {
+        logger.error('Error updating source type:', error);
+        next(error);
+    }
+};
+
+const deleteSourceType = async (req, res, next) => {
+    try {
+        const type = await PartSourceType.findById(req.params.id);
+        if (!type) {
+            throw new AppError('Source type not found', 404);
+        }
+        if (type.isSystem) {
+            throw new AppError('Built-in source types cannot be deleted', 400);
+        }
+
+        // Deleting a type that parts still point at would hide those parts from
+        // every tab, so the parts have to be moved first.
+        const inUse = await Part.countDocuments({ sourceType: type.value });
+        if (inUse > 0) {
+            throw new AppError(`${inUse} part(s) still use "${type.name}". Move them to another source type first.`, 409);
+        }
+
+        await PartSourceType.deleteOne({ _id: type._id });
+
+        logger.info(`Part source type deleted: ${type.value} by ${req.user?.email || 'system'}`);
+
+        res.json({ success: true, message: 'Source type deleted successfully' });
+    } catch (error) {
+        logger.error('Error deleting source type:', error);
         next(error);
     }
 };
@@ -500,5 +726,9 @@ module.exports = {
     getPartStats,
     getLowStockParts,
     getCategories,
-    getSuppliers
+    getSuppliers,
+    getSourceTypes,
+    createSourceType,
+    updateSourceType,
+    deleteSourceType
 };

@@ -48,6 +48,7 @@ partSchema.index({ partCode: 1 });
 partSchema.index({ sku: 1 });
 partSchema.index({ name: 1 });
 partSchema.index({ isActive: 1 });
+partSchema.index({ sourceType: 1 });
 
 partSchema.plugin(searchPlugin, { entityType: 'part' });
 const Part = mongoose.model('Part', partSchema);

@@ -16,6 +16,10 @@ import { toast } from 'react-hot-toast';
 import { uploaderAPI } from '../services/api';
 import '../styles/uploader.css';
 
+// Mirrors MAX_FILE_SIZE in backend/services/imports/spreadsheetMapper.js.
+const MAX_UPLOAD_MB = 25;
+const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024;
+
 const FILE_SLOTS = [
   { key: 'orderIntake', label: 'Order Intake Report', step: 'Step 1', description: 'Bookings, applicant, variant, color, and booking amounts.', icon: '📋' },
   { key: 'orderSales', label: 'Orders Sales Report', step: 'Step 2', description: 'Customer identity (CNIC/NTN/phone), payments, installments, chassis/engine.', icon: '💰' },
@@ -415,8 +419,9 @@ export default function DataImport() {
         toast.error(`${file.name}: only .xlsx and .csv files are supported.`, { position: 'top-center' });
         return;
       }
-      if (file.size > 10 * 1024 * 1024) {
-        toast.error(`${file.name}: exceeds the 10MB limit.`, { position: 'top-center' });
+      // Keep in step with MAX_FILE_SIZE in backend/services/imports/spreadsheetMapper.js
+      if (file.size > MAX_UPLOAD_BYTES) {
+        toast.error(`${file.name}: exceeds the ${MAX_UPLOAD_MB}MB limit.`, { position: 'top-center' });
         return;
       }
       accepted.push(file);
@@ -594,7 +599,7 @@ export default function DataImport() {
           <h3>Import Order Intake, Sales, and Dispatch data in one batch</h3>
           <p>Files run in Intake → Sales → Dispatch order and share one context: Sales reuses Intake customers and bookings; Dispatch resolves existing Sales Orders by PBO. Re-importing the same files never creates duplicates.</p>
         </div>
-        <div className="uploader-format-badge">XLSX / CSV<br /><small>Up to 10 MB each</small></div>
+        <div className="uploader-format-badge">XLSX / CSV<br /><small>Up to {MAX_UPLOAD_MB} MB each</small></div>
       </div>
 
       <div className="uploader-steps">

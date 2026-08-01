@@ -28,7 +28,7 @@ const {
 } = require('./valueNormalizer');
 const { FILE_TYPE_ORDER, normalizeText } = require('./spreadsheetMapper');
 const { runAtomicRow, supportsTransactions } = require('./atomicImport');
-const { currentAudit, debugEvent } = require('./importDebugAudit');
+const { currentAudit, debugEvent, importTrace } = require('./importDebugAudit');
 
 const clean = (value) => normalizeText(value);
 const lower = (value) => clean(value).toLowerCase();
@@ -275,7 +275,7 @@ async function resolveMasterData(row, context, session, journal, delta, { create
     let modelQuery = VehicleModel.findByIdAndUpdate(
       hierarchy.model._id,
       { $set: { year: Number(row.modelYear) } },
-      { new: true },
+      { returnDocument: 'after' },
     );
     if (session) modelQuery = modelQuery.session(session);
     hierarchy.model = await modelQuery.lean();
@@ -340,7 +340,7 @@ async function enrichExistingVehicle(vehicle, row, hierarchy, context, session, 
   if (!Number(vehicle.year) && Number(row.modelYear) >= 1900) patch.year = Number(row.modelYear);
   if (!Object.keys(patch).length) return { vehicle, updated: false };
   journal.trackUpdate(Vehicle, vehicle);
-  let query = Vehicle.findByIdAndUpdate(vehicle._id, { $set: patch }, { new: true });
+  let query = Vehicle.findByIdAndUpdate(vehicle._id, { $set: patch }, { returnDocument: 'after' });
   if (session) query = query.session(session);
   const updated = await query.lean();
   Object.assign(vehicle, updated);
@@ -382,7 +382,7 @@ async function enrichCustomer(customer, data, context, session, journal, delta) 
   });
   if (!Object.keys(desired).length) return customer;
   journal.trackUpdate(Customer, customer);
-  let query = Customer.findByIdAndUpdate(customer._id, { $set: desired }, { new: true });
+  let query = Customer.findByIdAndUpdate(customer._id, { $set: desired }, { returnDocument: 'after' });
   if (session) query = query.session(session);
   const updated = await query.lean();
   context.customers.add(updated);
@@ -422,7 +422,11 @@ async function resolveSalesCustomer(row, context, session, journal, delta, userI
     journal.trackCreate(Customer, resolution.customer._id);
     delta.customers.created += 1;
   } else delta.customers.reused += 1;
-  return enrichCustomer(resolution.customer, data, context, session, journal, delta);
+  const customer = await enrichCustomer(resolution.customer, data, context, session, journal, delta);
+  // Surfaced by the caller: a shared phone/email pointed at a different customer
+  // than the tax number did, and the tax number won.
+  if (resolution.weakConflicts?.length) customer._weakIdentityConflicts = resolution.weakConflicts;
+  return customer;
 }
 
 function resolveSeller(row, context, delta) {
@@ -437,22 +441,12 @@ async function resolveSellerForImport(row, context, session, journal, delta, use
   return resolveSeller(row, context, delta);
 }
 
-function sellerWarnings(row, seller) {
-  if (!rawPresent(row.sellerName)) return [];
-  if (seller.user || seller.employee) return [];
-  if (seller.ambiguous) {
-    return [rowWarning(row, `Seller "${row.sellerName}" is ambiguous (${seller.count} matching users/employees); original sale person was preserved without seller reference.`, {
-      field: 'sellerName', value: row.sellerName, relatedEntity: 'User/Employee',
-    })];
-  }
-  if (seller.roleMismatch) {
-    return [rowWarning(row, `Seller "${row.sellerName}" does not have source role "${row.sellerRole}"; original sale person was preserved without seller reference.`, {
-      field: 'sellerRole', value: row.sellerRole, relatedEntity: 'Role',
-    })];
-  }
-  return [rowWarning(row, `Seller "${row.sellerName}" could not be resolved to an active User or Employee; original sale person was preserved.`, {
-    field: 'sellerName', value: row.sellerName, relatedEntity: 'User/Employee',
-  })];
+// A sales person who has no User/Employee record is normal on this paperwork —
+// the name off the report is what the dealer works with, and it is stored on the
+// order either way. No warning is raised for it; the seller lookup outcome stays
+// in the debug audit for anyone who needs it.
+function sellerWarnings() {
+  return [];
 }
 
 function previewSeller(row, context, plannedSellerKeys, entities) {
@@ -578,7 +572,7 @@ async function createOrUpdateBooking(row, hierarchy, customer, seller, vehicle, 
   }
 
   const desired = bookingFields(row, hierarchy, customer, seller, vehicle, stage);
-  console.log("[BOOKING_CREATE_ATTEMPT]", {
+  importTrace("[BOOKING_CREATE_ATTEMPT]", {
     customerId: customer._id,
     pboNo: bookingNumber,
     bookingPayload: {
@@ -595,19 +589,19 @@ async function createOrUpdateBooking(row, hierarchy, customer, seller, vehicle, 
       createdBy: userId,
     };
     const bookingDocument = new Booking(document);
-    console.log("[BOOKING_BEFORE_SAVE]", {
+    importTrace("[BOOKING_BEFORE_SAVE]", {
       validationError: bookingDocument.validateSync(),
       document: bookingDocument.toObject(),
     });
     assertValidDocument(bookingDocument);
     await bookingDocument.save({ session });
-    console.log("[BOOKING_SAVE_SUCCESS]", {
+    importTrace("[BOOKING_SAVE_SUCCESS]", {
       bookingId: bookingDocument._id,
     });
     let verificationQuery = Booking.findById(bookingDocument._id).lean();
     if (session) verificationQuery = verificationQuery.session(session);
     const verifiedBooking = await verificationQuery;
-    console.log("[BOOKING_DB_VERIFY]", {
+    importTrace("[BOOKING_DB_VERIFY]", {
       exists: Boolean(verifiedBooking),
       verifiedBooking,
     });
@@ -683,7 +677,7 @@ async function createOrUpdateBooking(row, hierarchy, customer, seller, vehicle, 
   }
   if (userId) changes.updatedBy = userId;
   journal.trackUpdate(Booking, booking);
-  let query = Booking.findByIdAndUpdate(booking._id, { $set: changes }, { new: true });
+  let query = Booking.findByIdAndUpdate(booking._id, { $set: changes }, { returnDocument: 'after' });
   if (session) query = query.session(session);
   booking = await query.lean();
   context.bookings.add(booking);
@@ -864,7 +858,7 @@ async function createOrUpdateOrder(row, desired, context, session, journal, delt
   }
   if (userId) changes.updatedBy = userId;
   journal.trackUpdate(SalesOrder, order);
-  let query = SalesOrder.findByIdAndUpdate(order._id, { $set: changes }, { new: true });
+  let query = SalesOrder.findByIdAndUpdate(order._id, { $set: changes }, { returnDocument: 'after' });
   if (session) query = query.session(session);
   order = await query.lean();
   context.orders.addOrder(order);
@@ -958,7 +952,7 @@ async function ensureInvoice(row, order, seller, context, session, journal, delt
   const changes = changedFields(invoice, desired);
   if (Object.keys(changes).length) {
     if (!result.created) journal.trackUpdate(Invoice, invoice);
-    let query = Invoice.findByIdAndUpdate(invoice._id, { $set: changes }, { new: true });
+    let query = Invoice.findByIdAndUpdate(invoice._id, { $set: changes }, { returnDocument: 'after' });
     if (session) query = query.session(session);
     invoice = await query.lean();
     if (!result.created) delta.invoices.updated += 1;
@@ -1146,7 +1140,7 @@ async function importPayments(row, invoice, customer, context, session, journal,
   const invoiceDelta = changedFields(invoice, invoiceChanges);
   if (Object.keys(invoiceDelta).length) {
     journal.trackUpdate(Invoice, invoice);
-    let invoiceQuery = Invoice.findByIdAndUpdate(invoice._id, { $set: invoiceDelta }, { new: true });
+    let invoiceQuery = Invoice.findByIdAndUpdate(invoice._id, { $set: invoiceDelta }, { returnDocument: 'after' });
     if (session) invoiceQuery = invoiceQuery.session(session);
     Object.assign(invoice, await invoiceQuery.lean());
     changed = true;
@@ -1162,7 +1156,7 @@ async function importPayments(row, invoice, customer, context, session, journal,
       });
       if (Object.keys(orderDelta).length) {
         journal.trackUpdate(SalesOrder, order);
-        let updateQuery = SalesOrder.findByIdAndUpdate(order._id, { $set: orderDelta }, { new: true });
+        let updateQuery = SalesOrder.findByIdAndUpdate(order._id, { $set: orderDelta }, { returnDocument: 'after' });
         if (session) updateQuery = updateQuery.session(session);
         await updateQuery;
       }
@@ -1536,7 +1530,7 @@ async function processSalesRow(row, context, atomicOptions, userId) {
         let linkQuery = Vehicle.findByIdAndUpdate(
           vehicle._id,
           { $set: { 'dispatch.salesOrder': orderResult.order._id, 'dispatch.source': 'sales_order' } },
-          { new: true },
+          { returnDocument: 'after' },
         );
         if (session) linkQuery = linkQuery.session(session);
         Object.assign(vehicle, await linkQuery.lean());
@@ -1552,6 +1546,13 @@ async function processSalesRow(row, context, atomicOptions, userId) {
     let invoiceResult = null;
     let paymentsChanged = false;
     const warnings = sellerWarnings(row, seller);
+    (customer?._weakIdentityConflicts || []).forEach((conflict) => {
+      warnings.push(rowWarning(row, `Customer ${conflict.field} "${conflict.value}" also matches a different customer; the row was linked by its stronger identifier instead.`, {
+        errorType: 'RELATIONSHIP_RESOLUTION',
+        field: conflict.field,
+        relatedEntity: 'Customer',
+      }));
+    });
     // Money received against a confirmed order is a receivable, so it needs an
     // Invoice to hold it even when Dealer Pro left the "Invoice No" cell empty
     // (an internal INV-… number is generated; externalInvoiceNumber stays blank).
@@ -1675,7 +1676,7 @@ async function recordVehicleDispatch(vehicle, row, context, session, journal, op
   let query = Vehicle.findByIdAndUpdate(
     vehicle._id,
     { $set: { dispatch: nextDispatch, updatedBy: options.userId || null } },
-    { new: true },
+    { returnDocument: 'after' },
   );
   if (session) query = query.session(session);
   const updated = await query.lean();
@@ -1692,12 +1693,17 @@ async function recordVehicleDispatch(vehicle, row, context, session, journal, op
 async function processDispatchStockRow(row, context, atomicOptions, userId, unresolvedReason) {
   return runAtomicRow(async ({ session, journal }) => {
     const delta = newEntityDelta();
-    const warnings = [rowWarning(row, `Dispatch ${row.dispatchNumber} has no matching Sales Order (${unresolvedReason}); imported as a stock dispatch against the physical vehicle only — no Customer, Booking, Sales Order or Seller was created.`, {
-      errorType: 'DISPATCH_WITHOUT_SALES_ORDER',
-      field: 'pboNo',
-      value: row.pboNo || '',
-      relatedEntity: 'Vehicle/SalesOrder',
-    })];
+    // A dispatch with no Sales Order is a unit arriving into stock — the normal
+    // path for anything not yet sold, not a problem to report. The outcome is
+    // visible on the vehicle itself (dispatch.source = stock_dispatch) and in the
+    // debug audit; it is deliberately not raised as a per-row warning.
+    debugEvent('dispatch.stock_only', {
+      _meta: row._meta,
+      dispatchNumber: row.dispatchNumber,
+      pboNo: row.pboNo || '',
+      unresolvedReason,
+    });
+    const warnings = [];
     if (![row.chassisNumber, row.engineNumber].some(rawPresent)) {
       throw new ImportRowError('Dispatch row matches no Sales Order and carries no chassis/engine evidence, so no physical vehicle can be recorded.', {
         field: 'chassisNumber',
@@ -2065,7 +2071,7 @@ async function processDispatchChainRow(row, context, atomicOptions, userId, reso
       let bookingQuery = Booking.findByIdAndUpdate(
         booking._id,
         { $set: { vehicle: vehicle._id, updatedBy: userId || null } },
-        { new: true },
+        { returnDocument: 'after' },
       );
       if (session) bookingQuery = bookingQuery.session(session);
       booking = await bookingQuery.lean();
@@ -2127,7 +2133,7 @@ async function processDispatchChainRow(row, context, atomicOptions, userId, reso
       }
       if (Object.keys(invoiceChanges).length) {
         journal.trackUpdate(Invoice, invoice);
-        let invoiceQuery = Invoice.findByIdAndUpdate(invoice._id, { $set: invoiceChanges }, { new: true });
+        let invoiceQuery = Invoice.findByIdAndUpdate(invoice._id, { $set: invoiceChanges }, { returnDocument: 'after' });
         if (session) invoiceQuery = invoiceQuery.session(session);
         invoice = await invoiceQuery.lean();
         delta.invoices.updated += 1;
@@ -2175,7 +2181,7 @@ async function processDispatchChainRow(row, context, atomicOptions, userId, reso
     let order = resolution.order;
     if (Object.keys(changes).length) {
       journal.trackUpdate(SalesOrder, order);
-      let query = SalesOrder.findByIdAndUpdate(order._id, { $set: changes }, { new: true });
+      let query = SalesOrder.findByIdAndUpdate(order._id, { $set: changes }, { returnDocument: 'after' });
       if (session) query = query.session(session);
       order = await query.lean();
       context.orders.addOrder(order);
@@ -2652,6 +2658,55 @@ function previewEntityTotals(entities) {
   ]));
 }
 
+// Some warnings are one fact restated on every row — an unmapped source column, a
+// sales person with no matching employee. A 1,349-row workbook produced 32k such
+// warnings, a ~28 MB response and a FileUpload summary near Mongo's 16 MB document
+// limit. Warnings whose message is byte-identical within a file describe the same
+// fact, so they fold into a single entry carrying the row count and a sample row;
+// anything row-specific (amounts, references) has a distinct message and survives
+// untouched. Per-row detail stays in the debug audit file.
+function collapseWarningList(warnings = []) {
+  const collapsed = [];
+  const groups = new Map();
+  warnings.forEach((warning) => {
+    if (!warning?.message) {
+      collapsed.push(warning);
+      return;
+    }
+    const key = [
+      warning.errorType || '',
+      warning.fileKey || warning.fileName || '',
+      warning.sheetName || '',
+      warning.field || '',
+      warning.message,
+    ].join('|');
+    const existing = groups.get(key);
+    if (existing) {
+      existing.occurrences += 1;
+      return;
+    }
+    const entry = { ...warning, occurrences: 1, sampleRow: warning.row ?? null };
+    groups.set(key, entry);
+    collapsed.push(entry);
+  });
+  groups.forEach((entry) => {
+    if (entry.occurrences > 1) {
+      entry.row = null;
+      entry.sourceIdentifier = '';
+      entry.message = `${entry.message} (${entry.occurrences} rows; sample row ${entry.sampleRow}${entry.value ? `: "${String(entry.value).slice(0, 60)}"` : ''})`;
+    }
+  });
+  return collapsed;
+}
+
+function collapseRepeatedWarnings(result) {
+  if (Array.isArray(result?.warnings)) result.warnings = collapseWarningList(result.warnings);
+  (result?.files || []).forEach((file) => {
+    if (Array.isArray(file.warnings)) file.warnings = collapseWarningList(file.warnings);
+  });
+  return result;
+}
+
 async function previewBatchInternal(parsedFiles) {
   const ordered = [...parsedFiles].sort(
     (left, right) => FILE_TYPE_ORDER.indexOf(left.logicalType) - FILE_TYPE_ORDER.indexOf(right.logicalType),
@@ -2947,14 +3002,13 @@ async function previewBatchInternal(parsedFiles) {
                 code: stockVehicle.conflict ? 'VEHICLE_IDENTITY_CONFLICT' : 'AMBIGUOUS_VEHICLE_IDENTITY',
               });
             }
-            const stockIssue = rowWarning(row, `Dispatch ${row.dispatchNumber} has no matching Sales Order (searched by ${dispatchLookupSummary(row)}); it will be imported as a stock dispatch against the physical vehicle only — no Customer, Booking, Sales Order or Seller will be created.`, {
-              errorType: 'DISPATCH_WITHOUT_SALES_ORDER',
-              field: 'pboNo',
-              value: row.pboNo || '',
-              relatedEntity: 'Vehicle/SalesOrder',
+            // Stock arrival, not an anomaly — see processDispatchStockRow.
+            debugEvent('dispatch.stock_only', {
+              _meta: row._meta,
+              dispatchNumber: row.dispatchNumber,
+              pboNo: row.pboNo || '',
+              unresolvedReason: dispatchLookupSummary(row),
             });
-            output.warnings.push(stockIssue);
-            result.warnings.push(stockIssue);
             result.entities.vehicles[stockVehicle.vehicle ? 'reused' : 'created'] += 1;
             const alreadyDispatched = rawPresent(stockVehicle.vehicle?.dispatch?.dispatchNo);
             result.entities.dispatchRecords[alreadyDispatched ? 'updated' : 'created'] += 1;
@@ -3034,6 +3088,7 @@ async function previewBatchInternal(parsedFiles) {
     result.totals.failed += file.failed;
   });
   result.entities = previewEntityTotals(result.entities);
+  collapseRepeatedWarnings(result);
   return result;
 }
 
@@ -3126,7 +3181,7 @@ async function importBatchInternal(parsedFiles, { userId = null, onProgress = nu
       const records = parsed.records.filter((record) => (
         normalizeBusinessReference(normalizeRecord(record, parsed.logicalType).value.pboNo) === DEBUG_PBO
       ));
-      console.log("[IMPORT_DEBUG_CHAIN_FILTER]", {
+      importTrace("[IMPORT_DEBUG_CHAIN_FILTER]", {
         logicalType: parsed.logicalType,
         debugPbo: DEBUG_PBO,
         sourceRows: parsed.records.length,
@@ -3136,7 +3191,7 @@ async function importBatchInternal(parsedFiles, { userId = null, onProgress = nu
     });
   const files = ordered.map(fileResult);
   const countsBefore = await persistedCounts();
-  console.log("[IMPORT_COUNTS_BEFORE]", countsBefore);
+  importTrace("[IMPORT_COUNTS_BEFORE]", countsBefore);
   const result = {
     mode: 'commit',
     countsBefore,
@@ -3151,7 +3206,7 @@ async function importBatchInternal(parsedFiles, { userId = null, onProgress = nu
   };
   result.totals.totalRows = files.reduce((sum, file) => sum + file.totalRows, 0);
   const atomicOptions = { useTransactions: result.transactionMode === 'mongodb_transaction' };
-  console.log("[IMPORT_EXECUTION_MODE]", {
+  importTrace("[IMPORT_EXECUTION_MODE]", {
     requestedMode: 'commit',
     effectiveMode: 'commit',
     transactionMode: result.transactionMode,
@@ -3180,11 +3235,11 @@ async function importBatchInternal(parsedFiles, { userId = null, onProgress = nu
       const normalized = normalizedRows[rowIndex];
       const row = normalized.value;
       if (parsed.logicalType === 'orderIntake') {
-        console.log("[INTAKE_RAW_ROW]", {
+        importTrace("[INTAKE_RAW_ROW]", {
           excelRowNumber: row._meta?.rowNumber || null,
           rawRow: normalized.rawRow,
         });
-        console.log("[INTAKE_NORMALIZED_ROW]", {
+        importTrace("[INTAKE_NORMALIZED_ROW]", {
           excelRowNumber: row._meta?.rowNumber || null,
           customerName: row.customerName,
           pboNo: row.pboNo,
@@ -3309,11 +3364,11 @@ async function importBatchInternal(parsedFiles, { userId = null, onProgress = nu
   });
   result.status = result.totals.failed ? (result.totals.successful || result.totals.skipped ? 'completed_with_errors' : 'failed') : 'completed';
   result.countsAfter = await persistedCounts();
-  console.log("[IMPORT_COUNTS_AFTER]", result.countsAfter);
+  importTrace("[IMPORT_COUNTS_AFTER]", result.countsAfter);
   const databaseDiff = Object.fromEntries(
     Object.keys(COUNT_MODELS).map((name) => [name, result.countsAfter[name] - result.countsBefore[name]]),
   );
-  console.log("[IMPORT_DATABASE_DIFF]", databaseDiff);
+  importTrace("[IMPORT_DATABASE_DIFF]", databaseDiff);
   result.databaseDiff = databaseDiff;
   result.databaseName = mongoose.connection?.name || '';
   result.actualCreated = entityCountsByAction(result.entities, 'created');
@@ -3330,13 +3385,9 @@ async function importBatchInternal(parsedFiles, { userId = null, onProgress = nu
     || Number(result.actualUpdated[name] || 0) > 0
   ));
   result.databaseWritesObserved = result.changedCollections.length > 0;
-  console.log("[IMPORT_COMMIT_REPORT]", {
-    requestedMode: 'commit',
-    effectiveMode: result.mode,
-    transactionCommitted: result.transactionMode === 'mongodb_transaction',
-    transactionMode: result.transactionMode,
-    databaseWritesObserved: result.databaseWritesObserved,
-  });
+  collapseRepeatedWarnings(result);
+  // The commit report is part of the returned result and the audit file; printing
+  // it again only adds to the console noise an import already produces.
   return result;
 }
 

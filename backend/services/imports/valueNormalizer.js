@@ -74,7 +74,13 @@ function normalizeCustomerType(value) {
   const normalized = normalizeText(value).toLowerCase();
   if (!normalized) return '';
   if (['individual', 'person', 'personal', 'retail'].includes(normalized)) return 'individual';
-  if (['corporate', 'company', 'business', 'organization', 'organisation'].includes(normalized)) return 'corporate';
+  // Dealer Pro's "Client Category" also emits organisational buyer categories
+  // (Government bodies, other dealers, fleets) — all of them are corporate here.
+  if ([
+    'corporate', 'company', 'business', 'organization', 'organisation',
+    'government', 'govt', 'public sector', 'semi government', 'semi govt',
+    'dealer', 'distributor', 'fleet', 'institution', 'institutional', 'ngo',
+  ].includes(normalized)) return 'corporate';
   return null;
 }
 
@@ -82,6 +88,12 @@ const CORPORATE_NAME_MARKERS = [
   'm/s', 'pvt ltd', 'private limited', 'ltd', 'limited', 'company',
   'corporation', 'bank', 'group', 'industries', 'enterprises',
   'organization', 'institution',
+  // Trading names common on Pakistani dealer paperwork; without these a name
+  // like "Haji Naeem & Sons" reads as a person.
+  'and sons', 'sons', 'brothers', 'traders', 'trading', 'motors', 'autos',
+  'automobiles', 'agencies', 'associates', 'and co', 'mills', 'textiles',
+  'builders', 'developers', 'foundation', 'trust', 'society', 'hospital',
+  'college', 'university', 'school', 'academy', 'engineering', 'services',
 ];
 
 function hasCorporateNameMarker(value) {
@@ -95,10 +107,13 @@ function hasCorporateNameMarker(value) {
   });
 }
 
+// Mononyms ("Atiqullah", "Salman") are ordinary personal names on this paperwork,
+// so a single word still reads as a person once the corporate markers above have
+// had their say — requiring two words dropped 29 intake bookings outright.
 function isNormalPersonName(value) {
-  const name = normalizeText(value).replace(/^(?:mr|mrs|ms|miss|dr)\.?\s+/i, '').trim();
+  const name = normalizeText(value).replace(/^(?:mr|mrs|ms|miss|dr|haji|hafiz|syed|malik|ch|sheikh)\.?\s+/i, '').trim();
   const parts = name.split(/\s+/).filter(Boolean);
-  return parts.length >= 2 && parts.every((part) => /^[A-Za-z][A-Za-z.'-]*$/.test(part));
+  return parts.length >= 1 && parts.every((part) => /^[A-Za-z][A-Za-z.'-]*$/.test(part));
 }
 
 function inferCustomerType(value, { cnic = '', explicitPersonal = false } = {}) {
@@ -111,18 +126,31 @@ function inferCustomerType(value, { cnic = '', explicitPersonal = false } = {}) 
 
 function normalizePaymentCells(record, errors) {
   const payments = [];
+  let droppedDuplicates = 0;
   Object.entries(record.paymentCells || {}).forEach(([installment, source]) => {
     const hasAny = Object.values(source).some(rawPresent);
     if (!hasAny) return;
     const amount = parseNumber(source.amountReceived);
-    if (amount.error || !amount.present || amount.value <= 0) {
+    if (amount.error) {
       errors.push(issue(record, {
         field: `payments.${installment}.amountReceived`,
         value: normalizeText(source.amountReceived),
-        missingField: !amount.present ? 'amountReceived' : '',
         relatedEntity: 'Payment',
-        message: !amount.present ? `Installment ${installment} has data but no amount.` : `Installment ${installment} amount ${amount.error || 'must be greater than zero'}.`,
+        message: `Installment ${installment} amount ${amount.error}.`,
       }));
+      return;
+    }
+    if (!amount.present || amount.value <= 0) {
+      // Dealer Pro leaves half-filled installment blocks behind (a bank name, a
+      // status, a zeroed amount). Skipping just that installment keeps the order
+      // importable and invents nothing — that is normal shape for this paperwork,
+      // so it is recorded in the debug audit rather than raised as a warning.
+      debugEvent('payment.installment.skipped', {
+        _meta: record._meta,
+        installment: Number(installment),
+        amountCell: normalizeText(source.amountReceived),
+        reason: !amount.present ? 'no amount in a partially filled block' : 'amount not greater than zero',
+      });
       return;
     }
 
@@ -143,7 +171,38 @@ function normalizePaymentCells(record, errors) {
     });
     payments.push(normalized);
   });
-  return payments.sort((left, right) => left.installmentNo - right.installmentNo);
+
+  // Some Dealer Pro exports repeat an installment across two blocks (same date,
+  // same amount, same instrument). Summing both would double the paid amount and
+  // push the order past its own total, so identical repeats are dropped.
+  const ordered = payments.sort((left, right) => left.installmentNo - right.installmentNo);
+  const fingerprints = new Set();
+  const deduped = [];
+  ordered.forEach((payment) => {
+    const fingerprint = [
+      payment.amountReceived,
+      payment.transactionDate ? new Date(payment.transactionDate).toISOString().slice(0, 10) : '',
+      payment.instrumentNumber || '',
+      payment.instrumentBank || '',
+    ].join('|');
+    if (fingerprints.has(fingerprint)) {
+      // A byte-identical repeat is the export duplicating its own block (verified
+      // against source: same amount, date AND instrument number). Dropping it is
+      // the only correct reading, so it is audit detail, not a warning.
+      droppedDuplicates += 1;
+      debugEvent('payment.installment.duplicate_dropped', {
+        _meta: record._meta,
+        installment: payment.installmentNo,
+        amountReceived: payment.amountReceived,
+        instrumentNumber: payment.instrumentNumber || '',
+        fingerprint,
+      });
+      return;
+    }
+    fingerprints.add(fingerprint);
+    deduped.push(payment);
+  });
+  return { payments: deduped, droppedDuplicates };
 }
 
 function normalizeRecord(record, logicalType) {
@@ -218,7 +277,12 @@ function normalizeRecord(record, logicalType) {
     }));
   });
 
-  if (logicalType === 'orderSales') normalized.payments = normalizePaymentCells(record, errors);
+  let droppedDuplicateInstallments = 0;
+  if (logicalType === 'orderSales') {
+    const paymentCells = normalizePaymentCells(record, errors);
+    normalized.payments = paymentCells.payments;
+    droppedDuplicateInstallments = paymentCells.droppedDuplicates;
+  }
 
   const sourceIdentifier = logicalType === 'dispatch'
     ? normalizeText(normalized.dispatchNumber || normalized.pboNo || normalized.chassisNumber)
@@ -287,15 +351,23 @@ function normalizeRecord(record, logicalType) {
         ? Number(normalized.remainingBalance)
         : Math.max(0, totalAmount - paidAmount),
     };
+    // Only worth reporting when our reading disagrees with the dealer's own
+    // "Remaining Balance". Where that column carries the same negative figure we
+    // derive, the overpayment is what the source itself states — the columns were
+    // read correctly and there is nothing for anyone to check.
     if (paidAmount > totalAmount + 0.01) {
-      warnings.push(issue(record, {
-        sourceIdentifier,
-        errorType: 'FINANCIAL_MISMATCH',
-        field: 'onBooking',
-        value: String(paidAmount),
-        relatedEntity: 'Booking',
-        message: `Booking payments ${paidAmount} exceed the MSRP total ${totalAmount}; source values are preserved for review.`,
-      }));
+      const sourceBalance = normalized.remainingBalance != null ? Number(normalized.remainingBalance) : null;
+      const sourceAgrees = sourceBalance != null && Math.abs(sourceBalance - (totalAmount - paidAmount)) <= 0.01;
+      if (!sourceAgrees) {
+        warnings.push(issue(record, {
+          sourceIdentifier,
+          errorType: 'FINANCIAL_MISMATCH',
+          field: 'onBooking',
+          value: String(paidAmount),
+          relatedEntity: 'Booking',
+          message: `Booking payments ${paidAmount} exceed the MSRP total ${totalAmount}; source values are preserved for review.`,
+        }));
+      }
     }
     if (!(totalAmount > 0)) {
       errors.push(issue(record, {
@@ -343,10 +415,34 @@ function normalizeRecord(record, logicalType) {
     if (!(totalAmount > 0)) {
       errors.push(issue(record, { sourceIdentifier, field: 'totalAmount', missingField: 'totalAmount', relatedEntity: 'SalesOrder', message: 'Order Sales requires a positive total amount.' }));
     }
-    if (paidAmount < 0 || paidAmount > totalAmount) {
-      errors.push(issue(record, { sourceIdentifier, field: 'paidAmount', value: String(paidAmount), relatedEntity: 'SalesOrder', message: `Paid amount ${paidAmount} cannot be negative or exceed order total ${totalAmount}.` }));
+    if (paidAmount < 0) {
+      errors.push(issue(record, { sourceIdentifier, field: 'paidAmount', value: String(paidAmount), relatedEntity: 'SalesOrder', message: `Paid amount ${paidAmount} cannot be negative.` }));
+    } else if (paidAmount > totalAmount) {
+      // Rejecting the row would also throw away its customer, vehicle, booking and
+      // invoice over a dealer-side overpayment (rounding, an extra receipt), so the
+      // reported figures are kept and the balance floors at zero. It is only worth
+      // reporting when the source's own balance column disagrees — where that column
+      // already carries the same negative figure, the file is simply stating an
+      // overpayment and the columns were read correctly.
+      const sourceBalance = normalized.balanceAmount != null ? Number(normalized.balanceAmount) : null;
+      const sourceAgrees = sourceBalance != null && Math.abs(sourceBalance - (totalAmount - paidAmount)) <= 0.01;
+      if (!sourceAgrees) {
+        warnings.push(issue(record, {
+          sourceIdentifier,
+          errorType: 'FINANCIAL_MISMATCH',
+          field: 'paidAmount',
+          value: String(paidAmount),
+          relatedEntity: 'SalesOrder',
+          message: `Paid amount ${paidAmount} exceeds order total ${totalAmount} by ${paidAmount - totalAmount}; source figures were kept and the balance floored at zero.`,
+        }));
+      }
     }
-    if (reportedPaidAmount != null && normalized.payments.length && Math.abs(installmentTotal - reportedPaidAmount) > 0.01) {
+    // A repeated installment that was already dropped (and recorded in the audit)
+    // explains this difference on its own; a warning would add no information.
+    if (!droppedDuplicateInstallments
+      && reportedPaidAmount != null
+      && normalized.payments.length
+      && Math.abs(installmentTotal - reportedPaidAmount) > 0.01) {
       warnings.push(issue(record, {
         sourceIdentifier,
         errorType: 'FINANCIAL_MISMATCH',
@@ -356,7 +452,17 @@ function normalizeRecord(record, logicalType) {
         message: `Installment sum ${installmentTotal} differs from Total Amount Received ${reportedPaidAmount}; source totals are preserved without inventing a balancing installment.`,
       }));
     }
-    if (normalized.balanceAmount != null && Math.abs(Number(normalized.balanceAmount) - balanceAmount) > 0.01) {
+    // The stored balance floors at zero, so an overpaid order always "differs" from
+    // its negative source balance; that is the floor doing its job, not a mismatch.
+    const sourceBalanceIsNegativeOverpayment = normalized.balanceAmount != null
+      && Number(normalized.balanceAmount) < 0
+      && Math.abs(Number(normalized.balanceAmount) - (totalAmount - paidAmount)) <= 0.01;
+    if (!sourceBalanceIsNegativeOverpayment
+      // A dropped duplicate installment already explains why the stored balance no
+      // longer matches the source's — no need to say it twice for the same row.
+      && !droppedDuplicateInstallments
+      && normalized.balanceAmount != null
+      && Math.abs(Number(normalized.balanceAmount) - balanceAmount) > 0.01) {
       warnings.push(issue(record, {
         sourceIdentifier,
         errorType: 'FINANCIAL_MISMATCH',

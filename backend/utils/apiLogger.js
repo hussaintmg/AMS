@@ -167,7 +167,6 @@ const logApiEvent = async (payload) => {
         log: newLog.toObject(),
         type: serverError ? 'server-error' : 'api',
       });
-      console.log('[apiLogger] logs:new emitted for', newLog._id);
     } catch (err) {
       console.warn('[apiLogger] emitLogEvent failed:', err.message);
     }

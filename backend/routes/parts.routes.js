@@ -18,6 +18,12 @@ router.get('/low-stock', authenticate, partsController.getLowStockParts);
 router.get('/categories/list', authenticate, partsController.getCategories);
 router.get('/suppliers/list', authenticate, partsController.getSuppliers);
 
+// Source types (Manufacturer / 3rd Party / dealer-defined) — client managed
+router.get('/source-types/list', authenticate, partsController.getSourceTypes);
+router.post('/source-types', authenticate, partsController.createSourceType);
+router.put('/source-types/:id', authenticate, partsController.updateSourceType);
+router.delete('/source-types/:id', authenticate, partsController.deleteSourceType);
+
 // CRUD routes
 router.get('/', authenticate, partsController.getAllParts);
 router.get('/:id', authenticate, partsController.getPartById);

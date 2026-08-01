@@ -16,9 +16,12 @@ router.get('/inventory-stock-snapshot', authenticate, authorizeAction('reports',
 router.get('/pending-deliveries', authenticate, authorizeAction('reports', 'view'), reportsController.getPendingDeliveries);
 router.get('/customer-receivables', authenticate, authorizeAction('reports', 'view'), reportsController.getCustomerReceivables);
 router.get('/receivables-aging', authenticate, authorizeAction('reports', 'view'), reportsController.getReceivablesAging);
+router.get('/customer-purchases', authenticate, authorizeAction('reports', 'view'), reportsController.getCustomerPurchases);
 router.get('/lead-statistics', authenticate, authorizeAction('reports', 'view'), reportsController.getLeadStatistics);
 router.get('/service-analytics', authenticate, authorizeAction('reports', 'view'), reportsController.getServiceAnalytics);
 router.get('/service-kpi-detail', authenticate, authorizeAction('reports', 'view'), reportsController.getServiceKpiDetail);
+router.get('/service-appointments', authenticate, authorizeAction('reports', 'view'), reportsController.getServiceAppointments);
+router.get('/vehicle-stock', authenticate, authorizeAction('reports', 'view'), reportsController.getVehicleStock);
 router.get('/low-stock-parts', authenticate, authorizeAction('reports', 'view'), reportsController.getLowStockParts);
 router.get('/expenses', authenticate, authorizeAction('reports', 'view'), reportsController.getExpenseReport);
 router.get('/payments', authenticate, authorizeAction('reports', 'view'), reportsController.getPaymentReport);

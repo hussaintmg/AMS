@@ -13,7 +13,20 @@ import BulkUploadModal from "../components/BulkUploadModal";
 import useModalKeyboard from "../hooks/useModalKeyboard";
 import CategoryFormModal from "./parts/CategoryFormModal";
 import SupplierFormModal from "./parts/SupplierFormModal";
+import SourceTypeFormModal from "./parts/SourceTypeFormModal";
 import "../styles/partsInventory.css";
+
+// Source types are dealer-defined, so badge colours are assigned by position
+// instead of being hard-coded per type.
+const SOURCE_BADGE_CLASSES = [
+  "badge-primary",
+  "badge-purple",
+  "badge-info",
+  "badge-success",
+  "badge-warning",
+  "badge-secondary",
+];
+const SOURCE_STAT_COLORS = ["#22c55e", "#8b5cf6", "#0ea5e9", "#f97316", "#14b8a6", "#64748b"];
 
 const PartsInventory = () => {
   const { user: currentUser } = useAuth();
@@ -47,6 +60,7 @@ const PartsInventory = () => {
   const stockFormRef = useRef(null);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [showSupplierModal, setShowSupplierModal] = useState(false);
+  const [showSourceTypeModal, setShowSourceTypeModal] = useState(false);
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [showBulkUpload, setShowBulkUpload] = useState(false);
@@ -93,6 +107,7 @@ const PartsInventory = () => {
   // Reference data
   const [categories, setCategories] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
+  const [sourceTypes, setSourceTypes] = useState([]);
 
   // Form data
   const [formData, setFormData] = useState({
@@ -151,19 +166,22 @@ const PartsInventory = () => {
   // Fetch reference data
   const fetchReferenceData = useCallback(async () => {
     try {
-      const [categoriesRes, suppliersRes, statsRes] = await Promise.all([
+      const [categoriesRes, suppliersRes, sourceTypesRes, statsRes] = await Promise.all([
         partsAPI.getCategories(),
         partsAPI.getSuppliers(),
+        partsAPI.getSourceTypes(),
         partsAPI.getStats(),
       ]);
 
       setCategories(categoriesRes?.data?.data || []);
       setSuppliers(suppliersRes?.data?.data || []);
+      setSourceTypes(sourceTypesRes?.data?.data || []);
       setStats(statsRes?.data?.data || {});
     } catch (err) {
       console.error("Error fetching reference data:", err);
       setCategories([]);
       setSuppliers([]);
+      setSourceTypes([]);
     }
   }, []);
 
@@ -218,7 +236,10 @@ const PartsInventory = () => {
         categoryId: "",
         description: "",
         brand: "",
-        sourceType: activeTab !== "all" ? activeTab : "manufacturer",
+        sourceType:
+          activeTab !== "all"
+            ? activeTab
+            : sourceTypes[0]?.value || "manufacturer",
         supplierId: "",
         unit: "piece",
         purchasePrice: "",
@@ -356,6 +377,17 @@ const PartsInventory = () => {
     setFormData((prev) => ({ ...prev, supplierId: String(newSup.id) }));
   };
 
+  // Quick-create: source type — select it right away so the part being added uses it
+  const handleSourceTypeCreated = (newType) => {
+    if (newType?.value) {
+      setSourceTypes((prev) =>
+        prev.some((type) => type.value === newType.value) ? prev : [...prev, newType],
+      );
+      setFormData((prev) => ({ ...prev, sourceType: newType.value }));
+    }
+    fetchReferenceData();
+  };
+
   // Adjust stock
   const handleAdjustStock = async (e) => {
     e.preventDefault();
@@ -377,8 +409,6 @@ const PartsInventory = () => {
 
   // Get stock status badge
   const getStockStatusBadge = (stock) => {
-    console.log("Stock quantity:", stock);
-
     const quantity = Number(stock);
 
     if (isNaN(quantity)) {
@@ -415,11 +445,21 @@ const PartsInventory = () => {
     };
   };
 
-  // Get source type badge
+  // Get source type badge — label and colour come from the configured list
   const getSourceTypeBadge = (sourceType) => {
-    return sourceType === "manufacturer"
-      ? { class: "badge-primary", text: "Manufacturer" }
-      : { class: "badge-purple", text: "3rd Party" };
+    const index = sourceTypes.findIndex((type) => type.value === sourceType);
+    if (index === -1) {
+      return {
+        class: "badge-secondary",
+        text: sourceType
+          ? String(sourceType).replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+          : "—",
+      };
+    }
+    return {
+      class: SOURCE_BADGE_CLASSES[index % SOURCE_BADGE_CLASSES.length],
+      text: sourceTypes[index].name,
+    };
   };
 
   // Format currency
@@ -620,24 +660,20 @@ const PartsInventory = () => {
             <span className="stat-label">Total Parts</span>
           </div>
         </div>
-        <div className="stat-card stat-manufacturer">
-          <div className="stat-icon">
-            <Package size={24} style={{ color: "#22c55e" }} />
+        {(stats.by_source || []).map((source, index) => (
+          <div className="stat-card stat-source" key={source.value}>
+            <div className="stat-icon">
+              <Package
+                size={24}
+                style={{ color: SOURCE_STAT_COLORS[index % SOURCE_STAT_COLORS.length] }}
+              />
+            </div>
+            <div className="stat-content">
+              <span className="stat-value">{source.count || 0}</span>
+              <span className="stat-label">{source.name}</span>
+            </div>
           </div>
-          <div className="stat-content">
-            <span className="stat-value">{stats.manufacturer_parts || 0}</span>
-            <span className="stat-label">Manufacturer</span>
-          </div>
-        </div>
-        <div className="stat-card stat-third-party">
-          <div className="stat-icon">
-            <Package size={24} style={{ color: "#8b5cf6" }} />
-          </div>
-          <div className="stat-content">
-            <span className="stat-value">{stats.third_party_parts || 0}</span>
-            <span className="stat-label">3rd Party</span>
-          </div>
-        </div>
+        ))}
         <div className="stat-card stat-low-stock">
           <div className="stat-icon">
             <Package size={24} style={{ color: "#eab308" }} />
@@ -662,7 +698,7 @@ const PartsInventory = () => {
 
       <ErrorPopup error={errorPopup} onClose={() => setErrorPopup(null)} />
 
-      {/* Tabs */}
+      {/* Tabs — one per configured source type, plus the client's own additions */}
       <div className="tabs-container">
         <button
           className={`tab-btn ${activeTab === "all" ? "active" : ""}`}
@@ -670,17 +706,23 @@ const PartsInventory = () => {
         >
           All Parts
         </button>
+        {sourceTypes.map((type) => (
+          <button
+            key={type.value}
+            className={`tab-btn ${activeTab === type.value ? "active" : ""}`}
+            onClick={() => handleTabChange(type.value)}
+          >
+            {type.name}
+          </button>
+        ))}
         <button
-          className={`tab-btn ${activeTab === "manufacturer" ? "active" : ""}`}
-          onClick={() => handleTabChange("manufacturer")}
+          type="button"
+          className="tab-btn tab-btn-add"
+          onClick={() => setShowSourceTypeModal(true)}
+          title="Add a new source type"
         >
-          Manufacturer Parts
-        </button>
-        <button
-          className={`tab-btn ${activeTab === "third_party" ? "active" : ""}`}
-          onClick={() => handleTabChange("third_party")}
-        >
-          3rd Party Parts
+          <Plus size={14} />
+          <span>Source Type</span>
         </button>
       </div>
 
@@ -854,11 +896,25 @@ const PartsInventory = () => {
                   </div>
                   <div className="form-row">
                     <div className="form-group">
-                      <label>
+                      <label
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          flexDirection: 'row'
+                        }}
+                      >
                         <InfoLabel
                           label="Source Type *"
-                          help="Manufacturer = OEM. 3rd Party = aftermarket supplier."
+                          help="Where the part comes from. Manufacturer = OEM, 3rd Party = aftermarket. Add your own types with + Create Source Type."
                         />
+                        <button
+                          type="button"
+                          className="label-add-link"
+                          onClick={() => setShowSourceTypeModal(true)}
+                        >
+                          + Create Source Type
+                        </button>
                       </label>
                       <SearchableSelect
                         name="sourceType"
@@ -866,8 +922,11 @@ const PartsInventory = () => {
                         onChange={handleInputChange}
                         required
                       >
-                        <option value="manufacturer">Manufacturer (OEM)</option>
-                        <option value="third_party">3rd Party</option>
+                        {sourceTypes.map((type) => (
+                          <option key={type.value} value={type.value}>
+                            {type.name}
+                          </option>
+                        ))}
                       </SearchableSelect>
                     </div>
                     <div className="form-group">
@@ -1307,6 +1366,13 @@ const PartsInventory = () => {
         isOpen={showSupplierModal}
         onClose={() => setShowSupplierModal(false)}
         onSupplierCreated={handleSupplierCreated}
+      />
+
+      {/* Source Type Quick-Create Modal */}
+      <SourceTypeFormModal
+        isOpen={showSourceTypeModal}
+        onClose={() => setShowSourceTypeModal(false)}
+        onSourceTypeCreated={handleSourceTypeCreated}
       />
 
       {/* Confirm Delete Modal */}

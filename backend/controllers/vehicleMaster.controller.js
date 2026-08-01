@@ -825,6 +825,26 @@ const getSuppliers = async (req, res, next) => {
   }
 };
 
+// The Supplier schema stores three canonical types. Older screens and the parts
+// quick-create modal have sent other labels for the same ideas; folding them here
+// means no client can hit a Mongoose enum rejection for a value it was shown.
+const SUPPLIER_TYPE_ALIASES = {
+  oem: 'oem',
+  manufacturer: 'oem',
+  distributor: 'distributor',
+  wholesaler: 'distributor',
+  international: 'distributor',
+  local_vendor: 'local_vendor',
+  local: 'local_vendor',
+  localvendor: 'local_vendor',
+  vendor: 'local_vendor',
+};
+
+const normalizeSupplierType = (value) => {
+  const key = String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  return SUPPLIER_TYPE_ALIASES[key] || null;
+};
+
 const createSupplier = async (req, res, next) => {
   try {
     const {
@@ -836,10 +856,14 @@ const createSupplier = async (req, res, next) => {
     if (!supplierCode || !name || !type) {
       throw new AppError('Supplier code, name and type are required', 400);
     }
+    const supplierType = normalizeSupplierType(type);
+    if (!supplierType) {
+      throw new AppError('Supplier type must be one of: OEM (Manufacturer), Distributor, Local Vendor', 400);
+    }
 
     const doc = await Supplier.create({
       supplier_code: supplierCode,
-      name, type,
+      name, type: supplierType,
       contact_person: contactPerson,
       email,
       phone: normalizedPhone,
@@ -877,11 +901,16 @@ const updateSupplier = async (req, res, next) => {
     } = req.body;
     const normalizedPhone = phone !== undefined && phone !== null && phone !== '' ? normalizePhone(phone) : null;
 
+    const supplierType = type !== undefined ? normalizeSupplierType(type) : undefined;
+    if (type !== undefined && !supplierType) {
+      throw new AppError('Supplier type must be one of: OEM (Manufacturer), Distributor, Local Vendor', 400);
+    }
+
     const doc = await Supplier.findByIdAndUpdate(
       id,
       {
         supplier_code: supplierCode,
-        name, type,
+        name, type: supplierType,
         contact_person: contactPerson,
         email,
         phone: normalizedPhone,

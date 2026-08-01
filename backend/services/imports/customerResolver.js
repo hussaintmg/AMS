@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const Customer = require('../../models/Customer.model');
 const { normalizePhone } = require('../../utils/phone.util');
 const { inferCustomerType, normalizeCustomerType } = require('./valueNormalizer');
-const { debugEvent } = require('./importDebugAudit');
+const { debugEvent, importTrace } = require('./importDebugAudit');
 
 const clean = (value) => String(value == null ? '' : value).replace(/\s+/g, ' ').trim();
 const compact = (value) => clean(value).toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -22,6 +22,10 @@ function identityCandidates(data = {}) {
     ['phone', normalizedPhone(data.phone)],
   ].filter(([, value]) => value);
 }
+
+// Identifiers that legally belong to one customer. Everything else (email, phone,
+// name) can legitimately be shared between customers.
+const STRONG_IDENTITY_FIELDS = new Set(['customerCode', 'ntn', 'cnic']);
 
 function nameCandidate(data = {}) {
   return normalizePersonName(data.customerName || data.name);
@@ -272,6 +276,19 @@ class CustomerIndex {
     }
     const ids = [...new Set(matches.map((match) => match.id))];
     if (ids.length > 1) {
+      // A tax number identifies exactly one legal entity; a phone or email is
+      // routinely shared (a company and its contact person, a family, a dealer
+      // desk). When both point somewhere, the strong identifier decides instead
+      // of the row being rejected — the weaker match is reported, not obeyed.
+      const strongMatch = matches.find((match) => STRONG_IDENTITY_FIELDS.has(match.field));
+      if (strongMatch) {
+        const overruled = matches.filter((match) => match.id !== strongMatch.id);
+        return finish({
+          customer: this.customers.get(strongMatch.id),
+          matchBy: strongMatch.field,
+          weakConflicts: overruled.map(({ field, value, id }) => ({ field, value, customerId: id })),
+        });
+      }
       return finish({
         customer: null,
         matchBy: matches.map((match) => match.field).join('/'),
@@ -292,7 +309,7 @@ class CustomerIndex {
     related = null,
     allowNameOnly = false,
   } = {}) {
-    console.log("[CUSTOMER_RESOLVE_START]", {
+    importTrace("[CUSTOMER_RESOLVE_START]", {
       sourceName: data.customerName || data.name || '',
       customerCode: data.customerCode || '',
       cnic: data.cnic || '',
@@ -305,9 +322,9 @@ class CustomerIndex {
       identityCandidates: identityCandidates(data).map(([field, value]) => ({ field, value })),
       normalizedName: nameCandidate(data),
     };
-    console.log("[CUSTOMER_QUERY]", { filter });
+    importTrace("[CUSTOMER_QUERY]", { filter });
     const direct = this.resolve(data);
-    console.log("[CUSTOMER_QUERY_RESULT]", {
+    importTrace("[CUSTOMER_QUERY_RESULT]", {
       found: Boolean(direct.customer),
       customerId: direct.customer?._id ?? null,
       existingCustomer: direct.customer || null,
@@ -422,13 +439,13 @@ class CustomerIndex {
       importSource: 'legacy_import',
       createdBy: userId,
     };
-    console.log("[CUSTOMER_CREATE_ATTEMPT]", {
+    importTrace("[CUSTOMER_CREATE_ATTEMPT]", {
       payload: document,
     });
 
     try {
       const customer = new Customer(document);
-      console.log("[CUSTOMER_BEFORE_SAVE]", {
+      importTrace("[CUSTOMER_BEFORE_SAVE]", {
         isNew: customer.isNew,
         validationError: customer.validateSync(),
         document: customer.toObject(),
@@ -443,13 +460,13 @@ class CustomerIndex {
         throw validationError;
       }
       await customer.save({ session });
-      console.log("[CUSTOMER_SAVE_SUCCESS]", {
+      importTrace("[CUSTOMER_SAVE_SUCCESS]", {
         customerId: customer._id,
       });
       let verificationQuery = Customer.findById(customer._id).lean();
       if (session) verificationQuery = verificationQuery.session(session);
       const verifiedCustomer = await verificationQuery;
-      console.log("[CUSTOMER_DB_VERIFY]", {
+      importTrace("[CUSTOMER_DB_VERIFY]", {
         existsAfterSave: Boolean(verifiedCustomer),
         verifiedCustomer,
       });

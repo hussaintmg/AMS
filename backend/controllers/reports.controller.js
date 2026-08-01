@@ -1,6 +1,5 @@
-const mongoose = require('mongoose');
 const {
-  Lead, Customer, Vehicle, Part, Quotation, Booking, SalesOrder, Invoice,
+  Lead, Customer, Vehicle, Part, SalesOrder, Invoice,
   ServiceAppointment, JobCard, Expense, Payment, Employee, Leave, Department,
 } = require('../models');
 
@@ -18,6 +17,16 @@ const dateRange = (query = {}, field = 'createdAt') => {
 };
 const idOf = (value) => value?._id || value;
 const customerName = (customer) => customer ? ([customer.firstName, customer.lastName].filter(Boolean).join(' ') || customer.companyName || '') : '';
+// Master-data refs are stored either as an embedded snapshot ({ name, code }) or
+// as a populated ref, so reports must read `.name` before falling back to the raw
+// value — otherwise the cell renders as "[object Object]".
+const labelOf = (value) => {
+  if (!value) return '';
+  if (typeof value === 'string') return value;
+  return value.name || value.title || value.displayName || '';
+};
+const joinLabels = (...values) => [...new Set(values.map(labelOf).filter(Boolean))].join(' · ');
+const userName = (user) => user ? (`${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email || '') : '';
 const withDate = (filter, field = 'createdAt') => ({ ...filter, ...dateRange({}, field) });
 const rows = (items, map) => items.map(map);
 const send = (res, data) => res.json({ success: true, data });
@@ -34,14 +43,23 @@ const getSalesPerformance = async (req, res, next) => {
     const filter = { status: { $ne: 'cancelled' }, ...dateRange(req.query, 'orderDate') };
     const orders = await SalesOrder.find(filter)
       .populate('customer', 'firstName lastName companyName email phone customerCode')
-      .populate('vehicle', 'number make model')
+      .populate('vehicle', 'vehicleCode registrationNumber chassisNumber make model variant color')
+      .populate('vehicleMake', 'name')
+      .populate('vehicleModel', 'name')
+      .populate('vehicleVariant', 'name')
       .sort({ orderDate: -1, createdAt: -1 }).limit(2000).lean();
     const data = rows(orders, (order) => ({
       id: order._id, date: order.orderDate || order.createdAt, reference: order.orderNumber,
       customer: customerName(order.customer), customer_code: order.customer?.customerCode || '',
       email: order.customer?.email || '', phone: order.customer?.phone || '',
       status: order.status || 'pending', sale_type: order.saleType || '',
-      vehicle: [order.vehicle?.number, order.vehicle?.make, order.vehicle?.model].filter(Boolean).join(' · '),
+      vehicle: joinLabels(
+        order.vehicle?.vehicleCode || order.vehicle?.registrationNumber || order.vehicle?.chassisNumber,
+        order.vehicleMake || order.vehicle?.make,
+        order.vehicleModel || order.vehicle?.model,
+        order.vehicleVariant || order.vehicle?.variant,
+      ),
+      invoice_number: order.invoiceNo || '', salesperson: order.salePerson || '',
       amount: asNumber(order.totalAmount), revenue: asNumber(order.totalAmount),
       payment: asNumber(order.paidAmount), balance: asNumber(order.balanceAmount),
       subtotal: asNumber(order.subtotal), tax_amount: asNumber(order.taxAmount), discount_amount: asNumber(order.discountAmount),
@@ -88,8 +106,23 @@ const getInventoryStockMovement = async (_req, res, next) => {
 const getPendingDeliveries = async (req, res, next) => {
   try {
     const filter = { status: { $in: ['confirmed', 'invoiced', 'processing', 'ready'] }, ...dateRange(req.query, 'orderDate') };
-    const orders = await SalesOrder.find(filter).populate('customer', 'firstName lastName companyName').sort({ deliveryDate: 1, orderDate: -1 }).limit(2000).lean();
-    send(res, rows(orders, (order) => ({ id: order._id, reference: order.orderNumber, customer: customerName(order.customer), status: order.status, date: order.deliveryDate || order.orderDate, amount: asNumber(order.totalAmount) })));
+    const orders = await SalesOrder.find(filter)
+      .populate('customer', 'firstName lastName companyName phone')
+      .populate('vehicle', 'vehicleCode registrationNumber chassisNumber make model variant')
+      .populate('vehicleMake', 'name')
+      .populate('vehicleModel', 'name')
+      .sort({ deliveryDate: 1, orderDate: -1 }).limit(2000).lean();
+    send(res, rows(orders, (order) => ({
+      id: order._id, reference: order.orderNumber, customer: customerName(order.customer),
+      phone: order.customer?.phone || '', status: order.status,
+      vehicle: joinLabels(
+        order.vehicle?.vehicleCode || order.vehicle?.registrationNumber || order.vehicle?.chassisNumber,
+        order.vehicleMake || order.vehicle?.make,
+        order.vehicleModel || order.vehicle?.model,
+      ),
+      order_date: order.orderDate || null, date: order.deliveryDate || order.orderDate,
+      amount: asNumber(order.totalAmount), balance: asNumber(order.balanceAmount),
+    })));
   } catch (error) { next(error); }
 };
 
@@ -108,6 +141,95 @@ const getCustomerReceivables = async (req, res, next) => {
   } catch (error) { next(error); }
 };
 const getReceivablesAging = getCustomerReceivables;
+
+const buildCustomerPurchaseRows = (customers, purchases, invoices, today = new Date()) => {
+  const purchasesByCustomer = new Map();
+  for (const purchase of purchases) {
+    const key = String(purchase.customer);
+    if (!purchasesByCustomer.has(key)) purchasesByCustomer.set(key, []);
+    purchasesByCustomer.get(key).push(purchase);
+  }
+
+  const invoiceTotalsByCustomer = new Map();
+  for (const invoice of invoices) {
+    const key = String(invoice.customer);
+    const totals = invoiceTotalsByCustomer.get(key) || { count: 0, outstanding: 0, overdue: 0 };
+    const outstanding = asNumber(invoice.balanceAmount ?? (invoice.totalAmount - invoice.paidAmount));
+    totals.count += 1;
+    totals.outstanding += outstanding;
+    if (invoice.dueDate && invoice.dueDate < today) totals.overdue += outstanding;
+    invoiceTotalsByCustomer.set(key, totals);
+  }
+
+  return customers.map((customer) => {
+    const customerPurchases = purchasesByCustomer.get(String(customer._id)) || [];
+    const invoiceTotals = invoiceTotalsByCustomer.get(String(customer._id)) || { count: 0, outstanding: 0, overdue: 0 };
+    const vehicleLabels = customerPurchases.map((purchase) => [
+      purchase.vehicle?.vehicleCode || purchase.vehicle?.registrationNumber || purchase.vehicle?.chassisNumber,
+      purchase.vehicleMake?.name || purchase.vehicle?.make?.name,
+      purchase.vehicleModel?.name || purchase.vehicle?.model?.name,
+      purchase.vehicleVariant?.name || purchase.vehicle?.variant?.name,
+    ].filter(Boolean).join(' · ')).filter(Boolean);
+    const purchaseBalance = customerPurchases.reduce((total, purchase) => total + asNumber(purchase.balanceAmount), 0);
+
+    return {
+      id: customer._id,
+      customerId: customer._id,
+      customer: customerName(customer),
+      customer_code: customer.customerCode || '',
+      company: customer.companyName || '',
+      email: customer.email || '',
+      phone: customer.phone || '',
+      customer_type: customer.customerType || '',
+      city: customer.city || '',
+      status: customer.isActive === false ? 'inactive' : (customer.status || 'active'),
+      registered_at: customer.createdAt,
+      purchase_count: customerPurchases.length,
+      purchase_orders: customerPurchases.map((purchase) => purchase.orderNumber).filter(Boolean).join(', '),
+      purchase_statuses: [...new Set(customerPurchases.map((purchase) => purchase.status).filter(Boolean))].join(', '),
+      purchase_types: [...new Set(customerPurchases.map((purchase) => purchase.saleType).filter(Boolean))].join(', '),
+      purchased_vehicles: [...new Set(vehicleLabels)].join(', '),
+      last_purchase_date: customerPurchases[0]?.orderDate || null,
+      total_purchased: customerPurchases.reduce((total, purchase) => total + asNumber(purchase.totalAmount), 0),
+      total_paid: customerPurchases.reduce((total, purchase) => total + asNumber(purchase.paidAmount), 0),
+      outstanding: invoiceTotals.count ? invoiceTotals.outstanding : purchaseBalance,
+      overdue_amount: invoiceTotals.overdue,
+      invoice_count: invoiceTotals.count,
+    };
+  });
+};
+
+const getCustomerPurchases = async (req, res, next) => {
+  try {
+    const purchaseFilter = {
+      customer: { $ne: null },
+      status: { $ne: 'cancelled' },
+      ...dateRange(req.query, 'orderDate'),
+    };
+    const invoiceFilter = {
+      customer: { $ne: null },
+      status: { $ne: 'cancelled' },
+      ...dateRange(req.query, 'invoiceDate'),
+    };
+    const [customers, purchases, invoices] = await Promise.all([
+      Customer.find({ deletedAt: null })
+        .select('customerCode firstName lastName companyName email phone customerType city status isActive createdAt')
+        .sort({ createdAt: -1 }).limit(5000).lean(),
+      SalesOrder.find(purchaseFilter)
+        .select('customer orderNumber orderDate status saleType totalAmount paidAmount balanceAmount vehicle vehicleMake vehicleModel vehicleVariant')
+        .populate('vehicle', 'vehicleCode registrationNumber chassisNumber make model variant')
+        .populate('vehicleMake', 'name')
+        .populate('vehicleModel', 'name')
+        .populate('vehicleVariant', 'name')
+        .sort({ orderDate: -1, createdAt: -1 }).limit(5000).lean(),
+      Invoice.find(invoiceFilter)
+        .select('customer invoiceNumber invoiceDate dueDate totalAmount paidAmount balanceAmount')
+        .limit(5000).lean(),
+    ]);
+
+    send(res, buildCustomerPurchaseRows(customers, purchases, invoices));
+  } catch (error) { next(error); }
+};
 
 const getLeadStatistics = async (req, res, next) => {
   try {
@@ -142,20 +264,26 @@ const getServiceAnalytics = async (req, res, next) => {
     const filter = { ...dateRange(req.query, 'createdAt') };
     const cards = await JobCard.find(filter)
       .populate('customer', 'firstName lastName companyName email phone customerCode')
-      .populate('vehicle', 'number make model')
+      .populate('vehicle', 'vehicleCode registrationNumber make model')
       .populate('warrantyType', 'name durationMonths')
       .populate('servicePackage', 'packageName price')
       .populate('serviceAdvisor', 'firstName lastName email')
       .populate('technician', 'firstName lastName email')
       .populate('services.laborRate', 'name rate')
+      .populate('services.serviceType', 'name')
       .sort({ createdAt: -1 }).limit(5000).lean();
     send(res, rows(cards, (card) => ({
       id: card._id, reference: card.jobCardNumber, date: card.createdAt, created_at: card.createdAt, updated_at: card.updatedAt,
       customer: customerName(card.customer), customer_code: card.customer?.customerCode || '', customer_email: card.customer?.email || '', customer_phone: card.customer?.phone || '',
-      vehicle: [card.customerVehicle?.number, card.customerVehicle?.make, card.customerVehicle?.model].filter(Boolean).join(' · '),
+      vehicle: joinLabels(
+        card.customerVehicle?.number || card.vehicle?.vehicleCode || card.vehicle?.registrationNumber,
+        card.customerVehicle?.make || card.vehicle?.make,
+        card.customerVehicle?.model || card.vehicle?.model,
+      ),
+      services: (card.services || []).map((service) => labelOf(service.serviceType) || service.description).filter(Boolean).join(', '),
       status: card.status || 'open', service_package: card.servicePackage?.packageName || '', warranty_type: card.warrantyType?.name || '',
-      service_advisor: card.serviceAdvisor ? `${card.serviceAdvisor.firstName || ''} ${card.serviceAdvisor.lastName || ''}`.trim() || card.serviceAdvisor.email : '',
-      technician: card.technician ? `${card.technician.firstName || ''} ${card.technician.lastName || ''}`.trim() || card.technician.email : '',
+      service_advisor: userName(card.serviceAdvisor),
+      technician: userName(card.technician),
       labor_rates: (card.services || []).map((service) => service.laborRate?.name).filter(Boolean).join(', '),
       labor_total: asNumber(card.laborTotal), parts_total: asNumber(card.partsTotal), discount: asNumber(card.discount),
       tax_amount: asNumber(card.taxAmount), amount: asNumber(card.totalAmount || card.grandTotal), revenue: asNumber(card.totalAmount || card.grandTotal),
@@ -166,6 +294,63 @@ const getServiceAnalytics = async (req, res, next) => {
 };
 const getServiceKpiDetail = getServiceAnalytics;
 
+// Job cards only exist once a vehicle is actually in the workshop, so a dealership
+// that books work ahead has appointments and no job cards. The service report has
+// to read both or it looks empty while the Services module is full.
+const getServiceAppointments = async (req, res, next) => {
+  try {
+    const filter = { ...dateRange(req.query, 'appointmentDate') };
+    const appointments = await ServiceAppointment.find(filter)
+      .populate('customer', 'firstName lastName companyName email phone customerCode')
+      .populate('vehicle', 'vehicleCode registrationNumber make model')
+      .populate('serviceTypeRef', 'name')
+      .populate('serviceAdvisor', 'firstName lastName email')
+      .sort({ appointmentDate: -1, createdAt: -1 }).limit(5000).lean();
+    send(res, rows(appointments, (appointment) => ({
+      id: appointment._id, reference: appointment.appointmentNumber,
+      date: appointment.appointmentDate || appointment.createdAt, time: appointment.appointmentTime || '',
+      customer: customerName(appointment.customer), customer_code: appointment.customer?.customerCode || '',
+      customer_phone: appointment.customer?.phone || '',
+      vehicle: joinLabels(
+        appointment.customerVehicle?.number || appointment.vehicle?.vehicleCode || appointment.vehicle?.registrationNumber,
+        appointment.customerVehicle?.make || appointment.vehicle?.make,
+        appointment.customerVehicle?.model || appointment.vehicle?.model,
+      ),
+      service_type: labelOf(appointment.serviceTypeRef) || labelOf(appointment.serviceType),
+      service_advisor: userName(appointment.serviceAdvisor),
+      status: appointment.status || 'scheduled',
+      estimated_duration: asNumber(appointment.estimatedDuration),
+      amount: asNumber(appointment.serviceType?.basePrice),
+      concerns: appointment.customerConcerns || '',
+      created_at: appointment.createdAt,
+    })));
+  } catch (error) { next(error); }
+};
+
+// Parts are only half of a dealership's stock — the vehicle yard is the other half,
+// and the inventory report is the only place it is reported on.
+const getVehicleStock = async (req, res, next) => {
+  try {
+    const filter = { isActive: { $ne: false }, ...dateRange(req.query, 'createdAt') };
+    const vehicles = await Vehicle.find(filter).sort({ createdAt: -1 }).limit(5000).lean();
+    send(res, rows(vehicles, (vehicle) => ({
+      id: vehicle._id, reference: vehicle.vehicleCode,
+      chassis_number: vehicle.chassisNumber || vehicle.vin || '', engine_number: vehicle.engineNumber || '',
+      registration: vehicle.registrationNumber || '',
+      make: labelOf(vehicle.make), model: labelOf(vehicle.model), variant: labelOf(vehicle.variant),
+      color: labelOf(vehicle.color), year: vehicle.year || '',
+      warehouse: labelOf(vehicle.warehouse) || vehicle.location || '',
+      status: vehicle.status || '', condition: vehicle.conditionType || '',
+      stock_out: vehicle.isStockOut === true,
+      purchase_price: asNumber(vehicle.purchasePrice), sale_price: asNumber(vehicle.salePrice),
+      stockValue: asNumber(vehicle.purchasePrice),
+      arrival_date: vehicle.arrivalDate || null,
+      dispatch_number: vehicle.dispatch?.dispatchNo || '', dispatch_date: vehicle.dispatch?.dispatchDate || null,
+      date: vehicle.createdAt,
+    })));
+  } catch (error) { next(error); }
+};
+
 const getLowStockParts = async (_req, res, next) => {
   try {
     const parts = await Part.find({ isActive: { $ne: false }, $expr: { $lte: [{ $ifNull: ['$currentStock', '$quantity'] }, { $ifNull: ['$reorderLevel', '$minStock'] }] } }).sort({ currentStock: 1 }).limit(2000).lean();
@@ -175,15 +360,34 @@ const getLowStockParts = async (_req, res, next) => {
 
 const getExpenseReport = async (req, res, next) => {
   try {
-    const expenses = await Expense.find({ isDeleted: { $ne: true }, ...dateRange(req.query, 'expenseDate') }).sort({ expenseDate: -1, createdAt: -1 }).limit(5000).lean();
-    send(res, rows(expenses, (item) => ({ id: item._id, reference: item.expenseNumber, date: item.expenseDate || item.createdAt, category: item.category, description: item.description, status: item.status, amount: asNumber(item.amount) })));
+    const expenses = await Expense.find({ isDeleted: { $ne: true }, ...dateRange(req.query, 'expenseDate') })
+      .populate('employee', 'firstName lastName employeeCode')
+      .sort({ expenseDate: -1, createdAt: -1 }).limit(5000).lean();
+    send(res, rows(expenses, (item) => ({
+      id: item._id, reference: item.expenseNumber, date: item.expenseDate || item.createdAt,
+      category: labelOf(item.category), description: item.description,
+      vendor: item.vendor || '', account: item.account || '', employee: userName(item.employee),
+      status: item.status, amount: asNumber(item.amount), created_at: item.createdAt,
+    })));
   } catch (error) { next(error); }
 };
 
 const getPaymentReport = async (req, res, next) => {
   try {
-    const payments = await Payment.find({ ...dateRange(req.query, 'paymentDate') }).populate('customer', 'firstName lastName companyName').sort({ paymentDate: -1, createdAt: -1 }).limit(5000).lean();
-    send(res, rows(payments, (item) => ({ id: item._id, reference: item.paymentNumber, date: item.paymentDate || item.createdAt, customer: customerName(item.customer), method: item.method?.name || '', status: item.status || 'posted', amount: asNumber(item.amount) })));
+    const payments = await Payment.find({ ...dateRange(req.query, 'paymentDate') })
+      .populate('customer', 'firstName lastName companyName phone customerCode')
+      .populate('methodRef', 'name')
+      .populate('invoice', 'invoiceNumber')
+      .sort({ paymentDate: -1, createdAt: -1 }).limit(5000).lean();
+    send(res, rows(payments, (item) => ({
+      id: item._id, reference: item.paymentNumber, date: item.paymentDate || item.createdAt,
+      customer: customerName(item.customer), customer_code: item.customer?.customerCode || '', phone: item.customer?.phone || '',
+      invoice: item.invoice?.invoiceNumber || '',
+      // Imported payments carry only the ref; UI-entered ones carry the snapshot.
+      method: labelOf(item.method) || labelOf(item.methodRef) || item.paymentMode || '',
+      reference_number: item.referenceNumber || '', installment: item.installmentNo ?? '',
+      status: item.status || 'posted', amount: asNumber(item.amount),
+    })));
   } catch (error) { next(error); }
 };
 
@@ -203,6 +407,6 @@ module.exports = {
   createReport, updateReport, deleteReport, getReportById, getReports, executeReport,
   getSalesPerformance, getSalesByModel, getInventoryHealth, getInventoryStockMovement,
   getInventoryStockSnapshot, getPendingDeliveries, getCustomerReceivables, getReceivablesAging,
-  getLeadStatistics, getServiceAnalytics, getServiceKpiDetail, getLowStockParts,
-  getExpenseReport, getPaymentReport, getEmployeeReport,
+  getCustomerPurchases, getLeadStatistics, getServiceAnalytics, getServiceKpiDetail, getLowStockParts, buildCustomerPurchaseRows,
+  getServiceAppointments, getVehicleStock, getExpenseReport, getPaymentReport, getEmployeeReport,
 };

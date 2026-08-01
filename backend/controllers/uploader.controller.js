@@ -13,7 +13,8 @@ const {
   importBatch,
   previewBatch,
 } = require("../services/imports/importEngine");
-const { ImportDebugAudit } = require("../services/imports/importDebugAudit");
+const { ImportDebugAudit, importTrace } = require("../services/imports/importDebugAudit");
+const searchIndex = require("../services/searchIndex.service");
 
 const clientBatchId = (value) => {
   const candidate = String(value || "").trim();
@@ -130,7 +131,7 @@ async function uploadBatch(req, res, next) {
   const mode = String(req.body?.mode || "")
     .trim()
     .toLowerCase();
-  console.log("[IMPORT_REQUEST]", {
+  importTrace("[IMPORT_REQUEST]", {
     route: req.originalUrl || req.url,
     method: req.method,
     mode,
@@ -139,11 +140,11 @@ async function uploadBatch(req, res, next) {
     commit: mode === "commit",
     fileCount: selections.length,
   });
-  console.log("[IMPORT_API_RECEIVED]", {
+  importTrace("[IMPORT_API_RECEIVED]", {
     mode,
     contentType: req.headers["content-type"] || null,
   });
-  console.log("[IMPORT_DB_CONNECTION]", {
+  importTrace("[IMPORT_DB_CONNECTION]", {
     readyState: mongoose.connection.readyState,
     host: mongoose.connection.host,
     databaseName: mongoose.connection.name,
@@ -390,29 +391,38 @@ async function uploadBatch(req, res, next) {
     }
 
     const persistedProgress = new Map();
-    const result = await importBatch(parsedFiles, {
-      mode: "commit",
-      userId,
-      onProgress: async ({ fileKey, status, progress }) => {
-        const upload = logs.get(fileKey);
-        if (!upload) return;
-        const previous = persistedProgress.get(fileKey) || 0;
-        if (
-          progress < 100 &&
-          progress - previous < 10 &&
-          status === "importing"
-        )
-          return;
-        persistedProgress.set(fileKey, progress);
-        await FileUpload.updateOne(
-          { _id: upload._id },
-          {
-            $set: { status, progress },
-          },
-        );
-      },
-      audit,
-    });
+    // Indexing every imported document one save at a time adds thousands of round
+    // trips to a batch that already runs for minutes. The index is rebuilt once
+    // the batch finishes instead.
+    searchIndex.pauseIndexing();
+    let result;
+    try {
+      result = await importBatch(parsedFiles, {
+        mode: "commit",
+        userId,
+        onProgress: async ({ fileKey, status, progress }) => {
+          const upload = logs.get(fileKey);
+          if (!upload) return;
+          const previous = persistedProgress.get(fileKey) || 0;
+          if (
+            progress < 100 &&
+            progress - previous < 10 &&
+            status === "importing"
+          )
+            return;
+          persistedProgress.set(fileKey, progress);
+          await FileUpload.updateOne(
+            { _id: upload._id },
+            {
+              $set: { status, progress },
+            },
+          );
+        },
+        audit,
+      });
+    } finally {
+      searchIndex.resumeIndexing({ actor: req.user || null });
+    }
     result.batchId = batchId;
     result.mode = "commit";
 

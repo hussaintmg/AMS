@@ -104,10 +104,12 @@ class ImportDebugAudit {
       ...safe,
     };
     this.report.runSummary.eventCount += 1;
-    const logPayload = { importDebug: true, batchId: this.report.runSummary.batchId, mode: this.report.runSummary.mode, ...event };
-    if (level === 'error') logger.error('Import debug event', logPayload);
-    else if (level === 'warn') logger.warn('Import debug event', logPayload);
-    else logger.info('Import debug event', logPayload);
+    // Every row emits several of these. Echoing them to the console buried real
+    // problems under thousands of lines per import, so only failures are printed —
+    // the full event stream still goes to the audit file this class writes.
+    if (level === 'error') {
+      logger.error('Import debug event', { importDebug: true, batchId: this.report.runSummary.batchId, mode: this.report.runSummary.mode, ...event });
+    }
 
     if (meta.excelRowNumber != null) {
       const key = `${meta.sourceFile}\u0000${meta.sheet}\u0000${meta.excelRowNumber}`;
@@ -158,15 +160,9 @@ class ImportDebugAudit {
     const temporaryPath = `${this.filePath}.tmp`;
     await fs.promises.writeFile(temporaryPath, `${JSON.stringify(this.report, null, 2)}\n`, 'utf8');
     await fs.promises.rename(temporaryPath, this.filePath);
-    logger.info('Import debug audit written', {
-      importDebug: true,
-      batchId: this.report.runSummary.batchId,
-      auditFile: this.filePath,
-      status,
-      rows: this.report.runSummary.rowCount,
-      errors: this.report.runSummary.errorCount,
-      warnings: this.report.runSummary.warningCount,
-    });
+    // No console line here: the audit file path is already returned to the client
+    // as debugAuditFile and stored on the FileUpload records. During an upload the
+    // terminal should only ever show real errors.
     return this.filePath;
   }
 }
@@ -180,15 +176,25 @@ function debugEvent(stage, payload = {}, options = {}) {
   if (audit) return audit.event(stage, payload, options);
   const safe = jsonSafe(payload);
   const logPayload = { importDebug: true, stage, ...sourceMeta(safe), ...safe };
+  // Outside a batch there is no audit file to collect these, but the same rule
+  // applies: only failures reach the console.
   if (options.level === 'error') logger.error('Import debug event', logPayload);
-  else if (options.level === 'warn') logger.warn('Import debug event', logPayload);
-  else logger.info('Import debug event', logPayload);
   return logPayload;
 }
+
+/**
+ * Per-row developer tracing ("[CUSTOMER_RESOLVE_START]", "[BOOKING_SAVE_SUCCESS]",
+ * …). These fired several times per row and turned every import into thousands of
+ * console lines that hid genuine errors. The same ground is covered by the audit
+ * file's own stages (row.parsed, customer.lookup, booking.*), so the trace is a
+ * no-op: keep the call sites, keep the console for failures only.
+ */
+function importTrace() {}
 
 module.exports = {
   ImportDebugAudit,
   currentAudit,
   debugEvent,
+  importTrace,
   jsonSafe,
 };

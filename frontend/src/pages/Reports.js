@@ -3,8 +3,6 @@ import { reportAPI } from '../services/api';
 import toast from 'react-hot-toast';
 import '../styles/userManagement.css';
 
-function getToday() { return new Date().toISOString().split('T')[0]; }
-function getMonthAgo() { const d = new Date(); d.setMonth(d.getMonth() - 1); return d.toISOString().split('T')[0]; }
 
 const TABS = [
   { key: 'leads', label: 'Leads Report', icon: '🎯' },
@@ -27,25 +25,29 @@ const TAB_CARDS = {
   customers: [
     { key: 'totalCustomers', label: 'Total Customers', default: '—' },
     { key: 'activeCustomers', label: 'Active Customers', default: '—' },
-    { key: 'totalReceivables', label: 'Total Receivables', default: '—', prefix: 'PKR ' },
-    { key: 'overdueAmount', label: 'Overdue Amount', default: '—', prefix: 'PKR ' },
+    { key: 'customersWithPurchases', label: 'Customers with Purchases', default: '—' },
+    { key: 'totalPurchased', label: 'Total Purchased', default: '—', prefix: 'PKR ' },
+    { key: 'outstandingBalance', label: 'Outstanding Balance', default: '—', prefix: 'PKR ' },
   ],
   sales: [
     { key: 'totalRevenue', label: 'Total Revenue', default: '—', prefix: 'PKR ' },
     { key: 'totalOrders', label: 'Total Orders', default: '—' },
     { key: 'pendingDeliveries', label: 'Pending Deliveries', default: '—' },
     { key: 'avgOrderValue', label: 'Avg Order Value', default: '—', prefix: 'PKR ' },
+    { key: 'receivables', label: 'Receivables', default: '—', prefix: 'PKR ' },
   ],
   inventory: [
     { key: 'totalParts', label: 'Total Parts', default: '—' },
-    { key: 'stockValue', label: 'Stock Value', default: '—', prefix: 'PKR ' },
     { key: 'lowStockItems', label: 'Low Stock Items', default: '—' },
-    { key: 'warehouses', label: 'Warehouses', default: '—' },
+    { key: 'stockValue', label: 'Parts Stock Value', default: '—', prefix: 'PKR ' },
+    { key: 'totalVehicles', label: 'Total Vehicles', default: '—' },
+    { key: 'availableVehicles', label: 'Vehicles In Stock', default: '—' },
   ],
   service: [
     { key: 'totalJobCards', label: 'Total Job Cards', default: '—' },
     { key: 'completed', label: 'Completed', default: '—' },
     { key: 'inProgress', label: 'In Progress', default: '—' },
+    { key: 'appointments', label: 'Appointments', default: '—' },
     { key: 'serviceRevenue', label: 'Revenue', default: '—', prefix: 'PKR ' },
   ],
   expenses: [
@@ -68,95 +70,203 @@ const TAB_CARDS = {
   ],
 };
 
+const errorMessage = (error) =>
+  error?.response?.data?.message || error?.message || 'Request failed';
+
+// Every tab pulls several independent datasets. One failing endpoint must not blank
+// the whole tab, so each request is settled on its own and its failure is reported
+// by name instead of collapsing into a generic "No Data Available".
+const loadAll = async (requests) => {
+  const settled = await Promise.allSettled(requests.map((request) => request.load()));
+  const data = {};
+  const errors = [];
+  settled.forEach((result, index) => {
+    const { key, label } = requests[index];
+    if (result.status === 'fulfilled') {
+      data[key] = result.value?.data?.data || [];
+    } else {
+      data[key] = [];
+      errors.push({ label, message: errorMessage(result.reason) });
+    }
+  });
+  return { data, errors };
+};
+
+// Datasets name the same figure differently (revenue vs amount), so the first key
+// that actually holds a number wins and anything unparseable counts as zero.
+const sum = (rows, ...keys) => rows.reduce((total, row) => {
+  const key = keys.find((candidate) => Number.isFinite(Number(row[candidate])));
+  return total + (key ? Number(row[key]) : 0);
+}, 0);
+
+const isThisMonth = (value) => {
+  if (!value) return false;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+  const now = new Date();
+  return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
+};
+
 const TAB_FETCHERS = {
   leads: async (params) => {
-    const res = await reportAPI.getLeadStatistics(params);
-    const rows = res.data?.data || [];
+    const { data, errors } = await loadAll([
+      { key: 'leads', label: 'Leads', load: () => reportAPI.getLeadStatistics(params) },
+    ]);
+    const rows = data.leads;
+    const converted = rows.filter((row) => row.converted || String(row.status).toLowerCase() === 'converted').length;
+    const lost = rows.filter((row) => String(row.status).toLowerCase() === 'lost').length;
     return {
-      totalLeads: rows.length || 0,
-      converted: rows.filter((r) => r.status === 'converted').length,
-      lost: rows.filter((r) => r.status === 'lost').length,
-      conversionRate: rows.length ? Math.round(rows.filter((r) => r.status === 'converted').length / rows.length * 10000) / 100 : 0,
-      _rows: rows,
+      cards: {
+        totalLeads: rows.length,
+        converted,
+        lost,
+        conversionRate: rows.length ? Math.round(converted / rows.length * 10000) / 100 : 0,
+      },
+      sections: [{ key: 'leads', title: 'Leads', rows }],
+      errors,
     };
   },
   customers: async (params) => {
-    const res = await reportAPI.getCustomerReceivables(params);
-    const rows = res.data?.data || [];
-    const totalRec = rows.reduce((s, r) => s + Number(r.outstanding || r.balance || 0), 0);
+    const { data, errors } = await loadAll([
+      { key: 'customers', label: 'Customers', load: () => reportAPI.getCustomerPurchases(params) },
+      { key: 'receivables', label: 'Receivables', load: () => reportAPI.getCustomerReceivables(params) },
+    ]);
+    const rows = data.customers;
     return {
-      totalCustomers: new Set(rows.map((r) => r.customerId || r.customer)).size || 0,
-      activeCustomers: new Set(rows.filter((r) => r.active !== false).map((r) => r.customerId || r.customer)).size,
-      totalReceivables: totalRec,
-      overdueAmount: rows.reduce((s, r) => {
-        const d = r.due_date || r.dueDate;
-        return d && new Date(d) < new Date() ? s + Number(r.outstanding || r.balance || 0) : s;
-      }, 0),
-      _rows: rows,
+      cards: {
+        totalCustomers: rows.length,
+        activeCustomers: rows.filter((row) => row.status !== 'inactive').length,
+        customersWithPurchases: rows.filter((row) => Number(row.purchase_count) > 0).length,
+        totalPurchased: sum(rows, 'total_purchased'),
+        outstandingBalance: sum(rows, 'outstanding'),
+      },
+      sections: [
+        { key: 'customers', title: 'Customers & Purchases', rows },
+        { key: 'receivables', title: 'Outstanding Invoices', rows: data.receivables },
+      ],
+      errors,
     };
   },
   sales: async (params) => {
-    const [perfRes, pendRes] = await Promise.allSettled([
-      reportAPI.getSalesPerformance(params),
-      reportAPI.getPendingDeliveries(params),
+    const { data, errors } = await loadAll([
+      { key: 'orders', label: 'Sales Orders', load: () => reportAPI.getSalesPerformance(params) },
+      { key: 'pending', label: 'Pending Deliveries', load: () => reportAPI.getPendingDeliveries(params) },
+      { key: 'receivables', label: 'Receivables', load: () => reportAPI.getCustomerReceivables(params) },
     ]);
-    const perfRows = perfRes.status === 'fulfilled' ? perfRes.value.data?.data || [] : [];
-    const pendRows = pendRes.status === 'fulfilled' ? pendRes.value.data?.data || [] : [];
-    const rev = perfRows.reduce((s, r) => s + Number(r.revenue || r.total || r.amount || 0), 0);
+    const revenue = sum(data.orders, 'revenue', 'amount');
     return {
-      totalRevenue: rev,
-      totalOrders: perfRows.length || 0,
-      pendingDeliveries: pendRows.length || 0,
-      avgOrderValue: perfRows.length ? Math.round(rev / perfRows.length) : 0,
-      _rows: [...perfRows, ...pendRows],
+      cards: {
+        totalRevenue: revenue,
+        totalOrders: data.orders.length,
+        pendingDeliveries: data.pending.length,
+        avgOrderValue: data.orders.length ? Math.round(revenue / data.orders.length) : 0,
+        receivables: sum(data.receivables, 'outstanding'),
+      },
+      sections: [
+        { key: 'orders', title: 'Sales Orders', rows: data.orders },
+        { key: 'pending', title: 'Pending Deliveries', rows: data.pending },
+        { key: 'receivables', title: 'Receivables', rows: data.receivables },
+      ],
+      errors,
     };
   },
   inventory: async (params) => {
-    const [healthRes, lowStockRes] = await Promise.allSettled([
-      reportAPI.getInventoryHealth(params),
-      reportAPI.getLowStockParts(params),
+    const { data, errors } = await loadAll([
+      { key: 'parts', label: 'Parts Stock', load: () => reportAPI.getInventoryHealth(params) },
+      { key: 'vehicles', label: 'Vehicle Stock', load: () => reportAPI.getVehicleStock(params) },
     ]);
-    const healthRows = healthRes.status === 'fulfilled' ? healthRes.value.data?.data || [] : [];
-    const lowRows = lowStockRes.status === 'fulfilled' ? lowStockRes.value.data?.data || [] : [];
-    const val = healthRows.reduce((s, r) => s + Number(r.stockValue || r.total_value || r.value || 0), 0);
-    const wh = new Set(healthRows.map((r) => r.warehouse || r.warehouse_name).filter(Boolean));
     return {
-      totalParts: healthRows.length || 0,
-      stockValue: val,
-      lowStockItems: lowRows.length || 0,
-      warehouses: wh.size || 0,
-      _rows: [...healthRows, ...lowRows],
+      cards: {
+        totalParts: data.parts.length,
+        lowStockItems: data.parts.filter((row) => row.status === 'low').length,
+        stockValue: sum(data.parts, 'stockValue'),
+        totalVehicles: data.vehicles.length,
+        availableVehicles: data.vehicles.filter((row) => !row.stock_out).length,
+      },
+      sections: [
+        { key: 'parts', title: 'Parts Stock', rows: data.parts },
+        { key: 'vehicles', title: 'Vehicle Stock', rows: data.vehicles },
+      ],
+      errors,
     };
   },
   service: async (params) => {
-    const res = await reportAPI.getServiceAnalytics(params);
-    const rows = res.data?.data || [];
-    const completed = rows.filter((r) => r.status === 'completed').length;
-    const inProgress = rows.filter((r) => r.status === 'in_progress').length;
-    const rev = rows.reduce((s, r) => s + Number(r.revenue || r.total || r.amount || 0), 0);
+    const { data, errors } = await loadAll([
+      { key: 'jobCards', label: 'Job Cards', load: () => reportAPI.getServiceAnalytics(params) },
+      { key: 'appointments', label: 'Service Appointments', load: () => reportAPI.getServiceAppointments(params) },
+    ]);
     return {
-      totalJobCards: rows.length || 0,
-      completed,
-      inProgress,
-      serviceRevenue: rev,
-      _rows: rows,
+      cards: {
+        totalJobCards: data.jobCards.length,
+        completed: data.jobCards.filter((row) => ['completed', 'delivered'].includes(row.status)).length,
+        inProgress: data.jobCards.filter((row) => ['in_progress', 'open', 'pending'].includes(row.status)).length,
+        appointments: data.appointments.length,
+        serviceRevenue: sum(data.jobCards, 'revenue', 'amount'),
+      },
+      sections: [
+        { key: 'jobCards', title: 'Job Cards', rows: data.jobCards },
+        { key: 'appointments', title: 'Service Appointments', rows: data.appointments },
+      ],
+      errors,
     };
   },
   expenses: async (params) => {
-    const res = await reportAPI.getExpenses(params); const rows = res.data?.data || [];
-    const month = new Date().getMonth();
-    return { totalExpenses: rows.reduce((s, r) => s + Number(r.amount || 0), 0), pendingExpenses: rows.filter((r) => ['draft', 'submitted'].includes(r.status)).length, approvedExpenses: rows.filter((r) => ['approved', 'posted'].includes(r.status)).length, monthExpenses: rows.filter((r) => r.date && new Date(r.date).getMonth() === month).reduce((s, r) => s + Number(r.amount || 0), 0), _rows: rows };
+    const { data, errors } = await loadAll([
+      { key: 'expenses', label: 'Expenses', load: () => reportAPI.getExpenses(params) },
+    ]);
+    const rows = data.expenses;
+    return {
+      cards: {
+        totalExpenses: sum(rows, 'amount'),
+        pendingExpenses: rows.filter((row) => ['draft', 'submitted'].includes(row.status)).length,
+        approvedExpenses: rows.filter((row) => ['approved', 'posted'].includes(row.status)).length,
+        monthExpenses: rows.filter((row) => isThisMonth(row.date)).reduce((total, row) => total + Number(row.amount || 0), 0),
+      },
+      sections: [{ key: 'expenses', title: 'Expenses', rows }],
+      errors,
+    };
   },
   payments: async (params) => {
-    const res = await reportAPI.getPayments(params); const rows = res.data?.data || [];
-    const month = new Date().getMonth();
-    return { totalReceived: rows.reduce((s, r) => s + Number(r.amount || 0), 0), pendingPayments: rows.filter((r) => r.status === 'pending').length, monthPayments: rows.filter((r) => r.date && new Date(r.date).getMonth() === month).reduce((s, r) => s + Number(r.amount || 0), 0), paymentMethods: new Set(rows.map((r) => r.method).filter(Boolean)).size, _rows: rows };
+    const { data, errors } = await loadAll([
+      { key: 'payments', label: 'Payments', load: () => reportAPI.getPayments(params) },
+    ]);
+    const rows = data.payments;
+    return {
+      cards: {
+        totalReceived: sum(rows, 'amount'),
+        pendingPayments: rows.filter((row) => ['pending', 'draft'].includes(row.status)).length,
+        monthPayments: rows.filter((row) => isThisMonth(row.date)).reduce((total, row) => total + Number(row.amount || 0), 0),
+        paymentMethods: new Set(rows.map((row) => row.method).filter(Boolean)).size,
+      },
+      sections: [{ key: 'payments', title: 'Payments', rows }],
+      errors,
+    };
   },
   employee: async (params) => {
-    const res = await reportAPI.getEmployees(params); const rows = res.data?.data || [];
-    return { totalEmployees: rows.length, activeEmployees: rows.filter((r) => r.status === 'active').length, onLeave: rows.filter((r) => r.onLeave).length, departments: new Set(rows.map((r) => r.department).filter(Boolean)).size, _rows: rows };
+    const { data, errors } = await loadAll([
+      { key: 'employees', label: 'Employees', load: () => reportAPI.getEmployees(params) },
+    ]);
+    const rows = data.employees;
+    return {
+      cards: {
+        totalEmployees: rows.length,
+        activeEmployees: rows.filter((row) => row.status === 'active').length,
+        onLeave: rows.filter((row) => row.onLeave).length,
+        departments: rows[0]?.departments ?? new Set(rows.map((row) => row.department).filter(Boolean)).size,
+      },
+      sections: [{ key: 'employees', title: 'Employees', rows }],
+      errors,
+    };
   },
 };
+
+const HIDDEN_COLUMNS = new Set(['id', '_id', 'customerId', 'onLeave', 'departments', 'invoice_id']);
+const MONEY_COLUMNS = new Set([
+  'amount', 'revenue', 'payment', 'balance', 'outstanding', 'stockValue', 'totalAmount', 'paidAmount',
+  'balanceAmount', 'total_purchased', 'total_paid', 'overdue_amount', 'paid', 'subtotal', 'discount',
+]);
+const isMoneyColumn = (key) => MONEY_COLUMNS.has(key) || /(_price|_amount|_total|_value)$/.test(key);
+const isDateColumn = (key) => /date/i.test(key) || /_at$/.test(key);
 
 function formatNum(n) {
   if (n === null || n === undefined || n === '—') return '—';
@@ -164,45 +274,95 @@ function formatNum(n) {
   return isNaN(num) ? '—' : num.toLocaleString();
 }
 
-function EmptyState({ tabKey }) {
+function EmptyState({ message }) {
   return (
     <div className="report-empty-state">
       <div className="report-empty-icon">📊</div>
       <h3>No Data Available</h3>
-      <p>
-        No records found for the selected date range. Try adjusting the filters or add some data first.
-      </p>
+      <p>{message || 'No records found for the selected date range. Try adjusting the filters or add some data first.'}</p>
+    </div>
+  );
+}
+
+const columnLabel = (key) => key.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase());
+
+const columnsOf = (rows) => (rows.length
+  ? Array.from(new Set(rows.flatMap((row) => Object.keys(row)))).filter((key) => !HIDDEN_COLUMNS.has(key))
+  : []);
+
+const displayCell = (key, value) => {
+  if (value === null || value === undefined || value === '') return '—';
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+  if (Array.isArray(value)) return value.filter((item) => item !== null && item !== undefined && item !== '').join(', ');
+  if (typeof value === 'object') {
+    if (value.name || value.label || value.title) return value.name || value.label || value.title;
+    return JSON.stringify(value).replace(/["{}]/g, '').replace(/,/g, ', ');
+  }
+  if (isMoneyColumn(key)) return `PKR ${Number(value || 0).toLocaleString()}`;
+  if (isDateColumn(key)) {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString();
+  }
+  return String(value);
+};
+
+function ReportSection({ title, rows }) {
+  const columns = columnsOf(rows);
+  return (
+    <div className="report-section">
+      <div className="report-section-header">
+        <h3>{title}</h3>
+        <span className="report-section-count">{rows.length} {rows.length === 1 ? 'record' : 'records'}</span>
+      </div>
+      {rows.length ? (
+        <div className="report-table-wrap">
+          <table className="report-table">
+            <thead><tr>{columns.map((key) => <th key={key}>{columnLabel(key)}</th>)}</tr></thead>
+            {/* Reports join across tables, so two rows can legitimately carry the
+                same row.id (one sale, two invoice lines). Pairing id with the index
+                keeps every key unique — a duplicate key silently drops rows. */}
+            <tbody>
+              {rows.map((row, index) => (
+                <tr key={`${row.id ?? 'row'}-${index}`}>
+                  {columns.map((key) => <td key={key}>{displayCell(key, row[key])}</td>)}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="report-section-empty">No records found for this date range.</div>
+      )}
     </div>
   );
 }
 
 function Reports() {
   const [activeTab, setActiveTab] = useState('leads');
-  const [dateFrom, setDateFrom] = useState(getMonthAgo);
-  const [dateTo, setDateTo] = useState(getToday);
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [loading, setLoading] = useState(false);
-  const [cardData, setCardData] = useState(null);
+  const [report, setReport] = useState(null);
   const [error, setError] = useState(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
-    setCardData(null);
+    setReport(null);
     try {
       const params = {};
       if (dateFrom) params.startDate = dateFrom;
       if (dateTo) params.endDate = dateTo;
       const fetcher = TAB_FETCHERS[activeTab];
       if (!fetcher) {
-        setCardData(null);
+        setReport(null);
         return;
       }
-      const result = await fetcher(params);
-      setCardData(result);
+      setReport(await fetcher(params));
     } catch (err) {
       console.error('Report fetch failed:', err);
-      setError(err.message || 'Failed to load report data');
-      setCardData(null);
+      setError(errorMessage(err) || 'Failed to load report data');
+      setReport(null);
     } finally {
       setLoading(false);
     }
@@ -210,38 +370,33 @@ function Reports() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  const sections = report?.sections || [];
+  const populatedSections = sections.filter((section) => section.rows.length > 0);
+
   const handleExport = (format) => {
-    const data = cardData?._rows || [];
-    if (!data.length) { toast.error('There is no report data to export.'); return; }
     if (format === 'pdf') { window.print(); return; }
-    const columns = Object.keys(data[0]).filter((key) => key !== 'id');
-    const csv = [columns.join(','), ...data.map((row) => columns.map((key) => `"${String(row[key] ?? '').replace(/"/g, '""')}"`).join(','))].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob); const link = document.createElement('a');
-    link.href = url; link.download = `${activeTab}-report.${format === 'xlsx' ? 'csv' : 'csv'}`; link.click(); URL.revokeObjectURL(url);
+    if (!populatedSections.length) { toast.error('There is no report data to export.'); return; }
+    const escape = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+    // Each section keeps its own header row: the datasets have different shapes,
+    // so a single flat sheet would leave most cells empty.
+    const lines = [];
+    populatedSections.forEach((section, index) => {
+      if (index > 0) lines.push('');
+      const columns = columnsOf(section.rows);
+      lines.push(escape(section.title));
+      lines.push(columns.map((key) => escape(columnLabel(key))).join(','));
+      section.rows.forEach((row) => lines.push(columns.map((key) => escape(row[key])).join(',')));
+    });
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url; link.download = `${activeTab}-report.csv`; link.click(); URL.revokeObjectURL(url);
     toast.success(`${format.toUpperCase()} export downloaded.`);
   };
 
-  const reportRows = cardData?._rows || [];
-  const reportColumns = reportRows.length ? Array.from(new Set(reportRows.flatMap((row) => Object.keys(row))))
-    .filter((key) => key !== 'id' && key !== 'onLeave' && key !== '_id') : [];
-  const columnLabel = (key) => key.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase());
-  const displayCell = (key, value) => {
-    if (value === null || value === undefined || value === '') return '—';
-    if (Array.isArray(value)) return value.filter((item) => item !== null && item !== undefined && item !== '').join(', ');
-    if (typeof value === 'object') {
-      if (value.name || value.label || value.title) return value.name || value.label || value.title;
-      return JSON.stringify(value).replace(/["{}]/g, '').replace(/,/g, ', ');
-    }
-    if (['amount', 'revenue', 'payment', 'balance', 'outstanding', 'stockValue', 'totalAmount', 'paidAmount', 'balanceAmount'].includes(key)) return `PKR ${Number(value || 0).toLocaleString()}`;
-    if (/date/i.test(key)) {
-      const date = new Date(value);
-      return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString();
-    }
-    return String(value);
-  };
-
   const cards = TAB_CARDS[activeTab] || [];
+  const cardValues = report?.cards || {};
+  const failures = report?.errors || [];
 
   return (
     <div className="user-management-page">
@@ -282,6 +437,13 @@ function Reports() {
         @keyframes spin { to { transform: rotate(360deg); } }
         @keyframes pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
         .report-error { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 1rem; color: #991b1b; text-align: center; margin-bottom: 1rem; }
+        .report-warning { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 0.75rem 1rem; color: #92400e; margin-bottom: 1rem; font-size: 0.85rem; }
+        .report-warning ul { margin: 0.35rem 0 0; padding-left: 1.1rem; }
+        .report-sections { display: flex; flex-direction: column; gap: 1.5rem; }
+        .report-section-header { display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; margin-bottom: 0.5rem; }
+        .report-section-header h3 { margin: 0; font-size: 0.98rem; color: #0f172a; }
+        .report-section-count { font-size: 0.78rem; color: #64748b; white-space: nowrap; }
+        .report-section-empty { border: 1px dashed #e2e8f0; border-radius: 10px; padding: 1.25rem; text-align: center; color: #94a3b8; font-size: 0.85rem; background: #fff; }
         .report-table-wrap { overflow-x: auto; border: 1px solid #e2e8f0; border-radius: 10px; background: #fff; }
         .report-table { width: 100%; min-width: 760px; border-collapse: collapse; font-size: 0.82rem; }
         .report-table th { padding: 0.75rem; text-align: left; background: #f8fafc; color: #475569; font-weight: 700; white-space: nowrap; }
@@ -347,6 +509,17 @@ function Reports() {
 
         {error && <div className="report-error">{error}</div>}
 
+        {failures.length > 0 && (
+          <div className="report-warning">
+            Some data could not be loaded:
+            <ul>
+              {failures.map((failure) => (
+                <li key={failure.label}><strong>{failure.label}</strong> — {failure.message}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {loading ? (
           <div className="report-cards-grid">
             {cards.map((card) => (
@@ -356,34 +529,30 @@ function Reports() {
               </div>
             ))}
           </div>
-        ) : cardData ? (
+        ) : report ? (
           <>
             <div className="report-cards-grid">
               {cards.map((card) => (
                 <div key={card.key} className="report-card">
                   <div className="report-card-label">{card.label}</div>
                   <div className="report-card-value">
-                    {card.prefix || ''}{formatNum(cardData[card.key])}{card.suffix || ''}
+                    {card.prefix || ''}{formatNum(cardValues[card.key])}{card.suffix || ''}
                   </div>
                 </div>
               ))}
             </div>
-            {reportRows.length > 0 ? (
-              <div className="report-table-wrap">
-                <table className="report-table">
-                  <thead><tr>{reportColumns.map((key) => <th key={key}>{columnLabel(key)}</th>)}</tr></thead>
-                  {/* Reports join across tables, so two rows can legitimately carry the
-                      same row.id (one sale, two invoice lines). Pairing id with the index
-                      keeps every key unique — a duplicate key silently drops rows. */}
-                  <tbody>{reportRows.map((row, index) => <tr key={`${row.id ?? 'row'}-${index}`}>{reportColumns.map((key) => <td key={key}>{displayCell(key, row[key])}</td>)}</tr>)}</tbody>
-                </table>
+            {populatedSections.length > 0 ? (
+              <div className="report-sections">
+                {sections.map((section) => (
+                  <ReportSection key={section.key} title={section.title} rows={section.rows} />
+                ))}
               </div>
             ) : (
-              <EmptyState tabKey={activeTab} />
+              <EmptyState />
             )}
           </>
         ) : (
-          <EmptyState tabKey={activeTab} />
+          <EmptyState />
         )}
       </div>
     </div>

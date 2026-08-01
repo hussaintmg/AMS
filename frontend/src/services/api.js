@@ -288,7 +288,11 @@ export const partsAPI = {
     getStats: () => api.get('/parts/stats'),
     getLowStock: () => api.get('/parts/low-stock'),
     getCategories: () => api.get('/parts/categories/list'),
-    getSuppliers: () => api.get('/parts/suppliers/list')
+    getSuppliers: () => api.get('/parts/suppliers/list'),
+    getSourceTypes: () => api.get('/parts/source-types/list'),
+    createSourceType: (data) => api.post('/parts/source-types', data),
+    updateSourceType: (id, data) => api.put(`/parts/source-types/${id}`, data),
+    deleteSourceType: (id) => api.delete(`/parts/source-types/${id}`)
 };
 
 // Warehouse Management
@@ -488,10 +492,13 @@ export const reportAPI = {
     getInventoryStockSnapshot: (params) => api.get('/reports/inventory-stock-snapshot', { params }),
     getPendingDeliveries: (params) => api.get('/reports/pending-deliveries', { params }),
     getCustomerReceivables: (params) => api.get('/reports/customer-receivables', { params }),
+    getCustomerPurchases: (params) => api.get('/reports/customer-purchases', { params }),
     getReceivablesAging: (params) => api.get('/reports/receivables-aging', { params }),
     getLeadStatistics: (params) => api.get('/reports/lead-statistics', { params }),
     getServiceAnalytics: (params) => api.get('/reports/service-analytics', { params }),
     getServiceKpiDetail: (params) => api.get('/reports/service-kpi-detail', { params }),
+    getServiceAppointments: (params) => api.get('/reports/service-appointments', { params }),
+    getVehicleStock: (params) => api.get('/reports/vehicle-stock', { params }),
     getLowStockParts: (params) => api.get('/reports/low-stock-parts', { params }),
     getExpenses: (params) => api.get('/reports/expenses', { params }),
     getPayments: (params) => api.get('/reports/payments', { params }),

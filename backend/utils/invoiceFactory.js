@@ -7,6 +7,7 @@ const SalesOrder = require('../models/SalesOrder.model');
 const Invoice = require('../models/Invoice.model');
 const { nextDocNumber } = require('./docNumber');
 const { recordCustomerActivity } = require('./customerSync');
+const { currentAudit } = require('../services/imports/importDebugAudit');
 const logger = require('./logger');
 
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
@@ -122,7 +123,11 @@ async function createInvoiceForOrder(order, {
     session,
   });
 
-  logger.info(`Invoice ${invoiceNumber} generated for sales order ${order.orderNumber}`);
+  // One line per invoice is useful for a single sale and unreadable for a 1,300-row
+  // import, where the batch result already reports how many invoices were created.
+  if (!currentAudit()) {
+    logger.info(`Invoice ${invoiceNumber} generated for sales order ${order.orderNumber}`);
+  }
   return { invoice, created: true };
 }
 

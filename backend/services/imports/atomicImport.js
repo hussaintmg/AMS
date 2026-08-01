@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const logger = require('../../utils/logger');
+const { importTrace } = require('./importDebugAudit');
 
 class MutationJournal {
   constructor() {
@@ -40,15 +41,15 @@ async function runAtomicRow(work, { useTransactions = false } = {}) {
   const journal = new MutationJournal();
   if (useTransactions) {
     const session = await mongoose.startSession();
-    console.log("[TRANSACTION_START]", {
+    importTrace("[TRANSACTION_START]", {
       sessionId: session.id,
     });
     try {
       session.startTransaction();
       const result = await work({ session, journal });
-      console.log("[TRANSACTION_COMMIT_ATTEMPT]");
+      importTrace("[TRANSACTION_COMMIT_ATTEMPT]");
       await session.commitTransaction();
-      console.log("[TRANSACTION_COMMIT_SUCCESS]");
+      importTrace("[TRANSACTION_COMMIT_SUCCESS]");
       return result;
     } catch (error) {
       console.error("[TRANSACTION_ABORT]", {
@@ -62,7 +63,7 @@ async function runAtomicRow(work, { useTransactions = false } = {}) {
     }
   }
 
-  console.log("[TRANSACTION_NOT_USED]", {
+  importTrace("[TRANSACTION_NOT_USED]", {
     mode: "compensating_rollback",
   });
   try {
