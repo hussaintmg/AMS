@@ -1,9 +1,16 @@
 const express = require('express');
 const router = express.Router();
 const controller = require('../controllers/customer.controller');
-const { authenticate } = require('../middleware/auth');
+const { authenticate, authorizeAction } = require('../middleware/auth');
 
+
+// Page/action guards: a role without the Customers page must not be able to
+// reach customer data by calling the API directly.
 const requireAuth = [authenticate];
+const canView = [authenticate, authorizeAction('customers', 'view')];
+const canCreate = [authenticate, authorizeAction('customers', 'create')];
+const canEdit = [authenticate, authorizeAction('customers', 'edit')];
+const canDelete = [authenticate, authorizeAction('customers', 'delete')];
 
 /**
  * @swagger
@@ -229,15 +236,15 @@ const requireAuth = [authenticate];
  *       500: { description: Server error }
  */
 
-router.get('/stats', requireAuth, controller.getCustomerStats);
-router.get('/cities', requireAuth, controller.getCustomerCities);
-router.get('/all', requireAuth, controller.getAllForDropdown);
-router.get('/meta', requireAuth, controller.getCustomerMeta);
-router.get('/', requireAuth, controller.getCustomers);
-router.post('/', requireAuth, controller.createCustomer);
-router.get('/:id', requireAuth, controller.getCustomerById);
-router.put('/:id', requireAuth, controller.updateCustomer);
-router.delete('/:id', requireAuth, controller.deleteCustomer);
-router.patch('/:id/status', requireAuth, controller.toggleCustomerStatus);
+router.get('/stats', canView, controller.getCustomerStats);
+router.get('/cities', canView, controller.getCustomerCities);
+router.get('/all', canView, controller.getAllForDropdown);
+router.get('/meta', canView, controller.getCustomerMeta);
+router.get('/', canView, controller.getCustomers);
+router.post('/', canCreate, controller.createCustomer);
+router.get('/:id', canView, controller.getCustomerById);
+router.put('/:id', canEdit, controller.updateCustomer);
+router.delete('/:id', canDelete, controller.deleteCustomer);
+router.patch('/:id/status', canEdit, controller.toggleCustomerStatus);
 
 module.exports = router;

@@ -5,6 +5,7 @@ const pages = [
   { key: 'vehicles', label: 'Vehicles', path: '/vehicles', module: 'inventory', icon: 'Car', group: 'Inventory', isCore: false, isActive: true },
   { key: 'vehicle_master', label: 'Vehicle Master Data', path: '/vehicle-master', module: 'vehicle-master', icon: 'CarFront', group: 'Master Data', isCore: false, isActive: true },
   { key: 'parts', label: 'Parts Inventory', path: '/parts', module: 'parts', icon: 'Cog', group: 'Inventory', isCore: false, isActive: true },
+  { key: 'barcode_scan', label: 'Barcode Scan', path: '/barcode-scan', module: 'barcode-scan', icon: 'ScanLine', group: 'Inventory', isCore: false, isActive: true },
   { key: 'warehouses', label: 'Warehouse Management', path: '/warehouses', module: 'warehouses', icon: 'Warehouse', group: 'Master Data', isCore: false, isActive: true },
   { key: 'services', label: 'Services', path: '/service/appointments', module: 'service', icon: 'Wrench', group: 'Service', isCore: false, isActive: true },
   { key: 'service_master', label: 'Service Master Data', path: '/service-master', module: 'service-master', icon: 'Settings', group: 'Master Data', isCore: false, isActive: true },

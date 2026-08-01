@@ -5,33 +5,42 @@
  * hussaintmerng@gmail.com | +92 319 1634446
  * AMS ERP
  * Date: 2026-01-06
+ *
+ * Every route is guarded by the role's `parts` page permission and the specific
+ * action it performs, so a role that was never granted the Parts page cannot
+ * reach parts data by calling the API directly.
  */
 
 const express = require('express');
 const router = express.Router();
-const { authenticate } = require('../middleware/auth');
+const { authenticate, authorizeAction } = require('../middleware/auth');
 const partsController = require('../controllers/partsInventory.controller');
 
+const canView = authorizeAction('parts', 'view');
+const canCreate = authorizeAction('parts', 'create');
+const canEdit = authorizeAction('parts', 'edit');
+const canDelete = authorizeAction('parts', 'delete');
+
 // Reference data routes (must come before /:id routes)
-router.get('/stats', authenticate, partsController.getPartStats);
-router.get('/low-stock', authenticate, partsController.getLowStockParts);
-router.get('/categories/list', authenticate, partsController.getCategories);
-router.get('/suppliers/list', authenticate, partsController.getSuppliers);
+router.get('/stats', authenticate, canView, partsController.getPartStats);
+router.get('/low-stock', authenticate, canView, partsController.getLowStockParts);
+router.get('/categories/list', authenticate, canView, partsController.getCategories);
+router.get('/suppliers/list', authenticate, canView, partsController.getSuppliers);
 
 // Source types (Manufacturer / 3rd Party / dealer-defined) — client managed
-router.get('/source-types/list', authenticate, partsController.getSourceTypes);
-router.post('/source-types', authenticate, partsController.createSourceType);
-router.put('/source-types/:id', authenticate, partsController.updateSourceType);
-router.delete('/source-types/:id', authenticate, partsController.deleteSourceType);
+router.get('/source-types/list', authenticate, canView, partsController.getSourceTypes);
+router.post('/source-types', authenticate, canCreate, partsController.createSourceType);
+router.put('/source-types/:id', authenticate, canEdit, partsController.updateSourceType);
+router.delete('/source-types/:id', authenticate, canDelete, partsController.deleteSourceType);
 
 // CRUD routes
-router.get('/', authenticate, partsController.getAllParts);
-router.get('/:id', authenticate, partsController.getPartById);
-router.post('/', authenticate, partsController.createPart);
-router.put('/:id', authenticate, partsController.updatePart);
-router.delete('/:id', authenticate, partsController.deletePart);
+router.get('/', authenticate, canView, partsController.getAllParts);
+router.get('/:id', authenticate, canView, partsController.getPartById);
+router.post('/', authenticate, canCreate, partsController.createPart);
+router.put('/:id', authenticate, canEdit, partsController.updatePart);
+router.delete('/:id', authenticate, canDelete, partsController.deletePart);
 
-// Stock adjustment
-router.post('/:id/adjust', authenticate, partsController.adjustStock);
+// Stock adjustment counts as editing the part record.
+router.post('/:id/adjust', authenticate, canEdit, partsController.adjustStock);
 
 module.exports = router;

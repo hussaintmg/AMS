@@ -731,6 +731,7 @@ function Quotations() {
                 <Modal
                     title={modalMode === 'view' ? `Quotation ${selectedItem?.quotation_number || ''}` : `${modalMode === 'create' ? 'Create' : 'Edit'} Quotation`}
                     onClose={closeModal}
+                    size={modalMode === 'view' ? 'medium' : 'large'}
                     overlayClassName={modalMode === 'view' ? 'sales-print-modal' : undefined}
                 >
                     {modalMode === 'view' ? (
@@ -1269,6 +1270,7 @@ function Bookings() {
                     <Modal
                         title={modalMode === 'view' ? `Booking ${selectedItem?.booking_number || ''}` : `${modalMode === 'create' ? 'Create' : 'Edit'} Booking`}
                         onClose={closeModal}
+                        size={modalMode === 'view' ? 'medium' : 'large'}
                         overlayClassName={modalMode === 'view' ? 'sales-print-modal' : undefined}
                     >
                         {modalMode === 'view' ? (
@@ -1440,8 +1442,10 @@ function SalesOrders() {
     const [parts, setParts] = useState([]);
     const [paymentMethods, setPaymentMethods] = useState([]);
 
+    // A sales order may sell any mix of vehicles and parts in one document.
+    const [orderLines, setOrderLines] = useState([]);
     const [formData, setFormData] = useState({
-        customerId: '', saleType: 'vehicle', vehicleId: '', partId: '', partQuantity: '1',
+        customerId: '',
         vehiclePrice: '', accessoriesTotal: '0',
         discountAmount: '0', taxAmount: '0', registrationCharges: '0', insuranceCharges: '0',
         otherCharges: '0', paidAmount: '0', paymentMode: '', financeCompany: '',
@@ -1572,12 +1576,19 @@ function SalesOrders() {
         setModalMode(mode);
         setSelectedItem(item);
         if (item) {
+            setOrderLines((item.line_items || []).map((line, index) => ({
+                key: `saved-${index}`,
+                itemType: line.item_type === 'part' ? 'part' : 'vehicle',
+                vehicleId: line.vehicle_id || '',
+                partId: line.part_id || '',
+                quantity: line.quantity || 1,
+                unitPrice: line.unit_price ?? '',
+                discountAmount: line.discount_amount || 0,
+                taxAmount: line.tax_amount || 0,
+                description: line.description || '',
+            })));
             setFormData({
                 customerId: item.customer_id || '',
-                saleType: item.sale_type || 'vehicle',
-                vehicleId: item.vehicle_id || '',
-                partId: item.part_id || '',
-                partQuantity: item.part_quantity || '1',
                 vehiclePrice: item.vehicle_price || '',
                 accessoriesTotal: item.accessories_total || '0',
                 discountAmount: item.discount_amount || '0',
@@ -1595,8 +1606,9 @@ function SalesOrders() {
                 notes: item.notes || ''
             });
         } else {
+            setOrderLines([]);
             setFormData({
-                customerId: '', saleType: 'vehicle', vehicleId: '', partId: '', partQuantity: '1',
+                customerId: '',
                 vehiclePrice: '', accessoriesTotal: '0',
                 discountAmount: '0', taxAmount: '0', registrationCharges: '0', insuranceCharges: '0',
                 otherCharges: '0', paidAmount: '0', paymentMode: '', financeCompany: '',
@@ -1619,63 +1631,59 @@ function SalesOrders() {
     const handleChange = (e) => {
         const { name, value } = e.target;
 
-        if (name === 'saleType') {
-            setFormData(prev => ({ ...prev, saleType: value, vehicleId: '', partId: '', vehiclePrice: '' }));
-            return;
-        }
-
-        // Auto-fill price for vehicle selection
-        if (name === 'vehicleId') {
-            const vehicle = vehicles.find(v => String(v.id) === String(value));
-            if (vehicle) {
-                setFormData(prev => ({
-                    ...prev,
-                    [name]: value,
-                    vehiclePrice: vehicle.selling_price ? vehicle.selling_price.toString() : ''
-                }));
-                return;
-            }
-        }
-        // Auto-fill price for part selection
-        if (name === 'partId') {
-            const part = parts.find(p => String(p.id) === String(value));
-            if (part) {
-                const qty = parseInt(formData.partQuantity) || 1;
-                setFormData(prev => ({
-                    ...prev,
-                    [name]: value,
-                    vehiclePrice: (part.selling_price * qty).toString()
-                }));
-                return;
-            }
-        }
-        if (name === 'partQuantity') {
-            const qty = parseInt(value) || 0;
-            const part = parts.find(p => String(p.id) === String(formData.partId));
-            if (part) {
-                setFormData(prev => ({
-                    ...prev,
-                    [name]: value,
-                    vehiclePrice: (part.selling_price * qty).toString()
-                }));
-                return;
-            }
-        }
         setFormData({ ...formData, [name]: value });
     };
+
+    // Products drive the order subtotal; the editor keeps prices in step.
+    const orderSubtotal = orderLines.reduce(
+        (sum, line) => sum + (Number(line.unitPrice) || 0) * (Number(line.quantity) || 1)
+            - (Number(line.discountAmount) || 0) + (Number(line.taxAmount) || 0),
+        0,
+    );
+    // Handing over more than the total is allowed at the counter — the surplus
+    // is change to return, shown here and recorded on the invoice.
+    const orderGrandTotal = orderSubtotal
+        + Number(formData.accessoriesTotal || 0) + Number(formData.registrationCharges || 0)
+        + Number(formData.insuranceCharges || 0) + Number(formData.otherCharges || 0)
+        + Number(formData.taxAmount || 0)
+        - Number(formData.discountAmount || 0) - Number(formData.exchangeValue || 0);
+    const orderChangeDue = Math.max(0, Number(formData.paidAmount || 0) - orderGrandTotal);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         try {
+            if (modalMode === 'create' && !orderLines.length) {
+                toast.error('Add at least one vehicle or part');
+                return;
+            }
+            const missing = orderLines.find((line) => (line.itemType === 'part' ? !line.partId : !line.vehicleId));
+            if (missing) {
+                toast.error('Every product line needs a product selected');
+                return;
+            }
             const payload = {
                 ...formData,
+                vehiclePrice: orderSubtotal || Number(formData.vehiclePrice || 0),
+                lineItems: orderLines.map((line) => ({
+                    itemType: line.itemType,
+                    vehicleId: line.vehicleId || undefined,
+                    partId: line.partId || undefined,
+                    quantity: Number(line.quantity) || 1,
+                    unitPrice: Number(line.unitPrice) || 0,
+                    discountAmount: Number(line.discountAmount) || 0,
+                    taxAmount: Number(line.taxAmount) || 0,
+                    description: line.description || undefined,
+                })),
                 taxAmount: Number(formData.taxAmount) > 0 || !salesTax
                     ? Number(formData.taxAmount || 0)
-                    : calculateConfiguredTax(Number(formData.vehiclePrice || 0), salesTax)
+                    : calculateConfiguredTax(orderSubtotal || Number(formData.vehiclePrice || 0), salesTax)
             };
             if (modalMode === 'create') {
-                await salesAPI.createDirectOrder(payload);
-                toast.success('Sales order created successfully');
+                const res = await salesAPI.createDirectOrder(payload);
+                const change = Number(res?.data?.data?.changeDue) || 0;
+                toast.success(change > 0
+                    ? `Sales order created — return change of ${currency.code} ${change.toLocaleString()}`
+                    : 'Sales order created successfully');
             } else if (modalMode === 'edit') {
                 await salesAPI.updateOrder(selectedItem.id, payload);
                 toast.success('Sales order updated successfully');
@@ -2124,76 +2132,30 @@ function SalesOrders() {
                     ) : (
                         <form onSubmit={handleSubmit}>
                             <div className="form-group">
-                                <label>Sale Type</label>
-                                <div className="btn-group" style={{ display: 'flex', gap: '10px' }}>
-                                    <button
-                                        type="button"
-                                        className={`btn ${formData.saleType === 'vehicle' ? 'btn-primary' : 'btn-secondary'}`}
-                                        onClick={() => setFormData({ ...formData, saleType: 'vehicle', vehicleId: '', partId: '', vehiclePrice: '' })}
-                                        disabled={modalMode !== 'create'}
-                                    >
-                                        Vehicle Sale
-                                    </button>
-                                    <button
-                                        type="button"
-                                        className={`btn ${formData.saleType === 'parts' ? 'btn-primary' : 'btn-secondary'}`}
-                                        onClick={() => setFormData({ ...formData, saleType: 'parts', vehicleId: '', partId: '', vehiclePrice: '' })}
-                                        disabled={modalMode !== 'create'}
-                                    >
-                                        Parts Sale
-                                    </button>
-                                </div>
+                                <label>Customer * <CustomerQuickCreate onCreated={handleCustomerCreated} /></label>
+                                <SearchableSelect name="customerId" value={formData.customerId} onChange={handleChange} required>
+                                    <option value="">Select Customer</option>
+                                    {customers.map(c => (
+                                        <option key={c.id} value={c.id}>{customerOptionLabel(c)}</option>
+                                    ))}
+                                </SearchableSelect>
                             </div>
 
-                            <div className="form-row">
-                                <div className="form-group">
-                                    <label>Customer * <CustomerQuickCreate onCreated={handleCustomerCreated} /></label>
-                                    <SearchableSelect name="customerId" value={formData.customerId} onChange={handleChange} required>
-                                        <option value="">Select Customer</option>
-                                        {customers.map(c => (
-                                            <option key={c.id} value={c.id}>{customerOptionLabel(c)}</option>
-                                        ))}
-                                    </SearchableSelect>
-                                </div>
-
-                                {formData.saleType === 'vehicle' ? (
-                                    <div className="form-group">
-                                        <label>Vehicle *</label>
-                                        <SearchableSelect name="vehicleId" value={formData.vehicleId} onChange={handleChange} required={formData.saleType === 'vehicle'} disabled={modalMode === 'edit'}>
-                                            <option value="">Select Vehicle</option>
-                                            {vehicles.map(v => (
-                                                <option key={v.id} value={v.id}>
-                                                    {v.vin} - {v.make_name} {v.model_name} {v.variant_name} ({v.year}) - {v.color_name} {v.status === 'in_transit' ? '(In Transit)' : ''}
-                                                </option>
-                                            ))}
-                                        </SearchableSelect>
-                                    </div>
-                                ) : (
-                                    <div className="form-group">
-                                        <label>Part *</label>
-                                        <SearchableSelect name="partId" value={formData.partId} onChange={handleChange} required={formData.saleType === 'parts'} disabled={modalMode === 'edit'}>
-                                            <option value="">Select Part</option>
-                                            {parts.map(p => (
-                                                <option key={p.id} value={p.id}>
-                                                    {p.name || p.part_name} ({p.part_number}) - Stock: {p.current_stock ?? p.quantity_in_stock ?? 0}
-                                                </option>
-                                            ))}
-                                        </SearchableSelect>
-                                    </div>
-                                )}
-                            </div>
-
-                            {formData.saleType === 'parts' && (
-                                <div className="form-group" style={{ maxWidth: '200px' }}>
-                                    <label>Quantity *</label>
-                                    <input type="number" name="partQuantity" value={formData.partQuantity} onChange={handleChange} required={formData.saleType === 'parts'} min="1" />
-                                </div>
+                            {modalMode === 'create' && (
+                                <LineItemsEditor
+                                    value={orderLines}
+                                    onChange={setOrderLines}
+                                    vehicles={vehicles}
+                                    parts={parts}
+                                    currencyCode={currency.code}
+                                    requireInventoryVehicle
+                                />
                             )}
 
                             <div className="form-row">
                                 <div className="form-group">
-                                    <label>{formData.saleType === 'vehicle' ? `Vehicle Price (${currency.code}) *` : `Total Price (${currency.code}) *`}</label>
-                                    <input type="number" name="vehiclePrice" value={formData.vehiclePrice} onChange={handleChange} required min="0" />
+                                    <label>Products subtotal ({currency.code})</label>
+                                    <input type="number" value={modalMode === 'create' ? orderSubtotal : formData.vehiclePrice} readOnly title="Sum of every product line" />
                                 </div>
                                 <div className="form-group">
                                     <label>Accessories Total</label>
@@ -2261,8 +2223,13 @@ function SalesOrders() {
                             )}
                             <div className="form-row">
                                 <div className="form-group">
-                                    <label>Paid Amount</label>
-                                    <input type="number" name="paidAmount" value={formData.paidAmount} onChange={handleChange} min="0" />
+                                    <label>Amount Received</label>
+                                    <input type="number" name="paidAmount" value={formData.paidAmount} onChange={handleChange} min="0" placeholder="What the customer handed over" />
+                                    {orderChangeDue > 0 && (
+                                        <small style={{ color: '#b45309', fontWeight: 600 }}>
+                                            Change to return: {currency.code} {orderChangeDue.toLocaleString()}
+                                        </small>
+                                    )}
                                 </div>
                                 <div className="form-group">
                                     <label>Expected Delivery Date</label>
@@ -2281,8 +2248,16 @@ function SalesOrders() {
                                 </div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem' }}>
                                     <span>Balance Due:</span>
-                                    <span style={{ color: '#dc2626' }}>PKR {(calculateGrandTotal() - (parseFloat(formData.paidAmount) || 0)).toLocaleString()}</span>
+                                    <span style={{ color: '#dc2626' }}>
+                                        PKR {Math.max(0, calculateGrandTotal() - (parseFloat(formData.paidAmount) || 0)).toLocaleString()}
+                                    </span>
                                 </div>
+                                {orderChangeDue > 0 && (
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem' }}>
+                                        <span>Change to return:</span>
+                                        <strong style={{ color: '#b45309' }}>PKR {orderChangeDue.toLocaleString()}</strong>
+                                    </div>
+                                )}
                             </div>
 
                             <div className="modal-actions" style={{ marginTop: '1rem' }}>

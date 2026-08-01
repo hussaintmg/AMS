@@ -17,6 +17,7 @@ import { vehicleAPI, adminAPI, vehicleMasterAPI } from "../services/api";
 import toast from "react-hot-toast";
 import ErrorPopup from "../components/ErrorPopup";
 import ActionButtons from "../components/ActionButtons";
+import BarcodeButton from "../components/BarcodeButton";
 import BulkUploadModal from "../components/BulkUploadModal";
 import ConfirmModal from "../components/ConfirmModal";
 import { ArrowUpTrayIcon } from "@heroicons/react/24/outline";
@@ -601,9 +602,16 @@ const Vehicles = () => {
     {
       header: "Actions",
       accessor: "actions",
-      style: { width: "100px" },
+      style: { width: "140px" },
       render: (row) => (
-        <div onClick={(e) => e.stopPropagation()}>
+        <div onClick={(e) => e.stopPropagation()} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <BarcodeButton
+            kind="vehicle"
+            id={row.id}
+            code={row.barcode}
+            label={row.vehicle_name || row.vin}
+            subtitle={row.chassis_number || row.vin || ""}
+          />
           <ActionButtons
             onEdit={() => openModal("edit", row)}
             onDelete={() => handleDeleteVehicle(row.id, row.vin)}

@@ -19,6 +19,7 @@ import Leads from "./pages/Leads";
 import Customers from "./pages/Customers";
 import Vehicles from "./pages/Vehicles";
 import PartsInventory from "./pages/PartsInventory";
+import BarcodeScan from "./pages/BarcodeScan";
 import Sales from "./pages/Sales";
 import Service from "./pages/Service";
 import Reports from "./pages/Reports";
@@ -182,6 +183,14 @@ const AppLayout = () => {
               element={
                 <ProtectedPage path="/parts">
                   <PartsInventory />
+                </ProtectedPage>
+              }
+            />
+            <Route
+              path="barcode-scan"
+              element={
+                <ProtectedPage path="/barcode-scan">
+                  <BarcodeScan />
                 </ProtectedPage>
               }
             />

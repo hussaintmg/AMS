@@ -1,0 +1,293 @@
+/* Barcode Scan — counter screen for building documents by scanning. */
+
+.scan-page {
+  padding: 20px 24px 40px;
+}
+
+.scan-page .page-header h1 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.scan-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 18px;
+  align-items: start;
+}
+
+@media (max-width: 1024px) {
+  .scan-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.scan-main,
+.scan-card {
+  background: var(--card-bg, #fff);
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 10px;
+  padding: 16px;
+}
+
+.scan-side {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* ── scan input ── */
+.scan-box {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.scan-box input {
+  flex: 1;
+  padding: 13px 16px;
+  font-size: 1.05rem;
+  font-family: monospace;
+  letter-spacing: 1px;
+  border: 2px solid var(--primary-color, #2563eb);
+  border-radius: 8px;
+  background: var(--input-bg, #fff);
+  color: inherit;
+}
+
+.scan-box input:focus {
+  outline: none;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.15);
+}
+
+.scan-empty {
+  text-align: center;
+  color: var(--text-muted, #94a3b8);
+  padding: 44px 20px;
+}
+
+.scan-empty p {
+  margin: 12px auto 0;
+  max-width: 420px;
+  font-size: 0.9rem;
+}
+
+/* ── basket ── */
+.scan-table-wrap {
+  overflow-x: auto;
+}
+
+.scan-table {
+  width: 100%;
+  min-width: 620px;
+  border-collapse: collapse;
+}
+
+.scan-table th {
+  text-align: left;
+  padding: 8px;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted, #64748b);
+  border-bottom: 2px solid var(--border-color, #e2e8f0);
+}
+
+.scan-table td {
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--border-color, #f1f5f9);
+  vertical-align: middle;
+}
+
+.scan-table td strong {
+  display: block;
+}
+
+.scan-table td small {
+  display: block;
+  color: var(--text-muted, #64748b);
+  font-size: 0.75rem;
+}
+
+.scan-table td small.scan-over {
+  color: #dc2626;
+  font-weight: 600;
+}
+
+.scan-table input {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 5px;
+  background: var(--input-bg, #fff);
+  color: inherit;
+}
+
+.scan-kind {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-bottom: 3px;
+}
+
+.scan-kind-vehicle { background: rgba(37, 99, 235, 0.12); color: #1d4ed8; }
+.scan-kind-part { background: rgba(16, 185, 129, 0.14); color: #047857; }
+
+.scan-amount {
+  text-align: right;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.scan-remove {
+  border: none;
+  background: transparent;
+  color: #dc2626;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+}
+
+/* ── side panel ── */
+.scan-card > label {
+  display: block;
+  font-weight: 600;
+  font-size: 0.85rem;
+  margin-bottom: 8px;
+}
+
+.scan-doc-types {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.scan-doc {
+  text-align: left;
+  padding: 9px 12px;
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 0.88rem;
+}
+
+.scan-doc.active {
+  border-color: var(--primary-color, #2563eb);
+  background: rgba(37, 99, 235, 0.08);
+  font-weight: 600;
+}
+
+.scan-hint {
+  margin: 8px 0 0;
+  font-size: 0.78rem;
+  color: var(--text-muted, #64748b);
+}
+
+.scan-totals {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.scan-total-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border-color, #e2e8f0);
+}
+
+.scan-total-row strong {
+  font-size: 1.35rem;
+  color: var(--primary-color, #2563eb);
+}
+
+.scan-received {
+  width: 100%;
+  padding: 11px 13px;
+  font-size: 1.1rem;
+  border: 1px solid var(--border-color, #cbd5e1);
+  border-radius: 7px;
+  background: var(--input-bg, #fff);
+  color: inherit;
+}
+
+/* Change is the headline number once an over-tender happens. */
+.scan-change,
+.scan-balance {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 10px 12px;
+  border-radius: 7px;
+}
+
+.scan-change {
+  background: rgba(245, 158, 11, 0.14);
+  color: #b45309;
+}
+
+.scan-change strong {
+  font-size: 1.3rem;
+}
+
+.scan-balance {
+  background: rgba(220, 38, 38, 0.1);
+  color: #b91c1c;
+}
+
+.scan-submit {
+  width: 100%;
+  padding: 12px;
+  font-size: 1rem;
+}
+
+.scan-totals .btn-secondary {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.scan-result {
+  border-color: #16a34a;
+  background: rgba(22, 163, 74, 0.07);
+}
+
+.scan-result strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.scan-result-change {
+  color: #b45309;
+  font-weight: 600;
+  margin: 6px 0;
+}
+
+.scan-result .btn {
+  margin-top: 8px;
+  width: 100%;
+}
+
+@media (prefers-color-scheme: dark) {
+  .scan-main,
+  .scan-card {
+    background: var(--card-bg, #1e293b);
+    border-color: var(--border-color, #334155);
+  }
+  .scan-box input,
+  .scan-table input,
+  .scan-received {
+    background: var(--input-bg, #0f172a);
+    border-color: var(--border-color, #334155);
+  }
+}

@@ -6,6 +6,7 @@ import toast from "react-hot-toast";
 import { Package, Search, Plus, Upload } from "lucide-react";
 import ErrorPopup from "../components/ErrorPopup";
 import ActionButtons from "../components/ActionButtons";
+import BarcodeButton from "../components/BarcodeButton";
 import SearchableSelect from "../components/SearchableSelect";
 import DataTable from "../components/DataTable";
 import ConfirmModal from "../components/ConfirmModal";
@@ -599,6 +600,13 @@ const PartsInventory = () => {
           >
             <Package size={16} />
           </button>
+          <BarcodeButton
+            kind="part"
+            id={row.id}
+            code={row.barcode}
+            label={row.name || row.part_name}
+            subtitle={row.part_number || row.sku || ""}
+          />
           <ActionButtons
             onEdit={() => openModal("edit", row)}
             onDelete={() => openDeleteConfirm(row)}

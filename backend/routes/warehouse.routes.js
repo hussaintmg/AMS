@@ -1,7 +1,13 @@
 const express = require('express');
 const router = express.Router();
-const { authenticate } = require('../middleware/auth');
+const { authenticate, authorizeAction } = require('../middleware/auth');
 const ctrl = require('../controllers/warehouseManagement.controller');
+
+const canView = authorizeAction('warehouses', 'view');
+const canCreate = authorizeAction('warehouses', 'create');
+const canEdit = authorizeAction('warehouses', 'edit');
+const canDelete = authorizeAction('warehouses', 'delete');
+
 
 /**
  * @swagger
@@ -21,7 +27,7 @@ const ctrl = require('../controllers/warehouseManagement.controller');
  *       200:
  *         description: Stats retrieved
  */
-router.get('/stats', authenticate, ctrl.getWarehouseStats);
+router.get('/stats', authenticate, canView, ctrl.getWarehouseStats);
 
 /**
  * @swagger
@@ -34,7 +40,7 @@ router.get('/stats', authenticate, ctrl.getWarehouseStats);
  *       200:
  *         description: Cities list
  */
-router.get('/cities/list', authenticate, ctrl.getCities);
+router.get('/cities/list', authenticate, canView, ctrl.getCities);
 
 /**
  * @swagger
@@ -85,8 +91,8 @@ router.get('/cities/list', authenticate, ctrl.getCities);
  *       201:
  *         description: Created
  */
-router.get('/', authenticate, ctrl.getAllWarehouses);
-router.post('/', authenticate, ctrl.createWarehouse);
+router.get('/', authenticate, canView, ctrl.getAllWarehouses);
+router.post('/', authenticate, canCreate, ctrl.createWarehouse);
 
 /**
  * @swagger
@@ -128,8 +134,8 @@ router.post('/', authenticate, ctrl.createWarehouse);
  *       200:
  *         description: Deleted
  */
-router.get('/:id', authenticate, ctrl.getWarehouseById);
-router.put('/:id', authenticate, ctrl.updateWarehouse);
-router.delete('/:id', authenticate, ctrl.deleteWarehouse);
+router.get('/:id', authenticate, canView, ctrl.getWarehouseById);
+router.put('/:id', authenticate, canEdit, ctrl.updateWarehouse);
+router.delete('/:id', authenticate, canDelete, ctrl.deleteWarehouse);
 
 module.exports = router;
