@@ -257,7 +257,7 @@ class MasterDataIndex {
     const query = { normalized_name: normalizedName };
     const update = { $setOnInsert: { name: clean(name), normalized_name: normalizedName, is_active: true } };
     const result = await VehicleMake.findOneAndUpdate(query, update, {
-      upsert: true, new: true, setDefaultsOnInsert: true, includeResultMetadata: true, session,
+      upsert: true, returnDocument: 'after', setDefaultsOnInsert: true, includeResultMetadata: true, session,
     });
     const { value, created } = metadataValue(result);
     this.addMake(value);
@@ -276,7 +276,7 @@ class MasterDataIndex {
     const result = await VehicleModel.findOneAndUpdate(
       { make_id: make._id, normalized_name: normalizedName },
       { $setOnInsert: setOnInsert },
-      { upsert: true, new: true, setDefaultsOnInsert: true, includeResultMetadata: true, session },
+      { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true, includeResultMetadata: true, session },
     );
     const { value, created } = metadataValue(result);
     this.addModel(value);
@@ -295,7 +295,7 @@ class MasterDataIndex {
     const result = await VehicleVariant.findOneAndUpdate(
       { model_id: model._id, normalized_name: normalizedName },
       { $setOnInsert: setOnInsert },
-      { upsert: true, new: true, setDefaultsOnInsert: true, includeResultMetadata: true, session },
+      { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true, includeResultMetadata: true, session },
     );
     const { value, created } = metadataValue(result);
     this.addVariant(value);
@@ -335,7 +335,7 @@ class MasterDataIndex {
     const result = await VehicleColor.findOneAndUpdate(
       { normalized_name: normalizedName },
       { $setOnInsert: { name: clean(name), normalized_name: normalizedName, is_active: true } },
-      { upsert: true, new: true, setDefaultsOnInsert: true, includeResultMetadata: true, session },
+      { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true, includeResultMetadata: true, session },
     );
     const { value: color, created } = metadataValue(result);
     this.addColor(color);

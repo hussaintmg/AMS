@@ -150,7 +150,9 @@ const logApiEvent = async (payload) => {
       params: req.params || {},
       requestBody: req.body || null,
       responseBody: responseBody || null,
-      files: req.files ? req.files.map((f) => ({ fieldname: f.fieldname, originalname: f.originalname, size: f.size, mimetype: f.mimetype })) : [],
+      // multer.array() gives an array; multer.fields() gives {field: File[]}.
+      files: (Array.isArray(req.files) ? req.files : Object.values(req.files || {}).flat())
+        .map((f) => ({ fieldname: f.fieldname, originalname: f.originalname, size: f.size, mimetype: f.mimetype })),
       statusCode,
       success: statusCode < 400,
       executionTime: durationMs,

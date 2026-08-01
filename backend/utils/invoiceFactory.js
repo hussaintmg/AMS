@@ -38,7 +38,7 @@ async function createInvoiceForOrder(order, {
   const existing = await existingQuery;
   if (existing) {
     if (!order.invoice || String(order.invoice) !== String(existing._id)) {
-      let linkQuery = SalesOrder.findByIdAndUpdate(order._id, { $set: { invoice: existing._id } }, { new: true });
+      let linkQuery = SalesOrder.findByIdAndUpdate(order._id, { $set: { invoice: existing._id } }, { returnDocument: 'after' });
       if (session) linkQuery = linkQuery.session(session);
       await linkQuery;
     }
@@ -107,7 +107,7 @@ async function createInvoiceForOrder(order, {
   const invoice = session
     ? (await Invoice.create([invoiceDocument], { session }))[0]
     : await Invoice.create(invoiceDocument);
-  let linkQuery = SalesOrder.findByIdAndUpdate(order._id, { $set: { invoice: invoice._id } }, { new: true });
+  let linkQuery = SalesOrder.findByIdAndUpdate(order._id, { $set: { invoice: invoice._id } }, { returnDocument: 'after' });
   if (session) linkQuery = linkQuery.session(session);
   await linkQuery;
 

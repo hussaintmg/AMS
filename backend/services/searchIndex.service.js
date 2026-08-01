@@ -65,7 +65,7 @@ async function upsertDocument(entityType, doc) {
     const result = await SearchDocument.findOneAndUpdate(
       { entityType: searchDoc.entityType, entityId: searchDoc.entityId },
       { ...searchDoc, updatedAt: new Date() },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
+      { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
     );
     if (suggestionCache.has(entityType)) {
       const key = entityType + '_' + searchDoc.title.slice(0, 5);
@@ -636,7 +636,7 @@ async function saveModuleConfig(entityType, settings) {
   const config = await SearchConfig.findOneAndUpdate(
     { key: 'global_search_config', 'modules.entityType': entityType },
     { $set: { 'modules.$': { entityType, ...settings, updatedAt: new Date() } } },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!config) {
     await SearchConfig.findOneAndUpdate(

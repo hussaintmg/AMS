@@ -81,6 +81,9 @@ class OrderIndex {
 
   addInvoice(orderId, invoice) {
     if (!orderId || !invoice) return;
+    // The document map must grow too, or invoices created earlier in this very
+    // batch look like orphan references to the later audit stages.
+    if (invoice._id) this.invoices.set(String(invoice._id), invoice);
     add(this.byField.invoiceNumber, invoice.invoiceNumber, orderId);
     add(this.byField.invoiceNumber, invoice.externalInvoiceNumber, orderId);
   }

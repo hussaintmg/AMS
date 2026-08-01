@@ -114,7 +114,7 @@ async function saveSmtpConfig(data, userId) {
   const config = await EmailConfig.findOneAndUpdate(
     { key: 'smtp' },
     { $set: update },
-    { upsert: true, returnDocument: 'after', new: true }
+    { upsert: true, returnDocument: 'after' }
   );
 
   return config;

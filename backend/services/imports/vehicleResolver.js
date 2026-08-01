@@ -113,15 +113,40 @@ class VehicleIndex {
       });
       return result;
     };
+    // Older import runs left duplicate Vehicle documents carrying the exact same
+    // chassis + engine. Those copies describe one physical unit, so the one that
+    // is already linked to a sales order/booking (else the oldest) wins instead
+    // of the row failing as ambiguous. Vehicles whose identifiers actually
+    // disagree are still a real ambiguity and are rejected below.
+    const collapseIdenticalDuplicates = (matches) => {
+      const chassisKeys = new Set(matches.map((v) => normalizeId(v.chassisNumber || v.vin)).filter(Boolean));
+      const engineKeys = new Set(matches.map((v) => normalizeId(v.engineNumber)).filter(Boolean));
+      if (chassisKeys.size > 1 || engineKeys.size > 1) return null;
+      const rank = (v) => (v.salesOrder ? 2 : 0) + (v.booking ? 1 : 0);
+      const winner = [...matches].sort((a, b) => (rank(b) - rank(a)) || String(a._id).localeCompare(String(b._id)))[0];
+      debugEvent('vehicle.duplicate_documents_collapsed', {
+        _meta,
+        importStage: stage,
+        chassisNumber: normalizedChassis,
+        engineNumber: normalizedEngine,
+        duplicateVehicleIds: matches.map((v) => String(v._id)),
+        keptVehicleId: String(winner._id),
+      });
+      return winner;
+    };
     for (const [field, value, map] of candidates) {
       if (!value) continue;
       const matches = map.get(value) || [];
-      if (matches.length > 1) return finish({ vehicle: null, matchBy: field, ambiguous: true, count: matches.length });
-      if (matches.length === 1) {
-        if (selected && String(selected._id) !== String(matches[0]._id)) {
+      let match = matches.length === 1 ? matches[0] : null;
+      if (matches.length > 1) {
+        match = collapseIdenticalDuplicates(matches);
+        if (!match) return finish({ vehicle: null, matchBy: field, ambiguous: true, count: matches.length });
+      }
+      if (match) {
+        if (selected && String(selected._id) !== String(match._id)) {
           return finish({ vehicle: null, matchBy: `${selectedBy}/${field}`, ambiguous: true, conflict: true, count: 2 });
         }
-        selected = matches[0];
+        selected = match;
         selectedBy = field;
       }
     }

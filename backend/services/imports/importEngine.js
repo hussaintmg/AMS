@@ -35,9 +35,13 @@ const lower = (value) => clean(value).toLowerCase();
 const DEBUG_SINGLE_CHAIN = process.env.IMPORT_DEBUG_SINGLE_CHAIN === 'true';
 const DEBUG_PBO = normalizeBusinessReference(process.env.IMPORT_DEBUG_PBO || '');
 
-function assertValidDocument(document) {
-  const validationError = document.validateSync();
-  if (validationError) {
+// validateSync() is deprecated and printed a Node warning for every single
+// document an import created — thousands of stderr lines per batch. validate()
+// raises the same ValidationError; the console.error stays for real failures.
+async function assertValidDocument(document) {
+  try {
+    await document.validate();
+  } catch (validationError) {
     console.error("[MODEL_VALIDATION_FAILED]", {
       model: document.constructor.modelName,
       errors: validationError.errors,
@@ -45,7 +49,6 @@ function assertValidDocument(document) {
     });
     throw validationError;
   }
-  return validationError;
 }
 
 class ImportRowError extends Error {
@@ -589,11 +592,7 @@ async function createOrUpdateBooking(row, hierarchy, customer, seller, vehicle, 
       createdBy: userId,
     };
     const bookingDocument = new Booking(document);
-    importTrace("[BOOKING_BEFORE_SAVE]", {
-      validationError: bookingDocument.validateSync(),
-      document: bookingDocument.toObject(),
-    });
-    assertValidDocument(bookingDocument);
+    await assertValidDocument(bookingDocument);
     await bookingDocument.save({ session });
     importTrace("[BOOKING_SAVE_SUCCESS]", {
       bookingId: bookingDocument._id,
@@ -1546,12 +1545,17 @@ async function processSalesRow(row, context, atomicOptions, userId) {
     let invoiceResult = null;
     let paymentsChanged = false;
     const warnings = sellerWarnings(row, seller);
+    // A shared desk phone/email pointing at a different customer is normal on
+    // this paperwork; the stronger identifier already decided the link, so the
+    // overruled match is audit detail rather than a per-row warning.
     (customer?._weakIdentityConflicts || []).forEach((conflict) => {
-      warnings.push(rowWarning(row, `Customer ${conflict.field} "${conflict.value}" also matches a different customer; the row was linked by its stronger identifier instead.`, {
-        errorType: 'RELATIONSHIP_RESOLUTION',
+      debugEvent('customer.weak_identity_overruled', {
+        _meta: row._meta,
         field: conflict.field,
-        relatedEntity: 'Customer',
-      }));
+        value: conflict.value || '',
+        overruledCustomerId: conflict.customerId || '',
+        keptCustomerId: String(customer._id),
+      });
     });
     // Money received against a confirmed order is a receivable, so it needs an
     // Invoice to hold it even when Dealer Pro left the "Invoice No" cell empty
@@ -2641,10 +2645,16 @@ async function auditExistingRelationship(row, logicalType, context) {
 
 function previewCustomerKey(row) {
   const data = customerData(row);
-  const strong = [data.customerCode, data.ntn, data.cnic, data.email, data.phone]
+  const strong = [data.customerCode, data.ntn, data.cnic]
     .map((value) => lower(value))
     .find(Boolean);
-  return strong || lower(data.customerName).replace(/[^a-z0-9]+/g, '');
+  if (strong) return strong;
+  // Mirror importIdentityKey: a shared phone/email alone is not identity, so a
+  // weak key carries the name — otherwise preview undercounts planned customers
+  // for buyers sharing one desk phone.
+  const weak = [data.email, data.phone].map((value) => lower(value)).find(Boolean);
+  const name = lower(data.customerName).replace(/[^a-z0-9]+/g, '');
+  return weak ? `${weak}|${name}` : name;
 }
 
 function previewEntityTotals(entities) {

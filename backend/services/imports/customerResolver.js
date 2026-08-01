@@ -6,11 +6,28 @@ const { debugEvent, importTrace } = require('./importDebugAudit');
 
 const clean = (value) => String(value == null ? '' : value).replace(/\s+/g, ' ').trim();
 const compact = (value) => clean(value).toLowerCase().replace(/[^a-z0-9]/g, '');
+// Dealer Pro spells the same company several ways across files ("Habib Bank
+// Limited" / "Habib Bank Ltd", "(Pvt.)Ltd." / "Private Limited"). Folding the
+// usual corporate tokens makes every spelling produce one name key, so one
+// customer record — otherwise the variants each create a customer and later
+// rows fail with conflicting references.
+const CORPORATE_TOKEN_FOLDS = {
+  limited: 'ltd',
+  private: 'pvt',
+  company: 'co',
+  corporation: 'corp',
+  incorporated: 'inc',
+  brothers: 'bros',
+};
 const normalizePersonName = (value) => clean(value)
   .replace(/^(?:m\/s\.?|mr\.?|mrs\.?|ms\.?|miss\.?|dr\.?)\s+/i, '')
   .toLowerCase()
   .replace(/[^a-z0-9]+/g, ' ')
-  .trim();
+  .trim()
+  .split(' ')
+  .filter((token) => token && token !== 'and')
+  .map((token) => CORPORATE_TOKEN_FOLDS[token] || token)
+  .join(' ');
 const normalizedPhone = (value) => String(normalizePhone(value) || '').replace(/\D/g, '');
 
 function identityCandidates(data = {}) {
@@ -113,7 +130,15 @@ function resolveRelatedCustomer(data = {}, related = {}) {
 function importIdentityKey(data = {}) {
   const first = identityCandidates(data)[0];
   if (!first) return '';
-  return `customer:${first[0]}:${crypto.createHash('sha256').update(first[1]).digest('hex')}`;
+  const [field, value] = first;
+  // A phone or email is routinely shared between customers on this paperwork,
+  // so a weak-led key also carries the name — otherwise two different buyers
+  // behind one desk phone collide on the unique importIdentityKey index and the
+  // second silently reuses the first one's record.
+  const seed = STRONG_IDENTITY_FIELDS.has(field)
+    ? value
+    : [value, nameCandidate(data)].filter(Boolean).join('|');
+  return `customer:${field}:${crypto.createHash('sha256').update(seed).digest('hex')}`;
 }
 
 // Placeholder domain for customers imported without a source email. A real
@@ -251,13 +276,22 @@ class CustomerIndex {
     for (const [field, value] of identity) {
       const ids = [...(this.byField.get(`${field}:${value}`) || [])];
       if (ids.length > 1) {
-        return finish({
-          customer: null,
-          matchBy: field,
-          ambiguous: true,
-          count: ids.length,
-          conflicts: ids.map((id) => ({ field, value, customerId: id })),
-        });
+        if (STRONG_IDENTITY_FIELDS.has(field)) {
+          // Two records claiming one tax number / customer code is a genuine
+          // duplicate that needs a human decision.
+          return finish({
+            customer: null,
+            matchBy: field,
+            ambiguous: true,
+            count: ids.length,
+            conflicts: ids.map((id) => ({ field, value, customerId: id })),
+          });
+        }
+        // A phone/email serving several customers is normal here (one desk
+        // number covers many buyers), so all of them stay as candidates and
+        // the name arbitrates below.
+        ids.forEach((id) => matches.push({ field, value, id }));
+        continue;
       }
       if (ids.length === 1) matches.push({ field, value, id: ids[0] });
     }
@@ -275,19 +309,60 @@ class CustomerIndex {
       if (ids.length === 1) matches.push({ field: 'customerName', value: normalizedName, id: ids[0] });
     }
     const ids = [...new Set(matches.map((match) => match.id))];
+    const nameKeysOf = (customer) => {
+      const keys = new Set();
+      const fullName = [customer?.firstName, customer?.lastName].filter(Boolean).join(' ');
+      [fullName, customer?.companyName].filter(Boolean).forEach((name) => {
+        const key = normalizePersonName(name);
+        if (key) keys.add(key);
+      });
+      return keys;
+    };
+    const asConflicts = (entries) => entries.map(({ field, value, id }) => ({ field, value, customerId: id }));
     if (ids.length > 1) {
       // A tax number identifies exactly one legal entity; a phone or email is
       // routinely shared (a company and its contact person, a family, a dealer
       // desk). When both point somewhere, the strong identifier decides instead
       // of the row being rejected — the weaker match is reported, not obeyed.
-      const strongMatch = matches.find((match) => STRONG_IDENTITY_FIELDS.has(match.field));
-      if (strongMatch) {
+      const strongMatches = matches.filter((match) => STRONG_IDENTITY_FIELDS.has(match.field));
+      const strongIds = [...new Set(strongMatches.map((match) => match.id))];
+      if (strongIds.length > 1) {
+        // Two different tax identities genuinely fight over this row — a human
+        // has to look at it; guessing would re-home someone's paperwork.
+        return finish({
+          customer: null,
+          matchBy: strongMatches.map((match) => match.field).join('/'),
+          ambiguous: true,
+          conflict: true,
+          count: strongIds.length,
+          conflicts: asConflicts(strongMatches),
+        });
+      }
+      if (strongIds.length === 1) {
+        const strongMatch = strongMatches[0];
         const overruled = matches.filter((match) => match.id !== strongMatch.id);
         return finish({
           customer: this.customers.get(strongMatch.id),
           matchBy: strongMatch.field,
-          weakConflicts: overruled.map(({ field, value, id }) => ({ field, value, customerId: id })),
+          weakConflicts: asConflicts(overruled),
         });
+      }
+      // No strong identity in play. The name is the next-best evidence: this
+      // dealer's files reuse one desk phone across many buyers (verified in the
+      // source), so a diverging phone/email match is reported, never obeyed.
+      const nameMatch = matches.find((match) => match.field === 'customerName');
+      if (nameMatch) {
+        const overruled = matches.filter((match) => match.id !== nameMatch.id);
+        return finish({
+          customer: this.customers.get(nameMatch.id),
+          matchBy: 'customerName',
+          weakConflicts: asConflicts(overruled),
+        });
+      }
+      if (normalizedName) {
+        // Phone and email each point at somebody else and neither carries this
+        // row's name — they are shared contact details, not this customer.
+        return finish({ customer: null, matchBy: null, weakConflicts: asConflicts(matches) });
       }
       return finish({
         customer: null,
@@ -295,10 +370,22 @@ class CustomerIndex {
         ambiguous: true,
         conflict: true,
         count: ids.length,
-        conflicts: matches.map(({ field, value, id }) => ({ field, value, customerId: id })),
+        conflicts: asConflicts(matches),
       });
     }
-    if (ids.length === 1) return finish({ customer: this.customers.get(ids[0]), matchBy: matches[0].field });
+    if (ids.length === 1) {
+      const customer = this.customers.get(ids[0]);
+      const hasStrongOrNameEvidence = matches.some((match) => (
+        STRONG_IDENTITY_FIELDS.has(match.field) || match.field === 'customerName'
+      ));
+      // A phone/email-only match whose stored name disagrees with the row's own
+      // name is a shared contact number, not the same customer — reusing it
+      // would silently merge two different buyers into one record.
+      if (!hasStrongOrNameEvidence && normalizedName && customer && !nameKeysOf(customer).has(normalizedName)) {
+        return finish({ customer: null, matchBy: null, weakConflicts: asConflicts(matches) });
+      }
+      return finish({ customer, matchBy: matches[0].field });
+    }
     return finish({ customer: null, matchBy: null });
   }
 
@@ -342,17 +429,38 @@ class CustomerIndex {
     if (relatedResolution?.ambiguous) return { ...relatedResolution, created: false };
     if (direct.customer && relatedResolution?.customer
       && String(direct.customer._id) !== String(relatedResolution.customer._id)) {
+      if (STRONG_IDENTITY_FIELDS.has(direct.matchBy)) {
+        // The row's tax number says one customer, its booking/order chain says
+        // another — that is a genuine identity fight a human has to settle.
+        return {
+          customer: null,
+          matchBy: 'direct/relatedReferences',
+          ambiguous: true,
+          conflict: true,
+          count: 2,
+          conflicts: [
+            { entity: 'Customer', customerId: String(direct.customer._id), field: direct.matchBy },
+            ...(relatedResolution.references || []),
+          ],
+          created: false,
+        };
+      }
+      // The booking/order this row references already belongs to a customer; a
+      // name/phone coincidence elsewhere must not re-home the transaction. The
+      // overruled direct match stays visible in the audit as a weak conflict.
+      debugEvent('customer.related_reference_overruled_direct', {
+        _meta: data._meta,
+        sourceCustomerValue: data.customerName || data.name || '',
+        directMatchBy: direct.matchBy,
+        directCustomerId: String(direct.customer._id),
+        keptCustomerId: String(relatedResolution.customer._id),
+        references: relatedResolution.references || [],
+      });
+      this.add(relatedResolution.customer);
       return {
-        customer: null,
-        matchBy: 'direct/relatedReferences',
-        ambiguous: true,
-        conflict: true,
-        count: 2,
-        conflicts: [
-          { entity: 'Customer', customerId: String(direct.customer._id), field: direct.matchBy },
-          ...(relatedResolution.references || []),
-        ],
+        ...relatedResolution,
         created: false,
+        weakConflicts: [{ field: direct.matchBy, customerId: String(direct.customer._id) }],
       };
     }
     if (direct.customer || !allowCreate) return { ...direct, created: false };
@@ -445,20 +553,8 @@ class CustomerIndex {
 
     try {
       const customer = new Customer(document);
-      importTrace("[CUSTOMER_BEFORE_SAVE]", {
-        isNew: customer.isNew,
-        validationError: customer.validateSync(),
-        document: customer.toObject(),
-      });
-      const validationError = customer.validateSync();
-      if (validationError) {
-        console.error("[MODEL_VALIDATION_FAILED]", {
-          model: customer.constructor.modelName,
-          errors: validationError.errors,
-          document: customer.toObject(),
-        });
-        throw validationError;
-      }
+      // save() validates; its ValidationError is logged by the catch below.
+      // (validateSync() here printed a deprecation warning per created customer.)
       await customer.save({ session });
       importTrace("[CUSTOMER_SAVE_SUCCESS]", {
         customerId: customer._id,
@@ -484,7 +580,13 @@ class CustomerIndex {
         newlyCreated: true,
         finalCustomerIdAssigned: String(verifiedCustomer._id),
       }, { section: 'customers', bucket: 'newlyCreated' });
-      return { customer: verifiedCustomer, matchBy: 'created', created: true };
+      return {
+        customer: verifiedCustomer,
+        matchBy: 'created',
+        created: true,
+        // e.g. a shared desk phone pointed at somebody else — kept for the audit.
+        weakConflicts: direct.weakConflicts || [],
+      };
     } catch (error) {
       console.error("[CUSTOMER_SAVE_FAILED]", {
         name: error.name,

@@ -83,7 +83,7 @@ async function applyVehicleLifecycle(vehicle, nextStatus, options = {}) {
     },
     $push: { lifecycleHistory: change.entry },
   };
-  let query = Vehicle.findByIdAndUpdate(vehicle._id, update, { new: true });
+  let query = Vehicle.findByIdAndUpdate(vehicle._id, update, { returnDocument: 'after' });
   if (options.session) query = query.session(options.session);
   const updated = await query.lean();
   return { vehicle: updated, changed: Boolean(updated), before: vehicle };

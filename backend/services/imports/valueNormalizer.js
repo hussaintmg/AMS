@@ -98,6 +98,10 @@ const CORPORATE_NAME_MARKERS = [
 
 function hasCorporateNameMarker(value) {
   const name = normalizeText(value).toLowerCase().replace(/\./g, '');
+  // An ampersand or a digit inside a name token never appears in a person's
+  // name on this paperwork — "Beads & Stones", "East West Insurance C0.Ltd"
+  // (OCR zero), "P&D Board" are all businesses.
+  if (name.includes('&') || /[a-z]\d|\d[a-z]/i.test(name)) return true;
   return CORPORATE_NAME_MARKERS.some((marker) => {
     const escaped = marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
     const pattern = marker === 'm/s'
