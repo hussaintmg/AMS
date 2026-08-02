@@ -116,6 +116,32 @@
   --warning-600: #d97706;
   --border-radius-lg: var(--radius-xl);
   --border-radius-md: var(--radius-md);
+
+  /* Stacking order. A modal is opened from a drawer (quick-create a source
+     while editing a lead), never the other way round, so modals sit above. */
+  --z-drawer: 1000;
+  --z-modal: 1100;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   OVERLAY STACKING ORDER
+   ═══════════════════════════════════════════════════════════════
+
+   A dozen page stylesheets each declare their own overlay z-index, and CRA
+   bundles them all globally — so whichever loaded last decided the layering for
+   the whole app. One set modals to 100, which put every modal *behind* every
+   drawer.
+
+   The class is repeated three times to reach a specificity of (0,3,0). Two
+   would not be enough: the page rules are written as
+   `.parts-inventory-page .modal-overlay`, which is already (0,2,0) and, loading
+   after this file, would win the tie. */
+.drawer-overlay.drawer-overlay.drawer-overlay {
+  z-index: var(--z-drawer);
+}
+
+.modal-overlay.modal-overlay.modal-overlay {
+  z-index: var(--z-modal);
 }
 
 /* ═══════════════════════════════════════════════════════════════

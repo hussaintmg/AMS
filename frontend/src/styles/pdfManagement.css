@@ -83,8 +83,12 @@
 .pdf-usage-row:last-child { border-bottom: 0; }
 .pdf-usage-row select { width: min(360px, 50%); padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; background: #fff; }
 
-/* Create modal */
-.modal-overlay {
+/* Create modal.
+   Scoped to this page on purpose: CRA bundles every stylesheet globally, so
+   the unscoped version of this rule applied to every modal in the app and its
+   z-index of 100 dropped them all behind drawers. */
+.pdf-management-page .modal-overlay,
+.pdf-template-editor .modal-overlay {
   position: fixed;
   inset: 0;
   background: rgba(15, 23, 42, .5);
@@ -92,7 +96,6 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 100;
   padding: 16px;
 }
 .modal-content {

@@ -257,7 +257,9 @@ export default function CustomerFormModal({ customer, onClose, onSaved }) {
 
   return (
     <>
-      <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }} style={{ zIndex: 1000 }}>
+      {/* No inline z-index: this modal is opened from drawers and from other
+          modals, so it has to follow the shared stacking scale in index.css. */}
+      <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
         <div className="modal-content customer-form-modal" style={{ maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
           <div className="modal-header">
             <h3>{isEdit ? 'Edit Customer' : 'New Customer'}</h3>
