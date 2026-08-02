@@ -30,7 +30,11 @@ const SOURCE_BADGE_CLASSES = [
 const SOURCE_STAT_COLORS = ["#22c55e", "#8b5cf6", "#0ea5e9", "#f97316", "#14b8a6", "#64748b"];
 
 const PartsInventory = () => {
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, isSuperAdmin } = useAuth();
+  // Purchase price is super-admin-only. This hides the column, the form field
+  // and the inventory-value card; the API enforces the same rule on its own, so
+  // another role gets responses without the field either way.
+  const canSeePurchasePrice = isSuperAdmin;
 
   // State
   const [parts, setParts] = useState([]);
@@ -573,13 +577,17 @@ const PartsInventory = () => {
         return <span className={`badge ${badge.class}`}>{badge.text}</span>;
       },
     },
-    {
-      header: "Purchase Price",
-      accessor: "purchase_price",
-      render: (row) => (
-        <span className="price-cell">{formatCurrency(row.purchase_price)}</span>
-      ),
-    },
+    ...(canSeePurchasePrice
+      ? [
+          {
+            header: "Purchase Price",
+            accessor: "purchase_price",
+            render: (row) => (
+              <span className="price-cell">{formatCurrency(row.purchase_price)}</span>
+            ),
+          },
+        ]
+      : []),
     {
       header: "Selling Price",
       accessor: "selling_price",
@@ -691,17 +699,21 @@ const PartsInventory = () => {
             <span className="stat-label">Low Stock</span>
           </div>
         </div>
-        <div className="stat-card stat-value">
-          <div className="stat-icon">
-            <Package size={24} style={{ color: "#059669" }} />
+        {/* Inventory value is stock × purchase price, so it follows the same
+            rule as the price it is built from. */}
+        {canSeePurchasePrice && (
+          <div className="stat-card stat-value">
+            <div className="stat-icon">
+              <Package size={24} style={{ color: "#059669" }} />
+            </div>
+            <div className="stat-content">
+              <span className="stat-value">
+                {formatCurrency(stats.total_inventory_value || 0)}
+              </span>
+              <span className="stat-label">Inventory Value</span>
+            </div>
           </div>
-          <div className="stat-content">
-            <span className="stat-value">
-              {formatCurrency(stats.total_inventory_value || 0)}
-            </span>
-            <span className="stat-label">Inventory Value</span>
-          </div>
-        </div>
+        )}
       </div>
 
       <ErrorPopup error={errorPopup} onClose={() => setErrorPopup(null)} />
@@ -1044,23 +1056,24 @@ const PartsInventory = () => {
                 <div className="form-section">
                   <h3>Pricing</h3>
                   <div className="form-row">
-                    <div className="form-group">
-                      <label>
-                        <InfoLabel
-                          label="Purchase Price (PKR) *"
-                          help="Your cost price (used for inventory valuation and profit calculation)."
+                    {canSeePurchasePrice && (
+                      <div className="form-group">
+                        <label>
+                          <InfoLabel
+                            label="Purchase Price (PKR)"
+                            help="Your cost price (used for inventory valuation and profit calculation). Only a Super Admin can see or change it."
+                          />
+                        </label>
+                        <input
+                          type="number"
+                          name="purchasePrice"
+                          className="form-input"
+                          value={formData.purchasePrice}
+                          onChange={handleInputChange}
+                          min={0}
                         />
-                      </label>
-                      <input
-                        type="number"
-                        name="purchasePrice"
-                        className="form-input"
-                        value={formData.purchasePrice}
-                        onChange={handleInputChange}
-                        required
-                        min={0}
-                      />
-                    </div>
+                      </div>
+                    )}
                     <div className="form-group">
                       <label>
                         <InfoLabel
@@ -1364,7 +1377,9 @@ const PartsInventory = () => {
         isOpen={showBulkUpload}
         onClose={() => setShowBulkUpload(false)}
         title="Bulk upload parts"
-        description="Import parts from CSV or XLSX using the template. Required columns: part_number, name, purchase_price, selling_price."
+        description={`Import parts from CSV or XLSX. Only part_number and name are required — leave any other column blank and it is left alone. Re-uploading the same part_number updates that part.${
+          canSeePurchasePrice ? "" : " purchase_price is Super Admin only and is ignored here."
+        }`}
         templateType="parts"
         onCompleted={() => fetchParts()}
       />

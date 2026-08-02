@@ -1,3 +1,4 @@
-# AMS Parts bulk import. REQUIRED: part_number, name, purchase_price, selling_price. category_name / supplier_name / warehouse_name must match existing records (blank = skip). source_type = manufacturer|supplier.
+﻿# AMS Parts import. REQUIRED: part_number, name. Every other column is optional — leave a cell blank and that value is left alone (an existing part keeps what it has). Re-importing the same part_number updates that part. category_name / supplier_name / warehouse_name must match a record that already exists; nothing new is created from this sheet.
 "part_number","name","purchase_price","selling_price","category_name","description","brand","source_type","supplier_name","unit","current_stock","minimum_stock","maximum_stock","reorder_level","warehouse_name","bin_location"
-"OIL-001","Engine Oil 5W30","1200","1800","","Synthetic engine oil","Shell","manufacturer","","liter","50","10","200","20","","A1-B2"
+"602004592AA","LWR BODY-FR BUMPER","","40446.29","","","JAECOO J7","","","","3","","","","",""
+"SPARE-001","Sample Brake Pad","1500","2500","","OEM quality brake pad set","OEM","manufacturer","","piece","10","2","50","5","","A-01"

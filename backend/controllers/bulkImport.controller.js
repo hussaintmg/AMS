@@ -40,6 +40,7 @@ const Part = require('../models/Part.model');
 const { VehicleMake, VehicleModel, VehicleVariant, VehicleColor, PartCategory, Supplier, VehicleCondition } = require('../models/VehicleMaster.model');
 const SalesOrder = require('../models/SalesOrder.model');
 const Employee = require('../models/Employee.model');
+const { resolveSourceType, canSeePurchasePrice } = require('./partsInventory.controller');
 
 /* ═══ generic helpers ═══════════════════════════════════════════════════ */
 
@@ -262,11 +263,17 @@ function parseRows(req, next) {
   return rows;
 }
 
-function respond(res, rows, created, errors, updated = 0) {
+/**
+ * `notes` carries things the importer decided on the caller's behalf — a column
+ * their role may not write, rows folded together. They are not failures, so
+ * they must not be counted or rendered as row errors.
+ */
+function respond(res, rows, created, errors, updated = 0, notes = []) {
   res.json({
     success: true,
     summary: { total: rows.length, created, updated, failed: errors.length },
-    errors: errors.slice(0, 200)
+    errors: errors.slice(0, 200),
+    ...(notes.length ? { notes } : {})
   });
 }
 
@@ -370,7 +377,11 @@ const TEMPLATE_META = {
   },
   parts: {
     filename: 'ams_parts_import_template',
-    headers: ['part_number', 'name', 'purchase_price', 'selling_price', 'category_name', 'description', 'brand', 'source_type', 'supplier_name', 'unit', 'current_stock', 'minimum_stock', 'maximum_stock', 'reorder_level', 'warehouse_name', 'bin_location']
+    headers: ['part_number', 'name', 'purchase_price', 'selling_price', 'category_name', 'description', 'brand', 'source_type', 'supplier_name', 'unit', 'current_stock', 'minimum_stock', 'maximum_stock', 'reorder_level', 'warehouse_name', 'bin_location'],
+    note: 'AMS Parts import. REQUIRED: part_number, name. Every other column is optional — leave a cell blank and that value is left alone (an existing part keeps what it has). Re-importing the same part_number updates that part. category_name / supplier_name / warehouse_name must match a record that already exists; nothing new is created from this sheet.',
+    // Purchase price is super-admin-only, so the column is not even offered to
+    // anyone else — no empty field inviting them to fill in a cost we ignore.
+    superAdminOnlyColumns: ['purchase_price']
   },
   'sales-orders': {
     filename: 'ams_sales_orders_import_template',
@@ -535,23 +546,26 @@ async function buildVehiclesSample() {
 async function buildPartsSample() {
   const doc = await Part.findOne().lean();
   const d = doc || {};
+  /* The optional columns are shown empty on purpose: blank is a valid, common
+     answer now (it means "leave this alone"), and a dealer stock list rarely
+     carries anything beyond part number, name, brand, price and quantity. */
   return [
     d.partCode || d.sku || 'SPARE-001',
     d.name || 'Sample Brake Pad',
-    fmtNum(d.costPrice) || '1500',
+    fmtNum(d.costPrice),
     fmtNum(d.sellingPrice) || '2500',
     (d.category && d.category.name) || '',
-    d.description || 'OEM quality brake pad set',
+    d.description || '',
     d.brand || 'OEM',
-    d.sourceType || 'manufacturer',
+    d.sourceType || '',
     (d.supplier && d.supplier.name) || '',
-    d.unit || 'piece',
+    d.unit || '',
     fmtNum(d.currentStock) || fmtNum(d.quantity) || '10',
-    fmtNum(d.minStock) || '2',
-    fmtNum(d.maxStock) || '50',
-    fmtNum(d.reorderLevel) || '5',
+    fmtNum(d.minStock),
+    fmtNum(d.maxStock),
+    fmtNum(d.reorderLevel),
     (d.warehouse && d.warehouse.name) || '',
-    d.binLocation || 'A-01'
+    d.binLocation || ''
   ];
 }
 
@@ -630,14 +644,28 @@ exports.downloadTemplate = async (req, res, next) => {
 
     /* For single-row types, sampleRows is a flat array; for master types, it's an array of arrays. */
     const isMaster = Array.isArray(sampleRows) && sampleRows.length > 0 && Array.isArray(sampleRows[0]);
-    const dataRows = isMaster ? sampleRows : (sampleRows ? [sampleRows] : []);
+    let dataRows = isMaster ? sampleRows : (sampleRows ? [sampleRows] : []);
+
+    /* Columns this role may not write are removed from the template entirely,
+       header and sample cell together, so the two never drift apart. */
+    let headers = meta.headers;
+    const restricted = req.user?.isSuperAdmin ? [] : (meta.superAdminOnlyColumns || []);
+    if (restricted.length) {
+      const keep = meta.headers
+        .map((header, index) => (restricted.includes(header) ? -1 : index))
+        .filter((index) => index >= 0);
+      headers = keep.map((index) => meta.headers[index]);
+      dataRows = dataRows.map((row) => keep.map((index) => row[index]));
+    }
 
     /* Build the matrix: [headers, ...dataRows] */
-    const matrix = [meta.headers, ...dataRows];
+    const matrix = [headers, ...dataRows];
 
     if (format === 'csv') {
       const lines = matrix.map((row) => row.map(csvCell).join(','));
-      const body = lines.join('\r\n');
+      /* A leading # line is stripped again on upload, so the instructions can
+         travel with the file the dealer fills in and hands back. */
+      const body = (meta.note ? [`# ${meta.note}`, ...lines] : lines).join('\r\n');
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
       res.setHeader('Content-Disposition', `attachment; filename="${meta.filename}.csv"`);
       return res.send('\uFEFF' + body);
@@ -645,8 +673,12 @@ exports.downloadTemplate = async (req, res, next) => {
 
     /* XLSX */
     const wb = xlsx.utils.book_new();
-    const ws = xlsx.utils.aoa_to_sheet(matrix);
-    const colWidths = meta.headers.map((h) => ({ wch: Math.max(h.length + 2, 16) }));
+    /* XLSX has no comment syntax, so the note goes in a row of its own above
+       the header. The parser skips any leading row holding fewer than two
+       filled cells, which is also why a sheet that simply starts with a blank
+       row imports fine. */
+    const ws = xlsx.utils.aoa_to_sheet(meta.note ? [[meta.note], ...matrix] : matrix);
+    const colWidths = headers.map((h) => ({ wch: Math.max(h.length + 2, 16) }));
     ws['!cols'] = colWidths;
     xlsx.utils.book_append_sheet(wb, ws, 'Import');
     const buf = xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
@@ -1081,6 +1113,67 @@ exports.importVehicles = async (req, res, next) => {
 
 /* ═══ Parts ═════════════════════════════════════════════════════════════ */
 
+/**
+ * Accepted spellings per parts column.
+ *
+ * normalizeHeader() already folds case, spaces and punctuation, so
+ * "Part number ", "PART_NUMBER" and "part number" all arrive as
+ * `part_number`. This table only has to cover columns that use a genuinely
+ * different *word* — the dealer's own stock sheet labels the description
+ * column "Part Name", older AMS templates call it "name".
+ */
+const PART_COLUMN_ALIASES = {
+  part_number: ['part_number', 'partnumber', 'part_no', 'partno', 'part_code', 'partcode', 'sku', 'item_code', 'itemcode'],
+  name: ['name', 'part_name', 'partname', 'item_name', 'itemname', 'item_description'],
+  purchase_price: ['purchase_price', 'purchaseprice', 'purchasing_price', 'cost_price', 'costprice', 'buying_price'],
+  selling_price: ['selling_price', 'sellingprice', 'sale_price', 'saleprice', 'retail_price', 'price'],
+  category_name: ['category_name', 'categoryname', 'category'],
+  description: ['description', 'notes', 'remarks'],
+  brand: ['brand', 'brand_name', 'brandname'],
+  source_type: ['source_type', 'sourcetype', 'source'],
+  supplier_name: ['supplier_name', 'suppliername', 'supplier', 'vendor_name', 'vendor'],
+  unit: ['unit', 'uom', 'unit_of_measure'],
+  current_stock: ['current_stock', 'currentstock', 'stock', 'quantity', 'qty', 'opening_stock'],
+  minimum_stock: ['minimum_stock', 'minimumstock', 'min_stock', 'minstock'],
+  maximum_stock: ['maximum_stock', 'maximumstock', 'max_stock', 'maxstock'],
+  reorder_level: ['reorder_level', 'reorderlevel', 'reorder'],
+  warehouse_name: ['warehouse_name', 'warehousename', 'warehouse', 'warehouse_id'],
+  bin_location: ['bin_location', 'binlocation', 'bin', 'shelf'],
+};
+
+/** First non-blank value among a field's accepted column spellings. */
+function partCell(row, field) {
+  for (const key of PART_COLUMN_ALIASES[field] || [field]) {
+    const value = row[key];
+    if (value !== undefined && value !== null && String(value).trim() !== '') return String(value).trim();
+  }
+  return '';
+}
+
+/** True when the file actually carries a value for this column on this row. */
+function partHas(row, field) {
+  return partCell(row, field) !== '';
+}
+
+/**
+ * Read a numeric column. A blank cell is "not supplied"; a cell holding
+ * something that is not a number is an error rather than a silent 0 — writing
+ * a price of zero because someone typed "TBC" is worse than refusing the row.
+ */
+function partNumberCell(row, field, { integer = false } = {}) {
+  const raw = partCell(row, field);
+  if (!raw) return { supplied: false };
+  const cleaned = raw.replace(/,/g, '');
+  const parsed = Number(cleaned);
+  if (!Number.isFinite(parsed)) {
+    return { supplied: true, error: `${field} must be a number (got "${raw}").` };
+  }
+  if (parsed < 0) {
+    return { supplied: true, error: `${field} cannot be negative (got "${raw}").` };
+  }
+  return { supplied: true, value: integer ? Math.round(parsed) : parsed };
+}
+
 exports.importParts = async (req, res, next) => {
   try {
     if (!requireFile(req, next)) return;
@@ -1088,9 +1181,16 @@ exports.importParts = async (req, res, next) => {
     if (!rows) return;
 
     const userId = req.user && (req.user._id || req.user.id);
+    // Cost is super-admin-only data. Another role may still run the import —
+    // the column is simply ignored, so a part they add carries no purchase
+    // price and one that already has a price keeps the stored value.
+    const canSetPurchasePrice = canSeePurchasePrice(req);
     const errors = [];
+    const notes = [];
     let created = 0;
     let updated = 0;
+    let ignoredPurchasePriceRows = 0;
+    let mergedDuplicateRows = 0;
 
     const [categories, suppliers, warehouses] = await Promise.all([
       PartCategory.find({ is_active: true }).lean(),
@@ -1100,6 +1200,8 @@ exports.importParts = async (req, res, next) => {
     const categoriesByName = byLowerName(categories);
     const suppliersByName = byLowerName(suppliers);
     const warehousesByName = byLowerName(warehouses, 'warehouseName');
+    // A sheet with no source_type column still has to land under a tab.
+    const defaultSourceType = await resolveSourceType('');
 
     // Load existing parts by partCode for UPSERT
     const existingParts = await Part.find().select('partCode sku').lean();
@@ -1113,24 +1215,19 @@ exports.importParts = async (req, res, next) => {
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
       const rowNum = i + 1;
-      const partNumber = String(row.part_number || row.partnumber || '').trim();
-      const name = String(row.name || '').trim();
-      const purchasePrice = row.purchase_price || row.purchaseprice;
-      const sellingPrice = row.selling_price || row.sellingprice;
-      if (!partNumber || !name || !purchasePrice || !sellingPrice) {
-        errors.push({ row: rowNum, message: 'Missing required field(s): part_number, name, purchase_price, selling_price.' });
+      const partNumber = partCell(row, 'part_number');
+      const name = partCell(row, 'name');
+      // Part number and name are the whole identity of a stock line; every
+      // other column is optional and simply left as-is when the sheet omits it.
+      if (!partNumber || !name) {
+        errors.push({ row: rowNum, message: 'Missing required field(s): part_number and name (part name).' });
         continue;
       }
 
       const pnKey = partNumber.toLowerCase();
-      if (seenInFile.has(pnKey)) {
-        errors.push({ row: rowNum, message: `Duplicate part_number "${partNumber}" in this file (skipped).` });
-        continue;
-      }
-      seenInFile.add(pnKey);
 
-      let categoryData = {};
-      const catRaw = String(row.category_name || row.category || '').trim();
+      let categoryData = null;
+      const catRaw = partCell(row, 'category_name');
       if (catRaw) {
         const cat = MONGO_ID.test(catRaw)
           ? categories.find((c) => String(c._id) === catRaw.toLowerCase() || String(c._id) === catRaw)
@@ -1142,8 +1239,8 @@ exports.importParts = async (req, res, next) => {
         categoryData = { name: cat.name, code: String(cat._id) };
       }
 
-      let supplierData = {};
-      const supRaw = String(row.supplier_name || row.supplier || '').trim();
+      let supplierData = null;
+      const supRaw = partCell(row, 'supplier_name');
       if (supRaw) {
         const sup = MONGO_ID.test(supRaw)
           ? suppliers.find((s) => String(s._id) === supRaw.toLowerCase() || String(s._id) === supRaw)
@@ -1155,8 +1252,8 @@ exports.importParts = async (req, res, next) => {
         supplierData = { name: sup.name, code: sup.supplier_code, phone: sup.phone, email: sup.email };
       }
 
-      let warehouseData = {};
-      const whRaw = String(row.warehouse_name || row.warehouse_id || '').trim();
+      let warehouseData = null;
+      const whRaw = partCell(row, 'warehouse_name');
       if (whRaw) {
         let wh = null;
         if (MONGO_ID.test(whRaw)) wh = warehouses.find((w) => String(w._id) === whRaw.toLowerCase() || String(w._id) === whRaw);
@@ -1168,29 +1265,61 @@ exports.importParts = async (req, res, next) => {
         warehouseData = { name: wh.warehouseName, code: wh.code };
       }
 
-      const currentStock = toInt(row.current_stock, 0);
+      /* Only the columns the sheet actually filled in are written. A blank cell
+         means "leave this alone": on an existing part the stored value survives,
+         and on a new one the schema default applies instead of an invented
+         number. That is what lets a stock list carrying nothing but part
+         number, name, brand, price and quantity import cleanly. */
       const partData = {
         partCode: partNumber,
         sku: partNumber,
         name,
-        description: row.description || '',
-        category: categoryData,
-        supplier: supplierData,
-        warehouse: warehouseData,
-        brand: row.brand || '',
-        unit: row.unit || 'piece',
-        costPrice: toNum(purchasePrice),
-        sellingPrice: toNum(sellingPrice),
-        quantity: currentStock,
-        currentStock,
-        minStock: toInt(row.minimum_stock, 5),
-        maxStock: toInt(row.maximum_stock, 100),
-        reorderLevel: toInt(row.reorder_level, 10),
-        binLocation: row.bin_location || '',
-        sourceType: row.source_type || 'manufacturer',
         isActive: true,
         updatedBy: userId
       };
+      if (categoryData) partData.category = categoryData;
+      if (supplierData) partData.supplier = supplierData;
+      if (warehouseData) partData.warehouse = warehouseData;
+      if (partHas(row, 'description')) partData.description = partCell(row, 'description');
+      if (partHas(row, 'brand')) partData.brand = partCell(row, 'brand');
+      if (partHas(row, 'unit')) partData.unit = partCell(row, 'unit');
+      if (partHas(row, 'source_type')) partData.sourceType = await resolveSourceType(partCell(row, 'source_type'));
+      if (partHas(row, 'bin_location')) partData.binLocation = partCell(row, 'bin_location');
+
+      const numericColumns = [
+        ['selling_price', 'sellingPrice', false],
+        ['current_stock', 'currentStock', true],
+        ['minimum_stock', 'minStock', true],
+        ['maximum_stock', 'maxStock', true],
+        ['reorder_level', 'reorderLevel', true],
+      ];
+      let numberError = null;
+      for (const [column, field, integer] of numericColumns) {
+        const parsed = partNumberCell(row, column, { integer });
+        if (parsed.error) { numberError = parsed.error; break; }
+        if (parsed.supplied) partData[field] = parsed.value;
+      }
+      if (numberError) {
+        errors.push({ row: rowNum, message: numberError });
+        continue;
+      }
+      // The model keeps both; quantity is the legacy name for the same holding.
+      if (partData.currentStock !== undefined) partData.quantity = partData.currentStock;
+
+      const cost = partNumberCell(row, 'purchase_price');
+      if (cost.error) { errors.push({ row: rowNum, message: cost.error }); continue; }
+      if (cost.supplied) {
+        if (canSetPurchasePrice) partData.costPrice = cost.value;
+        else ignoredPurchasePriceRows += 1;
+      }
+
+      // The same part number twice in one sheet is the same part listed under
+      // two models, not two parts. Applying the later row on top of the earlier
+      // one keeps stock honest — importing it twice would double the holding.
+      // Counted here, past the validation gates, so a row that never landed is
+      // never reported as merged.
+      if (seenInFile.has(pnKey)) mergedDuplicateRows += 1;
+      seenInFile.add(pnKey);
 
       const existingId = existingByPartCode.get(pnKey);
       if (existingId) {
@@ -1202,7 +1331,15 @@ exports.importParts = async (req, res, next) => {
         }
       } else {
         try {
-          await Part.create({ ...partData, createdBy: userId });
+          // Defaults for a brand-new part only — an update never reaches these,
+          // so re-importing a trimmed sheet cannot reset a part to 'piece'.
+          const part = await Part.create({
+            unit: 'piece',
+            sourceType: defaultSourceType,
+            ...partData,
+            createdBy: userId
+          });
+          existingByPartCode.set(pnKey, part._id);
           created += 1;
         } catch (e) {
           errors.push({ row: rowNum, message: e.message || 'Create failed' });
@@ -1210,7 +1347,14 @@ exports.importParts = async (req, res, next) => {
       }
     }
 
-    respond(res, rows, created, errors, updated);
+    if (ignoredPurchasePriceRows) {
+      notes.push(`purchase_price was ignored on ${ignoredPurchasePriceRows} row(s): only a Super Admin can set a part's purchase price.`);
+    }
+    if (mergedDuplicateRows) {
+      notes.push(`${mergedDuplicateRows} row(s) repeated a part number already in this file and were applied to the same part instead of creating a second one.`);
+    }
+
+    respond(res, rows, created, errors, updated, notes);
   } catch (err) {
     logger.error('importParts error', err);
     handleImportError(err, next);

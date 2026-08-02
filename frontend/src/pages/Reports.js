@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { reportAPI } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
 import '../styles/userManagement.css';
 
@@ -338,6 +339,7 @@ function ReportSection({ title, rows }) {
 }
 
 function Reports() {
+  const { isSuperAdmin } = useAuth();
   const [activeTab, setActiveTab] = useState('leads');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -394,7 +396,11 @@ function Reports() {
     toast.success(`${format.toUpperCase()} export downloaded.`);
   };
 
-  const cards = TAB_CARDS[activeTab] || [];
+  // Parts stock value is derived from purchase price, which only a super admin
+  // may see — the API withholds the field, so the card would read PKR 0.
+  const cards = (TAB_CARDS[activeTab] || []).filter(
+    (card) => card.key !== 'stockValue' || isSuperAdmin,
+  );
   const cardValues = report?.cards || {};
   const failures = report?.errors || [];
 

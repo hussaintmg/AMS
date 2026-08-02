@@ -82,14 +82,20 @@ const getSalesByModel = async (req, res, next) => {
   } catch (error) { next(error); }
 };
 
-const getInventoryHealth = async (_req, res, next) => {
+const getInventoryHealth = async (req, res, next) => {
   try {
     const parts = await Part.find({ isActive: { $ne: false } }).sort({ currentStock: 1 }).limit(5000).lean();
+    // Stock value is quantity × purchase price, which hands back the purchase
+    // price itself for anything held as a single unit. Only the super admin —
+    // the one role allowed to see cost — gets the column.
+    const showStockValue = req.user?.isSuperAdmin === true;
     send(res, rows(parts, (part) => ({
       id: part._id, reference: part.partCode || part.sku, name: part.name || part.partCode,
       category: part.category?.name || '', warehouse: part.warehouse?.name || '',
       stock: asNumber(part.currentStock ?? part.quantity), minimum: asNumber(part.minStock ?? part.reorderLevel),
-      stockValue: asNumber(part.currentStock ?? part.quantity) * asNumber(part.costPrice),
+      ...(showStockValue
+        ? { stockValue: asNumber(part.currentStock ?? part.quantity) * asNumber(part.costPrice) }
+        : {}),
       status: asNumber(part.currentStock ?? part.quantity) <= asNumber(part.minStock ?? part.reorderLevel) ? 'low' : 'healthy',
     })));
   } catch (error) { next(error); }

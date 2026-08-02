@@ -255,6 +255,16 @@ export default function BulkUploadModal({
                             Processed {result.summary.total} row(s): {result.summary.created} imported
                             {result.summary.updated > 0 ? `, ${result.summary.updated} updated` : ''}
                             {result.summary.failed > 0 ? `, ${result.summary.failed} failed` : ''}.
+                            {/* Decisions the import made on the user's behalf — a column
+                                their role may not write, rows folded together. Not
+                                failures, so they are kept clear of the row-error list. */}
+                            {result.notes?.length > 0 ? (
+                                <ul className="bulk-upload-row-notes">
+                                    {result.notes.map((note, idx) => (
+                                        <li key={idx}>{note}</li>
+                                    ))}
+                                </ul>
+                            ) : null}
                             {result.errors?.length > 0 ? (
                                 <ul className="bulk-upload-row-errors">
                                     {result.errors.slice(0, 50).map((rowErr, idx) => (

@@ -183,6 +183,18 @@
     margin-bottom: 0.35rem;
 }
 
+/* Notes read as information, not failure, so they stay off the error red. */
+.bulk-upload-row-notes {
+    margin-top: 0.75rem;
+    font-size: 0.8125rem;
+    padding-left: 1.1rem;
+    color: #475569;
+}
+
+.bulk-upload-row-notes li {
+    margin-bottom: 0.35rem;
+}
+
 .bulk-upload-spinner {
     display: inline-block;
     width: 1rem;

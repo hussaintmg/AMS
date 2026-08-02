@@ -109,7 +109,15 @@ const flattenSourceType = (type) => ({
     is_active: type.isActive !== false,
 });
 
-const flattenPart = (p) => ({
+/**
+ * Purchase (cost) price is commercially sensitive: only the super admin may
+ * read it, add it or change it. The rule is enforced here rather than in the
+ * UI alone, so hitting the API directly with another role's token still comes
+ * back without the field and still cannot write it.
+ */
+const canSeePurchasePrice = (req) => req.user?.isSuperAdmin === true;
+
+const flattenPart = (p, showPurchasePrice = false) => ({
     id: p._id,
     part_number: p.partCode,
     name: p.name,
@@ -120,7 +128,7 @@ const flattenPart = (p) => ({
     supplier_id: p.supplierId || null,
     supplier_name: p.supplier?.name || '',
     unit: p.unit,
-    purchase_price: p.costPrice,
+    ...(showPurchasePrice ? { purchase_price: p.costPrice } : {}),
     selling_price: p.sellingPrice,
     current_stock: p.currentStock,
     minimum_stock: p.minStock,
@@ -199,6 +207,7 @@ const getAllParts = async (req, res, next) => {
 
         const total = await Part.countDocuments(filter);
 
+        const showPurchasePrice = canSeePurchasePrice(req);
         const mapped = parts.map((p) => {
             const threshold = p.reorderLevel || p.minStock || 0;
             let computedStatus = 'normal';
@@ -218,7 +227,7 @@ const getAllParts = async (req, res, next) => {
                 supplier_id: null,
                 supplier_name: p.supplier?.name || '',
                 unit: p.unit,
-                purchase_price: p.costPrice,
+                ...(showPurchasePrice ? { purchase_price: p.costPrice } : {}),
                 selling_price: p.sellingPrice,
                 current_stock: p.currentStock,
                 minimum_stock: p.minStock,
@@ -263,7 +272,7 @@ const getPartById = async (req, res, next) => {
 
         res.json({
             success: true,
-            data: flattenPart(part)
+            data: flattenPart(part, canSeePurchasePrice(req))
         });
     } catch (error) {
         logger.error('Error fetching part:', error);
@@ -328,7 +337,10 @@ const createPart = async (req, res, next) => {
             warehouse: warehouseData,
             brand: brand || '',
             unit: unit || 'piece',
-            costPrice: purchasePrice || 0,
+            // A non-super-admin cannot introduce a purchase price: the field is
+            // dropped from their payload rather than rejected, so adding a part
+            // still works — it just starts with no cost recorded.
+            costPrice: canSeePurchasePrice(req) ? (purchasePrice || 0) : 0,
             sellingPrice: sellingPrice || 0,
             quantity: currentStock || 0,
             currentStock: currentStock || 0,
@@ -414,7 +426,9 @@ const updatePart = async (req, res, next) => {
         if (brand !== undefined) part.brand = brand;
         if (sourceType !== undefined) part.sourceType = await resolveSourceType(sourceType);
         if (unit !== undefined) part.unit = unit;
-        if (purchasePrice !== undefined) part.costPrice = purchasePrice;
+        // Ignored for everyone but the super admin — an edit from another role
+        // leaves the stored cost untouched instead of zeroing it.
+        if (purchasePrice !== undefined && canSeePurchasePrice(req)) part.costPrice = purchasePrice;
         if (sellingPrice !== undefined) part.sellingPrice = sellingPrice;
         if (minimumStock !== undefined) part.minStock = minimumStock;
         if (maximumStock !== undefined) part.maxStock = maximumStock;
@@ -547,6 +561,11 @@ const getPartStats = async (req, res, next) => {
             total_inventory_value: 0
         };
         delete stats._id;
+
+        // Inventory value is stock × purchase price, so for a part held as a
+        // single unit it *is* the purchase price. It goes out with the same
+        // restriction as the field it is derived from.
+        if (!canSeePurchasePrice(req)) delete stats.total_inventory_value;
 
         // One entry per configured source type so the UI can render a card/tab per
         // type without knowing which ones the dealer created.
@@ -712,7 +731,8 @@ const getLowStockParts = async (req, res, next) => {
             (p) => p.currentStock <= (p.reorderLevel || p.minStock || 0)
         ).slice(0, 20);
 
-        const mapped = thresholdFiltered.map(flattenPart);
+        const showPurchasePrice = canSeePurchasePrice(req);
+        const mapped = thresholdFiltered.map((p) => flattenPart(p, showPurchasePrice));
 
         res.json({ success: true, data: mapped });
     } catch (error) {
@@ -735,5 +755,9 @@ module.exports = {
     getSourceTypes,
     createSourceType,
     updateSourceType,
-    deleteSourceType
+    deleteSourceType,
+    // Shared with the bulk importer so an imported part lands under the same
+    // source-type tab a manually created one would.
+    resolveSourceType,
+    canSeePurchasePrice
 };
