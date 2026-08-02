@@ -12,10 +12,12 @@
 const mongoose = require('mongoose');
 const Payroll = require('../models/Payroll.model');
 const Employee = require('../models/Employee.model');
+const SalaryAdvance = require('../models/SalaryAdvance.model');
 const { AppError } = require('../middleware/errorHandler');
 const {
     postDoubleEntry,
     isAlreadyPosted,
+    reverseEntries,
     DEFAULT_CREDIT_ACCOUNT,
     DEFAULT_SALARY_ACCOUNT,
 } = require('../services/ledgerPosting.service');
@@ -25,6 +27,9 @@ const {
     ADVANCE_ACCOUNT,
 } = require('./salaryAdvance.controller');
 
+/** What the company owes staff between posting a period and paying it out. */
+const SALARY_PAYABLE_ACCOUNT = 'Salaries Payable';
+
 const getUserId = (req) => req.user?._id || req.user?.id || null;
 const round2 = (value) => Math.round((Number(value) || 0) * 100) / 100;
 
@@ -32,15 +37,45 @@ const toObjectId = (value) => (mongoose.Types.ObjectId.isValid(value) ? new mong
 
 const asDateOnly = (d) => (d ? new Date(d).toISOString().slice(0, 10) : null);
 
-const mapPeriod = (p) => ({
-    id: p._id,
-    label: p.label,
-    period_start: asDateOnly(p.periodStart),
-    period_end: asDateOnly(p.periodEnd),
-    status: p.status,
-    line_count: (p.lines || []).length,
-    posted_at: p.postedAt || null,
-    created_at: p.createdAt,
+const remainingOf = (line) => Math.max(0, round2((line.netAmount || 0) - (line.paidAmount || 0)));
+
+/** unpaid → partial → paid, worked out from the numbers rather than stored. */
+const paymentStatusOf = (line) => {
+    const net = round2(line.netAmount);
+    const paid = round2(line.paidAmount);
+    if (net <= 0) return 'nothing_due';
+    if (paid <= 0) return 'unpaid';
+    return paid >= net ? 'paid' : 'partial';
+};
+
+const mapPeriod = (p) => {
+    const lines = p.lines || [];
+    const net = round2(lines.reduce((sum, l) => sum + (l.netAmount || 0), 0));
+    const paid = round2(lines.reduce((sum, l) => sum + (l.paidAmount || 0), 0));
+    return {
+        id: p._id,
+        label: p.label,
+        period_start: asDateOnly(p.periodStart),
+        period_end: asDateOnly(p.periodEnd),
+        status: p.status,
+        line_count: lines.length,
+        // Totals let the list show at a glance what a month still owes.
+        net_total: net,
+        paid_total: paid,
+        remaining_total: round2(lines.reduce((sum, l) => sum + remainingOf(l), 0)),
+        unpaid_count: lines.filter((l) => paymentStatusOf(l) !== 'paid' && (l.netAmount || 0) > 0).length,
+        posted_at: p.postedAt || null,
+        created_at: p.createdAt,
+    };
+};
+
+const mapPayment = (payment) => ({
+    id: String(payment._id),
+    amount: round2(payment.amount),
+    paid_on: asDateOnly(payment.paidOn),
+    method: payment.method || 'cash',
+    reference: payment.reference || '',
+    notes: payment.notes || '',
 });
 
 const mapLine = (line) => {
@@ -56,6 +91,10 @@ const mapLine = (line) => {
         // What the employee still owes after this run is taken off.
         advance_balance: line.advanceBalance || 0,
         net_amount: line.netAmount || 0,
+        paid_amount: round2(line.paidAmount),
+        remaining_amount: remainingOf(line),
+        payment_status: paymentStatusOf(line),
+        payments: (line.payments || []).map(mapPayment),
         notes: line.notes || '',
     };
 };
@@ -294,12 +333,17 @@ const postPeriod = async (req, res, next) => {
             throw new AppError('Cannot post a period with zero net total', 400);
         }
 
-        // Cash actually handed over.
+        /**
+         * Posting recognises the cost and the debt, not the cash. Salaries here
+         * are often handed over in instalments, so the money leaves when a
+         * payment is recorded — until then the net sits in Salaries Payable,
+         * which is exactly what the employee is still owed.
+         */
         if (netTotal > 0) {
             await postDoubleEntry({
                 transactionDate: period.periodEnd,
                 debitAccount: DEFAULT_SALARY_ACCOUNT,
-                creditAccount: DEFAULT_CREDIT_ACCOUNT,
+                creditAccount: SALARY_PAYABLE_ACCOUNT,
                 amount: netTotal,
                 description: `Payroll ${period.label} (${period.lines.length} employees)`,
                 referenceType: 'salary',
@@ -401,6 +445,280 @@ const updateLine = async (req, res, next) => {
     }
 };
 
+/** Shared by the single and bulk payment routes. */
+async function findPostedLineOr404(lineId) {
+    if (!toObjectId(lineId)) throw new AppError('Salary line not found', 404);
+    const period = await Payroll.findOne({ 'lines._id': lineId });
+    if (!period) throw new AppError('Salary line not found', 404);
+    if (period.status !== 'posted') {
+        throw new AppError('Post the payroll period before paying salaries from it', 400);
+    }
+    return { period, line: period.lines.id(lineId) };
+}
+
+/**
+ * Write the cash movement for one salary payment: the debt raised at posting is
+ * cleared and the money leaves.
+ */
+async function postPaymentToLedger({ period, line, payment, employeeLabel, userId }) {
+    await postDoubleEntry({
+        transactionDate: payment.paidOn,
+        debitAccount: SALARY_PAYABLE_ACCOUNT,
+        creditAccount: DEFAULT_CREDIT_ACCOUNT,
+        amount: payment.amount,
+        description: `Salary paid to ${employeeLabel} — ${period.label}`,
+        referenceType: 'salary',
+        referenceId: `PRPAY-${line._id}-${payment._id}`,
+        userId,
+    });
+}
+
+/**
+ * Record a salary payment against one line.
+ * @route POST /api/payroll/lines/:lineId/pay
+ */
+const payLine = async (req, res, next) => {
+    try {
+        const { period, line } = await findPostedLineOr404(req.params.lineId);
+
+        const remaining = remainingOf(line);
+        if (remaining <= 0) throw new AppError('This salary is already fully paid', 400);
+
+        // Paying the whole remainder is the common case, so an empty amount
+        // means "settle it".
+        const amount = req.body?.amount == null || req.body.amount === ''
+            ? remaining
+            : round2(req.body.amount);
+        if (!Number.isFinite(amount) || amount <= 0) {
+            throw new AppError('Payment must be greater than zero', 400);
+        }
+        if (amount > remaining) {
+            throw new AppError(`Payment cannot exceed the remaining ${remaining}`, 400);
+        }
+
+        line.payments.push({
+            amount,
+            paidOn: req.body?.paid_on ? new Date(req.body.paid_on) : new Date(),
+            method: String(req.body?.method || 'cash').trim(),
+            reference: String(req.body?.reference || '').trim(),
+            notes: String(req.body?.notes || '').trim(),
+            createdBy: getUserId(req),
+        });
+        line.paidAmount = round2(line.paidAmount + amount);
+        period.updatedBy = getUserId(req);
+        await period.save();
+
+        const employee = await Employee.findById(line.employee).select('firstName lastName employeeCode').lean();
+        await postPaymentToLedger({
+            period,
+            line,
+            payment: line.payments[line.payments.length - 1],
+            employeeLabel: [employee?.firstName, employee?.lastName].filter(Boolean).join(' ') || 'employee',
+            userId: getUserId(req),
+        });
+
+        const populated = await findPeriodOr404(period._id, true);
+        const updated = populated.lines.id(line._id);
+        res.json({
+            success: true,
+            message: remainingOf(updated) > 0
+                ? `Paid ${amount}; ${remainingOf(updated)} still remaining`
+                : `Paid ${amount} — salary settled`,
+            data: mapLine(updated),
+        });
+    } catch (e) { next(e); }
+};
+
+/**
+ * Settle every unpaid line in a period in one go — the usual "pay everyone
+ * today" action.
+ * @route POST /api/payroll/periods/:id/pay-all
+ */
+const payPeriod = async (req, res, next) => {
+    try {
+        const period = await findPeriodOr404(req.params.id, true);
+        if (period.status !== 'posted') {
+            throw new AppError('Post the payroll period before paying salaries from it', 400);
+        }
+
+        const paidOn = req.body?.paid_on ? new Date(req.body.paid_on) : new Date();
+        const method = String(req.body?.method || 'cash').trim();
+        const userId = getUserId(req);
+
+        let total = 0;
+        let count = 0;
+        const receipts = [];
+        for (const line of period.lines) {
+            const remaining = remainingOf(line);
+            if (remaining <= 0) continue;
+            line.payments.push({ amount: remaining, paidOn, method, notes: 'Paid with the whole period', createdBy: userId });
+            line.paidAmount = round2(line.paidAmount + remaining);
+            receipts.push({ line, payment: line.payments[line.payments.length - 1] });
+            total = round2(total + remaining);
+            count += 1;
+        }
+
+        if (!count) throw new AppError('Every salary in this period is already paid', 400);
+
+        period.updatedBy = userId;
+        await period.save();
+
+        // Ledger rows are written after the save so a failed save cannot leave
+        // cash movements behind for payments that were never recorded.
+        for (const { line, payment } of receipts) {
+            const emp = line.employee && typeof line.employee === 'object' ? line.employee : null;
+            await postPaymentToLedger({
+                period,
+                line,
+                payment,
+                employeeLabel: emp ? [emp.firstName, emp.lastName].filter(Boolean).join(' ') : 'employee',
+                userId,
+            });
+        }
+
+        const populated = await findPeriodOr404(period._id, true);
+        res.json({
+            success: true,
+            message: `${count} salar${count === 1 ? 'y' : 'ies'} paid, ${total} in total`,
+            data: { period: mapPeriod(populated.toObject()), lines: populated.lines.map(mapLine) },
+        });
+    } catch (e) { next(e); }
+};
+
+/**
+ * Undo a payment that was recorded by mistake.
+ * @route DELETE /api/payroll/lines/:lineId/payments/:paymentId
+ */
+const deletePayment = async (req, res, next) => {
+    try {
+        const { period, line } = await findPostedLineOr404(req.params.lineId);
+        const payment = line.payments.id(req.params.paymentId);
+        if (!payment) throw new AppError('Payment not found', 404);
+
+        const amount = round2(payment.amount);
+        payment.deleteOne();
+        line.paidAmount = Math.max(0, round2(line.paidAmount - amount));
+        period.updatedBy = getUserId(req);
+        await period.save();
+
+        // Drop the cash movement too, otherwise the ledger keeps money leaving
+        // for a payment the payroll no longer shows.
+        await reverseEntries('salary', `PRPAY-${line._id}-${req.params.paymentId}`, getUserId(req));
+
+        const populated = await findPeriodOr404(period._id, true);
+        res.json({ success: true, message: `Payment of ${amount} removed`, data: mapLine(populated.lines.id(line._id)) });
+    } catch (e) { next(e); }
+};
+
+/**
+ * One employee's salary month by month, newest first.
+ * @route GET /api/payroll/employees/:employeeId/history
+ *
+ * Answers the question a payroll clerk actually gets asked: what has this
+ * person earned, what was held back, what have we paid them, and what do we
+ * still owe — for this month and across the year.
+ */
+const employeeHistory = async (req, res, next) => {
+    try {
+        const employeeId = toObjectId(req.params.employeeId);
+        if (!employeeId) throw new AppError('Invalid employee id', 400);
+
+        const employee = await Employee.findById(employeeId)
+            .select('firstName lastName employeeCode salary designation status').lean();
+        if (!employee) throw new AppError('Employee not found', 404);
+
+        // Only periods that actually carry a line for this employee.
+        const periods = await Payroll.find({ 'lines.employee': employeeId })
+            .sort({ periodStart: -1 }).lean();
+
+        const months = [];
+        for (const period of periods) {
+            for (const line of period.lines || []) {
+                if (String(line.employee) !== String(employeeId)) continue;
+                months.push({
+                    period_id: String(period._id),
+                    period_label: period.label,
+                    period_start: asDateOnly(period.periodStart),
+                    period_end: asDateOnly(period.periodEnd),
+                    period_status: period.status,
+                    ...mapLine({ ...line, employee: null }),
+                });
+            }
+        }
+
+        const sum = (key) => round2(months.reduce((total, m) => total + (Number(m[key]) || 0), 0));
+        const advances = await SalaryAdvance.find({ employee: employeeId })
+            .sort({ issuedOn: -1 }).select('amount recovered status issuedOn reason').lean();
+
+        res.json({
+            success: true,
+            data: {
+                employee: {
+                    id: String(employee._id),
+                    name: [employee.firstName, employee.lastName].filter(Boolean).join(' '),
+                    code: employee.employeeCode || '',
+                    designation: employee.designation || '',
+                    status: employee.status || '',
+                    monthly_salary: round2(employee.salary),
+                },
+                months,
+                totals: {
+                    months: months.length,
+                    gross: sum('gross_amount'),
+                    deductions: sum('deductions'),
+                    advance_recovered: sum('advance_deduction'),
+                    net: sum('net_amount'),
+                    paid: sum('paid_amount'),
+                    remaining: sum('remaining_amount'),
+                },
+                advance_outstanding: round2(advances.reduce(
+                    (total, a) => total + (a.status === 'outstanding' ? Math.max(0, a.amount - a.recovered) : 0), 0,
+                )),
+            },
+        });
+    } catch (e) { next(e); }
+};
+
+/**
+ * Everyone who is still owed something, across every posted period.
+ * @route GET /api/payroll/outstanding
+ */
+const outstandingSalaries = async (req, res, next) => {
+    try {
+        const periods = await Payroll.find({ status: 'posted' })
+            .populate('lines.employee', 'firstName lastName employeeCode')
+            .sort({ periodStart: -1 }).lean();
+
+        const byEmployee = new Map();
+        let total = 0;
+        for (const period of periods) {
+            for (const line of period.lines || []) {
+                const remaining = remainingOf(line);
+                if (remaining <= 0) continue;
+                const emp = line.employee && typeof line.employee === 'object' ? line.employee : null;
+                const key = String(emp?._id || line.employee);
+                const entry = byEmployee.get(key) || {
+                    employee_id: key,
+                    employee_name: emp ? [emp.firstName, emp.lastName].filter(Boolean).join(' ') : '',
+                    employee_code: emp?.employeeCode || '',
+                    remaining: 0,
+                    months: [],
+                };
+                entry.remaining = round2(entry.remaining + remaining);
+                entry.months.push({ period_label: period.label, remaining });
+                byEmployee.set(key, entry);
+                total = round2(total + remaining);
+            }
+        }
+
+        res.json({
+            success: true,
+            data: [...byEmployee.values()].sort((a, b) => b.remaining - a.remaining),
+            summary: { total_outstanding: total, employees: byEmployee.size },
+        });
+    } catch (e) { next(e); }
+};
+
 module.exports = {
     listPeriods,
     createPeriod,
@@ -408,5 +726,10 @@ module.exports = {
     generateLines,
     lockPeriod,
     postPeriod,
-    updateLine
+    updateLine,
+    payLine,
+    payPeriod,
+    deletePayment,
+    employeeHistory,
+    outstandingSalaries,
 };

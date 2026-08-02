@@ -769,7 +769,13 @@ export const payrollAPI = {
     generateLines: (id) => api.post(`/payroll/periods/${id}/generate`),
     lockPeriod: (id) => api.post(`/payroll/periods/${id}/lock`),
     postPeriod: (id) => api.post(`/payroll/periods/${id}/post`),
-    updateLine: (lineId, data) => api.patch(`/payroll/lines/${lineId}`, data)
+    updateLine: (lineId, data) => api.patch(`/payroll/lines/${lineId}`, data),
+    // Paying salaries out, in full or in instalments.
+    payLine: (lineId, data) => api.post(`/payroll/lines/${lineId}/pay`, data),
+    payPeriod: (id, data) => api.post(`/payroll/periods/${id}/pay-all`, data),
+    deletePayment: (lineId, paymentId) => api.delete(`/payroll/lines/${lineId}/payments/${paymentId}`),
+    employeeHistory: (employeeId) => api.get(`/payroll/employees/${employeeId}/history`),
+    outstanding: () => api.get('/payroll/outstanding')
 };
 
 // Salary paid ahead of payday, and what the employee still owes back.

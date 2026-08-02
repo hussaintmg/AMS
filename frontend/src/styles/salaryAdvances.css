@@ -81,3 +81,45 @@
   color: var(--text-muted);
   line-height: 1.5;
 }
+
+.adv-total-row td {
+  border-top: 2px solid var(--border-color);
+  background: var(--gray-50);
+}
+
+/* Instalments already recorded against a salary line. */
+.pay-history {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.pay-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 7px;
+  border-radius: var(--radius-full);
+  background: var(--success-100);
+  color: #047857;
+  font-size: 0.68rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.pay-chip button {
+  border: 0;
+  background: none;
+  color: #047857;
+  cursor: pointer;
+  font-size: 0.85rem;
+  line-height: 1;
+  padding: 0;
+  opacity: 0.6;
+}
+
+.pay-chip button:hover {
+  opacity: 1;
+  color: var(--error-500);
+}

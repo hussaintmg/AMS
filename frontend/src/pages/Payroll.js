@@ -12,6 +12,21 @@ import '../styles/salaryAdvances.css';
 
 const money = (value) => Number(value || 0).toLocaleString('en-PK');
 
+/**
+ * Where a salary stands. A month that has not been posted yet is not owed to
+ * anyone, so it reads "not posted" rather than alarming the clerk with unpaid.
+ */
+const PayBadge = ({ line, periodStatus }) => {
+    if (periodStatus && periodStatus !== 'posted') {
+        return <span className="badge badge-secondary">Not posted</span>;
+    }
+    const status = line.payment_status;
+    if (status === 'paid') return <span className="badge badge-success">Paid</span>;
+    if (status === 'partial') return <span className="badge badge-warning">Part paid</span>;
+    if (status === 'nothing_due') return <span className="badge badge-secondary">Nothing due</span>;
+    return <span className="badge badge-danger">Unpaid</span>;
+};
+
 const Payroll = () => {
     const { hasRole } = useAuth();
     const canRun = hasRole(['super_admin', 'admin', 'payroll_clerk', 'accountant']);
@@ -33,6 +48,16 @@ const Payroll = () => {
     const [showAdvance, setShowAdvance] = useState(false);
     const [savingAdvance, setSavingAdvance] = useState(false);
     const [advanceForm, setAdvanceForm] = useState({ employee_id: '', amount: '', issued_on: '', reason: '' });
+
+    // ── paying salaries out ──
+    const [payLine, setPayLine] = useState(null);
+    const [paying, setPaying] = useState(false);
+    const [payForm, setPayForm] = useState({ amount: '', paid_on: '', method: 'cash', reference: '', notes: '' });
+
+    // ── one employee's month-by-month record ──
+    const [historyId, setHistoryId] = useState('');
+    const [history, setHistory] = useState(null);
+    const [historyLoading, setHistoryLoading] = useState(false);
 
     const loadPeriods = useCallback(async () => {
         try {
@@ -118,15 +143,81 @@ const Payroll = () => {
         }
     }, []);
 
+    // Both the advances tab and the employee record tab need the staff list.
     useEffect(() => {
-        if (tab !== 'advances') return;
-        loadAdvances();
-        if (!employees.length) {
-            employeeAPI.list({ limit: 500, status: 'active' })
-                .then((res) => setEmployees(res.data?.data?.employees || []))
-                .catch(() => { /* the picker simply stays empty */ });
+        if (tab === 'periods' || employees.length) return;
+        employeeAPI.list({ limit: 500, status: 'active' })
+            .then((res) => setEmployees(res.data?.data?.employees || []))
+            .catch(() => { /* the picker simply stays empty */ });
+    }, [tab, employees.length]);
+
+    useEffect(() => {
+        if (tab === 'advances') loadAdvances();
+    }, [tab, loadAdvances]);
+
+    const loadHistory = useCallback(async (employeeId) => {
+        setHistoryId(employeeId);
+        if (!employeeId) { setHistory(null); return; }
+        try {
+            setHistoryLoading(true);
+            const res = await payrollAPI.employeeHistory(employeeId);
+            setHistory(res.data.data);
+        } catch (e) {
+            setHistory(null);
+        } finally {
+            setHistoryLoading(false);
         }
-    }, [tab, loadAdvances, employees.length]);
+    }, []);
+
+    /** Open the pay dialog pre-filled with whatever is still owed. */
+    const openPay = (line) => {
+        setPayLine(line);
+        setPayForm({ amount: String(line.remaining_amount), paid_on: '', method: 'cash', reference: '', notes: '' });
+    };
+
+    const submitPayment = async (e) => {
+        e.preventDefault();
+        if (paying || !payLine) return;
+        setPaying(true);
+        try {
+            const res = await payrollAPI.payLine(payLine.id, {
+                ...payForm,
+                amount: Number(payForm.amount),
+                paid_on: payForm.paid_on || undefined,
+            });
+            toast.success(res?.data?.message || 'Payment recorded');
+            setPayLine(null);
+            loadLines(selected);
+            loadPeriods();
+            if (historyId) loadHistory(historyId);
+        } catch (err) { /* the interceptor surfaces the message */ } finally {
+            setPaying(false);
+        }
+    };
+
+    const payEveryone = async () => {
+        if (!selected) return;
+        const owed = (linesData?.lines || []).reduce((sum, l) => sum + Number(l.remaining_amount || 0), 0);
+        if (!window.confirm(`Pay every unpaid salary in this period? That is ${money(owed)} in total.`)) return;
+        try {
+            const res = await payrollAPI.payPeriod(selected, {});
+            toast.success(res?.data?.message || 'Salaries paid');
+            loadLines(selected);
+            loadPeriods();
+            if (historyId) loadHistory(historyId);
+        } catch (err) { /* */ }
+    };
+
+    const removePayment = async (line, payment) => {
+        if (!window.confirm(`Remove the payment of ${money(payment.amount)} made on ${payment.paid_on}?`)) return;
+        try {
+            await payrollAPI.deletePayment(line.id, payment.id);
+            toast.success('Payment removed');
+            loadLines(selected);
+            loadPeriods();
+            if (historyId) loadHistory(historyId);
+        } catch (err) { /* */ }
+    };
 
     const issueAdvance = async (e) => {
         e.preventDefault();
@@ -207,9 +298,121 @@ const Payroll = () => {
                 >
                     Salary advances
                 </button>
+                <button
+                    type="button"
+                    role="tab"
+                    aria-selected={tab === 'records'}
+                    className={`adv-tab ${tab === 'records' ? 'active' : ''}`}
+                    onClick={() => setTab('records')}
+                >
+                    Employee records
+                </button>
             </div>
 
-            {tab === 'advances' ? (
+            {tab === 'records' ? (
+                <div className="card">
+                    <div className="form-group" style={{ maxWidth: 460 }}>
+                        <label htmlFor="rec-employee">Employee</label>
+                        <SearchableSelect
+                            id="rec-employee"
+                            name="historyEmployee"
+                            value={historyId}
+                            onChange={(ev) => loadHistory(ev.target.value)}
+                        >
+                            <option value="">Select an employee to see their salary record</option>
+                            {employees.map((emp) => (
+                                <option key={emp._id || emp.id} value={emp._id || emp.id}>
+                                    {[emp.firstName, emp.lastName].filter(Boolean).join(' ')}
+                                    {emp.employeeCode ? ` — ${emp.employeeCode}` : ''}
+                                </option>
+                            ))}
+                        </SearchableSelect>
+                    </div>
+
+                    {historyLoading ? <div className="loading-inline">Loading…</div> : !history ? (
+                        <p className="adv-note">Pick an employee above to see every month they have been paid for.</p>
+                    ) : (
+                        <>
+                            <div className="adv-summary">
+                                <div className="adv-stat">
+                                    <span>Monthly salary</span>
+                                    <strong>{money(history.employee.monthly_salary)}</strong>
+                                </div>
+                                <div className="adv-stat">
+                                    <span>Months on record</span>
+                                    <strong>{history.totals.months}</strong>
+                                </div>
+                                <div className="adv-stat">
+                                    <span>Total paid</span>
+                                    <strong className="adv-good">{money(history.totals.paid)}</strong>
+                                </div>
+                                <div className="adv-stat adv-stat-main">
+                                    <span>Still owed</span>
+                                    <strong className="adv-owed">{money(history.totals.remaining)}</strong>
+                                </div>
+                                <div className="adv-stat">
+                                    <span>Advance outstanding</span>
+                                    <strong className={history.advance_outstanding > 0 ? 'adv-owed' : 'adv-good'}>
+                                        {money(history.advance_outstanding)}
+                                    </strong>
+                                </div>
+                            </div>
+
+                            <div className="table-responsive">
+                                <table className="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Month</th>
+                                            <th>Gross</th>
+                                            <th>Deductions</th>
+                                            <th>Advance recovered</th>
+                                            <th>Net</th>
+                                            <th>Paid</th>
+                                            <th>Remaining</th>
+                                            <th>Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {history.months.length === 0 ? (
+                                            <tr><td colSpan="8" className="text-center p-4">No salary months recorded yet for this employee.</td></tr>
+                                        ) : history.months.map((m) => (
+                                            <tr key={m.id}>
+                                                <td>
+                                                    <strong>{m.period_label}</strong>
+                                                    <div className="text-muted small">{m.period_start} → {m.period_end}</div>
+                                                </td>
+                                                <td>{money(m.gross_amount)}</td>
+                                                <td>{money(m.deductions)}</td>
+                                                <td>{Number(m.advance_deduction) > 0 ? money(m.advance_deduction) : '—'}</td>
+                                                <td><strong>{money(m.net_amount)}</strong></td>
+                                                <td className="adv-good">{money(m.paid_amount)}</td>
+                                                <td className={Number(m.remaining_amount) > 0 ? 'adv-owed' : undefined}>
+                                                    {Number(m.remaining_amount) > 0 ? money(m.remaining_amount) : '—'}
+                                                </td>
+                                                <td><PayBadge line={m} periodStatus={m.period_status} /></td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                    {history.months.length > 0 && (
+                                        <tfoot>
+                                            <tr className="adv-total-row">
+                                                <td><strong>Total</strong></td>
+                                                <td><strong>{money(history.totals.gross)}</strong></td>
+                                                <td><strong>{money(history.totals.deductions)}</strong></td>
+                                                <td><strong>{money(history.totals.advance_recovered)}</strong></td>
+                                                <td><strong>{money(history.totals.net)}</strong></td>
+                                                <td><strong className="adv-good">{money(history.totals.paid)}</strong></td>
+                                                <td><strong className="adv-owed">{money(history.totals.remaining)}</strong></td>
+                                                <td />
+                                            </tr>
+                                        </tfoot>
+                                    )}
+                                </table>
+                            </div>
+                        </>
+                    )}
+                </div>
+            ) : tab === 'advances' ? (
                 <div className="card">
                     {advanceSummary && (
                         <div className="adv-summary">
@@ -358,10 +561,40 @@ const Payroll = () => {
                             <div className="header-actions" style={{ flexWrap: 'wrap', gap: '0.5rem' }}>
                                 <button type="button" className="btn btn-secondary btn-sm" onClick={runGenerate} disabled={linesData.period.status !== 'draft'}>Generate lines</button>
                                 <button type="button" className="btn btn-secondary btn-sm" onClick={runLock} disabled={linesData.period.status !== 'draft'}>Lock</button>
-                                <button type="button" className="btn btn-primary btn-sm" onClick={runPost} disabled={linesData.period.status !== 'locked'}>Post to ledger</button>
+                                <button type="button" className="btn btn-secondary btn-sm" onClick={runPost} disabled={linesData.period.status !== 'locked'}>Post to ledger</button>
+                                {/* Salaries can only leave once the period is posted. */}
+                                <button
+                                    type="button"
+                                    className="btn btn-primary btn-sm"
+                                    onClick={payEveryone}
+                                    disabled={linesData.period.status !== 'posted' || !(linesData.lines || []).some((l) => Number(l.remaining_amount) > 0)}
+                                >
+                                    Pay everyone
+                                </button>
                             </div>
                         )}
                     </div>
+
+                    {linesData.period.status === 'posted' && (
+                        <div className="adv-summary">
+                            <div className="adv-stat">
+                                <span>Net payable</span>
+                                <strong>{money(linesData.period.net_total)}</strong>
+                            </div>
+                            <div className="adv-stat">
+                                <span>Paid so far</span>
+                                <strong className="adv-good">{money(linesData.period.paid_total)}</strong>
+                            </div>
+                            <div className="adv-stat adv-stat-main">
+                                <span>Remaining</span>
+                                <strong className="adv-owed">{money(linesData.period.remaining_total)}</strong>
+                            </div>
+                            <div className="adv-stat">
+                                <span>Still unpaid</span>
+                                <strong>{linesData.period.unpaid_count} employee{linesData.period.unpaid_count === 1 ? '' : 's'}</strong>
+                            </div>
+                        </div>
+                    )}
                     <div className="desktop-only">
                         <div className="table-responsive">
                             <table className="data-table">
@@ -373,13 +606,34 @@ const Payroll = () => {
                                         <th>Advance recovered</th>
                                         <th>Advance balance</th>
                                         <th>Net</th>
-                                        <th>GL</th>
+                                        <th>Paid</th>
+                                        <th>Remaining</th>
+                                        <th>Status</th>
+                                        {canRun && <th>Action</th>}
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {(linesData.lines || []).map((ln) => (
                                         <tr key={ln.id}>
-                                            <td>{ln.employee_name} <small className="text-muted">{ln.employee_code}</small></td>
+                                            <td>
+                                                {ln.employee_name} <small className="text-muted">{ln.employee_code}</small>
+                                                {(ln.payments || []).length > 0 && (
+                                                    <div className="pay-history">
+                                                        {ln.payments.map((p) => (
+                                                            <span key={p.id} className="pay-chip">
+                                                                {money(p.amount)} · {p.paid_on} · {p.method}
+                                                                {canRun && (
+                                                                    <button
+                                                                        type="button"
+                                                                        title="Remove this payment"
+                                                                        onClick={() => removePayment(ln, p)}
+                                                                    >×</button>
+                                                                )}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </td>
                                             <td>{money(ln.gross_amount)}</td>
                                             <td>{money(ln.deductions)}</td>
                                             <td>{Number(ln.advance_deduction) > 0 ? money(ln.advance_deduction) : '—'}</td>
@@ -388,7 +642,20 @@ const Payroll = () => {
                                                 {Number(ln.advance_balance) > 0 ? money(ln.advance_balance) : '—'}
                                             </td>
                                             <td><strong>{money(ln.net_amount)}</strong></td>
-                                            <td>{ln.ledger_transaction_id ? `#${ln.ledger_transaction_id}` : '—'}</td>
+                                            <td className="adv-good">{money(ln.paid_amount)}</td>
+                                            <td className={Number(ln.remaining_amount) > 0 ? 'adv-owed' : undefined}>
+                                                {Number(ln.remaining_amount) > 0 ? money(ln.remaining_amount) : '—'}
+                                            </td>
+                                            <td><PayBadge line={ln} periodStatus={linesData.period.status} /></td>
+                                            {canRun && (
+                                                <td>
+                                                    {linesData.period.status === 'posted' && Number(ln.remaining_amount) > 0 && (
+                                                        <button type="button" className="btn btn-sm btn-primary" onClick={() => openPay(ln)}>
+                                                            Pay
+                                                        </button>
+                                                    )}
+                                                </td>
+                                            )}
                                         </tr>
                                     ))}
                                 </tbody>
@@ -439,10 +706,23 @@ const Payroll = () => {
                                             <span className="row-value">{money(ln.net_amount)}</span>
                                         </div>
                                         <div className="data-card-row">
-                                            <span className="row-icon">📋</span>
-                                            <span className="row-label">GL</span>
-                                            <span className="row-value">{ln.ledger_transaction_id ? `#${ln.ledger_transaction_id}` : '—'}</span>
+                                            <span className="row-icon">💵</span>
+                                            <span className="row-label">Paid</span>
+                                            <span className="row-value adv-good">{money(ln.paid_amount)}</span>
                                         </div>
+                                        {Number(ln.remaining_amount) > 0 && (
+                                            <div className="data-card-row">
+                                                <span className="row-icon">⏳</span>
+                                                <span className="row-label">Remaining</span>
+                                                <span className="row-value adv-owed">{money(ln.remaining_amount)}</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="data-card-footer">
+                                        <PayBadge line={ln} periodStatus={linesData.period.status} />
+                                        {canRun && linesData.period.status === 'posted' && Number(ln.remaining_amount) > 0 && (
+                                            <button type="button" className="btn btn-sm btn-primary" onClick={() => openPay(ln)}>Pay</button>
+                                        )}
                                     </div>
                                 </div>
                             ))}
@@ -451,6 +731,102 @@ const Payroll = () => {
                 </div>
             )}
             </>
+            )}
+
+            {payLine && (
+                <div className="modal-overlay" onClick={() => setPayLine(null)}>
+                    <div
+                        className="modal-content modal-md"
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="hr-pay-modal-title"
+                        onClick={(ev) => ev.stopPropagation()}
+                    >
+                        <div className="modal-header">
+                            <h2 id="hr-pay-modal-title">Pay {payLine.employee_name}</h2>
+                            <button type="button" className="modal-close" onClick={() => setPayLine(null)} aria-label="Close">×</button>
+                        </div>
+                        <form onSubmit={submitPayment}>
+                            <div className="modal-body">
+                                <div className="adv-summary">
+                                    <div className="adv-stat">
+                                        <span>Net for the month</span>
+                                        <strong>{money(payLine.net_amount)}</strong>
+                                    </div>
+                                    <div className="adv-stat">
+                                        <span>Already paid</span>
+                                        <strong className="adv-good">{money(payLine.paid_amount)}</strong>
+                                    </div>
+                                    <div className="adv-stat adv-stat-main">
+                                        <span>Remaining</span>
+                                        <strong className="adv-owed">{money(payLine.remaining_amount)}</strong>
+                                    </div>
+                                </div>
+                                <div className="form-row">
+                                    <div className="form-group">
+                                        <label htmlFor="pay-amount">Amount *</label>
+                                        <input
+                                            id="pay-amount"
+                                            type="number"
+                                            min="1"
+                                            step="0.01"
+                                            max={payLine.remaining_amount}
+                                            className="form-control"
+                                            value={payForm.amount}
+                                            onChange={(ev) => setPayForm({ ...payForm, amount: ev.target.value })}
+                                            required
+                                        />
+                                    </div>
+                                    <div className="form-group">
+                                        <label htmlFor="pay-date">Paid on</label>
+                                        <input
+                                            id="pay-date"
+                                            type="date"
+                                            className="form-control"
+                                            value={payForm.paid_on}
+                                            onChange={(ev) => setPayForm({ ...payForm, paid_on: ev.target.value })}
+                                        />
+                                    </div>
+                                </div>
+                                <div className="form-row">
+                                    <div className="form-group">
+                                        <label htmlFor="pay-method">Method</label>
+                                        <select
+                                            id="pay-method"
+                                            className="form-control"
+                                            value={payForm.method}
+                                            onChange={(ev) => setPayForm({ ...payForm, method: ev.target.value })}
+                                        >
+                                            <option value="cash">Cash</option>
+                                            <option value="bank">Bank transfer</option>
+                                            <option value="cheque">Cheque</option>
+                                        </select>
+                                    </div>
+                                    <div className="form-group">
+                                        <label htmlFor="pay-ref">Reference</label>
+                                        <input
+                                            id="pay-ref"
+                                            className="form-control"
+                                            value={payForm.reference}
+                                            onChange={(ev) => setPayForm({ ...payForm, reference: ev.target.value })}
+                                            placeholder="Cheque no., transfer id…"
+                                        />
+                                    </div>
+                                </div>
+                                <p className="adv-note">
+                                    Pay less than the remaining amount to record a part payment — the rest stays
+                                    on this employee&apos;s balance until it is paid.
+                                </p>
+                            </div>
+                            <div className="modal-footer">
+                                <button type="button" className="btn btn-secondary" onClick={() => setPayLine(null)}>Cancel</button>
+                                <button type="submit" className="btn btn-primary" disabled={paying}>
+                                    {paying ? 'Recording…' : `Pay ${money(payForm.amount || 0)}`}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
             )}
 
             {showAdvance && (
