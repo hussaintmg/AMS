@@ -19,7 +19,7 @@ const pages = [
   ['service_master','Service Master Data','/service-master','service-master','Settings','Master Data'], ['reports','Reports','/reports','reports','BarChart3','Reports'],
   ['employees','Employees','/hr/employees','hr','UserRound','HR & Finance'], ['leaves','Leaves','/hr/leaves','leaves','CalendarDays','HR & Finance'],
   ['expenses','Expenses','/hr/expenses','expenses','WalletCards','HR & Finance'],   ['ledger','Ledger','/hr/ledger','ledger','BookOpen','HR & Finance'],
-  ['payroll','Payroll','/payroll','payroll','Coins','HR & Finance'],
+  ['payroll','Payroll','/hr/payroll','payroll','Coins','HR & Finance'],
   ['payment_methods','Payment Methods','/payment-methods','payment-methods','CreditCard','ERP Settings'], ['settings','ERP Settings','/settings','settings','SlidersHorizontal','ERP Settings'],
   ['user_management','User Management','/admin/users','users','UsersRound','Master Data'],
   ['department_management','Department Management','/admin/departments','departments','Building2','Master Data'],   ['role_management','Role Management','/admin/roles','roles','Shield','Master Data'],

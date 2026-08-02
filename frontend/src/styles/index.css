@@ -1562,12 +1562,50 @@ img {
    INLINE "CREATE" LINK BUTTON (used next to form labels/selects
    for quick-creating a related record — consistent across all forms)
    ═══════════════════════════════════════════════════════════════ */
+
+/**
+ * A label that carries a quick-add control shares one line with it: caption on
+ * the left, control on the right at its own width.
+ *
+ * This has to be stated on the label because the surrounding rules lay labels
+ * out as a column (`.modal-body label`) or a block (`.form-group label`), which
+ * turns the control into a full-width box on its own row. Every form used to
+ * repeat the same inline style object to work around that; the rule lives here
+ * now so a new form gets it for free.
+ *
+ * The layout declarations are forced because roughly a dozen page stylesheets
+ * set `display` on `.form-group label` with enough specificity to win — the
+ * Users page is one. Chasing each of those would leave the next new page broken
+ * again, so this one purpose-built class overrides them all. Only the layout is
+ * forced; colour and type still come from the page.
+ */
+.form-label-add,
+label:has(> .label-add-link),
+label:has(> .label-add-actions) {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 12px;
+}
+
+/* Several controls on one label (e.g. "+ Vehicle" and "+ Part"). */
+.label-add-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
 .label-add-link {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  /* Never stretch: inside a flex label the default would fill the row. */
+  flex: 0 0 auto;
+  width: auto;
   margin-left: 8px;
-  padding: 3px 10px;
+  padding: 4px 12px;
   font-size: 0.72rem;
   font-weight: 600;
   color: #2563eb;
@@ -1580,6 +1618,12 @@ img {
   white-space: nowrap;
   vertical-align: middle;
   transition: all 0.15s ease;
+}
+
+/* The gap already separates it from the caption when the label is a row. */
+.form-label-add > .label-add-link,
+label:has(> .label-add-link) > .label-add-link {
+  margin-left: 0;
 }
 
 .label-add-link:hover {

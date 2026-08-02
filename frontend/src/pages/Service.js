@@ -449,7 +449,7 @@ function Appointments() {
             <form onSubmit={modalMode === 'view' ? (e) => e.preventDefault() : handleSubmit}>
               <div className="modal-body">
                 <div className="form-group">
-                  <label>Customer * {modalMode !== 'view' && <CustomerQuickCreate onCreated={handleCustomerCreated} />}</label>
+                  <label className="form-label-add"><span>Customer *</span> {modalMode !== 'view' && <CustomerQuickCreate onCreated={handleCustomerCreated} />}</label>
                   <SearchableSelect name="customerId" value={formData.customerId} onChange={handleChange}
                     options={customerOptions} placeholder="Select Customer"
                     required disabled={modalMode === 'view'} />
@@ -993,7 +993,7 @@ function JobCards() {
                   <div>
                     <h4 style={{ marginBottom: '0.75rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.5rem' }}>Customer & Vehicle</h4>
                     <div className="form-group">
-                      <label>Customer * {modalMode !== 'view' && <CustomerQuickCreate onCreated={handleCustomerCreated} />}</label>
+                      <label className="form-label-add"><span>Customer *</span> {modalMode !== 'view' && <CustomerQuickCreate onCreated={handleCustomerCreated} />}</label>
                       <SearchableSelect name="customerId" value={formData.customerId} onChange={handleChange}
                         options={customerOptions} placeholder="Select Customer" required disabled={modalMode === 'view'} />
                     </div>

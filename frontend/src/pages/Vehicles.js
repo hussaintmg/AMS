@@ -942,14 +942,7 @@ const Vehicles = () => {
                   <h3>Vehicle Details</h3>
                   <div className="form-row">
                     <div className="form-group">
-                      <label
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "space-between",
-                          flexDirection: "row",
-                        }}
-                      >
+                      <label className="form-label-add">
                         Brand *
                         <a
                           className="label-add-link"
@@ -973,14 +966,7 @@ const Vehicles = () => {
                       </SearchableSelect>
                     </div>
                     <div className="form-group">
-                      <label
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "space-between",
-                          flexDirection: "row",
-                        }}
-                      >
+                      <label className="form-label-add">
                         Model *
                         <a
                           className="label-add-link"
@@ -1007,14 +993,7 @@ const Vehicles = () => {
                   </div>
                   <div className="form-row">
                     <div className="form-group">
-                      <label
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "space-between",
-                          flexDirection: "row",
-                        }}
-                      >
+                      <label className="form-label-add">
                         Variant *
                         <a
                           className="label-add-link"
@@ -1039,14 +1018,7 @@ const Vehicles = () => {
                       </SearchableSelect>
                     </div>
                     <div className="form-group">
-                      <label
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "space-between",
-                          flexDirection: "row",
-                        }}
-                      >
+                      <label className="form-label-add">
                         Color *
                         <a
                           className="label-add-link"
@@ -1085,14 +1057,7 @@ const Vehicles = () => {
                       />
                     </div>
                     <div className="form-group">
-                      <label
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "space-between",
-                          flexDirection: "row",
-                        }}
-                      >
+                      <label className="form-label-add">
                         Condition
                         <a
                           className="label-add-link"

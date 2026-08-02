@@ -1,0 +1,142 @@
+/* Camera barcode reader — the viewfinder shown inside the scan screens. */
+
+.cam-scanner {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--gray-900);
+}
+
+.cam-stage {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  max-height: 340px;
+  background: var(--gray-900);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.cam-stage video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* A green pulse confirms the read without the operator reading any text. */
+.cam-stage.is-hit::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(16, 185, 129, 0.35);
+  animation: cam-hit 260ms ease-out;
+}
+
+@keyframes cam-hit {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+/* Corner brackets mark where to hold the label. */
+.cam-frame {
+  position: absolute;
+  inset: 18% 14%;
+  pointer-events: none;
+}
+
+.cam-frame span {
+  position: absolute;
+  width: 26px;
+  height: 26px;
+  border: 3px solid rgba(255, 255, 255, 0.9);
+}
+
+.cam-frame span:nth-child(1) { top: 0; left: 0; border-right: 0; border-bottom: 0; border-radius: 6px 0 0 0; }
+.cam-frame span:nth-child(2) { top: 0; right: 0; border-left: 0; border-bottom: 0; border-radius: 0 6px 0 0; }
+.cam-frame span:nth-child(3) { bottom: 0; left: 0; border-right: 0; border-top: 0; border-radius: 0 0 0 6px; }
+.cam-frame span:nth-child(4) { bottom: 0; right: 0; border-left: 0; border-top: 0; border-radius: 0 0 6px 0; }
+
+.cam-laser {
+  position: absolute;
+  left: 14%;
+  right: 14%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--error-500), transparent);
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.8);
+  animation: cam-sweep 2.2s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes cam-sweep {
+  0%, 100% { top: 22%; }
+  50% { top: 76%; }
+}
+
+.cam-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-2);
+  padding: var(--spacing-6);
+  text-align: center;
+  color: #fff;
+  background: var(--gray-900);
+}
+
+.cam-overlay p {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  max-width: 380px;
+  line-height: 1.5;
+}
+
+.cam-overlay small {
+  color: var(--gray-400);
+  font-size: var(--font-size-xs);
+}
+
+.cam-overlay-error svg { color: var(--error-500); }
+
+.cam-overlay .btn {
+  margin-top: var(--spacing-2);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cam-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  background: var(--bg-card);
+  border-top: 1px solid var(--border-color);
+}
+
+.cam-bar select {
+  max-width: 220px;
+  padding: 6px 10px;
+  font-size: var(--font-size-sm);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.cam-status {
+  flex: 1;
+  min-width: 140px;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
+.cam-bar .cam-close {
+  padding: 6px 12px;
+  font-size: var(--font-size-xs);
+}

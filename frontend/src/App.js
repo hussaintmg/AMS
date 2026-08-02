@@ -25,6 +25,7 @@ import Service from "./pages/Service";
 import Reports from "./pages/Reports";
 import Employees from "./pages/Employees";
 import Leaves from "./pages/Leaves";
+import Payroll from "./pages/Payroll";
 import Expenses from "./pages/Expenses";
 import Ledger from "./pages/Ledger";
 import UserManagement from "./pages/UserManagement";
@@ -279,6 +280,14 @@ const AppLayout = () => {
               element={
                 <ProtectedPage path="/hr/leaves">
                   <Leaves />
+                </ProtectedPage>
+              }
+            />
+            <Route
+              path="hr/payroll"
+              element={
+                <ProtectedPage path="/hr/payroll">
+                  <Payroll />
                 </ProtectedPage>
               }
             />

@@ -221,14 +221,7 @@ function UserFormModal({
 
             <div className="form-row">
               <div className="form-group">
-                <label
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    flexDirection:'row'
-                  }}
-                >
+                <label className="form-label-add">
                   Role *
                   {allowCreateRole && onOpenCreateRole && (
                     <button
@@ -263,14 +256,7 @@ function UserFormModal({
                 )}
               </div>
               <div className="form-group">
-                <label
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    flexDirection:'row'
-                  }}
-                >
+                <label className="form-label-add">
                   Department
                   {allowCreateDepartment && onOpenCreateDepartment && (
                     <button

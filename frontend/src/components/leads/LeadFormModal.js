@@ -29,7 +29,7 @@ const TABS = [
   { key: 'assignment', label: 'Assignment' },
 ];
 
-const LABEL_STYLE = { display: 'flex', alignItems: 'center', justifyContent: 'space-between' ,flexDirection:'row'};
+// Layout for a label carrying a quick-add control lives in index.css.
 
 export default function LeadFormModal({ lead, onClose, onSaved }) {
   const { createLead, updateLead, meta, loadMeta } = useLeads();
@@ -168,7 +168,7 @@ export default function LeadFormModal({ lead, onClose, onSaved }) {
   const assignOptions = getAssignedOptions();
 
   const renderLabel = (text, field, onCreate) => (
-    <label style={LABEL_STYLE}>
+    <label className="form-label-add">
       <span>{text}</span>
       {onCreate && (
         <button type="button" className="label-add-link" onClick={onCreate}>+ Create {text}</button>

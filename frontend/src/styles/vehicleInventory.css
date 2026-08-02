@@ -566,29 +566,5 @@
     vertical-align: middle;
 }
 
-/* Label add-link style */
-.vehicle-inventory-page .label-add-link {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    margin-left: 8px;
-    font-size: 0.72rem;
-    font-weight: 600;
-    color: #2563eb;
-    cursor: pointer;
-    text-decoration: none;
-    background: #eff6ff;
-    border: 1px solid #dbeafe;
-    padding: 3px 10px;
-    border-radius: 999px;
-    line-height: 1.5;
-    white-space: nowrap;
-    vertical-align: middle;
-    transition: all 0.15s ease;
-}
-.vehicle-inventory-page .label-add-link:hover {
-    background: #dbeafe;
-    border-color: #bfdbfe;
-    color: #1d4ed8;
-    transform: translateY(-1px);
-}
+/* The add-link is styled once, in index.css. A copy lived here and, being more
+   specific, quietly overrode the shared padding and sizing on this page only. */

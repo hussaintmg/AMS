@@ -1,25 +1,36 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
-import { ScanLine, Trash2, X } from "lucide-react";
+import { Camera, Keyboard, PackageSearch, ScanLine, Search, Trash2, X } from "lucide-react";
 import { barcodeAPI, salesAPI, customerAPI } from "../services/api";
 import useErpDocumentSettings from "../hooks/useErpDocumentSettings";
 import SearchableSelect from "../components/SearchableSelect";
+import CameraScanner from "../components/CameraScanner";
 import "../styles/barcodeScan.css";
 
 /**
- * Counter screen: scan products, pick a customer, enter what the customer hands
- * over, and create the document.
+ * Counter screen: put products in a basket, pick a customer, enter what the
+ * customer hands over, and create the document.
  *
  * The whole point is speed — the operator never types a per-product amount.
- * Scanning fills the basket and prices it; they enter one figure and the page
- * works out the change. That change is shown here and printed on the receipt,
- * and is never added to the amount paid.
+ * Adding a product prices it; they enter one figure and the page works out the
+ * change. That change is shown here and printed on the receipt, and is never
+ * added to the amount paid.
+ *
+ * Products get in three ways, because not every counter has the same kit:
+ * a handheld scanner typing into the box, the device camera, or a plain
+ * product search for stock whose label is missing or unreadable.
  */
 const DOCUMENTS = [
   { key: "quotation", label: "Quotation", hint: "An offer. No stock is touched." },
   { key: "booking", label: "Booking", hint: "Reserves vehicles. Parts stay in stock." },
   { key: "order", label: "Sales Order + Invoice", hint: "Invoices immediately — this is what moves stock." },
+];
+
+const MODES = [
+  { key: "keyboard", label: "Scanner", icon: Keyboard, hint: "Handheld scanner or typed code" },
+  { key: "camera", label: "Camera", icon: Camera, hint: "Use this device's camera" },
+  { key: "browse", label: "Browse", icon: PackageSearch, hint: "Pick a product from stock" },
 ];
 
 const num = (value, fallback = 0) => {
@@ -31,8 +42,13 @@ function BarcodeScan() {
   const navigate = useNavigate();
   const { currency } = useErpDocumentSettings();
   const scanRef = useRef(null);
+  // Guards the camera: frames arrive faster than a lookup completes.
+  const resolvingRef = useRef(false);
+  // Mirror of the basket, so adding a product needs no state updater. See addFound.
+  const basketRef = useRef([]);
 
   const [docType, setDocType] = useState("order");
+  const [mode, setMode] = useState("keyboard");
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -41,6 +57,12 @@ function BarcodeScan() {
   const [customerId, setCustomerId] = useState("");
   const [amountReceived, setAmountReceived] = useState("");
   const [lastResult, setLastResult] = useState(null);
+
+  const [query, setQuery] = useState("");
+  const [queryKind, setQueryKind] = useState("");
+  const [results, setResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+
   const currencyCode = currency?.code || "PKR";
 
   useEffect(() => {
@@ -52,6 +74,10 @@ function BarcodeScan() {
     })();
     scanRef.current?.focus();
   }, []);
+
+  // Quantity edits, removals and clearing all go through setBasket, so re-point
+  // the mirror at whatever the basket actually became.
+  useEffect(() => { basketRef.current = basket; }, [basket]);
 
   const money = useCallback(
     (value) => `${currencyCode} ${num(value).toLocaleString("en-PK")}`,
@@ -67,60 +93,107 @@ function BarcodeScan() {
   const changeDue = Math.max(0, received - total);
   const balanceDue = Math.max(0, total - received);
 
-  /** Resolve a scanned or typed code and add it to the basket. */
-  const handleScan = async (event) => {
-    event?.preventDefault();
-    const value = code.trim();
-    if (!value || busy) return;
+  /**
+   * Put a resolved product in the basket, however it was found.
+   *
+   * The basket is mirrored in a ref so the decision — new row or bump the
+   * quantity — and its toast happen here rather than inside a state updater:
+   * React may run an updater while rendering, and a toast fired from there
+   * updates the toaster mid-render. The ref is also written synchronously, so
+   * two scans in quick succession still see each other.
+   */
+  const addFound = useCallback((found) => {
+    if (!found?.lineItem) return;
+    const current = basketRef.current;
+    const existing = current.find(
+      (row) =>
+        (found.lineItem.partId && row.partId === found.lineItem.partId) ||
+        (found.lineItem.vehicleId && row.vehicleId === found.lineItem.vehicleId),
+    );
+
+    // Scanning the same part again bumps the quantity — the operator does not
+    // have to open a field and type "2".
+    if (existing && found.kind === "part") {
+      const quantity = num(existing.quantity, 1) + 1;
+      const next = current.map((row) => (row.key === existing.key ? { ...row, quantity } : row));
+      basketRef.current = next;
+      setBasket(next);
+      toast.success(`${found.name} × ${quantity}`);
+      return;
+    }
+    if (existing) {
+      toast(`${found.name} is already in the basket`);
+      return;
+    }
+
+    if (found.kind === "part" && !found.inStock) toast.error(`${found.name} is out of stock`);
+    const next = [
+      ...current,
+      {
+        key: `${found.kind}-${found.id}`,
+        kind: found.kind,
+        name: found.name,
+        code: found.code || found.barcode,
+        available: found.available,
+        quantity: 1,
+        unitPrice: num(found.unitPrice),
+        partId: found.lineItem.partId,
+        vehicleId: found.lineItem.vehicleId,
+        itemType: found.lineItem.itemType,
+      },
+    ];
+    basketRef.current = next;
+    setBasket(next);
+    toast.success(`Added ${found.name}`);
+  }, []);
+
+  /** Resolve a code — from the scanner box or the camera — and basket it. */
+  const resolveCode = useCallback(async (value) => {
+    const trimmed = String(value || "").trim();
+    if (!trimmed || resolvingRef.current) return;
+    resolvingRef.current = true;
     setBusy(true);
     try {
-      const res = await barcodeAPI.scan(value);
+      const res = await barcodeAPI.scan(trimmed);
       const found = res?.data?.data;
       if (!found?.lineItem) throw new Error("Not found");
-
-      setBasket((current) => {
-        const existing = current.find(
-          (row) =>
-            (found.lineItem.partId && row.partId === found.lineItem.partId) ||
-            (found.lineItem.vehicleId && row.vehicleId === found.lineItem.vehicleId),
-        );
-        // Scanning the same part again bumps the quantity — the operator does
-        // not have to open a field and type "2".
-        if (existing && found.kind === "part") {
-          toast.success(`${found.name} × ${existing.quantity + 1}`);
-          return current.map((row) =>
-            row === existing ? { ...row, quantity: row.quantity + 1 } : row,
-          );
-        }
-        if (existing) {
-          toast(`${found.name} is already in the basket`);
-          return current;
-        }
-        if (found.kind === "part" && !found.inStock) toast.error(`${found.name} is out of stock`);
-        toast.success(`Added ${found.name}`);
-        return [
-          ...current,
-          {
-            key: `${found.kind}-${found.id}`,
-            kind: found.kind,
-            name: found.name,
-            code: found.code || found.barcode,
-            available: found.available,
-            quantity: 1,
-            unitPrice: num(found.unitPrice),
-            partId: found.lineItem.partId,
-            vehicleId: found.lineItem.vehicleId,
-            itemType: found.lineItem.itemType,
-          },
-        ];
-      });
+      addFound(found);
       setCode("");
     } catch (error) {
-      toast.error(error?.response?.data?.message || `Nothing matches "${value}"`);
+      toast.error(error?.response?.data?.message || `Nothing matches "${trimmed}"`);
     } finally {
+      resolvingRef.current = false;
       setBusy(false);
-      scanRef.current?.focus();
     }
+  }, [addFound]);
+
+  const handleScan = async (event) => {
+    event?.preventDefault();
+    await resolveCode(code);
+    scanRef.current?.focus();
+  };
+
+  // Browse tab: debounced so typing does not fire a request per keystroke.
+  useEffect(() => {
+    if (mode !== "browse") return undefined;
+    let live = true;
+    setSearching(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await barcodeAPI.search({ q: query.trim(), kind: queryKind || undefined, limit: 30 });
+        if (live) setResults(res?.data?.data || []);
+      } catch {
+        if (live) setResults([]);
+      } finally {
+        if (live) setSearching(false);
+      }
+    }, 300);
+    return () => { live = false; clearTimeout(timer); };
+  }, [mode, query, queryKind]);
+
+  const chooseMode = (next) => {
+    setMode(next);
+    if (next === "keyboard") setTimeout(() => scanRef.current?.focus(), 0);
   };
 
   const setQuantity = (key, quantity) =>
@@ -143,7 +216,7 @@ function BarcodeScan() {
 
   const submit = async () => {
     if (!customerId) { toast.error("Select a customer"); return; }
-    if (!basket.length) { toast.error("Scan at least one product"); return; }
+    if (!basket.length) { toast.error("Add at least one product"); return; }
     setSaving(true);
     try {
       if (docType === "quotation") {
@@ -189,37 +262,124 @@ function BarcodeScan() {
   };
 
   const activeDoc = DOCUMENTS.find((entry) => entry.key === docType);
+  const activeMode = MODES.find((entry) => entry.key === mode);
+  const inBasket = (item) =>
+    basket.some((row) => row.partId === item.lineItem?.partId && row.vehicleId === item.lineItem?.vehicleId);
 
   return (
     <div className="scan-page">
       <div className="page-header">
         <div className="header-content">
           <h1><ScanLine size={22} /> Barcode Scan</h1>
-          <p>Scan products to build a quotation, booking or sale — no typing per product.</p>
+          <p>Build a quotation, booking or sale by scanning — or pick products straight from stock.</p>
         </div>
       </div>
 
       <div className="scan-layout">
         <section className="scan-main">
-          <form className="scan-box" onSubmit={handleScan}>
-            <input
-              ref={scanRef}
-              type="text"
-              value={code}
-              onChange={(event) => setCode(event.target.value)}
-              placeholder="Scan a barcode, or type a part code / chassis number"
-              autoComplete="off"
-              disabled={busy}
-            />
-            <button type="submit" className="btn btn-primary" disabled={busy || !code.trim()}>
-              {busy ? "Looking up…" : "Add"}
-            </button>
-          </form>
+          <div className="scan-modes" role="tablist" aria-label="How to add products">
+            {MODES.map((entry) => {
+              const Icon = entry.icon;
+              return (
+                <button
+                  key={entry.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={mode === entry.key}
+                  className={`scan-mode ${mode === entry.key ? "active" : ""}`}
+                  onClick={() => chooseMode(entry.key)}
+                >
+                  <Icon size={16} />
+                  {entry.label}
+                </button>
+              );
+            })}
+            <span className="scan-mode-hint">{activeMode?.hint}</span>
+          </div>
+
+          {mode === "keyboard" && (
+            <form className="scan-box" onSubmit={handleScan}>
+              <ScanLine size={18} className="scan-box-icon" />
+              <input
+                ref={scanRef}
+                type="text"
+                value={code}
+                onChange={(event) => setCode(event.target.value)}
+                placeholder="Scan a barcode, or type a part code / chassis number"
+                autoComplete="off"
+                disabled={busy}
+              />
+              <button type="submit" className="btn btn-primary" disabled={busy || !code.trim()}>
+                {busy ? "Looking up…" : "Add"}
+              </button>
+            </form>
+          )}
+
+          {mode === "camera" && (
+            <div className="scan-camera">
+              <CameraScanner onDetected={resolveCode} onClose={() => chooseMode("keyboard")} />
+              {busy && <p className="scan-note">Looking up the code…</p>}
+            </div>
+          )}
+
+          {mode === "browse" && (
+            <div className="scan-browse">
+              <div className="scan-browse-bar">
+                <span className="scan-browse-search">
+                  <Search size={16} />
+                  <input
+                    type="text"
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    placeholder="Search by name, part code or chassis number"
+                    autoComplete="off"
+                  />
+                </span>
+                <select value={queryKind} onChange={(event) => setQueryKind(event.target.value)} aria-label="Product type">
+                  <option value="">All products</option>
+                  <option value="part">Parts only</option>
+                  <option value="vehicle">Vehicles only</option>
+                </select>
+              </div>
+
+              {searching && !results.length ? (
+                <p className="scan-note">Searching…</p>
+              ) : results.length === 0 ? (
+                <p className="scan-note">No products match that search.</p>
+              ) : (
+                <ul className="scan-results">
+                  {results.map((item) => (
+                    <li key={`${item.kind}-${item.id}`}>
+                      <button
+                        type="button"
+                        onClick={() => addFound(item)}
+                        disabled={inBasket(item)}
+                      >
+                        <span className={`scan-kind scan-kind-${item.kind}`}>{item.kind}</span>
+                        <span className="scan-result-name">
+                          <strong>{item.name}</strong>
+                          <small>
+                            {item.code || item.barcode || "no code"}
+                            {item.kind === "part" ? ` · ${item.available} in stock` : item.status ? ` · ${item.status}` : ""}
+                          </small>
+                        </span>
+                        <span className="scan-result-price">{money(item.unitPrice)}</span>
+                        <span className="scan-result-add">{inBasket(item) ? "Added" : "Add"}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
 
           {basket.length === 0 ? (
             <div className="scan-empty">
               <ScanLine size={40} />
-              <p>Nothing scanned yet. The cursor stays in the box, so a handheld scanner just works.</p>
+              <p>
+                Nothing in the basket yet. A handheld scanner types straight into the Scanner
+                box; no scanner at the counter means Camera or Browse.
+              </p>
             </div>
           ) : (
             <div className="scan-table-wrap">

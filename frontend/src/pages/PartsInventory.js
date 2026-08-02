@@ -916,14 +916,7 @@ const PartsInventory = () => {
                   </div>
                   <div className="form-row">
                     <div className="form-group">
-                      <label
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "space-between",
-                          flexDirection: 'row'
-                        }}
-                      >
+                      <label className="form-label-add">
                         <InfoLabel
                           label="Source Type *"
                           help="Where the part comes from. Manufacturer = OEM, 3rd Party = aftermarket. Add your own types with + Create Source Type."
@@ -950,14 +943,7 @@ const PartsInventory = () => {
                       </SearchableSelect>
                     </div>
                     <div className="form-group">
-                      <label
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "space-between",
-                          flexDirection:'row'
-                        }}
-                      >
+                      <label className="form-label-add">
                         <InfoLabel
                           label="Category"
                           help="Optional grouping for reporting and filtering (e.g., Engine, Electrical)."
@@ -999,14 +985,7 @@ const PartsInventory = () => {
                       />
                     </div>
                     <div className="form-group">
-                      <label
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "space-between",
-                          flexDirection:'row'
-                        }}
-                      >
+                      <label className="form-label-add">
                         <InfoLabel
                           label="Supplier"
                           help="Supplier you purchase this part from (optional)."

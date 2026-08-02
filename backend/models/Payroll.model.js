@@ -4,6 +4,11 @@ const payrollLineSchema = new mongoose.Schema({
   employee: { type: mongoose.Schema.Types.ObjectId, ref: 'Employee', required: true },
   grossAmount: { type: Number, default: 0, min: [0, 'Gross amount cannot be negative'] },
   deductions: { type: Number, default: 0, min: [0, 'Deductions cannot be negative'] },
+  // Salary paid early and now being taken back. Kept apart from `deductions`
+  // so the payslip can show what was held against an advance and what is left
+  // to recover, rather than one lump the employee cannot account for.
+  advanceDeduction: { type: Number, default: 0, min: [0, 'Advance deduction cannot be negative'] },
+  advanceBalance: { type: Number, default: 0, min: [0, 'Advance balance cannot be negative'] },
   netAmount: { type: Number, default: 0 },
   notes: { type: String, default: '' }
 }, { _id: true });

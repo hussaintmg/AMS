@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
-import { X, Pencil, Trash2, User, CalendarDays, DollarSign, Phone, Mail, MapPin, Tag, Flag, MessageSquare, ArrowRightLeft, Plus } from 'lucide-react';
+import { X, Pencil, Trash2, User, CalendarDays, DollarSign, Phone, Mail, MapPin, Tag, Flag, MessageSquare, ArrowRightLeft } from 'lucide-react';
 import { useLeads } from '../../context/LeadsContext';
 import SearchableSelect from '../SearchableSelect';
 import ConfirmModal from '../ConfirmModal';
@@ -174,10 +174,19 @@ export default function LeadDrawer({ leadId, onClose, onUpdated }) {
     }
   };
 
-  const renderCreateBtn = (type, field, title) => (
-    <button type="button" className="btn-icon inline-create-btn" title={title} onClick={() => setQuickCreate({ show: true, type, field })}>
-      <Plus size={16} />
-    </button>
+  /**
+   * Caption plus its quick-add control, laid out the same way as every other
+   * form. These three fields previously passed a `label` prop to
+   * SearchableSelect, which does not accept one — so they rendered with no
+   * caption at all and a bare icon button floating beside the select.
+   */
+  const renderFieldLabel = (text, type, field) => (
+    <label className="form-label-add">
+      <span>{text}</span>
+      <button type="button" className="label-add-link" title={`Create ${text}`} onClick={() => setQuickCreate({ show: true, type, field })}>
+        + {text}
+      </button>
+    </label>
   );
 
   if (loading) {
@@ -239,67 +248,63 @@ export default function LeadDrawer({ leadId, onClose, onUpdated }) {
                   <label>Phone</label>
                   <input type="tel" className="form-input" value={editForm.phone} onChange={(e) => setEditForm((p) => ({ ...p, phone: e.target.value }))} />
                 </div>
-                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end' }}>
-                  <div style={{ flex: 1 }}>
-                    <SearchableSelect
-                      options={meta.sources || []}
-                      value={editForm.source}
-                      onChange={(e) => setEditForm((p) => ({ ...p, source: e.target.value }))}
-                      label="Source"
-                      placeholder="Select source"
-                      valueField="_id"
-                      labelField="name"
-                    />
-                  </div>
-                  {renderCreateBtn('sources', 'source', 'Create Source')}
+                <div className="form-group">
+                  {renderFieldLabel('Source', 'sources', 'source')}
+                  <SearchableSelect
+                    options={meta.sources || []}
+                    value={editForm.source}
+                    onChange={(e) => setEditForm((p) => ({ ...p, source: e.target.value }))}
+                    placeholder="Select source"
+                    valueField="_id"
+                    labelField="name"
+                  />
                 </div>
-                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end' }}>
-                  <div style={{ flex: 1 }}>
-                    <SearchableSelect
-                      options={meta.types || []}
-                      value={editForm.type}
-                      onChange={(e) => setEditForm((p) => ({ ...p, type: e.target.value }))}
-                      label="Type"
-                      placeholder="Select type"
-                      valueField="_id"
-                      labelField="name"
-                    />
-                  </div>
-                  {renderCreateBtn('types', 'type', 'Create Type')}
+                <div className="form-group">
+                  {renderFieldLabel('Type', 'types', 'type')}
+                  <SearchableSelect
+                    options={meta.types || []}
+                    value={editForm.type}
+                    onChange={(e) => setEditForm((p) => ({ ...p, type: e.target.value }))}
+                    placeholder="Select type"
+                    valueField="_id"
+                    labelField="name"
+                  />
                 </div>
-                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end' }}>
-                  <div style={{ flex: 1 }}>
-                    <SearchableSelect
-                      options={meta.priorities || []}
-                      value={editForm.priority}
-                      onChange={(e) => setEditForm((p) => ({ ...p, priority: e.target.value }))}
-                      label="Priority"
-                      placeholder="Select priority"
-                      valueField="_id"
-                      labelField="name"
-                    />
-                  </div>
-                  {renderCreateBtn('priorities', 'priority', 'Create Priority')}
+                <div className="form-group">
+                  {renderFieldLabel('Priority', 'priorities', 'priority')}
+                  <SearchableSelect
+                    options={meta.priorities || []}
+                    value={editForm.priority}
+                    onChange={(e) => setEditForm((p) => ({ ...p, priority: e.target.value }))}
+                    placeholder="Select priority"
+                    valueField="_id"
+                    labelField="name"
+                  />
                 </div>
-                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end' }}>
-                  <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
-                    <label>Status</label>
-                    <select className="form-input" value={editForm.status} onChange={(e) => setEditForm((p) => ({ ...p, status: e.target.value }))}>
-                      <option value="">Select status</option>
-                      {meta.statuses.map((s) => (
-                        <option key={s._id} value={s.value || s.label}>{s.label}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <button type="button" className="btn-icon inline-create-btn" title="Create Status" onClick={() => {
-                    if (!meta.leadStatusCollectionId) {
-                      toast.error('Please select or create a Lead Status Collection in Server Management first.');
-                      return;
-                    }
-                    setShowStatusItemModal(true);
-                  }}>
-                    <Plus size={16} />
-                  </button>
+                <div className="form-group">
+                  <label className="form-label-add">
+                    <span>Status</span>
+                    <button
+                      type="button"
+                      className="label-add-link"
+                      title="Create Status"
+                      onClick={() => {
+                        if (!meta.leadStatusCollectionId) {
+                          toast.error('Please select or create a Lead Status Collection in Server Management first.');
+                          return;
+                        }
+                        setShowStatusItemModal(true);
+                      }}
+                    >
+                      + Status
+                    </button>
+                  </label>
+                  <select className="form-input" value={editForm.status} onChange={(e) => setEditForm((p) => ({ ...p, status: e.target.value }))}>
+                    <option value="">Select status</option>
+                    {meta.statuses.map((s) => (
+                      <option key={s._id} value={s.value || s.label}>{s.label}</option>
+                    ))}
+                  </select>
                 </div>
                 <div className="form-row">
                   <div className="form-group">

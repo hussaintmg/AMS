@@ -1,0 +1,83 @@
+/* Salary advances on the Payroll page. */
+
+.adv-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: var(--spacing-4);
+}
+
+.adv-tab {
+  padding: 8px 16px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-full);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.adv-tab:hover {
+  border-color: var(--primary-300);
+  color: var(--primary-700);
+}
+
+.adv-tab.active {
+  border-color: var(--primary-color);
+  background: var(--primary-50);
+  color: var(--primary-700);
+  font-weight: 600;
+}
+
+.adv-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-3);
+  margin-bottom: var(--spacing-4);
+}
+
+.adv-stat {
+  flex: 1 1 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 16px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  background: var(--gray-50);
+}
+
+.adv-stat span {
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+}
+
+.adv-stat strong {
+  font-size: var(--font-size-xl);
+  font-weight: 700;
+}
+
+/* The balance is the number this feature exists to answer. */
+.adv-stat-main {
+  border-color: var(--warning-500);
+  background: var(--warning-100);
+}
+
+.adv-owed { color: #b45309; font-weight: 600; }
+.adv-good { color: #047857; }
+
+.adv-actions {
+  display: flex;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.adv-note {
+  margin: var(--spacing-3) 0 0;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  line-height: 1.5;
+}

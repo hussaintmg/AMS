@@ -299,6 +299,8 @@ export const partsAPI = {
 export const barcodeAPI = {
     // Resolve a scanned barcode / part code / chassis number to a line item.
     scan: (code) => api.post('/barcode/scan', { code }),
+    // Browse products by name/code when there is no barcode to scan.
+    search: (params) => api.get('/barcode/search', { params }),
     assign: (kind, id) => api.post(`/barcode/${kind}/${id}`),
     svgUrl: (kind, id, download = false) => `/api/barcode/${kind}/${id}/svg${download ? '?download=true' : ''}`,
     labelUrl: (kind, id) => `/api/barcode/${kind}/${id}/label`,
@@ -768,6 +770,15 @@ export const payrollAPI = {
     lockPeriod: (id) => api.post(`/payroll/periods/${id}/lock`),
     postPeriod: (id) => api.post(`/payroll/periods/${id}/post`),
     updateLine: (lineId, data) => api.patch(`/payroll/lines/${lineId}`, data)
+};
+
+// Salary paid ahead of payday, and what the employee still owes back.
+export const salaryAdvanceAPI = {
+    list: (params) => api.get('/salary-advances', { params }),
+    outstanding: (employeeId) => api.get(`/salary-advances/outstanding/${employeeId}`),
+    create: (data) => api.post('/salary-advances', data),
+    repay: (id, amount) => api.post(`/salary-advances/${id}/repay`, { amount }),
+    cancel: (id) => api.delete(`/salary-advances/${id}`)
 };
 
 export const leavesAPI = {

@@ -461,14 +461,7 @@ function ModelForm({ formData, onChange, set, makes, onQuickCreate }) {
     <>
       <div className="form-row">
         <div className="form-group">
-          <label
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              flexDirection: "row",
-            }}
-          >
+          <label className="form-label-add">
             Brand *{" "}
             <a
               className="label-add-link"
@@ -617,14 +610,7 @@ function VariantForm({
     <>
       <div className="form-row">
         <div className="form-group">
-          <label
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              flexDirection: "row",
-            }}
-          >
+          <label className="form-label-add">
             Brand *{" "}
             <a
               className="label-add-link"
@@ -650,14 +636,7 @@ function VariantForm({
           </SearchableSelect>
         </div>
         <div className="form-group">
-          <label
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              flexDirection: "row",
-            }}
-          >
+          <label className="form-label-add">
             Model *{" "}
             <a
               className="label-add-link"

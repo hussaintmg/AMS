@@ -12,6 +12,7 @@ const pages = [
   { key: 'reports', label: 'Reports', path: '/reports', module: 'reports', icon: 'BarChart3', group: 'Reports', isCore: false, isActive: true },
   { key: 'employees', label: 'Employees', path: '/hr/employees', module: 'hr', icon: 'UserRound', group: 'HR & Finance', isCore: false, isActive: true },
   { key: 'leaves', label: 'Leaves', path: '/hr/leaves', module: 'leaves', icon: 'CalendarDays', group: 'HR & Finance', isCore: false, isActive: true },
+  { key: 'payroll', label: 'Payroll', path: '/hr/payroll', module: 'payroll', icon: 'Coins', group: 'HR & Finance', isCore: false, isActive: true },
   { key: 'expenses', label: 'Expenses', path: '/hr/expenses', module: 'expenses', icon: 'WalletCards', group: 'HR & Finance', isCore: false, isActive: true },
   { key: 'ledger', label: 'Ledger', path: '/hr/ledger', module: 'ledger', icon: 'BookOpen', group: 'HR & Finance', isCore: false, isActive: true },
   { key: 'payment_methods', label: 'Payment Methods', path: '/payment-methods', module: 'payment-methods', icon: 'CreditCard', group: 'ERP Settings', isCore: false, isActive: true },

@@ -782,21 +782,8 @@
   cursor: default;
 }
 
-/* Inline create button (reusable for modals) */
-.inline-create-btn {
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  background: var(--bg-secondary);
-  color: var(--primary-color);
-  transition: all 0.2s;
-  flex-shrink: 0;
-}
+/* The icon-only create button that used to sit beside these selects is gone —
+   quick-add now lives on the label line, styled once in index.css. */
 
 .lead-management-page .table-container,
 .customer-management-page .table-container {
@@ -832,15 +819,6 @@
   box-sizing: border-box;
 }
 
-.inline-create-btn:hover {
-  background: var(--primary-color);
-  color: white;
-}
-
-.inline-create-btn svg {
-  width: 14px;
-  height: 14px;
-}
 
 /* Inactive badge in dropdowns */
 .inactive-option {

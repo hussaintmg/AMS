@@ -84,6 +84,49 @@ exports.label = async (req, res, next) => {
   } catch (error) { next(error); }
 };
 
+/** The shape every lookup returns: a product plus a ready-made line item. */
+const partPayload = (part) => ({
+  kind: 'part',
+  id: String(part._id),
+  barcode: part.barcode || '',
+  name: part.name,
+  code: part.partCode || part.sku || '',
+  available: num(part.currentStock),
+  inStock: num(part.currentStock) > 0,
+  unitPrice: num(part.sellingPrice),
+  // Ready to append to a document's lineItems.
+  lineItem: {
+    itemType: 'part',
+    partId: String(part._id),
+    quantity: 1,
+    unitPrice: num(part.sellingPrice),
+    description: `${part.name}${part.partCode ? ` (${part.partCode})` : ''}`,
+  },
+});
+
+const vehiclePayload = (vehicle) => {
+  const status = canonicalStatus(vehicle.status);
+  const sellable = ['available', 'booked'].includes(status);
+  return {
+    kind: 'vehicle',
+    id: String(vehicle._id),
+    barcode: vehicle.barcode || '',
+    name: vehicleLabel(vehicle),
+    code: vehicle.chassisNumber || vehicle.vehicleCode || '',
+    status: vehicle.status,
+    available: sellable ? 1 : 0,
+    inStock: sellable,
+    unitPrice: num(vehicle.salePrice),
+    lineItem: {
+      itemType: 'vehicle',
+      vehicleId: String(vehicle._id),
+      quantity: 1,
+      unitPrice: num(vehicle.salePrice),
+      description: vehicleLabel(vehicle),
+    },
+  };
+};
+
 /**
  * POST /api/barcode/scan { code }
  * Resolve a scanned (or typed) code to a product and hand back a line item the
@@ -105,60 +148,59 @@ exports.scan = async (req, res, next) => {
       $or: [{ barcode: exact }, { partCode: exact }, { sku: exact }],
     }).lean();
 
-    if (part) {
-      return res.json({
-        success: true,
-        data: {
-          kind: 'part',
-          id: String(part._id),
-          barcode: part.barcode || '',
-          name: part.name,
-          code: part.partCode || part.sku || '',
-          available: num(part.currentStock),
-          inStock: num(part.currentStock) > 0,
-          unitPrice: num(part.sellingPrice),
-          // Ready to append to a document's lineItems.
-          lineItem: {
-            itemType: 'part',
-            partId: String(part._id),
-            quantity: 1,
-            unitPrice: num(part.sellingPrice),
-            description: `${part.name}${part.partCode ? ` (${part.partCode})` : ''}`,
-          },
-        },
-      });
-    }
+    if (part) return res.json({ success: true, data: partPayload(part) });
 
     const vehicle = await Vehicle.findOne({
       $or: [{ barcode: exact }, { chassisNumber: exact }, { vin: exact }, { vehicleCode: exact }, { engineNumber: exact }],
     }).lean();
 
-    if (vehicle) {
-      const status = canonicalStatus(vehicle.status);
-      return res.json({
-        success: true,
-        data: {
-          kind: 'vehicle',
-          id: String(vehicle._id),
-          barcode: vehicle.barcode || '',
-          name: vehicleLabel(vehicle),
-          code: vehicle.chassisNumber || vehicle.vehicleCode || '',
-          status: vehicle.status,
-          available: ['available', 'booked'].includes(status) ? 1 : 0,
-          inStock: ['available', 'booked'].includes(status),
-          unitPrice: num(vehicle.salePrice),
-          lineItem: {
-            itemType: 'vehicle',
-            vehicleId: String(vehicle._id),
-            quantity: 1,
-            unitPrice: num(vehicle.salePrice),
-            description: vehicleLabel(vehicle),
-          },
-        },
-      });
-    }
+    if (vehicle) return res.json({ success: true, data: vehiclePayload(vehicle) });
 
     res.status(404).json({ success: false, message: `Nothing matches "${code}"` });
+  } catch (error) { next(error); }
+};
+
+/**
+ * GET /api/barcode/search?q=&kind=&limit=
+ * Free-text product lookup for the counter screen: stock that has no barcode
+ * printed yet — or that the operator simply cannot scan — is still one click
+ * away. Results carry the same line item as a scan, so the caller treats a
+ * picked product and a scanned one identically.
+ */
+exports.search = async (req, res, next) => {
+  try {
+    const q = clean(req.query?.q);
+    const kind = clean(req.query?.kind).toLowerCase();
+    const limit = Math.min(Math.max(num(req.query?.limit, 20), 1), 50);
+    // A blank query is not an error — it lists what is on the shelf.
+    const like = q ? new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') : null;
+    const results = [];
+
+    if (kind !== 'vehicle') {
+      const parts = await Part.find({
+        isActive: { $ne: false },
+        ...(like ? { $or: [{ name: like }, { partCode: like }, { sku: like }, { barcode: like }, { brand: like }] } : {}),
+      }).sort({ name: 1 }).limit(limit).lean();
+      results.push(...parts.map(partPayload));
+    }
+
+    if (kind !== 'part') {
+      const vehicles = await Vehicle.find(
+        like
+          ? { $or: [{ chassisNumber: like }, { vin: like }, { vehicleCode: like }, { engineNumber: like }, { barcode: like }] }
+          : {},
+      )
+        .populate('make', 'name').populate('model', 'name')
+        .populate('variant', 'name').populate('color', 'name')
+        .sort({ createdAt: -1 }).limit(limit).lean();
+      results.push(...vehicles.map(vehiclePayload));
+    }
+
+    // Sellable stock first: a counter mostly wants what it can actually hand
+    // over, and this runs before the slice so those win the limited slots.
+    results.sort((a, b) => Number(b.inStock) - Number(a.inStock));
+
+    res.json({ success: true, data: results.slice(0, limit) });
   } catch (error) { next(error); }
 };
 

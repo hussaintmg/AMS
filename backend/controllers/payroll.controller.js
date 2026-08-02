@@ -19,8 +19,14 @@ const {
     DEFAULT_CREDIT_ACCOUNT,
     DEFAULT_SALARY_ACCOUNT,
 } = require('../services/ledgerPosting.service');
+const {
+    outstandingByEmployee,
+    recoverFromAdvances,
+    ADVANCE_ACCOUNT,
+} = require('./salaryAdvance.controller');
 
 const getUserId = (req) => req.user?._id || req.user?.id || null;
+const round2 = (value) => Math.round((Number(value) || 0) * 100) / 100;
 
 const toObjectId = (value) => (mongoose.Types.ObjectId.isValid(value) ? new mongoose.Types.ObjectId(value) : null);
 
@@ -46,9 +52,25 @@ const mapLine = (line) => {
         employee_code: emp ? emp.employeeCode || '' : '',
         gross_amount: line.grossAmount || 0,
         deductions: line.deductions || 0,
+        advance_deduction: line.advanceDeduction || 0,
+        // What the employee still owes after this run is taken off.
+        advance_balance: line.advanceBalance || 0,
         net_amount: line.netAmount || 0,
         notes: line.notes || '',
     };
+};
+
+/**
+ * Net pay after everything is held back. An advance can never push the payslip
+ * negative — whatever cannot be recovered this run stays on the balance.
+ */
+const settleLine = (line) => {
+    const gross = round2(line.grossAmount);
+    const other = round2(line.deductions);
+    const room = Math.max(0, round2(gross - other));
+    line.advanceDeduction = Math.min(round2(line.advanceDeduction), room);
+    line.netAmount = round2(gross - other - line.advanceDeduction);
+    return line;
 };
 
 /** Load a period or 404, optionally with employee details on each line. */
@@ -144,7 +166,12 @@ const generateLines = async (req, res, next) => {
 
         // Regenerating must not duplicate lines for employees already present.
         const existing = new Set((period.lines || []).map((l) => String(l.employee)));
+        // One query for every employee's outstanding advance, rather than one
+        // per line.
+        const owedByEmployee = await outstandingByEmployee(employees.map((e) => e._id));
+
         let added = 0;
+        let advanceTotal = 0;
         const flagged = [];
         for (const emp of employees) {
             if (existing.has(String(emp._id))) continue;
@@ -156,13 +183,20 @@ const generateLines = async (req, res, next) => {
             const notes = raw < 0 ? 'Employee salary was negative on record; treated as 0 — please correct the employee.' : '';
             if (raw < 0) flagged.push(String(emp._id));
 
-            period.lines.push({
+            // Hold back what the employee owes, but never more than this
+            // month's pay — the rest simply stays outstanding.
+            const owed = round2(owedByEmployee.get(String(emp._id)) || 0);
+            const line = settleLine({
                 employee: emp._id,
                 grossAmount: gross,
                 deductions: 0,
-                netAmount: gross,
+                advanceDeduction: owed,
                 notes,
             });
+            line.advanceBalance = round2(owed - line.advanceDeduction);
+            advanceTotal = round2(advanceTotal + line.advanceDeduction);
+
+            period.lines.push(line);
             added++;
         }
 
@@ -171,14 +205,17 @@ const generateLines = async (req, res, next) => {
 
         const populated = await findPeriodOr404(period._id, true);
 
+        const notices = [`${added} line(s) generated`];
+        if (advanceTotal > 0) notices.push(`${advanceTotal} recovered against salary advances`);
+        if (flagged.length) notices.push(`${flagged.length} employee(s) had a negative salary and were set to 0`);
+
         res.json({
             success: true,
-            message: flagged.length
-                ? `${added} line(s) generated; ${flagged.length} employee(s) had a negative salary and were set to 0.`
-                : `${added} line(s) generated`,
+            message: notices.join('; '),
             data: {
                 count: populated.lines.length,
                 added,
+                advanceRecovered: advanceTotal,
                 flaggedEmployees: flagged,
                 lines: populated.lines.map(mapLine),
             },
@@ -228,28 +265,76 @@ const postPeriod = async (req, res, next) => {
             throw new AppError('Period already posted to ledger', 400);
         }
 
-        const total = period.lines.reduce((sum, l) => sum + (Number(l.netAmount) || 0), 0);
-        if (total <= 0) {
+        /**
+         * Recovery happens here, not at generate time: the lines are only a
+         * proposal until the period is posted, and an employee may have repaid
+         * in cash in between. `recoverFromAdvances` therefore reports what it
+         * could actually apply, and the line is rewritten to match — so a
+         * payslip never claims to have taken back money that was not there.
+         */
+        let advanceRecovered = 0;
+        for (const line of period.lines) {
+            const wanted = round2(line.advanceDeduction);
+            if (wanted <= 0) {
+                line.advanceBalance = 0;
+                continue;
+            }
+            const { applied } = await recoverFromAdvances(line.employee, wanted, getUserId(req));
+            if (applied !== wanted) {
+                line.advanceDeduction = applied;
+                settleLine(line); // net pay goes back up by whatever was not owed
+                line.notes = [line.notes, `Advance recovery adjusted to ${applied} at posting.`]
+                    .filter(Boolean).join(' ');
+            }
+            advanceRecovered = round2(advanceRecovered + applied);
+        }
+
+        const netTotal = round2(period.lines.reduce((sum, l) => sum + (Number(l.netAmount) || 0), 0));
+        if (netTotal <= 0 && advanceRecovered <= 0) {
             throw new AppError('Cannot post a period with zero net total', 400);
         }
 
-        await postDoubleEntry({
-            transactionDate: period.periodEnd,
-            debitAccount: DEFAULT_SALARY_ACCOUNT,
-            creditAccount: DEFAULT_CREDIT_ACCOUNT,
-            amount: total,
-            description: `Payroll ${period.label} (${period.lines.length} employees)`,
-            referenceType: 'salary',
-            referenceId,
-            userId: getUserId(req),
-        });
+        // Cash actually handed over.
+        if (netTotal > 0) {
+            await postDoubleEntry({
+                transactionDate: period.periodEnd,
+                debitAccount: DEFAULT_SALARY_ACCOUNT,
+                creditAccount: DEFAULT_CREDIT_ACCOUNT,
+                amount: netTotal,
+                description: `Payroll ${period.label} (${period.lines.length} employees)`,
+                referenceType: 'salary',
+                referenceId,
+                userId: getUserId(req),
+            });
+        }
+
+        // Salary that was already paid out as an advance: the cost lands now
+        // and the receivable it was sitting in is cleared.
+        if (advanceRecovered > 0) {
+            await postDoubleEntry({
+                transactionDate: period.periodEnd,
+                debitAccount: DEFAULT_SALARY_ACCOUNT,
+                creditAccount: ADVANCE_ACCOUNT,
+                amount: advanceRecovered,
+                description: `Payroll ${period.label} — salary advances recovered`,
+                referenceType: 'salary',
+                referenceId: `${referenceId}-ADV`,
+                userId: getUserId(req),
+            });
+        }
 
         period.status = 'posted';
         period.postedAt = new Date();
         period.updatedBy = getUserId(req);
         await period.save();
 
-        res.json({ success: true, message: 'Payroll posted to ledger', data: mapPeriod(period.toObject()) });
+        res.json({
+            success: true,
+            message: advanceRecovered > 0
+                ? `Payroll posted to ledger; ${advanceRecovered} recovered against salary advances`
+                : 'Payroll posted to ledger',
+            data: { ...mapPeriod(period.toObject()), advance_recovered: advanceRecovered, net_total: netTotal },
+        });
     } catch (e) {
         next(e);
     }
@@ -271,7 +356,7 @@ const updateLine = async (req, res, next) => {
         }
 
         const line = period.lines.id(lineId);
-        const { gross_amount, deductions, notes } = req.body;
+        const { gross_amount, deductions, advance_deduction, notes } = req.body;
 
         if (gross_amount != null) {
             const g = Number(gross_amount);
@@ -283,12 +368,28 @@ const updateLine = async (req, res, next) => {
             if (!Number.isFinite(d) || d < 0) throw new AppError('Deductions must be zero or greater', 400);
             line.deductions = d;
         }
+        if (advance_deduction != null) {
+            const a = Number(advance_deduction);
+            if (!Number.isFinite(a) || a < 0) throw new AppError('Advance deduction must be zero or greater', 400);
+            // Recovering more than is owed would turn an advance into a charge.
+            const owed = (await outstandingByEmployee([line.employee])).get(String(line.employee)) || 0;
+            if (a > round2(owed)) {
+                throw new AppError(`That employee only owes ${round2(owed)} against advances`, 400);
+            }
+            line.advanceDeduction = a;
+        }
         if (notes != null) line.notes = notes;
 
         if (line.deductions > line.grossAmount) {
             throw new AppError('Deductions cannot exceed the gross amount', 400);
         }
-        line.netAmount = line.grossAmount - line.deductions;
+
+        // No error when other deductions leave too little room for the advance:
+        // settleLine recovers what it can and the rest stays on the balance,
+        // which is the whole point of carrying advances across runs.
+        settleLine(line);
+        const owedNow = (await outstandingByEmployee([line.employee])).get(String(line.employee)) || 0;
+        line.advanceBalance = round2(Math.max(0, owedNow - line.advanceDeduction));
 
         period.updatedBy = getUserId(req);
         await period.save();

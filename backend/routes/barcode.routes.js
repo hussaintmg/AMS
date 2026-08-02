@@ -28,6 +28,16 @@ router.get('/scan', authenticate, barcodeController.scan);
 
 /**
  * @swagger
+ * /api/barcode/search:
+ *   get:
+ *     tags: [Barcode]
+ *     summary: Free-text product lookup for stock that cannot be scanned
+ *     security: [{ bearerAuth: [] }]
+ */
+router.get('/search', authenticate, barcodeController.search);
+
+/**
+ * @swagger
  * /api/barcode/{kind}/{id}:
  *   post:
  *     tags: [Barcode]

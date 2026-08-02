@@ -1,0 +1,134 @@
+/* "Vehicle/Parts" listing cell and its portalled tooltip. */
+
+.product-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  padding: 1px 2px;
+  outline: none;
+}
+
+.product-cell-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-bottom: 1px dotted var(--gray-400);
+}
+
+.product-cell:hover .product-cell-text,
+.product-cell.is-open .product-cell-text {
+  color: var(--primary-color);
+  border-bottom-color: var(--primary-color);
+}
+
+.product-cell:focus-visible {
+  box-shadow: 0 0 0 2px var(--primary-200);
+}
+
+/* How many more products are hiding behind the summary. */
+.product-cell-count {
+  flex: none;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: var(--radius-full);
+  background: var(--primary-50);
+  color: var(--primary-700);
+}
+
+.product-cell-plain {
+  display: inline-block;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+/* ── tooltip ── */
+.product-tip {
+  position: fixed;
+  z-index: 4000;
+  min-width: 240px;
+  max-width: min(420px, calc(100vw - 16px));
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  /* Hidden until the measuring pass has placed it. */
+  opacity: 0;
+  pointer-events: none;
+}
+
+.product-tip.is-ready {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.product-tip-head {
+  flex: none;
+  padding: 7px 12px;
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  background: var(--gray-50);
+  border-bottom: 1px solid var(--border-light);
+}
+
+.product-tip-list {
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+/* One product per line — this is the line break the list needs. */
+.product-tip-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 12px;
+  font-size: var(--font-size-sm);
+  line-height: 1.4;
+}
+
+.product-tip-row + .product-tip-row {
+  border-top: 1px solid var(--border-light);
+}
+
+.product-tip-kind {
+  flex: none;
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+}
+
+.product-tip-kind-vehicle { background: var(--info-100); color: #1d4ed8; }
+.product-tip-kind-part { background: var(--success-100); color: #047857; }
+.product-tip-kind-service { background: var(--accent-50); color: #b45309; }
+.product-tip-kind-other { background: var(--gray-100); color: var(--gray-600); }
+
+.product-tip-name {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-primary);
+  /* Long chassis-number names wrap instead of stretching the tooltip. */
+  overflow-wrap: anywhere;
+}
+
+.product-tip-qty {
+  flex: none;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+}

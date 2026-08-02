@@ -14,7 +14,7 @@ const TABS = [
   { key: 'details', label: 'Details' },
 ];
 
-const LABEL_STYLE = { display: 'flex', alignItems: 'center', justifyContent: 'space-between' ,flexDirection:'row'};
+// Layout for a label carrying a quick-add control lives in index.css.
 
 export default function CustomerFormModal({ customer, onClose, onSaved }) {
   const { createCustomer, updateCustomer, meta, loadMeta } = useCustomers();
@@ -97,7 +97,7 @@ export default function CustomerFormModal({ customer, onClose, onSaved }) {
   useModalKeyboard(true, onClose, handleSubmit, saving);
 
   const renderLabel = (text, field, quickType) => (
-    <label style={LABEL_STYLE}>
+    <label className="form-label-add">
       <span>{text}</span>
       <button type="button" className="label-add-link" onClick={() => setQuickCreate(quickType || field)}>+ Create {text}</button>
     </label>
