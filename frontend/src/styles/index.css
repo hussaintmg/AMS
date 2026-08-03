@@ -626,6 +626,11 @@ img {
   border-bottom: 1px solid var(--gray-200);
 }
 
+/* No `width: 1%` squeeze trick here: a percentage width on cells poisons the
+   table's intrinsic (max-content) size — the browser resolves the content
+   against the 1% and infers a table 100× wider than the content, which is
+   exactly the "every column is enormous" bug. Auto layout with nowrap already
+   sizes columns to their content. */
 .data-table td {
   padding: 0.5rem 0.75rem;
   border-bottom: 1px solid var(--gray-100);
@@ -633,14 +638,18 @@ img {
   line-height: 1.25;
   height: 38px;
   white-space: nowrap;
-  width: 1%;
-  max-width: none;
+  /* Nowrap needs a ceiling: one runaway value (a 5,000-character name in a
+     test record did exactly this) would otherwise stretch its whole column to
+     tens of thousands of pixels. Long values truncate with an ellipsis and
+     the row stays readable. */
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .data-table th {
   padding: 0.55rem 0.75rem;
   white-space: nowrap;
-  width: 1%;
 }
 
 .data-table td > img { max-height: 28px; width: auto; }
