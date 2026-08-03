@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { partsAPI, vehicleMasterAPI } from "../services/api";
 import toast from "react-hot-toast";
-import { Package, Search, Plus, Upload } from "lucide-react";
+import { Package, Search, Plus, Upload, Pencil, Trash2, ScanLine } from "lucide-react";
 import ErrorPopup from "../components/ErrorPopup";
 import ActionButtons from "../components/ActionButtons";
 import BarcodeButton from "../components/BarcodeButton";
@@ -47,7 +47,7 @@ const PartsInventory = () => {
 
   // Pagination & filtering
   const [page, setPage] = useState(1);
-  const [limit] = useState(20);
+  const [limit, setLimit] = useState(20);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
   const [searchParams] = useSearchParams();
@@ -66,6 +66,9 @@ const PartsInventory = () => {
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [showSupplierModal, setShowSupplierModal] = useState(false);
   const [showSourceTypeModal, setShowSourceTypeModal] = useState(false);
+  // Set when the "+ Source Type" tab is used to edit rather than create one
+  const [editingSourceType, setEditingSourceType] = useState(null);
+  const [sourceTypeDeleteTarget, setSourceTypeDeleteTarget] = useState(null);
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [showBulkUpload, setShowBulkUpload] = useState(false);
@@ -393,6 +396,45 @@ const PartsInventory = () => {
     fetchReferenceData();
   };
 
+  // Renaming keeps the same `value`, so the active tab and every part on it stay put
+  const handleSourceTypeUpdated = (updated) => {
+    if (updated?.id) {
+      setSourceTypes((prev) =>
+        prev.map((type) => (type.id === updated.id ? { ...type, ...updated } : type)),
+      );
+    }
+    fetchReferenceData();
+  };
+
+  const openSourceTypeEdit = (type) => {
+    setEditingSourceType(type);
+    setShowSourceTypeModal(true);
+  };
+
+  const closeSourceTypeModal = () => {
+    setShowSourceTypeModal(false);
+    setEditingSourceType(null);
+  };
+
+  // The API refuses to delete a type parts still point at, so surface that message
+  const handleDeleteSourceType = async () => {
+    const target = sourceTypeDeleteTarget;
+    if (!target) return;
+    try {
+      await partsAPI.deleteSourceType(target.id);
+      toast.success("Source type deleted");
+      setSourceTypes((prev) => prev.filter((type) => type.id !== target.id));
+      if (activeTab === target.value) handleTabChange("all");
+      setSourceTypeDeleteTarget(null);
+      fetchReferenceData();
+    } catch (err) {
+      setSourceTypeDeleteTarget(null);
+      setErrorPopup(
+        err.response?.data || { message: "Failed to delete source type" },
+      );
+    }
+  };
+
   // Adjust stock
   const handleAdjustStock = async (e) => {
     e.preventDefault();
@@ -646,6 +688,15 @@ const PartsInventory = () => {
             alignItems: "center",
           }}
         >
+          {/* Straight to the counter screen for this side of the business. */}
+          <a
+            href="/parts/barcode-scan"
+            className="btn btn-secondary btn-create"
+            title="Scan parts into a quotation, booking or sale"
+          >
+            <ScanLine size={18} style={{ marginRight: 6 }} />
+            Scan
+          </a>
           <button
             type="button"
             className="btn btn-secondary btn-create"
@@ -726,19 +777,49 @@ const PartsInventory = () => {
         >
           All Parts
         </button>
+        {/* Every source type renames inline; only dealer-added ones can be deleted. */}
         {sourceTypes.map((type) => (
-          <button
+          <div
             key={type.value}
-            className={`tab-btn ${activeTab === type.value ? "active" : ""}`}
-            onClick={() => handleTabChange(type.value)}
+            className={`tab-item ${activeTab === type.value ? "active" : ""}`}
           >
-            {type.name}
-          </button>
+            <button
+              type="button"
+              className="tab-btn"
+              onClick={() => handleTabChange(type.value)}
+            >
+              {type.name}
+            </button>
+            <span className="tab-item-actions">
+              <button
+                type="button"
+                className="tab-item-action"
+                title={`Rename "${type.name}"`}
+                onClick={() => openSourceTypeEdit(type)}
+              >
+                <Pencil size={13} />
+              </button>
+              {/* Built-ins are reported on across the system, so they rename but never delete */}
+              {!type.is_system && (
+                <button
+                  type="button"
+                  className="tab-item-action tab-item-action-danger"
+                  title={`Delete "${type.name}"`}
+                  onClick={() => setSourceTypeDeleteTarget(type)}
+                >
+                  <Trash2 size={13} />
+                </button>
+              )}
+            </span>
+          </div>
         ))}
         <button
           type="button"
           className="tab-btn tab-btn-add"
-          onClick={() => setShowSourceTypeModal(true)}
+          onClick={() => {
+            setEditingSourceType(null);
+            setShowSourceTypeModal(true);
+          }}
           title="Add a new source type"
         >
           <Plus size={14} />
@@ -841,6 +922,7 @@ const PartsInventory = () => {
         loading={loading}
         pagination={{ page, totalPages, total, limit }}
         onPageChange={(p) => setPage(p)}
+        onPageSizeChange={(nextLimit) => { setPage(1); setLimit(nextLimit); }}
         onRowClick={(row) => openModal("edit", row)}
         rowClassName={(row) =>
           row.stock_status === "out_of_stock" ? "row-warning" : ""
@@ -924,7 +1006,10 @@ const PartsInventory = () => {
                         <button
                           type="button"
                           className="label-add-link"
-                          onClick={() => setShowSourceTypeModal(true)}
+                          onClick={() => {
+                            setEditingSourceType(null);
+                            setShowSourceTypeModal(true);
+                          }}
                         >
                           + Create Source Type
                         </button>
@@ -1370,11 +1455,25 @@ const PartsInventory = () => {
         onSupplierCreated={handleSupplierCreated}
       />
 
-      {/* Source Type Quick-Create Modal */}
+      {/* Source Type Create / Edit Modal */}
       <SourceTypeFormModal
         isOpen={showSourceTypeModal}
-        onClose={() => setShowSourceTypeModal(false)}
+        onClose={closeSourceTypeModal}
+        sourceType={editingSourceType}
         onSourceTypeCreated={handleSourceTypeCreated}
+        onSourceTypeUpdated={handleSourceTypeUpdated}
+      />
+
+      {/* Confirm Delete Source Type */}
+      <ConfirmModal
+        isOpen={Boolean(sourceTypeDeleteTarget)}
+        title="Delete Source Type"
+        message={`Delete the source type "${sourceTypeDeleteTarget?.name}"? Its tab is removed from the parts list. Parts still using it must be moved to another source type first.`}
+        onConfirm={handleDeleteSourceType}
+        onCancel={() => setSourceTypeDeleteTarget(null)}
+        confirmText="Delete"
+        cancelText="Cancel"
+        type="danger"
       />
 
       {/* Confirm Delete Modal */}

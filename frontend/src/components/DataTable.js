@@ -9,6 +9,7 @@ const DataTable = ({
   onRowClick,
   pagination,
   onPageChange,
+  onPageSizeChange,
   emptyMessage = 'No data found',
   className = '',
   rowClassName,
@@ -124,7 +125,7 @@ const DataTable = ({
       </div>
 
       {/* Pagination */}
-      {pagination && onPageChange && <ServerPagination page={pagination.page} totalPages={pagination.totalPages} total={pagination.total || 0} limit={pagination.limit || 20} onPageChange={onPageChange} loading={loading} />}
+      {pagination && onPageChange && <ServerPagination page={pagination.page} totalPages={pagination.totalPages} total={pagination.total || 0} limit={pagination.limit || 20} onPageChange={onPageChange} onPageSizeChange={onPageSizeChange} loading={loading} />}
     </div>
   );
 };

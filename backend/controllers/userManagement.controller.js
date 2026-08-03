@@ -98,7 +98,7 @@ const getAllUsers = async (req, res, next) => {
     }
 
     const pageNum = Math.max(1, Number(page));
-    const limitNum = Math.min(100, Math.max(1, Number(limit)));
+    const limitNum = Math.min(1000, Math.max(1, Number(limit)));
 
     const [users, total] = await Promise.all([
       User.find(query)

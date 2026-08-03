@@ -185,12 +185,14 @@ async function resolveServiceLine(raw) {
  * @param {boolean}  options.checkStock            reject part lines exceeding stock
  * @param {string[]} options.vehicleStatuses       canonical statuses a vehicle may be in
  * @param {boolean}  options.requireInventoryVehicle
+ * @param {string[]} options.allowedTypes          itemTypes this document accepts
  */
 async function resolveLineItems(requested = [], options = {}) {
   const {
     checkStock = false,
     vehicleStatuses = null,
     requireInventoryVehicle = false,
+    allowedTypes = null,
   } = options;
 
   if (!Array.isArray(requested) || !requested.length) {
@@ -207,6 +209,16 @@ async function resolveLineItems(requested = [], options = {}) {
       : itemType === 'service' ? 'service'
         : itemType === 'vehicle' ? 'vehicle'
           : (oid(raw.partId ?? raw.part) ? 'part' : oid(raw.serviceTypeId ?? raw.serviceType) ? 'service' : 'vehicle');
+
+    // Vehicle and parts documents live in separate collections now, so a
+    // document rejects the other side's products outright rather than storing a
+    // line its own screens cannot render.
+    if (allowedTypes && !allowedTypes.includes(kind)) {
+      throw new AppError(
+        `A ${kind} cannot be added here — use the ${kind === 'part' ? 'Parts' : 'Vehicles'} screens for that`,
+        400,
+      );
+    }
 
     let line;
     if (kind === 'part') line = await resolvePartLine(raw, { checkStock: false });

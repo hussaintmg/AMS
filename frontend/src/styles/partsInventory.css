@@ -170,6 +170,75 @@
     color: white;
 }
 
+/* A source-type tab carries its own edit/delete controls, so the pill is the
+   wrapper and the inner button only supplies the label. */
+.parts-inventory-page .tab-item {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 8px;
+    transition: all 0.2s;
+}
+
+.parts-inventory-page .tab-item:hover {
+    background: #f3f4f6;
+}
+
+.parts-inventory-page .tab-item:hover .tab-btn {
+    color: #374151;
+}
+
+.parts-inventory-page .tab-item.active {
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+}
+
+.parts-inventory-page .tab-item.active .tab-btn,
+.parts-inventory-page .tab-item.active .tab-item-action {
+    color: white;
+}
+
+.parts-inventory-page .tab-item .tab-btn,
+.parts-inventory-page .tab-item .tab-btn:hover {
+    background: transparent;
+}
+
+.parts-inventory-page .tab-item-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.15rem;
+    padding-right: 0.6rem;
+    margin-left: -0.9rem;
+}
+
+.parts-inventory-page .tab-item-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.25rem;
+    border: none;
+    background: transparent;
+    border-radius: 5px;
+    color: #9ca3af;
+    cursor: pointer;
+    opacity: 0.7;
+    transition: all 0.15s;
+}
+
+.parts-inventory-page .tab-item-action:hover {
+    opacity: 1;
+    background: rgba(0, 0, 0, 0.06);
+    color: #2563eb;
+}
+
+.parts-inventory-page .tab-item-action-danger:hover {
+    background: #fee2e2;
+    color: #dc2626;
+}
+
+.parts-inventory-page .tab-item.active .tab-item-action:hover {
+    background: rgba(255, 255, 255, 0.22);
+    color: white;
+}
+
 /* Filters Bar */
 .parts-inventory-page .filters-bar {
     display: flex;

@@ -3,19 +3,24 @@ import useModalKeyboard from '../../hooks/useModalKeyboard';
 import { partsAPI } from '../../services/api';
 import toast from 'react-hot-toast';
 
-// Lets the dealer add their own part sources (beyond Manufacturer / 3rd Party)
-// straight from the Add Part form; new types show up as tabs on the parts list.
-function SourceTypeFormModal({ isOpen, onClose, onSourceTypeCreated }) {
+// Lets the dealer manage their own part sources (beyond Manufacturer / 3rd Party)
+// straight from the parts list or the Add Part form; new types show up as tabs.
+// Passing `sourceType` switches the modal to edit mode for that type.
+function SourceTypeFormModal({ isOpen, onClose, onSourceTypeCreated, sourceType = null, onSourceTypeUpdated }) {
+  const isEdit = Boolean(sourceType?.id);
   const [formData, setFormData] = useState({ name: '', description: '' });
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
-    setFormData({ name: '', description: '' });
+    setFormData({
+      name: sourceType?.name || '',
+      description: sourceType?.description || '',
+    });
     setErrors({});
     setSaving(false);
-  }, [isOpen]);
+  }, [isOpen, sourceType]);
 
   const validate = () => {
     const errs = {};
@@ -29,16 +34,28 @@ function SourceTypeFormModal({ isOpen, onClose, onSourceTypeCreated }) {
     if (!validate()) return;
     setSaving(true);
     try {
-      const res = await partsAPI.createSourceType({
+      const payload = {
         name: formData.name.trim(),
-        description: formData.description.trim() || undefined,
-      });
-      const created = res?.data?.data || {};
-      toast.success('Source type created!');
-      if (onSourceTypeCreated) onSourceTypeCreated(created);
+        description: formData.description.trim(),
+      };
+      if (isEdit) {
+        const res = await partsAPI.updateSourceType(sourceType.id, payload);
+        toast.success('Source type updated!');
+        if (onSourceTypeUpdated) onSourceTypeUpdated(res?.data?.data || {});
+      } else {
+        const res = await partsAPI.createSourceType({
+          ...payload,
+          description: payload.description || undefined,
+        });
+        toast.success('Source type created!');
+        if (onSourceTypeCreated) onSourceTypeCreated(res?.data?.data || {});
+      }
       onClose();
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to create source type');
+      toast.error(
+        err.response?.data?.message ||
+          `Failed to ${isEdit ? 'update' : 'create'} source type`,
+      );
     } finally {
       setSaving(false);
     }
@@ -52,7 +69,7 @@ function SourceTypeFormModal({ isOpen, onClose, onSourceTypeCreated }) {
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
         <div className="modal-header">
-          <h2>Create Source Type</h2>
+          <h2>{isEdit ? 'Edit Source Type' : 'Create Source Type'}</h2>
           <button className="modal-close" onClick={onClose} type="button">×</button>
         </div>
         <form onSubmit={handleSubmit}>
@@ -87,13 +104,17 @@ function SourceTypeFormModal({ isOpen, onClose, onSourceTypeCreated }) {
               </div>
             </div>
             <small style={{ color: '#64748b' }}>
-              New source types appear as a tab on the parts list and as an option on every part.
+              {isEdit
+                ? 'Renaming only changes the label — parts already on this source type stay where they are.'
+                : 'New source types appear as a tab on the parts list and as an option on every part.'}
             </small>
           </div>
           <div className="modal-footer">
             <button type="button" className="btn btn-secondary" onClick={onClose} disabled={saving}>Cancel</button>
             <button type="submit" className="btn btn-primary" disabled={saving}>
-              {saving ? <><span className="spinner-mini"></span> Creating...</> : 'Create Source Type'}
+              {saving
+                ? <><span className="spinner-mini"></span> {isEdit ? 'Saving...' : 'Creating...'}</>
+                : (isEdit ? 'Save Changes' : 'Create Source Type')}
             </button>
           </div>
         </form>

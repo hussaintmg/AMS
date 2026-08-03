@@ -97,7 +97,7 @@ export default function Ledger() {
         <div className="mobile-only ledger-mobile-list">{entries.map((entry) => <article key={entry._id || entry.id} onClick={() => setDrawerEntry(entry)}><header><strong>{entry.account}</strong><span>{entry.transactionDate ? new Date(entry.transactionDate).toLocaleDateString('en-GB') : '-'}</span></header><p>{entry.description}</p><div><span>Debit <b className="debit-text">{money(entry.debit)}</b></span><span>Credit <b className="credit-text">{money(entry.credit)}</b></span><span>Balance <b>{money(entry.runningBalance)}</b></span></div></article>)}</div>
       </>}
     </section>
-    <ServerPagination page={page} totalPages={pagination.pages} total={pagination.total} limit={pagination.limit} onPageChange={setPage} loading={loading}/>
+    <ServerPagination page={page} totalPages={pagination.pages} total={pagination.total} limit={pagination.limit} onPageChange={setPage} onPageSizeChange={(limit) => { setPage(1); setPagination((prev) => ({ ...prev, limit })); }} loading={loading}/>
     <LedgerDrawer isOpen={Boolean(drawerEntry)} onClose={() => setDrawerEntry(null)} entry={drawerEntry}/>
 
     {showEntryModal && <div className="modal-overlay" onClick={() => setShowEntryModal(false)}>

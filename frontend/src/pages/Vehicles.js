@@ -23,7 +23,7 @@ import ConfirmModal from "../components/ConfirmModal";
 import { ArrowUpTrayIcon } from "@heroicons/react/24/outline";
 import DataTable from "../components/DataTable";
 import useModalKeyboard from "../hooks/useModalKeyboard";
-import { Search } from "lucide-react";
+import { Search, ScanLine } from "lucide-react";
 import "../styles/vehicleInventory.css";
 
 const Vehicles = () => {
@@ -37,7 +37,7 @@ const Vehicles = () => {
 
   // Pagination & filtering
   const [page, setPage] = useState(1);
-  const [limit] = useState(20);
+  const [limit, setLimit] = useState(20);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
   const [searchParams] = useSearchParams();
@@ -643,6 +643,15 @@ const Vehicles = () => {
             alignItems: "center",
           }}
         >
+          {/* Straight to the counter screen for this side of the business. */}
+          <a
+            href="/vehicles/barcode-scan"
+            className="btn btn-secondary btn-create"
+            title="Scan vehicles into a quotation, booking or sale"
+          >
+            <ScanLine size={18} style={{ marginRight: 6 }} />
+            Scan
+          </a>
           <button
             type="button"
             className="btn btn-secondary btn-create"
@@ -824,6 +833,7 @@ const Vehicles = () => {
         loading={loading}
         pagination={{ page, totalPages, total, limit }}
         onPageChange={(p) => setPage(p)}
+        onPageSizeChange={(nextLimit) => { setPage(1); setLimit(nextLimit); }}
         onRowClick={(row) => openModal("edit", row)}
       />
 

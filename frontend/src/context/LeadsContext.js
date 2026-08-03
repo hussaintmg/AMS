@@ -8,7 +8,7 @@ export function LeadsProvider({ children }) {
   const [leads, setLeads] = useState([]);
   const [meta, setMeta] = useState({ statuses: [], sources: [], types: [], priorities: [], cities: [], users: [], departments: [] });
   const [stats, setStats] = useState(null);
-  const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, pages: 0 });
+  const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, pages: 0 });
   const [filters, setFilters] = useState({});
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState('createdAt');
@@ -16,6 +16,7 @@ export function LeadsProvider({ children }) {
   const [loading, setLoading] = useState(false);
   const [metaLoading, setMetaLoading] = useState(false);
   const initialLoadDone = useRef(false);
+  const previousLimit = useRef(20);
 
   const loadMeta = useCallback(async () => {
     setMetaLoading(true);
@@ -82,6 +83,12 @@ export function LeadsProvider({ children }) {
     }
   }, []);
 
+  useEffect(() => {
+    if (previousLimit.current === pagination.limit) return;
+    previousLimit.current = pagination.limit;
+    loadLeads(1);
+  }, [pagination.limit, loadLeads]);
+
   const handleSearch = useCallback((val) => {
     setSearch(val);
   }, []);
@@ -103,6 +110,10 @@ export function LeadsProvider({ children }) {
   const goToPage = useCallback((page) => {
     loadLeads(page);
   }, [loadLeads]);
+
+  const setPageSize = useCallback((limit) => {
+    setPagination((prev) => ({ ...prev, page: 1, limit: Math.min(1000, limit) }));
+  }, []);
 
   const applyFilters = useCallback(() => {
     loadLeads(1);
@@ -168,7 +179,7 @@ export function LeadsProvider({ children }) {
     leads, meta, stats, pagination, filters, search,
     sortBy, sortOrder, loading, metaLoading,
     handleSearch, handleFilter, clearFilters,
-    handleSort, goToPage, applyFilters, refreshLeads,
+    handleSort, goToPage, setPageSize, applyFilters, refreshLeads,
     getLeadById, createLead, updateLead, deleteLead,
     assignLead, changeStatus, addNote, getActivities, convertLead, markLeadLost,
     loadMeta, loadStats, loadLeads,

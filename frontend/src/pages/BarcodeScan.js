@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
-import { Camera, Keyboard, PackageSearch, ScanLine, Search, Trash2, X } from "lucide-react";
-import { barcodeAPI, salesAPI, customerAPI } from "../services/api";
+import { Camera, Keyboard, PackageSearch, ScanLine, Search, Trash2, UserRound, X } from "lucide-react";
+import { barcodeAPI, salesAPI, partsSalesAPI, customerAPI } from "../services/api";
 import useErpDocumentSettings from "../hooks/useErpDocumentSettings";
 import SearchableSelect from "../components/SearchableSelect";
 import CameraScanner from "../components/CameraScanner";
@@ -20,12 +20,49 @@ import "../styles/barcodeScan.css";
  * Products get in three ways, because not every counter has the same kit:
  * a handheld scanner typing into the box, the device camera, or a plain
  * product search for stock whose label is missing or unreadable.
+ *
+ * There is one of these per side of the business. `category` comes from the
+ * URL (/vehicles/barcode-scan or /parts/barcode-scan) and decides what a scan
+ * may resolve to and which collection the document lands in — a vehicle code
+ * scanned at the parts counter is reported as not found rather than quietly
+ * basketed. `?doc=quotation|booking|order` preselects the document, so arriving
+ * from the Quotations screen starts a quotation.
  */
-const DOCUMENTS = [
-  { key: "quotation", label: "Quotation", hint: "An offer. No stock is touched." },
-  { key: "booking", label: "Booking", hint: "Reserves vehicles. Parts stay in stock." },
-  { key: "order", label: "Sales Order + Invoice", hint: "Invoices immediately — this is what moves stock." },
-];
+const CATEGORY = {
+  vehicle: {
+    key: "vehicle",
+    kind: "vehicle",
+    label: "Vehicle",
+    basePath: "/vehicles",
+    api: salesAPI,
+    lead: "Scan a chassis number or barcode to build a quotation, booking or sale.",
+    searchPlaceholder: "Search by name or chassis number",
+    scanPlaceholder: "Scan a barcode, or type a chassis number",
+    documents: [
+      { key: "quotation", label: "Quotation", hint: "An offer. Nothing is reserved." },
+      { key: "booking", label: "Booking", hint: "Reserves the vehicles for this customer." },
+      { key: "order", label: "Sales Order + Invoice", hint: "Invoices immediately — this is what marks vehicles sold." },
+    ],
+  },
+  parts: {
+    key: "parts",
+    kind: "part",
+    label: "Parts",
+    basePath: "/parts",
+    api: partsSalesAPI,
+    lead: "Scan a part barcode to build a quotation, booking or counter sale.",
+    searchPlaceholder: "Search by name or part code",
+    scanPlaceholder: "Scan a barcode, or type a part code",
+    documents: [
+      { key: "quotation", label: "Quotation", hint: "An offer. No stock is touched." },
+      { key: "booking", label: "Booking", hint: "Records intent. Stock stays on the shelf." },
+      { key: "order", label: "Sales Order + Invoice", hint: "Invoices immediately — this is what takes stock off the shelf." },
+    ],
+  },
+};
+
+/** Where each created document can be opened. */
+const LIST_PATH = { quotation: "quotations", booking: "booking", order: "orders" };
 
 const MODES = [
   { key: "keyboard", label: "Scanner", icon: Keyboard, hint: "Handheld scanner or typed code" },
@@ -40,8 +77,11 @@ const num = (value, fallback = 0) => {
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
-function BarcodeScan() {
+function BarcodeScan({ category = "vehicle" }) {
+  const config = CATEGORY[category] || CATEGORY.vehicle;
+  const isParts = config.key === "parts";
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { currency } = useErpDocumentSettings();
   const scanRef = useRef(null);
   // Lookups run one after another on this chain. The camera can accept a new
@@ -52,7 +92,11 @@ function BarcodeScan() {
   // Mirror of the basket, so adding a product needs no state updater. See addFound.
   const basketRef = useRef([]);
 
-  const [docType, setDocType] = useState("order");
+  // Arriving from Quotations should start a quotation, not the default sale.
+  const requestedDoc = searchParams.get("doc");
+  const [docType, setDocType] = useState(
+    config.documents.some((entry) => entry.key === requestedDoc) ? requestedDoc : "order",
+  );
   const [mode, setMode] = useState("keyboard");
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
@@ -60,11 +104,14 @@ function BarcodeScan() {
   const [basket, setBasket] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [customerId, setCustomerId] = useState("");
+  // A counter mostly serves people who are not on the customer list.
+  const [walkIn, setWalkIn] = useState(false);
+  const [walkInName, setWalkInName] = useState("");
+  const [walkInPhone, setWalkInPhone] = useState("");
   const [amountReceived, setAmountReceived] = useState("");
   const [lastResult, setLastResult] = useState(null);
 
   const [query, setQuery] = useState("");
-  const [queryKind, setQueryKind] = useState("");
   const [results, setResults] = useState([]);
   const [searching, setSearching] = useState(false);
 
@@ -115,6 +162,12 @@ function BarcodeScan() {
     // existing part through the vehicle-only "already in basket" branch.
     const isPart = Boolean(found.lineItem.partId) ||
       String(found.lineItem.itemType || found.kind).toLowerCase() === "part";
+    // The lookup is already scoped to this counter's kind; this catches a stale
+    // result and keeps a vehicle out of a parts document either way.
+    if (isPart !== (config.kind === "part")) {
+      toast.error(`${found.name} is not a ${config.label.toLowerCase()} product`);
+      return;
+    }
     const available = Math.max(0, num(found.available));
     const existing = current.find(
       (row) =>
@@ -143,8 +196,12 @@ function BarcodeScan() {
       return;
     }
 
-    if (isPart && available === 0) {
-      toast.error(`${found.name} is out of stock`);
+    if (available === 0) {
+      // Sold, dispatched or delivered for a vehicle; nothing left on the shelf
+      // for a part. Either way it cannot go on a new document.
+      toast.error(isPart
+        ? `${found.name} is out of stock`
+        : `${found.name} is not available (${found.status || "already sold"})`);
       return;
     }
     const next = [
@@ -165,7 +222,7 @@ function BarcodeScan() {
     basketRef.current = next;
     setBasket(next);
     toast.success(`Added ${found.name}`);
-  }, []);
+  }, [config.kind, config.label]);
 
   /** Resolve a code — from the scanner box or the camera — and basket it. */
   const resolveCode = useCallback((value) => {
@@ -175,7 +232,7 @@ function BarcodeScan() {
     setBusy(true);
     const run = queueRef.current.then(async () => {
       try {
-        const res = await barcodeAPI.scan(trimmed);
+        const res = await barcodeAPI.scan(trimmed, config.kind);
         const found = res?.data?.data;
         if (!found?.lineItem) throw new Error("Not found");
         addFound(found);
@@ -189,7 +246,7 @@ function BarcodeScan() {
     });
     queueRef.current = run;
     return run;
-  }, [addFound]);
+  }, [addFound, config.kind]);
 
   const handleScan = async (event) => {
     event?.preventDefault();
@@ -204,7 +261,9 @@ function BarcodeScan() {
     setSearching(true);
     const timer = setTimeout(async () => {
       try {
-        const res = await barcodeAPI.search({ q: query.trim(), kind: queryKind || undefined, limit: 30 });
+        // Only what the counter can actually hand over: parts with stock left,
+        // and vehicles that have not been sold, dispatched or delivered.
+        const res = await barcodeAPI.search({ q: query.trim(), kind: config.kind, limit: 30 });
         if (live) setResults(res?.data?.data || []);
       } catch {
         if (live) setResults([]);
@@ -213,7 +272,7 @@ function BarcodeScan() {
       }
     }, 300);
     return () => { live = false; clearTimeout(timer); };
-  }, [mode, query, queryKind]);
+  }, [mode, query, config.kind]);
 
   const chooseMode = (next) => {
     setMode(next);
@@ -249,32 +308,44 @@ function BarcodeScan() {
       unitPrice: num(row.unitPrice),
     }));
 
+  /** The buyer, however they were identified. */
+  const buyer = () => (walkIn
+    ? { walkIn: true, walkInName: walkInName.trim(), walkInPhone: walkInPhone.trim() }
+    : { customerId });
+
   const submit = async () => {
-    if (!customerId) { toast.error("Select a customer"); return; }
+    if (!walkIn && !customerId) { toast.error("Select a customer, or switch to walk-in"); return; }
     if (!basket.length) { toast.error("Add at least one product"); return; }
+    const overStock = basket.find((row) => row.kind === "part" && num(row.quantity, 1) > num(row.available));
+    if (overStock) {
+      toast.error(`Only ${overStock.available} ${overStock.name} in stock`);
+      return;
+    }
     setSaving(true);
     try {
+      const api = config.api;
       if (docType === "quotation") {
-        const res = await salesAPI.createQuotation({
-          customerId, lineItems: lineItems(), validityDays: 7,
+        const res = await api.createQuotation({
+          ...buyer(), lineItems: lineItems(), validityDays: 7,
         });
-        setLastResult({ kind: "Quotation", number: res?.data?.data?.quotationNumber, id: res?.data?.data?.id });
+        setLastResult({ kind: "Quotation", doc: "quotation", number: res?.data?.data?.quotationNumber, id: res?.data?.data?.id });
         toast.success("Quotation created");
       } else if (docType === "booking") {
-        const res = await salesAPI.createBooking({
-          customerId, lineItems: lineItems(),
+        const res = await api.createBooking({
+          ...buyer(), lineItems: lineItems(),
           bookingAmount: received || total, totalAmount: total,
         });
-        setLastResult({ kind: "Booking", number: res?.data?.data?.bookingNumber, id: res?.data?.data?.id });
+        setLastResult({ kind: "Booking", doc: "booking", number: res?.data?.data?.bookingNumber, id: res?.data?.data?.id });
         toast.success("Booking created");
       } else {
-        const res = await salesAPI.createDirectOrder({
-          customerId, lineItems: lineItems(),
+        const res = await api.createDirectOrder({
+          ...buyer(), lineItems: lineItems(),
           paidAmount: received, paymentMode: "cash",
         });
         const data = res?.data?.data || {};
         setLastResult({
           kind: "Sales order",
+          doc: "order",
           number: data.orderNumber,
           id: data.id,
           invoiceNumber: data.invoiceNumber,
@@ -296,7 +367,7 @@ function BarcodeScan() {
     }
   };
 
-  const activeDoc = DOCUMENTS.find((entry) => entry.key === docType);
+  const activeDoc = config.documents.find((entry) => entry.key === docType);
   const activeMode = MODES.find((entry) => entry.key === mode);
   const inBasket = (item) =>
     basket.some((row) => row.partId === item.lineItem?.partId && row.vehicleId === item.lineItem?.vehicleId);
@@ -305,8 +376,8 @@ function BarcodeScan() {
     <div className="scan-page">
       <div className="page-header">
         <div className="header-content">
-          <h1><ScanLine size={22} /> Barcode Scan</h1>
-          <p>Build a quotation, booking or sale by scanning — or pick products straight from stock.</p>
+          <h1><ScanLine size={22} /> {config.label} Scan</h1>
+          <p>{config.lead}</p>
         </div>
       </div>
 
@@ -343,7 +414,7 @@ function BarcodeScan() {
                 type="text"
                 value={code}
                 onChange={(event) => setCode(event.target.value)}
-                placeholder="Scan a barcode, or type a part code / chassis number"
+                placeholder={config.scanPlaceholder}
                 autoComplete="off"
               />
               <button type="submit" className="btn btn-primary" disabled={!code.trim()}>
@@ -372,21 +443,20 @@ function BarcodeScan() {
                     type="text"
                     value={query}
                     onChange={(event) => setQuery(event.target.value)}
-                    placeholder="Search by name, part code or chassis number"
+                    placeholder={config.searchPlaceholder}
                     autoComplete="off"
                   />
                 </span>
-                <select value={queryKind} onChange={(event) => setQueryKind(event.target.value)} aria-label="Product type">
-                  <option value="">All products</option>
-                  <option value="part">Parts only</option>
-                  <option value="vehicle">Vehicles only</option>
-                </select>
               </div>
 
               {searching && !results.length ? (
                 <p className="scan-note">Searching…</p>
               ) : results.length === 0 ? (
-                <p className="scan-note">No products match that search.</p>
+                <p className="scan-note">
+                  {isParts
+                    ? "No parts with stock match that search."
+                    : "No available vehicles match that search — sold and dispatched units are not listed."}
+                </p>
               ) : (
                 <ul className="scan-results">
                   {results.map((item) => (
@@ -423,7 +493,8 @@ function BarcodeScan() {
               <ScanLine size={40} />
               <p>
                 Nothing in the basket yet. A handheld scanner types straight into the Scanner
-                box; no scanner at the counter means Camera or Browse.
+                box; no scanner at the counter means Camera or Browse. Only {isParts ? "parts" : "vehicles"} can
+                be added here.
               </p>
             </div>
           ) : (
@@ -486,7 +557,7 @@ function BarcodeScan() {
           <div className="scan-card">
             <label>Document</label>
             <div className="scan-doc-types">
-              {DOCUMENTS.map((entry) => (
+              {config.documents.map((entry) => (
                 <button
                   key={entry.key}
                   type="button"
@@ -501,22 +572,47 @@ function BarcodeScan() {
           </div>
 
           <div className="scan-card">
-            <label htmlFor="scan-customer">Customer *</label>
-            <SearchableSelect
-              id="scan-customer"
-              name="customerId"
-              value={customerId}
-              onChange={(event) => setCustomerId(event.target.value)}
-            >
-              <option value="">Select customer</option>
-              {customers.map((customer) => (
-                <option key={customer.id || customer._id} value={customer.id || customer._id}>
-                  {customer.companyName || customer.name ||
-                    [customer.firstName, customer.lastName].filter(Boolean).join(" ")}
-                  {customer.phone ? ` — ${customer.phone}` : ""}
-                </option>
-              ))}
-            </SearchableSelect>
+            <div className="scan-customer-head">
+              <label htmlFor="scan-customer">{walkIn ? "Walk-in customer" : "Customer *"}</label>
+              {/* Most counter buyers are not on the customer list; the sale is
+                  still booked against the one shared walk-in record. */}
+              <label className="scan-walkin">
+                <input type="checkbox" checked={walkIn} onChange={(event) => setWalkIn(event.target.checked)} />
+                <UserRound size={13} /> Walk-in
+              </label>
+            </div>
+            {walkIn ? (
+              <div className="scan-walkin-fields">
+                <input
+                  type="text"
+                  value={walkInName}
+                  onChange={(event) => setWalkInName(event.target.value)}
+                  placeholder="Buyer's name (optional)"
+                />
+                <input
+                  type="text"
+                  value={walkInPhone}
+                  onChange={(event) => setWalkInPhone(event.target.value)}
+                  placeholder="Phone (optional)"
+                />
+              </div>
+            ) : (
+              <SearchableSelect
+                id="scan-customer"
+                name="customerId"
+                value={customerId}
+                onChange={(event) => setCustomerId(event.target.value)}
+              >
+                <option value="">Select customer</option>
+                {customers.map((customer) => (
+                  <option key={customer.id || customer._id} value={customer.id || customer._id}>
+                    {customer.companyName || customer.name ||
+                      [customer.firstName, customer.lastName].filter(Boolean).join(" ")}
+                    {customer.phone ? ` — ${customer.phone}` : ""}
+                  </option>
+                ))}
+              </SearchableSelect>
+            )}
           </div>
 
           <div className="scan-card scan-totals">
@@ -556,7 +652,7 @@ function BarcodeScan() {
               type="button"
               className="btn btn-primary scan-submit"
               onClick={submit}
-              disabled={saving || !basket.length || !customerId}
+              disabled={saving || !basket.length || (!walkIn && !customerId)}
             >
               {saving ? "Creating…" : `Create ${activeDoc?.label}`}
             </button>
@@ -572,12 +668,16 @@ function BarcodeScan() {
               {lastResult.changeDue > 0 && (
                 <div className="scan-result-change">Change returned: {money(lastResult.changeDue)}</div>
               )}
+              {/* Open the document that was just created, on the right side of
+                  the business, searched by its own number. */}
               <button
                 type="button"
                 className="btn btn-secondary"
-                onClick={() => navigate(docType === "quotation" ? "/sales?tab=quotations" : docType === "booking" ? "/sales?tab=bookings" : "/sales?tab=orders")}
+                onClick={() => navigate(
+                  `${config.basePath}/${LIST_PATH[lastResult.doc] || "orders"}?search=${encodeURIComponent(lastResult.number || "")}`,
+                )}
               >
-                Open in Sales
+                Open {lastResult.kind.toLowerCase()}
               </button>
             </div>
           )}

@@ -163,7 +163,7 @@ const getAllParts = async (req, res, next) => {
         } = req.query;
 
         const pageNum = parseInt(page);
-        const limitNum = parseInt(limit);
+        const limitNum = Math.min(1000, Math.max(1, parseInt(limit, 10) || 20));
         const skip = (pageNum - 1) * limitNum;
 
         const filter = { isActive: true };

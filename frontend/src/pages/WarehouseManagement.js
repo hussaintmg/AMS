@@ -199,7 +199,7 @@ function WarehouseManagement() {
     />
   );
 
-  const renderPagination = () => <ServerPagination {...pagination} onPageChange={paginate} loading={loading} />;
+  const renderPagination = () => <ServerPagination {...pagination} onPageChange={paginate} onPageSizeChange={(limit) => setPagination(prev => ({ ...prev, page: 1, limit }))} loading={loading} />;
 
   // ── Table ────────────────────────────────────────────────────────────
 

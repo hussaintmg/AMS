@@ -22,6 +22,7 @@ const { recordCustomerActivity } = require('../utils/customerSync');
 const { createInvoiceForOrder, round2 } = require('../utils/invoiceFactory');
 const { mapLineItem } = require('../services/lineItems.service');
 const { revertInvoiceStock } = require('../services/stockLedger.service');
+const { resolveDocumentCustomer } = require('../utils/walkInCustomer');
 const { sendTemplateEmail } = require('../services/emailSender.service');
 const { allowedOwnerIds } = require('../utils/roleJobs');
 
@@ -60,7 +61,12 @@ const mapInvoiceRow = (inv) => ({
     booking_number: inv.salesOrder?.bookingNo || inv.salesOrder?.pboNo || '',
     job_card_id: inv.jobCard || null,
     customer_id: inv.customer?._id || inv.customer || null,
-    customer_name: customerName(inv.customer),
+    // A counter sale prints the buyer's own name rather than the shared
+    // walk-in record it is booked against.
+    customer_name: inv.walkIn && inv.walkInName ? inv.walkInName : customerName(inv.customer),
+    walk_in: inv.walkIn === true,
+    walk_in_name: inv.walkInName || '',
+    walk_in_phone: inv.walkInPhone || '',
     sale_person: inv.salePerson || inv.salesOrder?.salePerson || '',
     status: displayStatus(inv),
     invoice_date: inv.invoiceDate || inv.createdAt,
@@ -150,7 +156,7 @@ const getAllInvoices = async (req, res, next) => {
         }
 
         const pageNum = Math.max(1, parseInt(page, 10) || 1);
-        const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
+        const limitNum = Math.min(1000, Math.max(1, parseInt(limit, 10) || 20));
         const sortMap = {
             created_at: 'createdAt', invoice_date: 'invoiceDate', due_date: 'dueDate',
             total_amount: 'totalAmount', invoice_number: 'invoiceNumber', status: 'status',
@@ -242,9 +248,12 @@ const createInvoice = async (req, res, next) => {
             discountAmount, notes, termsAndConditions, items,
         } = req.body;
 
-        if (!sanitizeId(customerId)) throw new AppError('Customer is required', 400);
-        const customer = await Customer.findOne({ _id: customerId, deletedAt: null }).lean();
-        if (!customer) throw new AppError('Customer not found', 404);
+        const { customer, walkIn, walkInName, walkInPhone } = await resolveDocumentCustomer(req.body, async (id) => {
+            if (!sanitizeId(id)) throw new AppError('Customer is required', 400);
+            const found = await Customer.findOne({ _id: id, deletedAt: null }).lean();
+            if (!found) throw new AppError('Customer not found', 404);
+            return found;
+        });
 
         const invoiceItems = (Array.isArray(items) ? items : [])
             .filter((item) => item && item.description)
@@ -276,6 +285,7 @@ const createInvoice = async (req, res, next) => {
             salesOrder: sanitizeId(salesOrderId),
             jobCard: sanitizeId(jobCardId),
             customer: customer._id,
+            walkIn, walkInName, walkInPhone,
             status: 'draft',
             invoiceDate: now,
             dueDate: new Date(now.getTime() + Math.max(0, num(dueDays, 30)) * 24 * 60 * 60 * 1000),

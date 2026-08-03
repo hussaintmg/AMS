@@ -3,7 +3,13 @@ import "../../styles/lineItems.css";
 
 /**
  * Product picker for every sales document: a quotation, booking, sales order or
- * invoice may carry any mix of inventory vehicles and parts.
+ * invoice. Any number of products may be added.
+ *
+ * `category` decides what may go on the document, matching the URL the form was
+ * opened from and the server's own rule: a document under /vehicles takes
+ * vehicles only, one under /parts takes parts only. A vehicle is one physical
+ * unit so its quantity is fixed at 1; a part carries a real quantity that
+ * cannot exceed what is on the shelf.
  *
  * Products are chosen straight from the vehicle and part lists. There is
  * deliberately no barcode box here — scanning belongs to the counter screen
@@ -46,7 +52,15 @@ function LineItemsEditor({
   currencyCode = "PKR",
   requireInventoryVehicle = false,
   disabled = false,
+  category = "vehicle",
 }) {
+  const isParts = category === "parts";
+  const lineType = isParts ? "part" : "vehicle";
+  const stockOf = (partId) => {
+    const part = parts.find((item) => String(item.id) === String(partId));
+    const stock = Number(part?.current_stock);
+    return Number.isFinite(stock) ? stock : null;
+  };
   const lines = useMemo(
     () => (value || []).map((line, index) => ({ key: line.key || `line-${index}`, ...line })),
     [value],
@@ -63,10 +77,23 @@ function LineItemsEditor({
     if (onChange) onChange(next);
   }, [onChange]);
 
-  const addLine = (itemType) => emit([...linesRef.current, emptyLine(itemType)]);
+  const addLine = () => emit([...linesRef.current, emptyLine(lineType)]);
   const removeLine = (key) => emit(linesRef.current.filter((line) => line.key !== key));
   const patchLine = (key, patch) =>
     emit(linesRef.current.map((line) => (line.key === key ? { ...line, ...patch } : line)));
+
+  /**
+   * Stock is the hard ceiling on a part line. Typing 50 when 6 are left would
+   * only fail on save, so it is clamped here and the row says why.
+   */
+  const setQuantity = (key, raw) => {
+    const line = linesRef.current.find((entry) => entry.key === key);
+    if (!line) return;
+    if (raw === "") return patchLine(key, { quantity: "" });
+    const stock = stockOf(line.partId);
+    const wanted = Math.max(1, num(raw, 1));
+    patchLine(key, { quantity: stock == null ? wanted : Math.min(wanted, Math.max(0, stock)) });
+  };
 
   // Choosing a product fills its price so the user only overrides when they mean to.
   const chooseVehicle = (key, vehicleId) => {
@@ -91,9 +118,14 @@ function LineItemsEditor({
   };
   const choosePart = (key, partId) => {
     const part = parts.find((item) => String(item.id) === String(partId));
+    const stock = stockOf(partId);
+    const current = linesRef.current.find((line) => line.key === key);
     patchLine(key, {
       partId,
       unitPrice: part?.selling_price ?? "",
+      // Switching to a part with less on the shelf must not leave the old,
+      // now-impossible quantity behind.
+      quantity: stock == null ? num(current?.quantity, 1) : Math.min(Math.max(1, num(current?.quantity, 1)), Math.max(1, stock)),
       description: part ? `${part.name || part.part_name}${part.part_number ? ` (${part.part_number})` : ""}` : "",
     });
   };
@@ -108,20 +140,19 @@ function LineItemsEditor({
   return (
     <div className="line-items">
       <div className="line-items-head">
-        <label>Products *</label>
+        <label>{isParts ? "Parts *" : "Vehicles *"}</label>
         <div className="line-items-add">
-          <button type="button" className="btn-chip" onClick={() => addLine("vehicle")} disabled={disabled}>
-            + Vehicle
-          </button>
-          <button type="button" className="btn-chip" onClick={() => addLine("part")} disabled={disabled}>
-            + Part
+          <button type="button" className="btn-chip" onClick={addLine} disabled={disabled}>
+            {isParts ? "+ Part" : "+ Vehicle"}
           </button>
         </div>
       </div>
 
       {lines.length === 0 ? (
         <p className="line-items-empty">
-          No products yet — add a vehicle or a part.
+          {isParts
+            ? "No parts yet — add as many as the customer is buying."
+            : "No vehicles yet — add one or more."}
         </p>
       ) : (
         <div className="line-items-table-wrap">
@@ -144,10 +175,10 @@ function LineItemsEditor({
                   <td>{index + 1}</td>
                   <td>
                     <div className="line-items-product">
-                      <span className={`line-type line-type-${line.itemType}`}>
-                        {line.itemType === "part" ? "Part" : "Vehicle"}
+                      <span className={`line-type line-type-${isParts ? "part" : "vehicle"}`}>
+                        {isParts ? "Part" : "Vehicle"}
                       </span>
-                      {line.itemType === "part" ? (
+                      {isParts ? (
                         <select
                           value={line.partId || ""}
                           onChange={(event) => choosePart(line.key, event.target.value)}
@@ -194,14 +225,24 @@ function LineItemsEditor({
                     </div>
                   </td>
                   <td>
-                    <input
-                      type="number"
-                      min="1"
-                      value={line.quantity}
+                    {isParts ? (
+                      <>
+                        <input
+                          type="number"
+                          min="1"
+                          max={stockOf(line.partId) ?? undefined}
+                          value={line.quantity}
+                          disabled={disabled}
+                          onChange={(event) => setQuantity(line.key, event.target.value)}
+                        />
+                        {line.partId && stockOf(line.partId) != null && (
+                          <small className="line-items-stock">{stockOf(line.partId)} in stock</small>
+                        )}
+                      </>
+                    ) : (
                       // A vehicle is one physical unit — the server enforces this too.
-                      disabled={disabled || line.itemType === "vehicle"}
-                      onChange={(event) => patchLine(line.key, { quantity: event.target.value })}
-                    />
+                      <input type="number" value={1} disabled readOnly />
+                    )}
                   </td>
                   <td>
                     <input

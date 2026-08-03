@@ -61,6 +61,10 @@ const customerSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   salesSummary: { type: salesSummarySchema, default: () => ({}) },
   salesHistory: { type: [salesHistoryEntrySchema], default: [] },
+  // The single shared counter customer. Exactly one record carries this flag
+  // (utils/walkInCustomer.js); it cannot be edited or deleted from the UI, and
+  // the buyer's real name/phone live on the document rather than here.
+  isWalkIn: { type: Boolean, default: false },
   isActive: { type: Boolean, default: true },
   deletedAt: { type: Date, default: null },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },

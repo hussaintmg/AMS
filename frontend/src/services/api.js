@@ -295,11 +295,75 @@ export const partsAPI = {
     deleteSourceType: (id) => api.delete(`/parts/source-types/${id}`)
 };
 
+// Parts sales documents — their own collections, separate from the vehicle
+// documents in salesAPI/invoiceAPI below. Method names mirror salesAPI so a
+// screen can pick one namespace or the other from the URL and call it the same
+// way; see pages/Sales.js.
+export const partsSalesAPI = {
+    // Quotations
+    getQuotations: (params) => api.get('/parts-sales/quotations', { params }),
+    getQuotation: (id) => api.get(`/parts-sales/quotations/${id}`),
+    createQuotation: (data) => api.post('/parts-sales/quotations', data),
+    updateQuotation: (id, data) => api.put(`/parts-sales/quotations/${id}`, data),
+    deleteQuotation: (id) => api.delete(`/parts-sales/quotations/${id}`),
+    updateQuotationStatus: (id, status) => api.patch(`/parts-sales/quotations/${id}/status`, { status }),
+    approveQuotation: (id, decision = 'approved', notes = '') => api.post(`/parts-sales/quotations/${id}/approve`, { decision, notes }),
+    convertQuotation: (id, data) => api.post(`/parts-sales/quotations/${id}/convert`, data),
+    // Email and estimates run on the same templates as the vehicle documents.
+    sendQuotationEmail: (id) => api.post(`/parts-sales/quotations/${id}/send-email`),
+    downloadEstimate: (id) => api.get(`/parts-sales/quotations/${id}/estimate/pdf`, { responseType: 'blob' }),
+    emailEstimate: (id, to) => api.post(`/parts-sales/quotations/${id}/estimate/email`, to ? { to } : {}),
+    bulkQuotations: (operation, ids) => api.post('/parts-sales/bulk/quotation', { operation, ids }),
+    // Bookings
+    getBookings: (params) => api.get('/parts-sales/bookings', { params }),
+    getBooking: (id) => api.get(`/parts-sales/bookings/${id}`),
+    createBooking: (data) => api.post('/parts-sales/bookings', data),
+    updateBooking: (id, data) => api.put(`/parts-sales/bookings/${id}`, data),
+    deleteBooking: (id, data) => api.delete(`/parts-sales/bookings/${id}`, { data }),
+    convertBooking: (id, data) => api.post(`/parts-sales/bookings/${id}/convert`, data),
+    sendBookingEmail: (id) => api.post(`/parts-sales/bookings/${id}/send-email`),
+    bulkBookings: (operation, ids) => api.post('/parts-sales/bulk/booking', { operation, ids }),
+    // Sales orders — creating one raises its invoice, which is what moves stock.
+    getOrders: (params) => api.get('/parts-sales/orders', { params }),
+    getOrder: (id) => api.get(`/parts-sales/orders/${id}`),
+    createOrder: (data) => api.post('/parts-sales/orders', data),
+    createDirectOrder: (data) => api.post('/parts-sales/orders', data),
+    updateOrderStatus: (id, status, notes) => api.put(`/parts-sales/orders/${id}/status`, { status, notes }),
+    deleteOrder: (id) => api.delete(`/parts-sales/orders/${id}`),
+    sendOrderEmail: (id) => api.post(`/parts-sales/orders/${id}/send-email`),
+    bulkOrders: (operation, ids) => api.post('/parts-sales/bulk/order', { operation, ids }),
+    // Sales orders already carry their invoice, so the orders list is the
+    // "with invoices" list too.
+    getOrdersWithInvoices: (params) => api.get('/parts-sales/orders', { params }),
+    // Stats
+    getSalesStats: () => api.get('/parts-sales/stats'),
+    getStats: () => api.get('/parts-sales/stats'),
+};
+
+// Parts invoices, shaped like invoiceAPI so the Invoices screen can take either
+// namespace from the URL without changing its call sites.
+export const partsInvoiceAPI = {
+    getAll: (params) => api.get('/parts-sales/invoices', { params }),
+    getById: (id) => api.get(`/parts-sales/invoices/${id}`),
+    create: (data) => api.post('/parts-sales/invoices', data),
+    updateStatus: (id, status) => api.put(`/parts-sales/invoices/${id}/status`, { status }),
+    // Cancelling is what returns the stock to the shelf.
+    delete: (id, data) => api.delete(`/parts-sales/invoices/${id}`, { data }),
+    recordPayment: (id, data) => api.post(`/parts-sales/invoices/${id}/payments`, data),
+    sendEmail: (id) => api.post(`/parts-sales/invoices/${id}/send-email`),
+    bulk: (operation, ids) => api.post('/parts-sales/bulk/invoice', { operation, ids }),
+    getStats: () => api.get('/parts-sales/stats'),
+    // Payment methods are configured once for the whole ERP, not per document type.
+    getPaymentMethods: () => api.get('/invoices/payment-methods'),
+};
+
 // Inventory barcodes (parts + vehicles)
 export const barcodeAPI = {
     // Resolve a scanned barcode / part code / chassis number to a line item.
-    scan: (code) => api.post('/barcode/scan', { code }),
-    // Browse products by name/code when there is no barcode to scan.
+    // `kind` keeps a parts counter from resolving a vehicle and vice versa.
+    scan: (code, kind) => api.post('/barcode/scan', kind ? { code, kind } : { code }),
+    // Browse products by name/code when there is no barcode to scan. Only
+    // sellable stock comes back unless includeUnavailable is passed.
     search: (params) => api.get('/barcode/search', { params }),
     assign: (kind, id) => api.post(`/barcode/${kind}/${id}`),
     svgUrl: (kind, id, download = false) => `/api/barcode/${kind}/${id}/svg${download ? '?download=true' : ''}`,

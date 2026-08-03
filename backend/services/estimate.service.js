@@ -6,10 +6,9 @@
  * the dealer's own branding wins. Otherwise the built-in layout below renders —
  * an estimate must never fail just because nobody has designed a template yet.
  */
-const Quotation = require('../models/Quotation.model');
 const { PdfUsage } = require('../models');
 const { renderPdf, renderHtmlPdf } = require('./pdfRenderer.service');
-const { buildDataBag, companyName, buildItemRows, buildItemsTable } = require('./pdfData.service');
+const { findDocument, buildDataBag, companyName, buildItemRows, buildItemsTable } = require('./pdfData.service');
 const { resolveTokens } = require('./pdfFormat.cjs');
 const { AppError } = require('../middleware/errorHandler');
 
@@ -21,13 +20,17 @@ const money = (value) => {
 };
 const day = (value) => (value ? new Date(value).toLocaleDateString('en-GB') : '');
 
+/**
+ * A parts quotation estimates from the same template as a vehicle one, so the
+ * lookup covers both collections; the id says which it is.
+ */
 async function loadQuotation(id) {
-  const quotation = await Quotation.findById(id)
-    .populate('customer', 'firstName lastName companyName email phone address city customerCode')
-    .populate('createdBy', 'firstName lastName fullName email phone')
-    .lean();
-  if (!quotation) throw new AppError('Quotation not found', 404);
-  return quotation;
+  const found = await findDocument('quotation', id, [
+    { path: 'customer', select: 'firstName lastName companyName email phone address city customerCode' },
+    { path: 'createdBy', select: 'firstName lastName fullName email phone' },
+  ]);
+  if (!found) throw new AppError('Quotation not found', 404);
+  return found.record;
 }
 
 /** The built-in estimate layout — used when no template is assigned. */

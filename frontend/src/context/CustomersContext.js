@@ -8,7 +8,7 @@ export function CustomersProvider({ children }) {
   const [stats, setStats] = useState({ total: 0, active: 0, inactive: 0, individual: 0, corporate: 0, convertedFromLead: 0, newThisMonth: 0 });
   const [cities, setCities] = useState([]);
   const [meta, setMeta] = useState({ sources: [], types: [], cities: [], statuses: [], users: [], departments: [], statusCollectionId: null, statusCollectionName: null });
-  const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, pages: 0 });
+  const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, pages: 0 });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [filters, setFilters] = useState({});
@@ -188,6 +188,10 @@ export function CustomersProvider({ children }) {
     loadStats();
   }, [loadCustomers, loadStats, pagination.page]);
 
+  const setPageSize = useCallback((limit) => {
+    setPagination((prev) => ({ ...prev, page: 1, limit: Math.min(1000, limit) }));
+  }, []);
+
   return (
     <CustomersContext.Provider value={{
       customers, stats, cities, meta, pagination, loading, error, filters, search, sortBy, sortOrder,
@@ -195,7 +199,7 @@ export function CustomersProvider({ children }) {
       handleSearch, handleFilter, clearFilters,
       loadCustomers, loadStats, loadCities, loadMeta, loadAll,
       getCustomerById, createCustomer, updateCustomer, deleteCustomer,
-      toggleCustomerStatus, openDrawer, closeDrawer, refresh,
+      toggleCustomerStatus, openDrawer, closeDrawer, refresh, setPageSize,
     }}>
       {children}
     </CustomersContext.Provider>

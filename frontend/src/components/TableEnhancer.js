@@ -1,189 +1,136 @@
-import { useEffect } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
+import { GripVertical, Settings2, X } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
-const getCellText = (cell) => (cell ? cell.textContent.trim() : '');
+const STORAGE_PREFIX = 'ams-table-columns:';
+const clean = (value) => String(value || '').replace(/[\u2191\u2193\u2195]/g, '').trim();
+const isFixed = (name) => !name || /action(s)?|operation(s)?/i.test(name);
 
-const compareValues = (a, b, direction) => {
-    const aNum = parseFloat(a.replace(/,/g, ''));
-    const bNum = parseFloat(b.replace(/,/g, ''));
-    const numeric = !Number.isNaN(aNum) && !Number.isNaN(bNum);
-
-    if (numeric) {
-        return direction === 'asc' ? aNum - bNum : bNum - aNum;
-    }
-
-    return direction === 'asc'
-        ? a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
-        : b.localeCompare(a, undefined, { numeric: true, sensitivity: 'base' });
+const bindSorting = (table) => {
+  const header = table.querySelector('thead tr:first-child');
+  if (!header || header.dataset.sortBound) return;
+  header.dataset.sortBound = 'true';
+  header.addEventListener('click', (event) => {
+    const cell = event.target.closest('th');
+    if (!cell || cell.parentElement !== header || isFixed(clean(cell.textContent))) return;
+    const body = table.tBodies[0];
+    if (!body) return;
+    const index = cell.cellIndex;
+    const direction = cell.dataset.sortDirection === 'asc' ? 'desc' : 'asc';
+    Array.from(header.cells).forEach((th) => { th.classList.remove('sort-asc', 'sort-desc'); delete th.dataset.sortDirection; });
+    Array.from(body.rows).sort((a, b) => {
+      const left = clean(a.cells[index]?.textContent);
+      const right = clean(b.cells[index]?.textContent);
+      return left.localeCompare(right, undefined, { numeric: true, sensitivity: 'base' }) * (direction === 'asc' ? 1 : -1);
+    }).forEach((row) => body.appendChild(row));
+    cell.dataset.sortDirection = direction;
+    cell.classList.add(`sort-${direction}`);
+  });
+  Array.from(header.cells).forEach((cell) => { if (!isFixed(clean(cell.textContent))) cell.classList.add('sortable'); });
 };
 
-const isActionHeader = (headerText) => /action(s)?|operation(s)?/i.test(headerText);
-const isSelectionHeader = (header) => !getCellText(header) || Boolean(header?.querySelector('input[type="checkbox"]'));
-
-const updateSortStyles = (table, activeIndex, direction) => {
-    const headerCells = table.querySelectorAll('thead tr:first-child th');
-    headerCells.forEach((th, index) => {
-        th.classList.toggle('sort-asc', index === activeIndex && direction === 'asc');
-        th.classList.toggle('sort-desc', index === activeIndex && direction === 'desc');
-    });
+const tableKey = (table, pathname, index) => {
+  const headings = Array.from(table.querySelectorAll('thead tr:first-child th')).map((th) => clean(th.textContent));
+  return `${STORAGE_PREFIX}${pathname}:${table.dataset.tableId || index}:${headings.slice().sort().join('|')}`;
 };
 
-const filterTable = (table) => {
-    const filterRow = table.querySelector('thead tr[data-filter-row]');
-    const filters = Array.from(filterRow?.cells || []).map((cell) => {
-        const input = cell.querySelector('input');
-        return input ? input.value.trim().toLowerCase() : '';
-    });
-
-    const rows = Array.from(table.tBodies[0]?.rows || []);
-    rows.forEach((row) => {
-        const cells = Array.from(row.cells);
-        const visible = filters.every((filter, index) => {
-            if (!filter) return true;
-            const cellText = getCellText(cells[index]).toLowerCase();
-            return cellText.includes(filter);
-        });
-
-        row.style.display = visible ? '' : 'none';
-    });
+const moveCells = (table, orderedNames) => {
+  const header = table.querySelector('thead tr:first-child');
+  if (!header || !orderedNames?.length) return;
+  const current = Array.from(header.cells);
+  const byName = new Map(current.map((cell) => [clean(cell.textContent), cell]));
+  const ordered = orderedNames.map((name) => byName.get(name)).filter(Boolean);
+  current.forEach((cell) => { if (!ordered.includes(cell)) ordered.push(cell); });
+  if (ordered.every((cell, index) => cell === current[index])) return;
+  const indices = ordered.map((cell) => current.indexOf(cell));
+  Array.from(table.rows).forEach((row) => {
+    if (row === header || row.dataset.filterRow) return;
+    const cells = Array.from(row.cells);
+    if (cells.length !== current.length) return;
+    indices.forEach((cellIndex) => row.appendChild(cells[cellIndex]));
+  });
+  ordered.forEach((cell) => header.appendChild(cell));
+  const filterRow = table.querySelector('thead tr[data-filter-row]');
+  if (filterRow) {
+    const cells = Array.from(filterRow.cells);
+    if (cells.length === indices.length) indices.forEach((cellIndex) => filterRow.appendChild(cells[cellIndex]));
+  }
 };
 
-const sortTable = (table, columnIndex) => {
-    const tbody = table.tBodies[0];
-    if (!tbody) return;
-
-    const currentIndex = Number(table.dataset.sortColumn);
-    const currentDirection = table.dataset.sortDirection || 'none';
-    const nextDirection = currentIndex === columnIndex && currentDirection === 'asc' ? 'desc' : 'asc';
-
-    const rows = Array.from(tbody.rows).slice();
-    rows.sort((rowA, rowB) => {
-        const a = getCellText(rowA.cells[columnIndex]);
-        const b = getCellText(rowB.cells[columnIndex]);
-        return compareValues(a, b, nextDirection);
-    });
-
-    rows.forEach((row) => tbody.appendChild(row));
-    table.dataset.sortColumn = String(columnIndex);
-    table.dataset.sortDirection = nextDirection;
-    updateSortStyles(table, columnIndex, nextDirection);
+const enhanceTable = (table, pathname, index) => {
+  table.classList.add('data-table', 'data-table--shared');
+  const key = tableKey(table, pathname, index);
+  table.dataset.columnSettingsKey = key;
+  try { moveCells(table, JSON.parse(localStorage.getItem(key))); } catch (_) { /* ignore invalid old preference */ }
+  bindSorting(table);
 };
 
-/**
- * Sorting is delegated from the header row so the handler always reads the
- * current cellIndex. Binding per-cell would capture an index that goes stale
- * when a re-render changes the column set.
- */
-const bindHeaderSorting = (table, headerRow) => {
-    if (headerRow.dataset.sortBound === 'true') return;
-
-    const targetHeader = (event) => {
-        const th = event.target.closest('th');
-        if (!th || th.parentElement !== headerRow) return null;
-        if (isActionHeader(th.textContent || '') || isSelectionHeader(th)) return null;
-        return th;
-    };
-
-    headerRow.addEventListener('click', (event) => {
-        const th = targetHeader(event);
-        if (th) sortTable(table, th.cellIndex);
-    });
-    headerRow.addEventListener('keydown', (event) => {
-        if (event.key !== 'Enter' && event.key !== ' ') return;
-        const th = targetHeader(event);
-        if (!th) return;
-        event.preventDefault();
-        sortTable(table, th.cellIndex);
-    });
-
-    headerRow.dataset.sortBound = 'true';
-};
-
-const enhanceTable = (table) => {
-    const thead = table.querySelector('thead');
-    const headerRow = thead?.querySelector('tr:not([data-filter-row])');
-    if (!thead || !headerRow) return;
-
-    const existingFilterRow = thead.querySelector('tr[data-filter-row]');
-
-    // A re-render can reuse the same <table> with a different column set (e.g.
-    // switching Lead Master Data tabs). The injected filter row is invisible to
-    // React, so a stale one keeps the previous tab's width and shows up as a
-    // phantom extra column. Rebuild it whenever the widths disagree.
-    if (existingFilterRow && existingFilterRow.cells.length === headerRow.cells.length) {
-        return;
-    }
-    if (existingFilterRow) existingFilterRow.remove();
-
-    const filterRow = document.createElement('tr');
-    filterRow.dataset.filterRow = 'true';
-
-    Array.from(headerRow.cells).forEach((th, index) => {
-        const filterCell = document.createElement('th');
-        filterCell.className = 'table-filter-cell';
-
-        const skipEnhancement = isActionHeader(th.textContent || '') || isSelectionHeader(th);
-
-        if (!skipEnhancement) {
-            const input = document.createElement('input');
-            input.type = 'text';
-            input.className = 'table-filter-input';
-            input.placeholder = 'Filter';
-            input.dataset.columnIndex = String(index);
-            input.addEventListener('input', () => filterTable(table));
-            filterCell.appendChild(input);
-
-            th.classList.add('sortable');
-            th.tabIndex = 0;
-            if (!th.querySelector('.sort-arrow')) {
-                const sortArrow = document.createElement('span');
-                sortArrow.className = 'sort-arrow';
-                th.appendChild(sortArrow);
-            }
-        }
-
-        filterRow.appendChild(filterCell);
-    });
-
-    bindHeaderSorting(table, headerRow);
-    thead.appendChild(filterRow);
-    table.dataset.tableEnhancer = 'true';
-};
-
-const enhanceAllTables = () => {
-    const tables = Array.from(document.querySelectorAll('table.data-table'));
-    tables.forEach(enhanceTable);
+const enhanceAll = (pathname) => {
+  const tables = Array.from(document.querySelectorAll('.main-content table'));
+  tables.forEach((table, index) => enhanceTable(table, pathname, index));
+  return tables;
 };
 
 const TableEnhancer = () => {
-    const location = useLocation();
+  const { pathname } = useLocation();
+  const { isSuperAdmin } = useAuth();
+  const [open, setOpen] = useState(false);
+  const [tables, setTables] = useState([]);
+  const [selected, setSelected] = useState(0);
+  const [columns, setColumns] = useState([]);
+  const [dragged, setDragged] = useState(null);
+  const scan = useCallback(() => setTables(enhanceAll(pathname)), [pathname]);
 
-    useEffect(() => {
-        enhanceAllTables();
-        const observer = new MutationObserver((mutations) => {
-            mutations.forEach((mutation) => {
-                mutation.addedNodes.forEach((node) => {
-                    if (!(node instanceof HTMLElement)) return;
-                    if (node.matches('table.data-table')) {
-                        enhanceTable(node);
-                        return;
-                    }
-                    if (node.querySelectorAll) {
-                        node.querySelectorAll('table.data-table').forEach(enhanceTable);
-                    }
-                    // Header cells can be swapped inside a table that already
-                    // exists, so re-sync the table this node landed in too.
-                    const parentTable = node.closest?.('table.data-table');
-                    if (parentTable) enhanceTable(parentTable);
-                });
-            });
-        });
+  useEffect(() => {
+    scan();
+    const observer = new MutationObserver(scan);
+    const root = document.querySelector('.main-content');
+    if (root) observer.observe(root, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [scan]);
 
-        observer.observe(document.body, { childList: true, subtree: true });
-        return () => observer.disconnect();
-    }, [location.pathname]);
+  useEffect(() => {
+    if (!open) return;
+    setColumns(Array.from(tables[selected]?.querySelectorAll('thead tr:first-child th') || []).map((th) => clean(th.textContent)));
+  }, [open, selected, tables]);
 
-    return null;
+  const labels = useMemo(() => tables.map((table, index) => {
+    const first = clean(table.querySelector('thead th')?.textContent);
+    return `Table ${index + 1}${first ? ` - ${first}` : ''}`;
+  }), [tables]);
+
+  const dropAt = (target) => {
+    if (dragged === null || dragged === target || isFixed(columns[dragged]) || isFixed(columns[target])) return;
+    setColumns((items) => {
+      const next = [...items];
+      const [item] = next.splice(dragged, 1);
+      next.splice(target, 0, item);
+      return next;
+    });
+    setDragged(null);
+  };
+
+  const save = () => {
+    const table = tables[selected];
+    if (!table) return;
+    localStorage.setItem(table.dataset.columnSettingsKey, JSON.stringify(columns));
+    moveCells(table, columns);
+    setOpen(false);
+  };
+
+  if (!isSuperAdmin || !tables.length) return null;
+  return <>
+    <button className="table-settings-trigger" onClick={() => { scan(); setOpen(true); }} title="Arrange table columns"><Settings2 size={17} /> Table settings</button>
+    {open && <div className="table-settings-overlay" onMouseDown={() => setOpen(false)}>
+      <div className="table-settings-modal" onMouseDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-label="Table column settings">
+        <div className="table-settings-header"><div><h3>Arrange table columns</h3><p>Drag headings into the order you want.</p></div><button onClick={() => setOpen(false)} aria-label="Close"><X size={20}/></button></div>
+        {tables.length > 1 && <label className="table-settings-select">Choose table<select value={selected} onChange={(event) => setSelected(Number(event.target.value))}>{labels.map((label, index) => <option key={label} value={index}>{label}</option>)}</select></label>}
+        <div className="table-column-list">{columns.map((name, index) => <div key={`${name}-${index}`} className={`table-column-item ${isFixed(name) ? 'fixed' : ''}`} draggable={!isFixed(name)} onDragStart={() => setDragged(index)} onDragOver={(event) => event.preventDefault()} onDrop={() => dropAt(index)}><GripVertical size={17}/><span>{name || 'Selection'}</span>{isFixed(name) && <small>fixed</small>}</div>)}</div>
+        <div className="table-settings-actions"><button className="btn btn-secondary" onClick={() => setOpen(false)}>Cancel</button><button className="btn btn-primary" onClick={save}>Save settings</button></div>
+      </div>
+    </div>}
+  </>;
 };
 
 export default TableEnhancer;

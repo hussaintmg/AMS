@@ -288,7 +288,7 @@ function ServiceMasterData() {
             : <ArrowDown size={14} style={{ verticalAlign: 'middle', marginLeft: 4 }} />;
     };
 
-    const renderPagination = () => <ServerPagination {...pagination} onPageChange={paginate} loading={loading} />;
+    const renderPagination = () => <ServerPagination {...pagination} onPageChange={paginate} onPageSizeChange={(limit) => setPagination(prev => ({ ...prev, page: 1, limit }))} loading={loading} />;
 
     const filteredItems = useMemo(() => {
         let data = [...tableData];

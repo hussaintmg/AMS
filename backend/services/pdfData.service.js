@@ -4,14 +4,49 @@
  * and the data bag in the same file guarantees every advertised variable
  * actually resolves against a real schema field (no dangling variables).
  */
-const { Quotation, Booking, SalesOrder, Invoice, BrandingSetting } = require('../models');
+const {
+  Quotation, Booking, SalesOrder, Invoice,
+  PartQuotation, PartBooking, PartSalesOrder, PartInvoice,
+  BrandingSetting,
+} = require('../models');
 
+/**
+ * Vehicles and parts deliberately share one document type each.
+ *
+ * A parts quotation prints from the same `quotation` template as a vehicle
+ * quotation — there is one template to design, one to assign and one to keep in
+ * step. `altModel` is the parts twin of the same document; a lookup tries the
+ * primary collection and then that one. Ids are ObjectIds, so a document can
+ * only ever be found in one of them.
+ *
+ * `Model` stays the vehicle model on purpose: it is what the variable catalog
+ * is built from, and the catalog must advertise the vehicle fields too.
+ */
 const TYPES = {
-  quotation: { label: 'Quotation', Model: Quotation, number: 'quotationNumber' },
-  booking: { label: 'Booking', Model: Booking, number: 'bookingNumber' },
-  order: { label: 'Sales Order', Model: SalesOrder, number: 'orderNumber' },
-  invoice: { label: 'Invoice', Model: Invoice, number: 'invoiceNumber' },
+  quotation: { label: 'Quotation', Model: Quotation, altModel: PartQuotation, number: 'quotationNumber' },
+  booking: { label: 'Booking', Model: Booking, altModel: PartBooking, number: 'bookingNumber' },
+  order: { label: 'Sales Order', Model: SalesOrder, altModel: PartSalesOrder, number: 'orderNumber' },
+  invoice: { label: 'Invoice', Model: Invoice, altModel: PartInvoice, number: 'invoiceNumber' },
 };
+
+/**
+ * Load one document of `type` by id, from whichever side of the business it
+ * belongs to. `populate` is applied per model so a field the parts twin does
+ * not have (vehicle) is simply skipped rather than throwing.
+ */
+async function findDocument(type, id, populate = []) {
+  const config = TYPES[type];
+  if (!config) return null;
+  for (const Model of [config.Model, config.altModel].filter(Boolean)) {
+    let query = Model.findById(id);
+    populate.forEach(({ path, select }) => {
+      if (Model.schema.path(path)) query = query.populate(path, select);
+    });
+    const record = await query.lean();
+    if (record) return { record, Model, isParts: Model === config.altModel };
+  }
+  return null;
+}
 
 const join = (...parts) => parts.filter(Boolean).join(' ').trim();
 
@@ -58,7 +93,9 @@ function buildItemRows(record) {
     return {
       index: index + 1,
       number: index + 1,
-      type: line.itemType || line.type || '',
+      // Parts documents store part-only lines, which carry no itemType — the
+      // presence of a part reference is what identifies them.
+      type: line.itemType || line.type || (line.part ? 'part' : ''),
       code: line.code || '',
       barcode: line.barcode || '',
       name: line.name || line.description || '',
@@ -126,10 +163,15 @@ function buildDataBag(type, record, extras = {}) {
       date: record.createdAt,
       itemName: itemName(record),
     },
+    // A walk-in sale is booked against the shared walk-in record, but the
+    // document must print the buyer who actually stood at the counter.
     customer: {
       ...customer,
-      fullName: join(customer.firstName, customer.lastName) || customer.companyName || '',
-      name: join(customer.firstName, customer.lastName) || customer.companyName || '',
+      ...(record.walkIn ? { phone: record.walkInPhone || customer.phone || '' } : {}),
+      fullName: (record.walkIn && record.walkInName)
+        || join(customer.firstName, customer.lastName) || customer.companyName || '',
+      name: (record.walkIn && record.walkInName)
+        || join(customer.firstName, customer.lastName) || customer.companyName || '',
     },
     vehicle: flattenVehicle(record.vehicle),
     generator: {
@@ -238,4 +280,7 @@ async function companyName() {
   return branding?.applicationName || '';
 }
 
-module.exports = { TYPES, buildDataBag, variableCatalog, companyName, flattenVehicle, buildItemRows, buildItemsTable };
+module.exports = {
+  TYPES, findDocument, buildDataBag, variableCatalog, companyName,
+  flattenVehicle, buildItemRows, buildItemsTable,
+};

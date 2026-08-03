@@ -19,8 +19,15 @@ const ActionButtons = ({
     title = 'Item',
     customActions = []
 }) => {
+    const actionCount =
+        (showView && onView ? 1 : 0) +
+        (showEdit && onEdit ? 1 : 0) +
+        (showToggle && onToggle ? 1 : 0) +
+        customActions.length +
+        (showDelete && onDelete ? 1 : 0);
+
     return (
-        <div className="action-buttons">
+        <div className={`action-buttons actions-count-${actionCount}`}>
             {showView && onView && (
                 <button
                     className="btn-action btn-view"

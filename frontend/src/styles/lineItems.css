@@ -107,6 +107,15 @@
   color: var(--text-muted, #94a3b8);
 }
 
+/* Sits under a part's quantity box so the ceiling is visible while typing. */
+.line-items-stock {
+  display: block;
+  margin-top: 3px;
+  font-size: 0.68rem;
+  color: var(--text-muted, #94a3b8);
+  white-space: nowrap;
+}
+
 .line-items-product {
   display: flex;
   align-items: center;

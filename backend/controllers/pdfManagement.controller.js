@@ -2,7 +2,7 @@ const archiver = require('archiver');
 const { PassThrough } = require('stream');
 const { PdfTemplate, PdfUsage, PdfVariable } = require('../models');
 const { renderPdf, renderHtmlPdf } = require('../services/pdfRenderer.service');
-const { TYPES, buildDataBag, variableCatalog, companyName } = require('../services/pdfData.service');
+const { TYPES, findDocument, buildDataBag, variableCatalog, companyName } = require('../services/pdfData.service');
 const { resolveTokens } = require('../services/pdfFormat.cjs');
 
 // Set PDF_DEBUG=1 to log resolved variables for each generated document while
@@ -122,12 +122,15 @@ exports.bulkVariables = async (req,res,next) => { try { const {documentType,vari
 
 async function loadRecord(type, id) {
   const config = TYPES[type]; if (!config) throw Object.assign(new Error('Invalid document type'), { statusCode: 400 });
-  const query = config.Model.findById(id)
-    .populate('customer')
-    .populate('createdBy', 'firstName lastName fullName email phone designation employeeId');
-  if (config.Model.schema.path('vehicle')) query.populate('vehicle');
-  const record = await query.lean();
-  if (!record) throw Object.assign(new Error(`${config.label} not found`), { statusCode: 404 });
+  // Vehicle and parts documents of the same type print from the same template,
+  // so the id decides which collection it came from.
+  const found = await findDocument(type, id, [
+    { path: 'customer' },
+    { path: 'createdBy', select: 'firstName lastName fullName email phone designation employeeId' },
+    { path: 'vehicle' },
+  ]);
+  if (!found) throw Object.assign(new Error(`${config.label} not found`), { statusCode: 404 });
+  const record = found.record;
   const data = buildDataBag(type, record, { companyName: await companyName() });
   if (PDF_DEBUG) {
     const flat = {};

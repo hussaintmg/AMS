@@ -96,7 +96,7 @@ function registerAll() {
     statusField: 'status',
     populate: 'customer',
     conditions: { deletedAt: null, cancelledAt: null },
-    urlFn: (doc) => `/invoices?search=${encodeURIComponent(doc.invoiceNumber || '')}&open=${doc._id}`,
+    urlFn: (doc) => `/vehicles/invoices?search=${encodeURIComponent(doc.invoiceNumber || '')}&open=${doc._id}`,
   });
 
   registry.registerModule({
@@ -117,7 +117,7 @@ function registerAll() {
     statusField: 'status',
     populate: 'customer',
     conditions: { deletedAt: null },
-    urlFn: (doc) => `/orders?search=${encodeURIComponent(doc.orderNumber || '')}&open=${doc._id}`,
+    urlFn: (doc) => `/vehicles/orders?search=${encodeURIComponent(doc.orderNumber || '')}&open=${doc._id}`,
   });
 
   registry.registerModule({
@@ -138,7 +138,7 @@ function registerAll() {
     statusField: 'status',
     populate: 'customer',
     conditions: { deletedAt: null },
-    urlFn: (doc) => `/quotations?search=${encodeURIComponent(doc.quotationNumber || '')}&open=${doc._id}`,
+    urlFn: (doc) => `/vehicles/quotations?search=${encodeURIComponent(doc.quotationNumber || '')}&open=${doc._id}`,
   });
 
   registry.registerModule({
@@ -159,7 +159,38 @@ function registerAll() {
     statusField: 'status',
     populate: 'customer',
     conditions: { deletedAt: null },
-    urlFn: (doc) => `/booking?search=${encodeURIComponent(doc.bookingNumber || '')}&open=${doc._id}`,
+    urlFn: (doc) => `/vehicles/booking?search=${encodeURIComponent(doc.bookingNumber || '')}&open=${doc._id}`,
+  });
+
+  // ── Parts sales documents ────────────────────────────────────────────────
+  // Separate collections from the vehicle documents above, so each needs its
+  // own search module; they share the vehicle side's permission keys.
+  [
+    ['part_quotation', 'Parts Quotations', models.PartQuotation, 'quotationNumber', 'quotations', '/parts/quotations', 'FileText'],
+    ['part_booking', 'Parts Bookings', models.PartBooking, 'bookingNumber', 'booking', '/parts/booking', 'CalendarCheck'],
+    ['part_order', 'Parts Orders', models.PartSalesOrder, 'orderNumber', 'orders', '/parts/orders', 'ShoppingCart'],
+    ['part_invoice', 'Parts Invoices', models.PartInvoice, 'invoiceNumber', 'invoices', '/parts/invoices', 'ReceiptText'],
+  ].forEach(([entityType, moduleName, model, numberField, permissionKey, path, icon]) => {
+    registry.registerModule({
+      entityType,
+      moduleName,
+      model,
+      permissionKey,
+      icon,
+      priority: 310,
+      searchWeight: 6,
+      titleField: numberField,
+      subtitleField: 'status',
+      searchableFields: [numberField, 'status', 'totalAmount', 'walkInName', 'customer.firstName', 'customer.lastName', 'notes'],
+      keywordFields: [numberField],
+      highlightFields: [numberField],
+      assignmentFields: ['createdBy'],
+      creatorField: 'createdBy',
+      statusField: 'status',
+      populate: 'customer',
+      conditions: { cancelledAt: null },
+      urlFn: (doc) => `${path}?search=${encodeURIComponent(doc[numberField] || '')}&open=${doc._id}`,
+    });
   });
 
   registry.registerModule({

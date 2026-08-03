@@ -10,14 +10,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import SearchableSelect from '../components/SearchableSelect';
 import { Routes, Route, useNavigate, useSearchParams } from 'react-router-dom';
-import { salesAPI, invoiceAPI, customerAPI, vehicleAPI, partsAPI, serviceMasterAPI, paymentMethodsAPI, erpSettingsAPI, reportsAPI, adminAPI, pdfManagementAPI } from '../services/api';
+import { salesAPI, invoiceAPI, partsSalesAPI, partsInvoiceAPI, customerAPI, vehicleAPI, partsAPI, serviceMasterAPI, paymentMethodsAPI, erpSettingsAPI, reportsAPI, adminAPI, pdfManagementAPI } from '../services/api';
 import toast from 'react-hot-toast';
 import LineItemsEditor from '../components/sales/LineItemsEditor';
 import ActionButtons from '../components/ActionButtons';
 import ConfirmModal from '../components/ConfirmModal';
 import CustomerQuickCreate from '../components/customers/CustomerQuickCreate';
 import { useAuth } from '../context/AuthContext';
-import { Send, DollarSign, FileText, Truck, Eye, Pencil, Trash2, Upload, X, Download, Mail, CheckCircle } from 'lucide-react';
+import { Send, DollarSign, FileText, Truck, Eye, Pencil, Trash2, Upload, X, Download, Mail, CheckCircle, ScanLine, UserRound } from 'lucide-react';
 import BulkUploadModal from '../components/BulkUploadModal';
 import ServerPagination from '../components/ServerPagination';
 
@@ -49,6 +49,124 @@ import '../styles/userManagement.css';
 import { getRoleJob, canRoleDo } from '../utils/roleJobs';
 
 const policyAllows = (user, resource, action, legacy) => getRoleJob(user, resource) ? canRoleDo(user, resource, action) : legacy;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// VEHICLE vs PARTS
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// These screens serve both sides of the business. The category comes from the
+// URL (/vehicles/… or /parts/…) and decides three things: which API namespace
+// every call goes to, what the product picker will accept, and which of the
+// vehicle-only extras are shown at all.
+//
+// The parts documents are younger than the vehicle ones and do not yet have
+// bulk actions, document email, printed estimates, dispatch or delivery. Rather
+// than render buttons that would 404, each capability is declared here and the
+// UI asks before drawing.
+
+const CATEGORY = {
+    vehicle: {
+        key: 'vehicle',
+        label: 'Vehicle',
+        basePath: '/vehicles',
+        sales: salesAPI,
+        invoices: invoiceAPI,
+        can: {
+            bulk: true, email: true, estimate: true, deliver: true, pdf: true,
+            allocate: true, generateInvoice: true, editOrder: true, editInvoice: true,
+        },
+    },
+    parts: {
+        key: 'parts',
+        label: 'Parts',
+        basePath: '/parts',
+        sales: partsSalesAPI,
+        invoices: partsInvoiceAPI,
+        // Email, PDF and estimates deliberately run on the vehicle documents'
+        // own templates — one template per document type, shared by both sides.
+        // Only the genuinely vehicle-shaped steps stay off: a parts order is
+        // invoiced the moment it is created (that is what moves stock), so
+        // there is nothing to invoice later, nothing to edit afterwards, and no
+        // dispatch or delivery stage.
+        can: {
+            bulk: true, email: true, estimate: true, pdf: true,
+            deliver: false, allocate: false, generateInvoice: false,
+            editOrder: false, editInvoice: false,
+        },
+    },
+};
+
+const categoryConfig = (category) => CATEGORY[category] || CATEGORY.vehicle;
+
+/**
+ * Customer picker with a walk-in switch.
+ *
+ * A walk-in sale still books against one shared "Walk-in Customer" record so
+ * the ledger and outstanding balances keep working, and the name/phone typed
+ * here ride on the document itself — which is what gets printed. The customer
+ * dropdown is hidden while walk-in is on so the two cannot disagree.
+ */
+function CustomerField({ formData, onChange, customers, onCustomerCreated, required = true }) {
+    const walkIn = formData.walkIn === true;
+    // handleChange in each screen reads event.target, so the toggle is reported
+    // in the same shape a real checkbox would send.
+    const setWalkIn = (checked) =>
+        onChange({ target: { name: 'walkIn', value: checked, type: 'checkbox', checked } });
+
+    return (
+        <>
+            <label className="form-label-add">
+                <span>{walkIn ? 'Walk-in customer' : 'Customer *'}</span>
+                <span className="walkin-toggle">
+                    <label>
+                        <input type="checkbox" checked={walkIn} onChange={(e) => setWalkIn(e.target.checked)} />
+                        <UserRound size={13} /> Walk-in
+                    </label>
+                    {!walkIn && <CustomerQuickCreate onCreated={onCustomerCreated} />}
+                </span>
+            </label>
+            {walkIn ? (
+                <div className="form-row walkin-fields">
+                    <input
+                        type="text"
+                        name="walkInName"
+                        value={formData.walkInName || ''}
+                        onChange={onChange}
+                        placeholder="Buyer's name (optional)"
+                    />
+                    <input
+                        type="text"
+                        name="walkInPhone"
+                        value={formData.walkInPhone || ''}
+                        onChange={onChange}
+                        placeholder="Phone (optional)"
+                    />
+                </div>
+            ) : (
+                <SearchableSelect name="customerId" value={formData.customerId} onChange={onChange} required={required}>
+                    <option value="">Select Customer</option>
+                    {customers.map((c) => <option key={c.id} value={c.id}>{customerOptionLabel(c)}</option>)}
+                </SearchableSelect>
+            )}
+        </>
+    );
+}
+
+/**
+ * "Scan" button that hands the counter screen the document the user is already
+ * looking at, so a scan started from Quotations creates a quotation.
+ */
+function ScanLink({ config, doc }) {
+    return (
+        <a
+            className="btn btn-secondary"
+            href={`${config.basePath}/barcode-scan?doc=${doc}`}
+            title={`Scan ${config.label.toLowerCase()} barcodes into a new ${doc}`}
+        >
+            <ScanLine size={16} /> Scan
+        </a>
+    );
+}
 
 // Debounce hook
 function useDebounce(value, delay) {
@@ -105,9 +223,11 @@ async function downloadSalesPdfBulk(documentType, rows) {
     } catch (error) { toast.error(error.response?.data?.message || 'Bulk PDF download failed'); }
 }
 
-function BulkSalesActions({type,selectedRows,onClear,onRefresh,canEmail,canPdf,canDelete}){
+function BulkSalesActions({type,config,selectedRows,onClear,onRefresh,canEmail,canPdf,canDelete}){
  const [busy,setBusy]=useState('');if(!selectedRows.length)return null;const ids=selectedRows.map(row=>row.id);
- const run=async operation=>{if(operation==='delete'&&!window.confirm(`Cancel/delete ${ids.length} selected records?`))return;setBusy(operation);try{const apiCall=type==='quotation'?salesAPI.bulkQuotations:type==='booking'?salesAPI.bulkBookings:type==='order'?salesAPI.bulkOrders:invoiceAPI.bulk;const res=await apiCall(operation,ids);toast.success(res.data?.message||'Bulk action completed');onClear();if(operation==='delete')await onRefresh();}catch(e){toast.error(e.response?.data?.message||'Bulk action failed')}finally{setBusy('')}};
+ // Bulk PDF goes through pdfManagementAPI, which resolves an id against both
+ // the vehicle and the parts collection and renders it with the same template.
+ const run=async operation=>{if(operation==='delete'&&!window.confirm(`Cancel/delete ${ids.length} selected records?`))return;setBusy(operation);try{const apiCall=type==='quotation'?config.sales.bulkQuotations:type==='booking'?config.sales.bulkBookings:type==='order'?config.sales.bulkOrders:config.invoices.bulk;const res=await apiCall(operation,ids);toast.success(res.data?.message||'Bulk action completed');onClear();if(operation==='delete')await onRefresh();}catch(e){toast.error(e.response?.data?.message||'Bulk action failed')}finally{setBusy('')}};
  return <div className="sales-bulk-toolbar"><strong>{ids.length} selected</strong>{canEmail&&<button disabled={!!busy} onClick={()=>run('email')}><Send size={16}/>{busy==='email'?'Sending...':'Send email'}</button>}{canPdf&&<button disabled={!!busy} onClick={()=>downloadSalesPdfBulk(type,selectedRows)}><Download size={16}/>Download PDFs</button>}{canDelete&&<button className="danger" disabled={!!busy} onClick={()=>run('delete')}><Trash2 size={16}/>{busy==='delete'?'Deleting...':'Delete'}</button>}<button onClick={onClear}><X size={16}/>Deselect</button></div>
 }
 
@@ -156,21 +276,21 @@ async function fetchAllCustomersForDropdown() {
 // MAIN SALES COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════
 
-function Sales({ section }) {
+function Sales({ section, category = 'vehicle' }) {
     const sections = {
-        quotations: <Quotations />,
-        booking: <Bookings />,
-        orders: <SalesOrders />,
-        invoices: <Invoices />
+        quotations: <Quotations category={category} />,
+        booking: <Bookings category={category} />,
+        orders: <SalesOrders category={category} />,
+        invoices: <Invoices category={category} />
     };
     return (
         <div className="sales-page-root">
             {section ? sections[section] : <Routes>
-                <Route path="quotations" element={<Quotations />} />
-                <Route path="bookings" element={<Bookings />} />
-                <Route path="orders" element={<SalesOrders />} />
-                <Route path="invoices" element={<Invoices />} />
-                <Route path="*" element={<Quotations />} />
+                <Route path="quotations" element={<Quotations category={category} />} />
+                <Route path="bookings" element={<Bookings category={category} />} />
+                <Route path="orders" element={<SalesOrders category={category} />} />
+                <Route path="invoices" element={<Invoices category={category} />} />
+                <Route path="*" element={<Quotations category={category} />} />
             </Routes>}
         </div>
     );
@@ -180,7 +300,10 @@ function Sales({ section }) {
 // QUOTATIONS COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════
 
-function Quotations() {
+function Quotations({ category = 'vehicle' }) {
+    const config = categoryConfig(category);
+    const docApi = config.sales;
+    const isParts = config.key === 'parts';
     const { user } = useAuth();
     const companyInfo = useCompanyLetterhead();
     const { currency, salesTax, taxAmount: calculateConfiguredTax } = useErpDocumentSettings();
@@ -209,7 +332,7 @@ function Quotations() {
     // source of truth and vehiclePrice below is only the derived subtotal.
     const [lineItems, setLineItems] = useState([]);
     const [formData, setFormData] = useState({
-        customerId: '', vehiclePrice: '', discountAmount: '0',
+        customerId: '', walkIn: false, walkInName: '', walkInPhone: '', vehiclePrice: '', discountAmount: '0',
         taxAmount: '0', additionalCharges: '0', validityDays: '7', notes: '', termsAndConditions: ''
     });
 
@@ -225,8 +348,11 @@ function Quotations() {
     const canCreate = policyAllows(user, 'quotations', 'create', ['super_admin','admin','sales_manager','sales_executive'].includes(user?.role));
     const canEdit = policyAllows(user, 'quotations', 'edit', ['super_admin','admin','sales_manager'].includes(user?.role));
     const canDelete = policyAllows(user, 'quotations', 'delete', canEdit);
-    const canSendEmail = policyAllows(user, 'quotations', 'sendEmail', canCreate);
-    const canDownloadPdf = policyAllows(user, 'quotations', 'downloadPdf', true);
+    // Parts documents have no email templates or PDF templates of their own yet,
+    // so those actions are declared unavailable rather than rendered and failing.
+    const canSendEmail = config.can.email && policyAllows(user, 'quotations', 'sendEmail', canCreate);
+    const canDownloadPdf = config.can.pdf && policyAllows(user, 'quotations', 'downloadPdf', true);
+    const canEstimate = config.can.estimate && canDownloadPdf;
 
     // Detail drawer
     const [drawerItem, setDrawerItem] = useState(null);
@@ -236,7 +362,7 @@ function Quotations() {
     const loadDrawer = useCallback(async (id) => {
         setDrawerLoading(true);
         try {
-            const res = await salesAPI.getQuotation(id);
+            const res = await docApi.getQuotation(id);
             setDrawerItem(res.data?.data || null);
         } catch (error) {
             toast.error('Failed to load quotation details');
@@ -252,7 +378,7 @@ function Quotations() {
         if (!drawerItem?.id) return;
         setSavingStatus(true);
         try {
-            await salesAPI.updateQuotationStatus(drawerItem.id, status);
+            await docApi.updateQuotationStatus(drawerItem.id, status);
             toast.success('Status updated');
             await Promise.all([loadDrawer(drawerItem.id), fetchData()]);
         } catch (error) {
@@ -285,7 +411,7 @@ function Quotations() {
             // Remove empty
             Object.keys(params).forEach(k => (params[k] === '' || params[k] === null) && delete params[k]);
 
-            const res = await salesAPI.getQuotations(params); // Passed params
+            const res = await docApi.getQuotations(params); // Passed params
             setData(res.data?.data || []);
             setPagination(prev => ({
                 ...prev,
@@ -358,6 +484,9 @@ function Quotations() {
             })));
             setFormData({
                 customerId: item.customer_id || '',
+                walkIn: item.walk_in === true,
+                walkInName: item.walk_in_name || '',
+                walkInPhone: item.walk_in_phone || '',
                 vehiclePrice: item.vehicle_price || '',
                 discountAmount: item.discount_amount || '0',
                 taxAmount: item.tax_amount || '0',
@@ -369,7 +498,7 @@ function Quotations() {
         } else {
             setLineItems([]);
             setFormData({
-                customerId: '', vehiclePrice: '', discountAmount: '0',
+                customerId: '', walkIn: false, walkInName: '', walkInPhone: '', vehiclePrice: '', discountAmount: '0',
                 taxAmount: '0', additionalCharges: '0', validityDays: '7', notes: '', termsAndConditions: ''
             });
         }
@@ -393,7 +522,7 @@ function Quotations() {
         e.preventDefault();
         try {
             if (!lineItems.length) {
-                toast.error('Add at least one vehicle or part');
+                toast.error(isParts ? 'Add at least one part' : 'Add at least one vehicle');
                 return;
             }
             const missing = lineItems.find((line) => (line.itemType === 'part' ? !line.partId : (!line.vehicleId && !line.vehicleVariantId)));
@@ -421,10 +550,10 @@ function Quotations() {
                     : calculateConfiguredTax(baseAmount, salesTax)
             };
             if (modalMode === 'create') {
-                await salesAPI.createQuotation(payload);
+                await docApi.createQuotation(payload);
                 toast.success('Quotation created successfully');
             } else if (modalMode === 'edit') {
-                await salesAPI.updateQuotation(selectedItem.id, payload);
+                await docApi.updateQuotation(selectedItem.id, payload);
                 toast.success('Quotation updated successfully');
             }
             closeModal();
@@ -450,7 +579,7 @@ function Quotations() {
 
     const handleDelete = async (id) => {
         try {
-            await salesAPI.deleteQuotation(id);
+            await docApi.deleteQuotation(id);
             toast.success('Quotation deleted');
             setConfirmModal({ isOpen: false });
             fetchData();
@@ -467,7 +596,7 @@ function Quotations() {
     const handleApprove = async (item, decision = 'approved') => {
         setApprovingId(item.id);
         try {
-            await salesAPI.approveQuotation(item.id, decision);
+            await docApi.approveQuotation(item.id, decision);
             toast.success(`Quotation ${decision}`);
             fetchData();
         } catch (error) {
@@ -481,7 +610,7 @@ function Quotations() {
     const handleDownloadEstimate = async (item) => {
         setEstimateId(item.id);
         try {
-            const res = await salesAPI.downloadEstimate(item.id);
+            const res = await docApi.downloadEstimate(item.id);
             const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
             const link = document.createElement('a');
             link.href = url;
@@ -502,7 +631,7 @@ function Quotations() {
     const handleEmailEstimate = async (item) => {
         setEstimateId(item.id);
         try {
-            const res = await salesAPI.emailEstimate(item.id);
+            const res = await docApi.emailEstimate(item.id);
             toast.success(res?.data?.message || 'Estimate emailed');
             fetchData();
         } catch (error) {
@@ -530,7 +659,7 @@ function Quotations() {
         }
         setConverting(true);
         try {
-            await salesAPI.convertQuotation(conversionForm.item.id, {
+            await docApi.convertQuotation(conversionForm.item.id, {
                 vehicleId: conversionForm.vehicleId || undefined,
                 bookingAmount: Number(conversionForm.bookingAmount),
                 expectedDeliveryDate: conversionForm.expectedDeliveryDate,
@@ -549,7 +678,7 @@ function Quotations() {
     const handleSendEmail = async (item) => {
         setSendingEmail(item.id);
         try {
-            await salesAPI.sendQuotationEmail(item.id);
+            await docApi.sendQuotationEmail(item.id);
             toast.success(`Quotation emailed to ${item.customer_name}`);
         } catch (error) {
             toast.error(error.response?.data?.message || 'Failed to email quotation');
@@ -620,8 +749,11 @@ function Quotations() {
                 </Modal>
             )}
             <div className="card-header d-flex justify-content-between align-items-center">
-                <h3>Quotations</h3>
-                <div className="sales-header-actions">{canCreate && <button className="btn btn-primary" onClick={() => openModal('create')}>+ New Quotation</button>}</div>
+                <h3>{config.label} Quotations</h3>
+                <div className="sales-header-actions">
+                    <ScanLink config={config} doc="quotation" />
+                    {canCreate && <button className="btn btn-primary" onClick={() => openModal('create')}>+ New Quotation</button>}
+                </div>
             </div>
 
             <SalesFilterBar
@@ -633,7 +765,7 @@ function Quotations() {
                 statusOptions={statusOptions}
                 customers={customers}
             />
-            <BulkSalesActions type="quotation" selectedRows={data.filter(x=>selectedIds.includes(x.id))} onClear={()=>setSelectedIds([])} onRefresh={fetchData} canEmail={canSendEmail} canPdf={canDownloadPdf} canDelete={canDelete}/>
+            {config.can.bulk && <BulkSalesActions type="quotation" config={config} selectedRows={data.filter(x=>selectedIds.includes(x.id))} onClear={()=>setSelectedIds([])} onRefresh={fetchData} canEmail={canSendEmail} canPdf={canDownloadPdf} canDelete={canDelete}/>}
 
             <div className="desktop-table">
                 <table className="data-table">
@@ -667,8 +799,8 @@ function Quotations() {
                                         customActions={[
                                             ...(canDownloadPdf ? [{ icon: <Download size={18} />, title: 'Download PDF', onClick: () => downloadSalesPdf('quotation', q.id, q.quotation_number), className: 'btn-info' }] : []),
                                             ...(canSendEmail ? [{ icon: <Send size={18} className="action-icon" />, title: 'Send quotation email', onClick: () => handleSendEmail(q), className: 'btn-info', disabled: sendingEmail === q.id, loading: sendingEmail === q.id }] : []),
-                                            ...(canDownloadPdf ? [{ icon: <FileText size={18} />, title: 'Estimate PDF (all products)', onClick: () => handleDownloadEstimate(q), className: 'btn-info', disabled: estimateId === q.id, loading: estimateId === q.id }] : []),
-                                            ...(canSendEmail ? [{ icon: <Mail size={18} />, title: 'Email estimate to customer', onClick: () => handleEmailEstimate(q), className: 'btn-info', disabled: estimateId === q.id, loading: estimateId === q.id }] : []),
+                                            ...(canEstimate ? [{ icon: <FileText size={18} />, title: 'Estimate PDF (all products)', onClick: () => handleDownloadEstimate(q), className: 'btn-info', disabled: estimateId === q.id, loading: estimateId === q.id }] : []),
+                                            ...(canEstimate ? [{ icon: <Mail size={18} />, title: 'Email estimate to customer', onClick: () => handleEmailEstimate(q), className: 'btn-info', disabled: estimateId === q.id, loading: estimateId === q.id }] : []),
                                             ...(canApprove && q.approval_status !== 'approved' && !['converted', 'cancelled'].includes(q.status) ? [{ icon: <CheckCircle size={18} />, title: 'Approve quotation', onClick: () => handleApprove(q, 'approved'), className: 'btn-success', disabled: approvingId === q.id, loading: approvingId === q.id }] : []),
                                             ...(q.approval_status === 'approved' && q.status !== 'converted' ? [{ icon: <span className="material-icons">shopping_cart</span>, title: 'Convert to booking', onClick: () => handleConvertClick(q), className: 'btn-success' }] : [])
                                         ]}
@@ -706,8 +838,8 @@ function Quotations() {
                                         onDelete={canEdit && q.status === 'draft' ? () => handleDeleteClick(q.id) : null}
                                         customActions={[
                                             ...(canSendEmail ? [{ icon: <Send size={18} className="action-icon" />, title: 'Send quotation email', onClick: () => handleSendEmail(q), className: 'btn-info', disabled: sendingEmail === q.id, loading: sendingEmail === q.id }] : []),
-                                            ...(canDownloadPdf ? [{ icon: <FileText size={18} />, title: 'Estimate PDF (all products)', onClick: () => handleDownloadEstimate(q), className: 'btn-info', disabled: estimateId === q.id, loading: estimateId === q.id }] : []),
-                                            ...(canSendEmail ? [{ icon: <Mail size={18} />, title: 'Email estimate to customer', onClick: () => handleEmailEstimate(q), className: 'btn-info', disabled: estimateId === q.id, loading: estimateId === q.id }] : []),
+                                            ...(canEstimate ? [{ icon: <FileText size={18} />, title: 'Estimate PDF (all products)', onClick: () => handleDownloadEstimate(q), className: 'btn-info', disabled: estimateId === q.id, loading: estimateId === q.id }] : []),
+                                            ...(canEstimate ? [{ icon: <Mail size={18} />, title: 'Email estimate to customer', onClick: () => handleEmailEstimate(q), className: 'btn-info', disabled: estimateId === q.id, loading: estimateId === q.id }] : []),
                                             ...(canApprove && q.approval_status !== 'approved' && !['converted', 'cancelled'].includes(q.status) ? [{ icon: <CheckCircle size={18} />, title: 'Approve quotation', onClick: () => handleApprove(q, 'approved'), className: 'btn-success', disabled: approvingId === q.id, loading: approvingId === q.id }] : []),
                                             ...(q.approval_status === 'approved' && q.status !== 'converted' ? [{ icon: <span className="material-icons">shopping_cart</span>, title: 'Convert to booking', onClick: () => handleConvertClick(q), className: 'btn-success' }] : [])
                                         ]}
@@ -725,6 +857,7 @@ function Quotations() {
                 total={pagination.total}
                 limit={pagination.limit}
                 onPageChange={(page) => setPagination(prev => ({ ...prev, page }))}
+                onPageSizeChange={(limit) => setPagination(prev => ({ ...prev, page: 1, limit }))}
                 loading={loading}
             />
 
@@ -790,11 +923,12 @@ function Quotations() {
                     ) : (
                         <form onSubmit={handleSubmit}>
                             <div className="form-group">
-                                <label className="form-label-add"><span>Customer *</span> <CustomerQuickCreate onCreated={handleCustomerCreated} /></label>
-                                <SearchableSelect name="customerId" value={formData.customerId} onChange={handleChange} required>
-                                    <option value="">Select Customer</option>
-                                    {customers.map(c => <option key={c.id} value={c.id}>{customerOptionLabel(c)}</option>)}
-                                </SearchableSelect>
+                                <CustomerField
+                                    formData={formData}
+                                    onChange={handleChange}
+                                    customers={customers}
+                                    onCustomerCreated={handleCustomerCreated}
+                                />
                             </div>
                             <LineItemsEditor
                                 value={lineItems}
@@ -803,6 +937,7 @@ function Quotations() {
                                 parts={parts}
                                 variants={vehicleVariants}
                                 currencyCode={currency.code}
+                                category={config.key}
                             />
 
                             <div className="form-row">
@@ -867,7 +1002,10 @@ function Quotations() {
 // BOOKINGS COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════
 
-function Bookings() {
+function Bookings({ category = 'vehicle' }) {
+    const config = categoryConfig(category);
+    const docApi = config.sales;
+    const isParts = config.key === 'parts';
     const { user } = useAuth();
     const companyInfo = useCompanyLetterhead();
     const { currency, salesTax, taxAmount: calculateConfiguredTax } = useErpDocumentSettings();
@@ -892,7 +1030,7 @@ function Bookings() {
     // A booking can reserve several vehicles and order several parts at once.
     const [bookingLines, setBookingLines] = useState([]);
     const [formData, setFormData] = useState({
-        customerId: '', bookingAmount: '',
+        customerId: '', walkIn: false, walkInName: '', walkInPhone: '', bookingAmount: '',
         totalAmount: '', taxAmount: '0', expectedDeliveryDate: '', priority: 'normal', notes: ''
     });
 
@@ -916,7 +1054,7 @@ function Bookings() {
     const loadDrawer = useCallback(async (id) => {
         setDrawerLoading(true);
         try {
-            const res = await salesAPI.getBooking(id);
+            const res = await docApi.getBooking(id);
             setDrawerItem(res.data?.data || null);
         } catch (error) {
             toast.error('Failed to load booking details');
@@ -932,7 +1070,7 @@ function Bookings() {
         if (!drawerItem?.id) return;
         setSavingStatus(true);
         try {
-            await salesAPI.updateBooking(drawerItem.id, { status });
+            await docApi.updateBooking(drawerItem.id, { status });
             toast.success('Status updated');
             await Promise.all([loadDrawer(drawerItem.id), fetchData()]);
         } catch (error) {
@@ -942,8 +1080,8 @@ function Bookings() {
         }
     };
     const canCreate = policyAllows(user, 'bookings', 'create', canAction);
-    const canSendEmail = policyAllows(user, 'bookings', 'sendEmail', ['super_admin','admin','sales_manager','sales_executive'].includes(user?.role));
-    const canDownloadPdf = policyAllows(user, 'bookings', 'downloadPdf', true);
+    const canSendEmail = config.can.email && policyAllows(user, 'bookings', 'sendEmail', ['super_admin','admin','sales_manager','sales_executive'].includes(user?.role));
+    const canDownloadPdf = config.can.pdf && policyAllows(user, 'bookings', 'downloadPdf', true);
 
     const statusOptions = useSalesStatusOptions('bookings', [
         { label: 'Pending', value: 'pending' },
@@ -965,7 +1103,7 @@ function Bookings() {
             };
             Object.keys(params).forEach(k => (params[k] === '' || params[k] === null) && delete params[k]);
 
-            const res = await salesAPI.getBookings(params);
+            const res = await docApi.getBookings(params);
             setData(res.data?.data || []);
             setPagination(prev => ({
                 ...prev,
@@ -1033,6 +1171,9 @@ function Bookings() {
             })));
             setFormData({
                 customerId: item.customer_id || '',
+                walkIn: item.walk_in === true,
+                walkInName: item.walk_in_name || '',
+                walkInPhone: item.walk_in_phone || '',
                 bookingAmount: item.booking_amount || '',
                 totalAmount: item.total_amount || '',
                 taxAmount: item.tax_amount || '0',
@@ -1043,7 +1184,7 @@ function Bookings() {
         } else {
             setBookingLines([]);
             setFormData({
-                customerId: '', bookingAmount: '',
+                customerId: '', walkIn: false, walkInName: '', walkInPhone: '', bookingAmount: '',
                 totalAmount: '', taxAmount: '0', expectedDeliveryDate: '', priority: 'normal', notes: ''
             });
         }
@@ -1061,7 +1202,7 @@ function Bookings() {
         e.preventDefault();
         try {
             if (!bookingLines.length) {
-                toast.error('Add at least one vehicle or part');
+                toast.error(isParts ? 'Add at least one part' : 'Add at least one vehicle');
                 return;
             }
             const missing = bookingLines.find((line) => (line.itemType === 'part' ? !line.partId : !line.vehicleId));
@@ -1093,10 +1234,10 @@ function Bookings() {
                     : calculateConfiguredTax(baseAmount, salesTax)
             };
             if (modalMode === 'create') {
-                await salesAPI.createBooking(payload);
+                await docApi.createBooking(payload);
                 toast.success('Booking created');
             } else if (modalMode === 'edit') {
-                await salesAPI.updateBooking(selectedItem.id, payload);
+                await docApi.updateBooking(selectedItem.id, payload);
                 toast.success('Booking updated');
             }
             closeModal();
@@ -1111,7 +1252,7 @@ function Bookings() {
     const handleSendEmail = async (item) => {
         setSendingEmail(item.id);
         try {
-            await salesAPI.sendBookingEmail(item.id);
+            await docApi.sendBookingEmail(item.id);
             toast.success(`Booking emailed to ${item.customer_name}`);
         } catch (error) {
             toast.error(error.response?.data?.message || 'Failed to email booking');
@@ -1125,7 +1266,7 @@ function Bookings() {
         if (!window.confirm(`Convert booking ${item.booking_number} to a sales order?`)) return;
         setConvertingId(item.id);
         try {
-            const res = await salesAPI.convertBooking(item.id, {});
+            const res = await docApi.convertBooking(item.id, {});
             toast.success(`Booking converted to order ${res.data?.data?.orderNumber || ''}`);
             fetchData();
         } catch (error) {
@@ -1145,8 +1286,11 @@ function Bookings() {
     return (
         <div className="card sales-page">
             <div className="card-header d-flex justify-content-between align-items-center">
-                <h3>Bookings</h3>
-                <div className="sales-header-actions">{canCreate && <button className="btn btn-primary" onClick={() => openModal('create')}>+ New Booking</button>}</div>
+                <h3>{config.label} Bookings</h3>
+                <div className="sales-header-actions">
+                    <ScanLink config={config} doc="booking" />
+                    {canCreate && <button className="btn btn-primary" onClick={() => openModal('create')}>+ New Booking</button>}
+                </div>
             </div>
 
             <SalesFilterBar
@@ -1175,7 +1319,7 @@ function Bookings() {
             />
 
             <div className="desktop-table">
-                <BulkSalesActions type="booking" selectedRows={data.filter(x=>selectedIds.includes(x.id))} onClear={()=>setSelectedIds([])} onRefresh={fetchData} canEmail={canSendEmail} canPdf={canDownloadPdf} canDelete={canDelete}/>
+                {config.can.bulk && <BulkSalesActions type="booking" config={config} selectedRows={data.filter(x=>selectedIds.includes(x.id))} onClear={()=>setSelectedIds([])} onRefresh={fetchData} canEmail={canSendEmail} canPdf={canDownloadPdf} canDelete={canDelete}/>}
                 <table className="data-table">
                     <thead>
                         <tr>
@@ -1263,6 +1407,7 @@ function Bookings() {
                 total={pagination.total}
                 limit={pagination.limit}
                 onPageChange={(page) => setPagination(prev => ({ ...prev, page }))}
+                onPageSizeChange={(limit) => setPagination(prev => ({ ...prev, page: 1, limit }))}
                 loading={loading}
             />
 
@@ -1323,11 +1468,12 @@ function Bookings() {
                         ) : (
                             <form onSubmit={handleSubmit}>
                                 <div className="form-group">
-                                    <label className="form-label-add"><span>Customer *</span> <CustomerQuickCreate onCreated={handleCustomerCreated} /></label>
-                                    <SearchableSelect name="customerId" value={formData.customerId} onChange={handleChange} required>
-                                        <option value="">Select Customer</option>
-                                        {customers.map(c => <option key={c.id} value={c.id}>{customerOptionLabel(c)}</option>)}
-                                    </SearchableSelect>
+                                    <CustomerField
+                                        formData={formData}
+                                        onChange={handleChange}
+                                        customers={customers}
+                                        onCustomerCreated={handleCustomerCreated}
+                                    />
                                 </div>
                                 {/* A booking reserves real inventory units, so vehicle
                                     lines must be actual vehicles, not catalogue models. */}
@@ -1341,6 +1487,7 @@ function Bookings() {
                                     parts={parts}
                                     currencyCode={currency.code}
                                     requireInventoryVehicle
+                                    category={config.key}
                                 />
                                 <div className="form-row">
                                     <div className="form-group">
@@ -1415,7 +1562,11 @@ function Bookings() {
 // SALES ORDERS COMPONENT - FULL CRUD
 // ═══════════════════════════════════════════════════════════════════════════
 
-function SalesOrders() {
+function SalesOrders({ category = 'vehicle' }) {
+    const config = categoryConfig(category);
+    const docApi = config.sales;
+    const invApi = config.invoices;
+    const isParts = config.key === 'parts';
     const { user } = useAuth();
     const companyInfo = useCompanyLetterhead();
     const { currency, salesTax, taxAmount: calculateConfiguredTax } = useErpDocumentSettings();
@@ -1446,7 +1597,7 @@ function SalesOrders() {
     // A sales order may sell any mix of vehicles and parts in one document.
     const [orderLines, setOrderLines] = useState([]);
     const [formData, setFormData] = useState({
-        customerId: '',
+        customerId: '', walkIn: false, walkInName: '', walkInPhone: '',
         vehiclePrice: '', accessoriesTotal: '0',
         discountAmount: '0', taxAmount: '0', registrationCharges: '0', insuranceCharges: '0',
         otherCharges: '0', paidAmount: '0', paymentMode: '', financeCompany: '',
@@ -1455,11 +1606,16 @@ function SalesOrders() {
     });
 
     const canCreate = policyAllows(user, 'sales_orders', 'create', ['super_admin','admin','sales_manager'].includes(user?.role));
-    const canEdit = policyAllows(user, 'sales_orders', 'edit', ['super_admin','sales_manager'].includes(user?.role));
+    // A parts order raises its invoice on the spot — that is what moves stock —
+    // so there is nothing to invoice later and nothing to edit afterwards.
+    // Dispatch and delivery are a vehicle concern only.
+    const canEdit = config.can.editOrder && policyAllows(user, 'sales_orders', 'edit', ['super_admin','sales_manager'].includes(user?.role));
     const canDelete = policyAllows(user, 'sales_orders', 'delete', user?.role === 'super_admin');
-    const canDeliverOrInvoice = ['super_admin', 'admin', 'sales_manager', 'accountant'].includes(user?.role);
-    const canSendEmail = policyAllows(user, 'sales_orders', 'sendEmail', ['super_admin','admin','sales_manager','sales_executive'].includes(user?.role));
-    const canDownloadPdf = policyAllows(user, 'sales_orders', 'downloadPdf', true);
+    const canDeliverOrInvoice = config.can.deliver
+        && ['super_admin', 'admin', 'sales_manager', 'accountant'].includes(user?.role);
+    const canEditInvoice = config.can.editInvoice;
+    const canSendEmail = config.can.email && policyAllows(user, 'sales_orders', 'sendEmail', ['super_admin','admin','sales_manager','sales_executive'].includes(user?.role));
+    const canDownloadPdf = config.can.pdf && policyAllows(user, 'sales_orders', 'downloadPdf', true);
 
     // Detail drawer
     const [drawerItem, setDrawerItem] = useState(null);
@@ -1469,7 +1625,7 @@ function SalesOrders() {
     const loadDrawer = useCallback(async (id) => {
         setDrawerLoading(true);
         try {
-            const res = await salesAPI.getOrder(id);
+            const res = await docApi.getOrder(id);
             setDrawerItem(res.data?.data || null);
         } catch (error) {
             toast.error('Failed to load order details');
@@ -1485,7 +1641,7 @@ function SalesOrders() {
         if (!drawerItem?.id) return;
         setSavingStatus(true);
         try {
-            await salesAPI.updateOrderStatus(drawerItem.id, status);
+            await docApi.updateOrderStatus(drawerItem.id, status);
             toast.success('Status updated');
             await Promise.all([loadDrawer(drawerItem.id), fetchData()]);
         } catch (error) {
@@ -1523,7 +1679,7 @@ function SalesOrders() {
             };
             Object.keys(params).forEach(k => (params[k] === '' || params[k] === null) && delete params[k]);
 
-            const res = await salesAPI.getOrdersWithInvoices(params); // Using new endpoint that supports invoices info
+            const res = await docApi.getOrdersWithInvoices(params); // Using new endpoint that supports invoices info
             setData(res.data?.data || []);
             setPagination(prev => ({
                 ...prev,
@@ -1590,6 +1746,9 @@ function SalesOrders() {
             })));
             setFormData({
                 customerId: item.customer_id || '',
+                walkIn: item.walk_in === true,
+                walkInName: item.walk_in_name || '',
+                walkInPhone: item.walk_in_phone || '',
                 vehiclePrice: item.vehicle_price || '',
                 accessoriesTotal: item.accessories_total || '0',
                 discountAmount: item.discount_amount || '0',
@@ -1609,7 +1768,7 @@ function SalesOrders() {
         } else {
             setOrderLines([]);
             setFormData({
-                customerId: '',
+                customerId: '', walkIn: false, walkInName: '', walkInPhone: '',
                 vehiclePrice: '', accessoriesTotal: '0',
                 discountAmount: '0', taxAmount: '0', registrationCharges: '0', insuranceCharges: '0',
                 otherCharges: '0', paidAmount: '0', paymentMode: '', financeCompany: '',
@@ -1654,7 +1813,7 @@ function SalesOrders() {
         e.preventDefault();
         try {
             if (modalMode === 'create' && !orderLines.length) {
-                toast.error('Add at least one vehicle or part');
+                toast.error(isParts ? 'Add at least one part' : 'Add at least one vehicle');
                 return;
             }
             const missing = orderLines.find((line) => (line.itemType === 'part' ? !line.partId : !line.vehicleId));
@@ -1680,13 +1839,13 @@ function SalesOrders() {
                     : calculateConfiguredTax(orderSubtotal || Number(formData.vehiclePrice || 0), salesTax)
             };
             if (modalMode === 'create') {
-                const res = await salesAPI.createDirectOrder(payload);
+                const res = await docApi.createDirectOrder(payload);
                 const change = Number(res?.data?.data?.changeDue) || 0;
                 toast.success(change > 0
                     ? `Sales order created — return change of ${currency.code} ${change.toLocaleString()}`
                     : 'Sales order created successfully');
             } else if (modalMode === 'edit') {
-                await salesAPI.updateOrder(selectedItem.id, payload);
+                await docApi.updateOrder(selectedItem.id, payload);
                 toast.success('Sales order updated successfully');
             }
             closeModal();
@@ -1704,7 +1863,7 @@ function SalesOrders() {
             type: 'danger',
             onConfirm: async () => {
                 try {
-                    await salesAPI.deleteOrder(item.id);
+                    await docApi.deleteOrder(item.id);
                     toast.success('Order cancelled successfully');
                     setConfirmModal({ isOpen: false });
                     fetchData();
@@ -1724,7 +1883,7 @@ function SalesOrders() {
             confirmText: 'Mark Delivered',
             onConfirm: async () => {
                 try {
-                    await salesAPI.deliverOrder(item.id);
+                    await docApi.deliverOrder(item.id);
                     toast.success('Order marked as delivered');
                     setConfirmModal({ isOpen: false });
                     fetchData();
@@ -1738,7 +1897,7 @@ function SalesOrders() {
     const handleSendEmail = async (item) => {
         setSendingEmail(item.id);
         try {
-            await salesAPI.sendOrderEmail(item.id);
+            await docApi.sendOrderEmail(item.id);
             toast.success(`Sales order emailed to ${item.customer_name}`);
         } catch (error) {
             toast.error(error.response?.data?.message || 'Failed to email sales order');
@@ -1756,7 +1915,7 @@ function SalesOrders() {
             confirmText: 'Generate Invoice',
             onConfirm: async () => {
                 try {
-                    const res = await salesAPI.generateInvoice(item.id, 30);
+                    const res = await docApi.generateInvoice(item.id, 30);
                     toast.success(`Invoice ${res.data?.data?.invoiceNumber} generated successfully`);
                     setConfirmModal({ isOpen: false });
                     fetchData();
@@ -1785,7 +1944,7 @@ function SalesOrders() {
             type: 'danger',
             onConfirm: async () => {
                 try {
-                    await invoiceAPI.delete(item.invoice_id, { reason: 'Deleted from sales orders view' });
+                    await invApi.delete(item.invoice_id, { reason: 'Deleted from sales orders view' });
                     toast.success('Invoice deleted');
                     setConfirmModal({ isOpen: false });
                     fetchData();
@@ -1818,7 +1977,7 @@ function SalesOrders() {
     return (
         <div className="card sales-page">
             <div className="card-header d-flex justify-content-between align-items-center">
-                <div><h3>Sales Orders</h3><BulkSalesActions type="order" selectedRows={data.filter(x=>selectedIds.includes(x.id))} onClear={()=>setSelectedIds([])} onRefresh={fetchData} canEmail={canSendEmail} canPdf={canDownloadPdf} canDelete={canDelete}/></div>
+                <div><h3>{config.label} Sales Orders</h3>{config.can.bulk && <BulkSalesActions type="order" config={config} selectedRows={data.filter(x=>selectedIds.includes(x.id))} onClear={()=>setSelectedIds([])} onRefresh={fetchData} canEmail={canSendEmail} canPdf={canDownloadPdf} canDelete={canDelete}/>}</div>
                 {canCreate && (
                     <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
                         <button
@@ -1830,6 +1989,7 @@ function SalesOrders() {
                             <Upload size={18} style={{ marginRight: 4 }} />
                             Upload
                         </button>
+                        <ScanLink config={config} doc="order" />
                         <button className="btn btn-primary" onClick={() => openModal('create')}>
                             <span className="material-icons" style={{ fontSize: '18px', verticalAlign: 'middle', marginRight: '4px' }}>add</span>
                             Create Direct Order
@@ -1923,7 +2083,7 @@ function SalesOrders() {
                                                     onClick: () => handleViewInvoice(o),
                                                     className: 'btn-outline-primary'
                                                 },
-                                                ...(o.invoice_status === 'draft' ? [{
+                                                ...(canEditInvoice && o.invoice_status === 'draft' ? [{
                                                     icon: <Pencil size={18} className="action-icon" />,
                                                     title: 'Edit Invoice',
                                                     onClick: () => handleEditInvoice(o),
@@ -1994,7 +2154,7 @@ function SalesOrders() {
                                                     onClick: () => handleViewInvoice(o),
                                                     className: 'btn-outline-primary'
                                                 },
-                                                ...(o.invoice_status === 'draft' ? [{
+                                                ...(canEditInvoice && o.invoice_status === 'draft' ? [{
                                                     icon: <Pencil size={18} className="action-icon" />,
                                                     title: 'Edit Invoice',
                                                     onClick: () => handleEditInvoice(o),
@@ -2022,6 +2182,7 @@ function SalesOrders() {
                 total={pagination.total}
                 limit={pagination.limit}
                 onPageChange={(page) => setPagination(prev => ({ ...prev, page }))}
+                onPageSizeChange={(limit) => setPagination(prev => ({ ...prev, page: 1, limit }))}
                 loading={loading}
             />
 
@@ -2133,13 +2294,12 @@ function SalesOrders() {
                     ) : (
                         <form onSubmit={handleSubmit}>
                             <div className="form-group">
-                                <label className="form-label-add"><span>Customer *</span> <CustomerQuickCreate onCreated={handleCustomerCreated} /></label>
-                                <SearchableSelect name="customerId" value={formData.customerId} onChange={handleChange} required>
-                                    <option value="">Select Customer</option>
-                                    {customers.map(c => (
-                                        <option key={c.id} value={c.id}>{customerOptionLabel(c)}</option>
-                                    ))}
-                                </SearchableSelect>
+                                <CustomerField
+                                    formData={formData}
+                                    onChange={handleChange}
+                                    customers={customers}
+                                    onCustomerCreated={handleCustomerCreated}
+                                />
                             </div>
 
                             {modalMode === 'create' && (
@@ -2150,6 +2310,7 @@ function SalesOrders() {
                                     parts={parts}
                                     currencyCode={currency.code}
                                     requireInventoryVehicle
+                                    category={config.key}
                                 />
                             )}
 
@@ -2326,7 +2487,14 @@ function SalesOrders() {
 // INVOICES COMPONENT - FULL CRUD & PROFESSIONAL UI
 // ═══════════════════════════════════════════════════════════════════════════
 
-function Invoices() {
+function Invoices({ category = 'vehicle' }) {
+    const config = categoryConfig(category);
+    const docApi = config.invoices;
+    const isParts = config.key === 'parts';
+    // A parts invoice consumes stock, so its lines must reference real parts
+    // rather than the free-text rows a vehicle/service invoice uses.
+    const [partOptions, setPartOptions] = useState([]);
+    const [partLines, setPartLines] = useState([]);
     const { user } = useAuth();
     const { currency, salesTax, serviceTax, taxAmount: calculateConfiguredTax } = useErpDocumentSettings();
     const [searchParams] = useSearchParams();
@@ -2367,7 +2535,7 @@ function Invoices() {
     // Create/Edit Invoice Form
     const [customers, setCustomers] = useState([]);
     const [formData, setFormData] = useState({
-        invoiceType: 'sales', customerId: '', dueDays: '30', notes: '', termsAndConditions: '',
+        invoiceType: 'sales', customerId: '', walkIn: false, walkInName: '', walkInPhone: '', dueDays: '30', notes: '', termsAndConditions: '',
         status: 'draft',
         paymentMethodId: '',
         initialPaidAmount: '',
@@ -2375,7 +2543,9 @@ function Invoices() {
     });
 
     const canCreate = policyAllows(user, 'invoices', 'create', ['super_admin','admin','sales_manager','accountant'].includes(user?.role));
-    const canEdit = policyAllows(user, 'invoices', 'edit', ['super_admin','admin','accountant'].includes(user?.role));
+    // A parts invoice has already consumed stock by the time it exists, so its
+    // lines are not editable; cancelling it (delete) is what returns the stock.
+    const canEdit = config.can.editInvoice && policyAllows(user, 'invoices', 'edit', ['super_admin','admin','accountant'].includes(user?.role));
     const canDelete = policyAllows(user, 'invoices', 'delete', user?.role === 'super_admin');
     const canRecordPayment = ['super_admin', 'admin', 'sales_manager', 'accountant'].includes(user?.role);
 
@@ -2387,7 +2557,7 @@ function Invoices() {
     const loadDrawer = useCallback(async (id) => {
         setDrawerLoading(true);
         try {
-            const res = await invoiceAPI.getById(id);
+            const res = await docApi.getById(id);
             setDrawerInvoice(res.data?.data || null);
         } catch (error) {
             toast.error('Failed to load invoice details');
@@ -2403,7 +2573,7 @@ function Invoices() {
         if (!drawerInvoice?.id) return;
         setSavingStatus(true);
         try {
-            await invoiceAPI.updateStatus(drawerInvoice.id, status);
+            await docApi.updateStatus(drawerInvoice.id, status);
             toast.success('Status updated');
             await Promise.all([loadDrawer(drawerInvoice.id), fetchData()]);
         } catch (error) {
@@ -2416,7 +2586,7 @@ function Invoices() {
     const handleDrawerPayment = async ({ amount, paymentMethodId, referenceNumber }) => {
         if (!drawerInvoice?.id) return false;
         try {
-            await invoiceAPI.recordPayment(drawerInvoice.id, { amount, paymentMethodId, referenceNumber });
+            await docApi.recordPayment(drawerInvoice.id, { amount, paymentMethodId, referenceNumber });
             toast.success('Payment recorded');
             await Promise.all([loadDrawer(drawerInvoice.id), fetchData()]);
             return true;
@@ -2425,8 +2595,8 @@ function Invoices() {
             return false;
         }
     };
-    const canSend = policyAllows(user, 'invoices', 'sendEmail', ['super_admin','admin','sales_manager','accountant'].includes(user?.role));
-    const canDownloadPdf = policyAllows(user, 'invoices', 'downloadPdf', true);
+    const canSend = config.can.email && policyAllows(user, 'invoices', 'sendEmail', ['super_admin','admin','sales_manager','accountant'].includes(user?.role));
+    const canDownloadPdf = config.can.pdf && policyAllows(user, 'invoices', 'downloadPdf', true);
 
     const fetchData = useCallback(async () => {
         try {
@@ -2439,7 +2609,7 @@ function Invoices() {
             };
             Object.keys(params).forEach(k => (params[k] === '' || params[k] === null) && delete params[k]);
 
-            const res = await invoiceAPI.getAll(params);
+            const res = await docApi.getAll(params);
             // Handle both legacy and new response formats
             if (res.data?.success) {
                 setData(res.data.data || []);
@@ -2476,11 +2646,16 @@ function Invoices() {
         try {
             const results = await Promise.allSettled([
                 fetchAllCustomersForDropdown(),
-                invoiceAPI.getPaymentMethods(),
+                docApi.getPaymentMethods(),
                 erpSettingsAPI.getCompanies({ limit: 1 }),
                 adminAPI.getStatusesByTable('invoices'),
-                serviceMasterAPI.getTypes({ is_active: true, limit: 200 })
+                serviceMasterAPI.getTypes({ is_active: true, limit: 200 }),
+                isParts ? partsAPI.getAll({ limit: 500 }) : Promise.resolve(null)
             ]);
+            const partsResult = results[5];
+            if (partsResult?.status === 'fulfilled' && partsResult.value) {
+                setPartOptions(partsResult.value.data?.data?.parts || partsResult.value.data?.data || []);
+            }
             setCustomers(results[0].status === 'fulfilled' ? results[0].value || [] : []);
             setPaymentMethods(results[1].status === 'fulfilled' ? results[1].value?.data?.data || [] : []);
             setServiceTypes(results[4].status === 'fulfilled' ? results[4].value?.data?.data || [] : []);
@@ -2536,15 +2711,17 @@ function Invoices() {
 
         if (mode === 'view' && item) {
             try {
-                const res = await invoiceAPI.getById(item.id);
+                const res = await docApi.getById(item.id);
                 setInvoiceDetails(res.data?.data);
             } catch (error) {
                 console.error('Error fetching invoice details:', error);
                 toast.error('Failed to load invoice details');
             }
         } else if (mode === 'create') {
+            setPartLines([]);
             setFormData({
-                invoiceType: 'sales', customerId: '', dueDays: '30', notes: '', termsAndConditions: '',
+                invoiceType: isParts ? 'parts' : 'sales',
+                customerId: '', walkIn: false, walkInName: '', walkInPhone: '', dueDays: '30', notes: '', termsAndConditions: '',
                 status: 'draft',
                 paymentMethodId: '',
                 initialPaidAmount: '',
@@ -2602,7 +2779,27 @@ function Invoices() {
         try {
             if (modalMode === 'create') {
                 const configuredTax = formData.invoiceType === 'service' ? serviceTax : salesTax;
-                const preparedItems = formData.items.map(item => {
+                // A parts invoice is built from real part lines; every other
+                // invoice is still free-text rows.
+                if (isParts && !partLines.length) {
+                    toast.error('Add at least one part');
+                    return;
+                }
+                if (isParts && partLines.some((line) => !line.partId)) {
+                    toast.error('Every line needs a part selected');
+                    return;
+                }
+                const sourceItems = isParts
+                    ? partLines.map((line) => ({
+                        partId: line.partId,
+                        quantity: Number(line.quantity) || 1,
+                        unitPrice: Number(line.unitPrice) || 0,
+                        discountAmount: Number(line.discountAmount) || 0,
+                        taxAmount: Number(line.taxAmount) || 0,
+                        description: line.description || undefined,
+                    }))
+                    : formData.items;
+                const preparedItems = sourceItems.map(item => {
                     if (Number(item.taxAmount) > 0 || !configuredTax) return item;
                     const base = (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0);
                     return { ...item, taxAmount: calculateConfiguredTax(base, configuredTax) };
@@ -2637,16 +2834,18 @@ function Invoices() {
 
                 const submitData = {
                     ...formData,
-                    items: preparedItems,
+                    ...(isParts ? { lineItems: preparedItems } : { items: preparedItems }),
                     subtotal: preparedSubtotal,
-                    taxAmount: preparedTax
+                    // Line tax already sits on each part line; sending it at the
+                    // document level too would tax the sale twice.
+                    taxAmount: isParts ? 0 : preparedTax
                 };
                 delete submitData.paymentMethodId;
                 delete submitData.initialPaidAmount;
-                const res = await invoiceAPI.create(submitData);
+                const res = await docApi.create(submitData);
 
                 if (amountToRecord > 0) {
-                    await invoiceAPI.recordPayment(res.data.data.id, {
+                    await docApi.recordPayment(res.data.data.id, {
                         amount: amountToRecord,
                         paymentMethodId: formData.paymentMethodId,
                         referenceNumber: '',
@@ -2657,12 +2856,12 @@ function Invoices() {
                 // Avoid conflicting status writes when payment SP already sets partial/paid.
                 const statusHandledByPayment = amountToRecord > 0 && ['partial', 'paid'].includes(formData.status);
                 if (formData.status !== 'draft' && !statusHandledByPayment) {
-                    await invoiceAPI.updateStatus(res.data.data.id, formData.status);
+                    await docApi.updateStatus(res.data.data.id, formData.status);
                 }
 
                 toast.success('Invoice created successfully');
             } else if (modalMode === 'edit') {
-                await invoiceAPI.update(selectedItem.id, formData);
+                await docApi.update(selectedItem.id, formData);
                 toast.success('Invoice updated successfully');
             }
             closeModal();
@@ -2680,7 +2879,7 @@ function Invoices() {
             type: 'danger',
             onConfirm: async () => {
                 try {
-                    await invoiceAPI.delete(item.id, { reason: 'Voided by user' });
+                    await docApi.delete(item.id, { reason: 'Voided by user' });
                     toast.success('Invoice voided successfully');
                     setConfirmModal({ isOpen: false });
                     fetchData();
@@ -2701,7 +2900,7 @@ function Invoices() {
             onConfirm: async () => {
                 setSendingEmail(item.id);
                 try {
-                    await invoiceAPI.sendEmail(item.id);
+                    await docApi.sendEmail(item.id);
                     toast.success('Invoice emailed successfully');
                     setConfirmModal({ isOpen: false });
                     fetchData();
@@ -2728,7 +2927,7 @@ function Invoices() {
         setRecordingPayment(true);
         try {
             const invoiceId = selectedItem.id;
-            await invoiceAPI.recordPayment(invoiceId, paymentData);
+            await docApi.recordPayment(invoiceId, paymentData);
             toast.success('Payment recorded successfully');
             setShowPaymentModal(false);
             setPaymentData({ amount: '', paymentMethodId: '', referenceNumber: '', notes: '' });
@@ -2736,7 +2935,7 @@ function Invoices() {
             // Re-open the invoice with fresh details so the new payment (method +
             // reference) shows immediately in the payment history table.
             try {
-                const res = await invoiceAPI.getById(invoiceId);
+                const res = await docApi.getById(invoiceId);
                 setInvoiceDetails(res.data?.data);
                 setModalMode('view');
                 setShowModal(true);
@@ -2774,12 +2973,15 @@ function Invoices() {
     return (
         <div className="card sales-page">
             <div className="card-header d-flex justify-content-between align-items-center">
-                <div><h3>Invoices</h3><BulkSalesActions type="invoice" selectedRows={data.filter(x=>selectedIds.includes(x.id))} onClear={()=>setSelectedIds([])} onRefresh={fetchData} canEmail={canSend} canPdf={canDownloadPdf} canDelete={canDelete}/></div>
+                <div><h3>{config.label} Invoices</h3>{config.can.bulk && <BulkSalesActions type="invoice" config={config} selectedRows={data.filter(x=>selectedIds.includes(x.id))} onClear={()=>setSelectedIds([])} onRefresh={fetchData} canEmail={canSend} canPdf={canDownloadPdf} canDelete={canDelete}/>}</div>
                 {canCreate && (
-                    <div className="sales-header-actions"><button className="btn btn-primary" onClick={() => openModal('create')}>
-                        <span className="material-icons" style={{ fontSize: '18px', verticalAlign: 'middle', marginRight: '4px' }}>add</span>
-                        Create Manual Invoice
-                    </button></div>
+                    <div className="sales-header-actions">
+                        <ScanLink config={config} doc="order" />
+                        <button className="btn btn-primary" onClick={() => openModal('create')}>
+                            <span className="material-icons" style={{ fontSize: '18px', verticalAlign: 'middle', marginRight: '4px' }}>add</span>
+                            Create Manual Invoice
+                        </button>
+                    </div>
                 )}
             </div>
 
@@ -2934,6 +3136,7 @@ function Invoices() {
                 total={pagination.total}
                 limit={pagination.limit}
                 onPageChange={(page) => setPagination(prev => ({ ...prev, page }))}
+                onPageSizeChange={(limit) => setPagination(prev => ({ ...prev, page: 1, limit }))}
                 loading={loading}
             />
 
@@ -3178,15 +3381,14 @@ function Invoices() {
                                 <div className="invoice-form-left">
                                     <div className="form-row">
                                         <div className="form-group" style={{ flex: 2 }}>
-                                            <label className="form-label-add"><span>Customer *</span> <CustomerQuickCreate onCreated={handleCustomerCreated} /></label>
-                                            <SearchableSelect name="customerId" value={formData.customerId} onChange={handleChange} required className="form-control-lg">
-                                                <option value="">Select Customer</option>
-                                                {customers.map(c => (
-                                                    <option key={c.id} value={c.id}>{customerOptionLabel(c)}</option>
-                                                ))}
-                                            </SearchableSelect>
+                                            <CustomerField
+                                                formData={formData}
+                                                onChange={handleChange}
+                                                customers={customers}
+                                                onCustomerCreated={handleCustomerCreated}
+                                            />
                                         </div>
-                                        <div className="form-group" style={{ flex: 1 }}>
+                                        <div className="form-group" style={{ flex: 1, display: isParts ? 'none' : undefined }}>
                                             <label>Invoice Type</label>
                                             <SearchableSelect name="invoiceType" value={formData.invoiceType} onChange={handleChange}>
                                                 <option value="sales">Sales</option>
@@ -3197,6 +3399,18 @@ function Invoices() {
                                     </div>
 
                                     <div className="card" style={{ padding: '1rem', border: '1px solid #e5e7eb', boxShadow: 'none' }}>
+                                        {isParts ? (
+                                            // Real part lines: this invoice takes the stock off the
+                                            // shelf the moment it is saved.
+                                            <LineItemsEditor
+                                                value={partLines}
+                                                onChange={setPartLines}
+                                                parts={partOptions}
+                                                currencyCode={currency.code}
+                                                category="parts"
+                                            />
+                                        ) : (
+                                        <>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                                             <h5 style={{ margin: 0, fontSize: '1rem', fontWeight: '600' }}>Line Items</h5>
                                             <button type="button" className="btn btn-secondary btn-sm" onClick={addItem}>+ Add Item</button>
@@ -3246,6 +3460,8 @@ function Invoices() {
                                                 </div>
                                             ))}
                                         </div>
+                                        </>
+                                        )}
                                     </div>
                                 </div>
 

@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const searchPlugin = require('../plugins/searchPlugin');
 const lineItemSchema = require('./lineItem.schema');
+const walkInFields = require('./walkIn.fields');
 
 const salesOrderItemSchema = new mongoose.Schema({
   description: { type: String },
@@ -35,6 +36,7 @@ const salesOrderSchema = new mongoose.Schema({
   invoice: { type: mongoose.Schema.Types.ObjectId, ref: 'Invoice', default: null },
   quotation: { type: mongoose.Schema.Types.ObjectId, ref: 'Quotation' },
   customer: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer' },
+  ...walkInFields,
   vehicle: { type: mongoose.Schema.Types.ObjectId, ref: 'Vehicle' },
   vehicleMake: { type: mongoose.Schema.Types.ObjectId, ref: 'VehicleMake', default: null },
   vehicleModel: { type: mongoose.Schema.Types.ObjectId, ref: 'VehicleModel', default: null },

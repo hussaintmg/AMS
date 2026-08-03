@@ -27,6 +27,7 @@ const { recordCustomerActivity } = require('../utils/customerSync');
 const { createInvoiceForOrder } = require('../utils/invoiceFactory');
 const { applyVehicleLifecycle, canonicalStatus } = require('../utils/vehicleLifecycle');
 const { sendTemplateEmail, sendRawEmail } = require('../services/emailSender.service');
+const { sendCustomerDocumentEmail } = require('../services/documentEmail.service');
 const { buildEstimatePdf, buildEstimateEmailContext, defaultEstimateEmailHtml } = require('../services/estimate.service');
 const { companyName } = require('../services/pdfData.service');
 const { canDo } = require('../utils/roleJobs');
@@ -36,6 +37,15 @@ const {
     legacyFieldsFromLines, linesToRequested, mapLineItem, round2,
 } = require('../services/lineItems.service');
 const { reserveBookingVehicles, releaseBookingVehicles, revertInvoiceStock } = require('../services/stockLedger.service');
+const { resolveDocumentCustomer } = require('../utils/walkInCustomer');
+
+/**
+ * These documents are the vehicle side of the business. Parts have their own
+ * quotations, bookings, orders and invoices in separate collections
+ * (controllers/partsSales.controller.js), so a part on a vehicle document is
+ * rejected rather than stored where the vehicle screens cannot show it.
+ */
+const VEHICLE_ONLY = ['vehicle'];
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SHARED HELPERS
@@ -110,6 +120,16 @@ const customerName = (customer) => {
     return name || customer.companyName || '';
 };
 
+/** What to print as the buyer: the typed walk-in name wins over the shared record. */
+const buyerName = (doc) => (doc.walkIn && doc.walkInName ? doc.walkInName : customerName(doc.customer));
+
+/** The walk-in fields every document mapper exposes to the client. */
+const walkInFieldsOf = (doc) => ({
+    walk_in: doc.walkIn === true,
+    walk_in_name: doc.walkInName || '',
+    walk_in_phone: doc.walkInPhone || '',
+});
+
 const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /** Resolve customer ids whose name/phone/code matches the search text. */
@@ -135,24 +155,6 @@ function dateRangeFilter(dateFrom, dateTo) {
     return Object.keys(range).length ? range : null;
 }
 
-/** Send a configured document email to the document's customer. */
-async function sendCustomerDocumentEmail({ Model, id, usageKey, documentKey, buildDocument, userId }) {
-    const document = await Model.findById(sanitizeId(id))
-        .populate('customer', 'firstName lastName companyName email phone customerCode')
-        .lean();
-    if (!document) throw new AppError('Document not found', 404);
-    if (!document.customer?.email) throw new AppError('The selected customer does not have an email address', 400);
-
-    const result = await sendTemplateEmail({
-        usageKey,
-        to: document.customer.email,
-        sentBy: userId,
-        context: { customer: document.customer, [documentKey]: buildDocument(document) },
-    });
-    if (result.status !== 'sent') throw new AppError(result.errorMessage || 'Email could not be sent', 502);
-    return { document, recipient: document.customer.email };
-}
-
 async function requireCustomer(customerId) {
     if (!sanitizeId(customerId)) throw new AppError('Customer is required', 400);
     const customer = await Customer.findOne({ _id: customerId, deletedAt: null }).lean();
@@ -168,7 +170,8 @@ const mapQuotation = (q) => ({
     id: q._id,
     quotation_number: q.quotationNumber,
     customer_id: q.customer?._id || q.customer || null,
-    customer_name: customerName(q.customer),
+    customer_name: buyerName(q),
+    ...walkInFieldsOf(q),
     sale_type: q.saleType || 'vehicle',
     vehicle_variant_id: q.vehicleVariant || q.vehicle || null,
     vehicle_color_id: q.vehicleColor || null,
@@ -228,7 +231,7 @@ const getAllQuotations = async (req, res, next) => {
         }
 
         const pageNum = Math.max(1, parseInt(page, 10) || 1);
-        const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
+        const limitNum = Math.min(1000, Math.max(1, parseInt(limit, 10) || 20));
         const sortField = QUOTATION_SORT[sortBy] || 'createdAt';
         const sortDir = String(sortOrder).toUpperCase() === 'ASC' ? 1 : -1;
 
@@ -357,18 +360,17 @@ const quotationTotals = (body, lines = []) => {
 
 const createQuotation = async (req, res, next) => {
     try {
-        const { customerId, leadId, discountPercentage, validityDays, termsAndConditions, notes } = req.body;
+        const { leadId, discountPercentage, validityDays, termsAndConditions, notes } = req.body;
 
         const requested = readRequestedItems(req.body);
-        if (!requested.length) throw new AppError('Add at least one vehicle or part to the quotation', 400);
-        if (requested.some((item) => String(item.itemType || '').toLowerCase() === 'service')) {
-            throw new AppError('Services are managed from Service Management', 400);
-        }
+        if (!requested.length) throw new AppError('Add at least one vehicle to the quotation', 400);
 
-        const customer = await requireCustomer(customerId);
+        const { customer, walkIn, walkInName, walkInPhone } = await resolveDocumentCustomer(req.body, requireCustomer);
         // A quotation is an offer, not a commitment: stock is never checked or
         // touched here, and no inventory unit has to be allocated yet.
-        const lines = await resolveLineItems(requested, { checkStock: false, requireInventoryVehicle: false });
+        const lines = await resolveLineItems(requested, {
+            checkStock: false, requireInventoryVehicle: false, allowedTypes: VEHICLE_ONLY,
+        });
         const legacy = legacyFieldsFromLines(lines);
 
         const totals = quotationTotals(req.body, lines);
@@ -378,6 +380,7 @@ const createQuotation = async (req, res, next) => {
         const quotation = await Quotation.create({
             quotationNumber,
             customer: customer._id,
+            walkIn, walkInName, walkInPhone,
             lead: sanitizeId(leadId),
             ...legacy,
             lineItems: lines,
@@ -422,9 +425,12 @@ const updateQuotation = async (req, res, next) => {
 
         const { customerId, discountPercentage, validityDays, status, termsAndConditions, notes } = req.body;
 
-        if (sanitizeId(customerId)) {
-            const customer = await requireCustomer(customerId);
-            quotation.customer = customer._id;
+        if (sanitizeId(customerId) || req.body.walkIn !== undefined) {
+            const resolved = await resolveDocumentCustomer(req.body, requireCustomer);
+            quotation.customer = resolved.customer._id;
+            quotation.walkIn = resolved.walkIn;
+            quotation.walkInName = resolved.walkInName;
+            quotation.walkInPhone = resolved.walkInPhone;
         }
 
         // An edit that does not mention products keeps the ones already on the
@@ -432,11 +438,8 @@ const updateQuotation = async (req, res, next) => {
         const requested = readRequestedItems(req.body);
         const lines = await resolveLineItems(
             requested.length ? requested : linesToRequested(quotation.lineItems),
-            { checkStock: false, requireInventoryVehicle: false },
+            { checkStock: false, requireInventoryVehicle: false, allowedTypes: VEHICLE_ONLY },
         );
-        if (lines.some((line) => line.itemType === 'service')) {
-            throw new AppError('Services are managed from Service Management', 400);
-        }
         const legacy = legacyFieldsFromLines(lines);
 
         const totals = quotationTotals(req.body, lines);
@@ -562,7 +565,10 @@ const convertQuotationToBooking = async (req, res, next) => {
         const requested = readRequestedItems(req.body);
         const lines = await resolveLineItems(
             requested.length ? requested : linesToRequested(quotation.lineItems),
-            { checkStock: false, requireInventoryVehicle: true, vehicleStatuses: ['available', 'booked'] },
+            {
+                checkStock: false, requireInventoryVehicle: true,
+                vehicleStatuses: ['available', 'booked'], allowedTypes: VEHICLE_ONLY,
+            },
         );
         const legacy = legacyFieldsFromLines(lines);
         const summary = summarizeLineItems(lines);
@@ -572,6 +578,9 @@ const convertQuotationToBooking = async (req, res, next) => {
             bookingNumber,
             quotation: quotation._id,
             customer: quotation.customer?._id || quotation.customer,
+            walkIn: quotation.walkIn,
+            walkInName: quotation.walkInName,
+            walkInPhone: quotation.walkInPhone,
             ...legacy,
             lineItems: lines,
             status: 'pending',
@@ -643,7 +652,8 @@ const mapBooking = (b, order = null) => ({
     external_order_number: b.externalOrderNumber || '',
     quotation_id: b.quotation || null,
     customer_id: b.customer?._id || b.customer || null,
-    customer_name: customerName(b.customer),
+    customer_name: buyerName(b),
+    ...walkInFieldsOf(b),
     sale_type: b.saleType || 'vehicle',
     vehicle_id: b.vehicle?._id || b.vehicle || null,
     vehicle_variant_id: b.vehicleVariant?._id || b.vehicleVariant || null,
@@ -703,7 +713,7 @@ const getAllBookings = async (req, res, next) => {
         }
 
         const pageNum = Math.max(1, parseInt(page, 10) || 1);
-        const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
+        const limitNum = Math.min(1000, Math.max(1, parseInt(limit, 10) || 20));
         const sortField = BOOKING_SORT[sortBy] || 'createdAt';
         const sortDir = String(sortOrder).toUpperCase() === 'ASC' ? 1 : -1;
 
@@ -769,27 +779,23 @@ const sendBookingEmail = async (req, res, next) => {
 const createBooking = async (req, res, next) => {
     try {
         const {
-            quotationId, customerId, bookingAmount, totalAmount, taxAmount,
+            quotationId, bookingAmount, totalAmount, taxAmount,
             expectedDeliveryDate, priority, notes,
         } = req.body;
 
-        if (!sanitizeId(customerId) || !num(bookingAmount)) {
-            throw new AppError('Customer and booking amount are required', 400);
-        }
+        if (!num(bookingAmount)) throw new AppError('Booking amount is required', 400);
         const requested = readRequestedItems(req.body);
-        if (!requested.length) throw new AppError('Add at least one vehicle or part to the booking', 400);
+        if (!requested.length) throw new AppError('Add at least one vehicle to the booking', 400);
 
-        const customer = await requireCustomer(customerId);
+        const { customer, walkIn, walkInName, walkInPhone } = await resolveDocumentCustomer(req.body, requireCustomer);
         // Vehicles must be real inventory units at booking time so they can be
-        // reserved; part stock is deliberately not checked or moved here.
+        // reserved.
         const lines = await resolveLineItems(requested, {
             checkStock: false,
             requireInventoryVehicle: true,
             vehicleStatuses: ['available', 'booked'],
+            allowedTypes: VEHICLE_ONLY,
         });
-        if (lines.some((line) => line.itemType === 'service')) {
-            throw new AppError('Services are managed from Service Management', 400);
-        }
         const legacy = legacyFieldsFromLines(lines);
         const summary = summarizeLineItems(lines);
         const documentTotal = num(totalAmount) || summary.lineTotal;
@@ -799,6 +805,7 @@ const createBooking = async (req, res, next) => {
             bookingNumber,
             quotation: sanitizeId(quotationId),
             customer: customer._id,
+            walkIn, walkInName, walkInPhone,
             ...legacy,
             lineItems: lines,
             status: 'pending',
@@ -859,9 +866,12 @@ const updateBooking = async (req, res, next) => {
             throw new AppError(`Use the ${nextStatus === 'completed' ? 'Convert to Sales Order' : 'Cancel Booking'} action`, 409);
         }
 
-        if (sanitizeId(customerId)) {
-            const customer = await requireCustomer(customerId);
-            booking.customer = customer._id;
+        if (sanitizeId(customerId) || req.body.walkIn !== undefined) {
+            const resolved = await resolveDocumentCustomer(req.body, requireCustomer);
+            booking.customer = resolved.customer._id;
+            booking.walkIn = resolved.walkIn;
+            booking.walkInName = resolved.walkInName;
+            booking.walkInPhone = resolved.walkInPhone;
         }
 
         const requested = readRequestedItems(req.body);
@@ -873,10 +883,8 @@ const updateBooking = async (req, res, next) => {
                 checkStock: false,
                 requireInventoryVehicle: true,
                 vehicleStatuses: ['available', 'booked'],
+                allowedTypes: VEHICLE_ONLY,
             });
-            if (lines.some((line) => line.itemType === 'service')) {
-                throw new AppError('Services are managed from Service Management', 400);
-            }
             const nextVehicles = new Set(lines
                 .filter((line) => line.itemType === 'vehicle' && line.vehicle)
                 .map((line) => String(line.vehicle)));
@@ -1010,7 +1018,8 @@ const mapOrder = (o, invoice = null) => ({
     booking_number: o.booking?.bookingNumber || o.bookingNo || o.pboNo || '',
     booking_id: o.booking?._id || o.booking || null,
     customer_id: o.customer?._id || o.customer || null,
-    customer_name: customerName(o.customer),
+    customer_name: buyerName(o),
+    ...walkInFieldsOf(o),
     sale_type: o.saleType || 'vehicle',
     vehicle_id: o.vehicle?._id || o.vehicle || null,
     part_id: o.part || null,
@@ -1113,7 +1122,7 @@ async function listOrders(req, res, next, { withInvoices }) {
         if (orderOwnerIds !== null) filter.createdBy = { $in: orderOwnerIds };
 
         const pageNum = Math.max(1, parseInt(page, 10) || 1);
-        const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
+        const limitNum = Math.min(1000, Math.max(1, parseInt(limit, 10) || 20));
         const sortField = ORDER_SORT[sortBy] || 'createdAt';
         const sortDir = String(sortOrder).toUpperCase() === 'ASC' ? 1 : -1;
 
@@ -1239,26 +1248,24 @@ async function createOrderInternal({
     salePerson = '',
 }) {
     const {
-        customerId, paymentMode, financeCompany, financeAmount, exchangeVehicleDetails,
+        paymentMode, financeCompany, financeAmount, exchangeVehicleDetails,
         expectedDeliveryDate, notes,
     } = body;
 
-    const customer = await requireCustomer(customerId);
+    const { customer, walkIn, walkInName, walkInPhone } = await resolveDocumentCustomer(body, requireCustomer);
 
     const requested = readRequestedItems(body);
-    if (!requested.length) throw new AppError('Add at least one vehicle or part to the sales order', 400);
+    if (!requested.length) throw new AppError('Add at least one vehicle to the sales order', 400);
 
     // Availability is checked so the order cannot promise a unit that is gone,
-    // but nothing is consumed here — parts leave stock and vehicles become sold
-    // only once the invoice is raised (services/stockLedger.service.js).
+    // but nothing is consumed here — vehicles become sold only once the invoice
+    // is raised (services/stockLedger.service.js).
     const lines = await resolveLineItems(requested, {
         checkStock: true,
         requireInventoryVehicle: true,
         vehicleStatuses: ['available', 'booked'],
+        allowedTypes: VEHICLE_ONLY,
     });
-    if (lines.some((line) => line.itemType === 'service')) {
-        throw new AppError('Services are managed from Service Management', 400);
-    }
     const legacy = legacyFieldsFromLines(lines);
     const summary = summarizeLineItems(lines);
 
@@ -1288,6 +1295,7 @@ async function createOrderInternal({
         booking: sanitizeId(bookingId),
         quotation: sanitizeId(quotationId),
         customer: customer._id,
+        walkIn, walkInName, walkInPhone,
         ...legacy,
         lineItems: lines,
         status: 'confirmed',
@@ -1446,6 +1454,9 @@ const convertBookingToOrder = async (req, res, next) => {
         const { order, orderNumber } = await createOrderInternal({
             body: {
                 customerId: booking.customer,
+                walkIn: booking.walkIn,
+                walkInName: booking.walkInName,
+                walkInPhone: booking.walkInPhone,
                 lineItems: bookingLines,
                 vehiclePrice: booking.totalAmount,
                 registrationCharges,
@@ -1898,7 +1909,7 @@ const getDispatchedOrders = async (req, res, next) => {
         const filter = await buildDispatchFilter(req.query);
 
         const pageNum = Math.max(1, parseInt(page, 10) || 1);
-        const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
+        const limitNum = Math.min(1000, Math.max(1, parseInt(limit, 10) || 20));
         const sortField = DISPATCH_SORT[sortBy] || 'dispatchDate';
         const sortDir = String(sortOrder).toUpperCase() === 'ASC' ? 1 : -1;
 

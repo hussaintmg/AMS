@@ -24,7 +24,7 @@ const statsIcons = {
 
 function CustomersPage() {
   const [urlParams] = useSearchParams();
-  const { customers, stats, meta, pagination, loading, filters, search, handleSearch, handleFilter, clearFilters, loadCustomers, openDrawer, closeDrawer, drawerOpen, selectedCustomerId, refresh, deleteCustomer, toggleCustomerStatus } = useCustomers();
+  const { customers, stats, meta, pagination, loading, filters, search, handleSearch, handleFilter, clearFilters, loadCustomers, setPageSize, openDrawer, closeDrawer, drawerOpen, selectedCustomerId, refresh, deleteCustomer, toggleCustomerStatus } = useCustomers();
   const [showForm, setShowForm] = useState(false);
   const [editCustomer, setEditCustomer] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -258,7 +258,7 @@ function CustomersPage() {
     </div>
   );
 
-  const renderPagination = () => <ServerPagination page={pagination.page} totalPages={pagination.pages} total={pagination.total} limit={pagination.limit || 20} onPageChange={loadCustomers} loading={loading} />;
+  const renderPagination = () => <ServerPagination page={pagination.page} totalPages={pagination.pages} total={pagination.total} limit={pagination.limit || 20} onPageChange={loadCustomers} onPageSizeChange={setPageSize} loading={loading} />;
 
   const renderFilters = () => (
     <div className="filter-bar">

@@ -387,6 +387,55 @@
   margin-bottom: 8px;
 }
 
+/* Customer caption and the walk-in switch share one row. */
+.scan-customer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.scan-customer-head > label:first-child {
+  margin-bottom: 0;
+}
+
+.scan-card label.scan-walkin {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 0;
+  padding: 3px 9px;
+  font-size: var(--font-size-xs, 0.72rem);
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg-secondary, #f8fafc);
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all var(--transition-fast);
+}
+
+.scan-card label.scan-walkin:has(input:checked) {
+  color: var(--primary-700, #1d4ed8);
+  background: var(--primary-50, #eff6ff);
+  border-color: var(--primary-200, #bfdbfe);
+}
+
+.scan-walkin input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+  accent-color: var(--primary-600, #2563eb);
+  cursor: pointer;
+}
+
+.scan-walkin-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
 .scan-doc-types {
   display: flex;
   flex-direction: column;

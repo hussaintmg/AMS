@@ -274,6 +274,7 @@ export default function DispatchReport() {
                         total={pagination.total}
                         limit={pagination.limit}
                         onPageChange={(page) => setPagination((prev) => ({ ...prev, page }))}
+                        onPageSizeChange={(limit) => setPagination((prev) => ({ ...prev, page: 1, limit }))}
                         loading={loading}
                     />
                 </>

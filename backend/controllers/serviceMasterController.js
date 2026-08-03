@@ -26,7 +26,7 @@ async function createAuditLog(userId, action, module, details, req) {
 
 function paginate(page = 1, limit = 100) {
   const p = Math.max(1, parseInt(page));
-  const l = Math.min(500, Math.max(1, parseInt(limit)));
+  const l = Math.min(1000, Math.max(1, parseInt(limit)));
   return { skip: (p - 1) * l, limit: l, page: p, limit: l };
 }
 

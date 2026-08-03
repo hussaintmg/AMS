@@ -127,7 +127,7 @@ const getAllAppointments = async (req, res, next) => {
         }
 
         const pageNum = Math.max(1, parseInt(page, 10) || 1);
-        const limitNum = Math.min(200, Math.max(1, parseInt(limit, 10) || 20));
+        const limitNum = Math.min(1000, Math.max(1, parseInt(limit, 10) || 20));
 
         const [appointments, total] = await Promise.all([
             ServiceAppointment.find(filter)
@@ -438,7 +438,7 @@ const getAllJobCards = async (req, res, next) => {
         }
 
         const pageNum = Math.max(1, parseInt(page, 10) || 1);
-        const limitNum = Math.min(200, Math.max(1, parseInt(limit, 10) || 20));
+        const limitNum = Math.min(1000, Math.max(1, parseInt(limit, 10) || 20));
 
         const [jobCards, total] = await Promise.all([
             JobCard.find(filter)

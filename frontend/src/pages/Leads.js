@@ -25,7 +25,7 @@ const statsIcons = {
 function LeadsPage() {
   const navigate = useNavigate();
   const [urlParams] = useSearchParams();
-  const { leads, meta, stats, pagination, search, filters, loading, handleSearch, handleFilter, clearFilters, goToPage, refreshLeads, deleteLead, loadLeads, convertLead } = useLeads();
+  const { leads, meta, stats, pagination, search, filters, loading, handleSearch, handleFilter, clearFilters, goToPage, setPageSize, refreshLeads, deleteLead, loadLeads, convertLead } = useLeads();
   const [showForm, setShowForm] = useState(false);
   const [editLead, setEditLead] = useState(null);
   const [drawerId, setDrawerId] = useState(null);
@@ -323,7 +323,7 @@ function LeadsPage() {
     </div>
   );
 
-  const renderPagination = () => <ServerPagination page={pagination.page} totalPages={pagination.pages} total={pagination.total} limit={pagination.limit || 20} onPageChange={goToPage} loading={loading} />;
+  const renderPagination = () => <ServerPagination page={pagination.page} totalPages={pagination.pages} total={pagination.total} limit={pagination.limit || 20} onPageChange={goToPage} onPageSizeChange={setPageSize} loading={loading} />;
 
   const renderFilters = () => (
     <div className="filter-bar">

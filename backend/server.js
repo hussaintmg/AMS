@@ -34,6 +34,7 @@ const leadRoutes = require("./routes/lead.routes");
 const customerRoutes = require("./routes/customer.routes");
 const vehicleRoutes = require("./routes/vehicle.routes");
 const partsRoutes = require("./routes/parts.routes");
+const partsSalesRoutes = require("./routes/parts-sales.routes");
 const quotationRoutes = require("./routes/quotation.routes");
 const bookingRoutes = require("./routes/booking.routes");
 const salesRoutes = require("./routes/sales.routes");
@@ -231,6 +232,9 @@ app.use("/api/lead-master", leadMasterRoutes);
 app.use("/api/sales-master", salesMasterRoutes);
 app.use("/api/customers", customerRoutes);
 app.use("/api/vehicles", vehicleRoutes);
+// Parts quotations/bookings/orders/invoices — separate collections from the
+// vehicle documents mounted further down.
+app.use("/api/parts-sales", partsSalesRoutes);
 app.use("/api/parts", partsRoutes);
 app.use("/api/quotations", quotationRoutes);
 app.use("/api/bookings", bookingRoutes);

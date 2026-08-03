@@ -187,62 +187,81 @@ const AppLayout = () => {
                 </ProtectedPage>
               }
             />
-            <Route
-              path="barcode-scan"
-              element={
-                <ProtectedPage path="/barcode-scan">
-                  <BarcodeScan />
-                </ProtectedPage>
-              }
-            />
-            <Route
-              path="orders"
-              element={
-                <ProtectedPage path="/orders">
-                  <Sales section="orders" />
-                </ProtectedPage>
-              }
-            />
-            <Route
-              path="quotations"
-              element={
-                <ProtectedPage path="/quotations">
-                  <Sales section="quotations" />
-                </ProtectedPage>
-              }
-            />
-            <Route
-              path="invoices"
-              element={
-                <ProtectedPage path="/invoices">
-                  <Sales section="invoices" />
-                </ProtectedPage>
-              }
-            />
-            <Route
-              path="booking"
-              element={
-                <ProtectedPage path="/booking">
-                  <Sales section="booking" />
-                </ProtectedPage>
-              }
-            />
-            <Route
-              path="sales/orders"
-              element={<Navigate to="/orders" replace />}
-            />
-            <Route
-              path="sales/quotations"
-              element={<Navigate to="/quotations" replace />}
-            />
-            <Route
-              path="sales/invoices"
-              element={<Navigate to="/invoices" replace />}
-            />
-            <Route
-              path="sales/bookings"
-              element={<Navigate to="/booking" replace />}
-            />
+
+            {/*
+              Sales documents are split by what is being sold. Vehicles keep the
+              screens they always had, now under /vehicles; parts get the same
+              screens driven by their own collections, under /parts. The
+              `category` prop is the only thing that differs, and it decides
+              which API namespace every screen below talks to.
+            */}
+            {[
+              { base: "vehicles", category: "vehicle" },
+              { base: "parts", category: "parts" },
+            ].flatMap(({ base, category }) => [
+              <Route
+                key={`${base}-quotations`}
+                path={`${base}/quotations`}
+                element={
+                  <ProtectedPage path={`/${base}/quotations`}>
+                    <Sales section="quotations" category={category} />
+                  </ProtectedPage>
+                }
+              />,
+              <Route
+                key={`${base}-booking`}
+                path={`${base}/booking`}
+                element={
+                  <ProtectedPage path={`/${base}/booking`}>
+                    <Sales section="booking" category={category} />
+                  </ProtectedPage>
+                }
+              />,
+              <Route
+                key={`${base}-orders`}
+                path={`${base}/orders`}
+                element={
+                  <ProtectedPage path={`/${base}/orders`}>
+                    <Sales section="orders" category={category} />
+                  </ProtectedPage>
+                }
+              />,
+              <Route
+                key={`${base}-invoices`}
+                path={`${base}/invoices`}
+                element={
+                  <ProtectedPage path={`/${base}/invoices`}>
+                    <Sales section="invoices" category={category} />
+                  </ProtectedPage>
+                }
+              />,
+              <Route
+                key={`${base}-scan`}
+                path={`${base}/barcode-scan`}
+                element={
+                  <ProtectedPage path={`/${base}/barcode-scan`}>
+                    <BarcodeScan category={category} />
+                  </ProtectedPage>
+                }
+              />,
+              <Route
+                key={`${base}-bookings-alias`}
+                path={`${base}/bookings`}
+                element={<Navigate to={`/${base}/booking`} replace />}
+              />,
+            ])}
+
+            {/* Everything that used to live at the top level is now the vehicle
+                side, so old links and bookmarks keep working. */}
+            <Route path="orders" element={<Navigate to="/vehicles/orders" replace />} />
+            <Route path="quotations" element={<Navigate to="/vehicles/quotations" replace />} />
+            <Route path="invoices" element={<Navigate to="/vehicles/invoices" replace />} />
+            <Route path="booking" element={<Navigate to="/vehicles/booking" replace />} />
+            <Route path="barcode-scan" element={<Navigate to="/vehicles/barcode-scan" replace />} />
+            <Route path="sales/orders" element={<Navigate to="/vehicles/orders" replace />} />
+            <Route path="sales/quotations" element={<Navigate to="/vehicles/quotations" replace />} />
+            <Route path="sales/invoices" element={<Navigate to="/vehicles/invoices" replace />} />
+            <Route path="sales/bookings" element={<Navigate to="/vehicles/booking" replace />} />
             <Route
               path="service/*"
               element={

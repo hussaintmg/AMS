@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const searchPlugin = require('../plugins/searchPlugin');
 const lineItemSchema = require('./lineItem.schema');
+const walkInFields = require('./walkIn.fields');
 
 const quotationItemSchema = new mongoose.Schema({
   description: { type: String },
@@ -13,6 +14,7 @@ const quotationItemSchema = new mongoose.Schema({
 const quotationSchema = new mongoose.Schema({
   quotationNumber: { type: String, trim: true, required: [true, 'Quotation number is required'] },
   customer: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer' },
+  ...walkInFields,
   lead: { type: mongoose.Schema.Types.ObjectId, ref: 'Lead' },
   vehicle: { type: mongoose.Schema.Types.ObjectId, ref: 'Vehicle' },
   saleType: { type: String, trim: true, default: 'vehicle' }, // vehicle | parts

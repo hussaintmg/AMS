@@ -193,7 +193,7 @@ exports.getLeads = async (req, res, next) => {
     }
 
     const pageNum = Math.max(1, parseInt(page, 10));
-    const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10)));
+    const limitNum = Math.min(1000, Math.max(1, parseInt(limit, 10)));
     const skip = (pageNum - 1) * limitNum;
     const sortObj = {};
     const allowedSortFields = ['createdAt', 'updatedAt', 'leadNo', 'customerName', 'email', 'leadValue', 'nextFollowUpAt', 'status', 'probability'];

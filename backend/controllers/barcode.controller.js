@@ -104,9 +104,16 @@ const partPayload = (part) => ({
   },
 });
 
+/**
+ * A vehicle that has been sold, dispatched or delivered has left the yard and
+ * can never go onto a new document. Anything still `available` or `booked` can.
+ */
+const SELLABLE_VEHICLE_STATUSES = ['available', 'booked'];
+const isSellableVehicle = (vehicle) => SELLABLE_VEHICLE_STATUSES.includes(canonicalStatus(vehicle.status));
+
 const vehiclePayload = (vehicle) => {
   const status = canonicalStatus(vehicle.status);
-  const sellable = ['available', 'booked'].includes(status);
+  const sellable = isSellableVehicle(vehicle);
   return {
     kind: 'vehicle',
     id: String(vehicle._id),
@@ -128,50 +135,69 @@ const vehiclePayload = (vehicle) => {
 };
 
 /**
- * POST /api/barcode/scan { code }
+ * POST /api/barcode/scan { code, kind }
  * Resolve a scanned (or typed) code to a product and hand back a line item the
  * sales screens can drop straight into a document.
  *
  * A scanner may send the barcode itself, and a human may type a part code or a
  * chassis number — all three resolve here so the page behaves the same either
  * way.
+ *
+ * `kind` narrows the lookup to 'part' or 'vehicle'. The parts counter and the
+ * vehicle counter are separate screens building documents in separate
+ * collections, so a code from the other side must not resolve: silently
+ * basketing a vehicle on a parts sale is worse than saying it was not found.
  */
 exports.scan = async (req, res, next) => {
   try {
     const code = clean(req.body?.code || req.query?.code);
+    const kind = clean(req.body?.kind || req.query?.kind).toLowerCase();
     if (!code) throw new AppError('Scan a barcode or enter a code', 400);
     if (!isEncodable(code)) throw new AppError('That code contains characters a barcode cannot hold', 400);
+    if (kind && !MODELS[kind]) throw new AppError('Barcode kind must be part or vehicle', 400);
     const exact = new RegExp(`^${code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
 
-    const part = await Part.findOne({
-      isActive: { $ne: false },
-      $or: [{ barcode: exact }, { partCode: exact }, { sku: exact }],
-    }).lean();
+    if (kind !== 'vehicle') {
+      const part = await Part.findOne({
+        isActive: { $ne: false },
+        $or: [{ barcode: exact }, { partCode: exact }, { sku: exact }],
+      }).lean();
+      if (part) return res.json({ success: true, data: partPayload(part) });
+    }
 
-    if (part) return res.json({ success: true, data: partPayload(part) });
+    if (kind !== 'part') {
+      const vehicle = await Vehicle.findOne({
+        $or: [{ barcode: exact }, { chassisNumber: exact }, { vin: exact }, { vehicleCode: exact }, { engineNumber: exact }],
+      })
+        .populate('make', 'name').populate('model', 'name')
+        .populate('variant', 'name').populate('color', 'name')
+        .lean();
+      if (vehicle) return res.json({ success: true, data: vehiclePayload(vehicle) });
+    }
 
-    const vehicle = await Vehicle.findOne({
-      $or: [{ barcode: exact }, { chassisNumber: exact }, { vin: exact }, { vehicleCode: exact }, { engineNumber: exact }],
-    }).lean();
-
-    if (vehicle) return res.json({ success: true, data: vehiclePayload(vehicle) });
-
-    res.status(404).json({ success: false, message: `Nothing matches "${code}"` });
+    const scope = kind === 'part' ? ' in parts' : kind === 'vehicle' ? ' in vehicles' : '';
+    res.status(404).json({ success: false, message: `Nothing matches "${code}"${scope}` });
   } catch (error) { next(error); }
 };
 
 /**
- * GET /api/barcode/search?q=&kind=&limit=
+ * GET /api/barcode/search?q=&kind=&limit=&includeUnavailable=
  * Free-text product lookup for the counter screen: stock that has no barcode
  * printed yet — or that the operator simply cannot scan — is still one click
  * away. Results carry the same line item as a scan, so the caller treats a
  * picked product and a scanned one identically.
+ *
+ * By default only stock that can actually be sold comes back: a part with none
+ * left on the shelf, or a vehicle already sold, dispatched or delivered, is not
+ * something the counter can hand over, and offering it only produces a failed
+ * document. Pass includeUnavailable=true to see everything anyway.
  */
 exports.search = async (req, res, next) => {
   try {
     const q = clean(req.query?.q);
     const kind = clean(req.query?.kind).toLowerCase();
     const limit = Math.min(Math.max(num(req.query?.limit, 20), 1), 50);
+    const includeUnavailable = clean(req.query?.includeUnavailable).toLowerCase() === 'true';
     // A blank query is not an error — it lists what is on the shelf.
     const like = q ? new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') : null;
     const results = [];
@@ -179,6 +205,7 @@ exports.search = async (req, res, next) => {
     if (kind !== 'vehicle') {
       const parts = await Part.find({
         isActive: { $ne: false },
+        ...(includeUnavailable ? {} : { currentStock: { $gt: 0 } }),
         ...(like ? { $or: [{ name: like }, { partCode: like }, { sku: like }, { barcode: like }, { brand: like }] } : {}),
       }).sort({ name: 1 }).limit(limit).lean();
       results.push(...parts.map(partPayload));
@@ -192,8 +219,14 @@ exports.search = async (req, res, next) => {
       )
         .populate('make', 'name').populate('model', 'name')
         .populate('variant', 'name').populate('color', 'name')
-        .sort({ createdAt: -1 }).limit(limit).lean();
-      results.push(...vehicles.map(vehiclePayload));
+        .sort({ createdAt: -1 })
+        // Status is stored in several spellings (canonicalStatus folds them), so
+        // it is filtered in code rather than in the query. Over-fetching keeps a
+        // page of results from collapsing to a handful once sold units drop out.
+        .limit(includeUnavailable ? limit : limit * 4)
+        .lean();
+      const sellable = includeUnavailable ? vehicles : vehicles.filter(isSellableVehicle);
+      results.push(...sellable.slice(0, limit).map(vehiclePayload));
     }
 
     // Sellable stock first: a counter mostly wants what it can actually hand

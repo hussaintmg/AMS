@@ -10,6 +10,12 @@ const Quotation = require('./Quotation.model');
 const Booking = require('./Booking.model');
 const SalesOrder = require('./SalesOrder.model');
 const Invoice = require('./Invoice.model');
+// Parts sales live in their own collections so they never mix with the vehicle
+// documents above; see controllers/partsSales.controller.js.
+const PartQuotation = require('./PartQuotation.model');
+const PartBooking = require('./PartBooking.model');
+const PartSalesOrder = require('./PartSalesOrder.model');
+const PartInvoice = require('./PartInvoice.model');
 const Payment = require('./Payment.model');
 const PaymentMethod = require('./PaymentMethod.model');
 const ServiceAppointment = require('./ServiceAppointment.model');
@@ -67,6 +73,10 @@ module.exports = {
   Booking,
   SalesOrder,
   Invoice,
+  PartQuotation,
+  PartBooking,
+  PartSalesOrder,
+  PartInvoice,
   Payment,
   PaymentMethod,
   ServiceAppointment,

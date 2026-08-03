@@ -109,6 +109,11 @@ async function createInvoiceForOrder(order, {
     invoiceType: order.saleType === 'parts' ? 'parts' : 'sales',
     salesOrder: order._id,
     customer: order.customer,
+    // A counter sale carries its buyer through to the invoice; without this the
+    // printed invoice would name the shared walk-in record instead.
+    walkIn: order.walkIn === true,
+    walkInName: order.walkInName || '',
+    walkInPhone: order.walkInPhone || '',
     seller: resolvedSeller,
     sellerEmployee: resolvedSellerEmployee,
     salePerson: resolvedSalePerson,
