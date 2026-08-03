@@ -186,6 +186,15 @@ function LineItemsEditor({
                           required
                         >
                           <option value="">Select part</option>
+                          {/* A saved line may point at a part the (limited)
+                              list did not include — without its own option the
+                              select would silently show the placeholder. */}
+                          {line.partId &&
+                            !parts.some((part) => String(part.id) === String(line.partId)) && (
+                            <option value={line.partId}>
+                              {line.description || "Saved part"}
+                            </option>
+                          )}
                           {parts.map((part) => (
                             <option key={part.id} value={part.id}>
                               {part.name || part.part_name}
@@ -202,6 +211,16 @@ function LineItemsEditor({
                           required
                         >
                           <option value="">Select inventory vehicle</option>
+                          {/* The vehicle list is fetched with a limit (and on
+                              orders filtered to in-stock statuses), so the
+                              vehicle already on a saved document is often not
+                              in it — its name still has to show. */}
+                          {line.vehicleId &&
+                            !vehicles.some((vehicle) => String(vehicle.id) === String(line.vehicleId)) && (
+                            <option value={line.vehicleId}>
+                              {line.description || "Saved vehicle"}
+                            </option>
+                          )}
                           {vehicles.map((vehicle) => (
                             <option key={vehicle.id} value={vehicle.id}>
                               {[vehicle.make_name, vehicle.model_name, vehicle.variant_name].filter(Boolean).join(" ")}
