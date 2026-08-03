@@ -33,6 +33,8 @@ const MODES = [
   { key: "browse", label: "Browse", icon: PackageSearch, hint: "Pick a product from stock" },
 ];
 
+const CAMERA_SCAN_COOLDOWN_MS = 2000;
+
 const num = (value, fallback = 0) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -108,17 +110,29 @@ function BarcodeScan() {
   const addFound = useCallback((found) => {
     if (!found?.lineItem) return;
     const current = basketRef.current;
+    // partId/itemType are the authoritative API fields. Some older API
+    // responses used a different `kind` value, which incorrectly sent an
+    // existing part through the vehicle-only "already in basket" branch.
+    const isPart = Boolean(found.lineItem.partId) ||
+      String(found.lineItem.itemType || found.kind).toLowerCase() === "part";
+    const available = Math.max(0, num(found.available));
     const existing = current.find(
       (row) =>
-        (found.lineItem.partId && row.partId === found.lineItem.partId) ||
-        (found.lineItem.vehicleId && row.vehicleId === found.lineItem.vehicleId),
+        (found.lineItem.partId && String(row.partId) === String(found.lineItem.partId)) ||
+        (found.lineItem.vehicleId && String(row.vehicleId) === String(found.lineItem.vehicleId)),
     );
 
     // Scanning the same part again bumps the quantity — the operator does not
     // have to open a field and type "2".
-    if (existing && found.kind === "part") {
+    if (existing && isPart) {
+      if (num(existing.quantity, 1) >= available) {
+        toast.error(`Only ${available} ${found.name} in stock`);
+        return;
+      }
       const quantity = num(existing.quantity, 1) + 1;
-      const next = current.map((row) => (row.key === existing.key ? { ...row, quantity } : row));
+      const next = current.map((row) =>
+        row.key === existing.key ? { ...row, quantity, available } : row,
+      );
       basketRef.current = next;
       setBasket(next);
       toast.success(`${found.name} × ${quantity}`);
@@ -129,15 +143,18 @@ function BarcodeScan() {
       return;
     }
 
-    if (found.kind === "part" && !found.inStock) toast.error(`${found.name} is out of stock`);
+    if (isPart && available === 0) {
+      toast.error(`${found.name} is out of stock`);
+      return;
+    }
     const next = [
       ...current,
       {
-        key: `${found.kind}-${found.id}`,
-        kind: found.kind,
+        key: `${isPart ? "part" : "vehicle"}-${found.id}`,
+        kind: isPart ? "part" : "vehicle",
         name: found.name,
         code: found.code || found.barcode,
-        available: found.available,
+        available,
         quantity: 1,
         unitPrice: num(found.unitPrice),
         partId: found.lineItem.partId,
@@ -203,10 +220,21 @@ function BarcodeScan() {
     if (next === "keyboard") setTimeout(() => scanRef.current?.focus(), 0);
   };
 
-  const setQuantity = (key, quantity) =>
-    setBasket((current) =>
-      current.map((row) => (row.key === key ? { ...row, quantity: Math.max(1, num(quantity, 1)) } : row)),
+  const setQuantity = (key, quantity) => {
+    const current = basketRef.current;
+    const row = current.find((item) => item.key === key);
+    if (!row) return;
+    const requested = Math.max(1, num(quantity, 1));
+    const nextQuantity = row.kind === "part"
+      ? Math.min(requested, Math.max(1, num(row.available, 1)))
+      : 1;
+    if (requested > nextQuantity) toast.error(`Only ${row.available} ${row.name} in stock`);
+    const next = current.map((item) =>
+      item.key === key ? { ...item, quantity: nextQuantity } : item,
     );
+    basketRef.current = next;
+    setBasket(next);
+  };
   const setPrice = (key, unitPrice) =>
     setBasket((current) => current.map((row) => (row.key === key ? { ...row, unitPrice } : row)));
   const removeRow = (key) => setBasket((current) => current.filter((row) => row.key !== key));
@@ -326,7 +354,11 @@ function BarcodeScan() {
 
           {mode === "camera" && (
             <div className="scan-camera">
-              <CameraScanner onDetected={resolveCode} onClose={() => chooseMode("keyboard")} />
+              <CameraScanner
+                onDetected={resolveCode}
+                pauseMs={CAMERA_SCAN_COOLDOWN_MS}
+                onClose={() => chooseMode("keyboard")}
+              />
               {busy && <p className="scan-note">Looking up the code…</p>}
             </div>
           )}

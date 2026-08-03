@@ -515,3 +515,15 @@
   margin-top: 8px;
   width: 100%;
 }
+
+
+@media (max-width: 480px) {
+  .scan-box {
+    flex-direction: column;
+  }
+  .scan-box-icon{
+    left: 12px;
+    top: 15px;
+    transform: none;
+  }
+}

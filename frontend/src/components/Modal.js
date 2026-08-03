@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import './Modal.css'; // Assuming we might want specific styles, or it uses global styles
 
@@ -10,14 +10,44 @@ import './Modal.css'; // Assuming we might want specific styles, or it uses glob
  * painting on top of it. On <body> it sits in the root stacking context where
  * the shared z-index scale in index.css actually applies.
  */
-const Modal = ({ title, children, onClose, size = 'medium', overlayClassName }) => {
+const Modal = ({
+    title,
+    children,
+    onClose,
+    size = 'medium',
+    overlayClassName,
+    closeOnEscape = false,
+    closeOnBackdrop = false,
+}) => {
+    useEffect(() => {
+        if (!closeOnEscape) return undefined;
+
+        const handleKeyDown = (event) => {
+            if (event.key === 'Escape') onClose?.();
+        };
+
+        document.addEventListener('keydown', handleKeyDown);
+        return () => document.removeEventListener('keydown', handleKeyDown);
+    }, [closeOnEscape, onClose]);
+
     const overlayClass = ['modal-overlay', overlayClassName].filter(Boolean).join(' ');
     return createPortal(
-        <div className={overlayClass}>
-            <div className={`modal-content ${size === 'large' ? 'modal-lg' : ''}`} style={size === 'large' ? { maxWidth: '1200px', width: '95%' } : {}}>
+        <div
+            className={overlayClass}
+            onMouseDown={(event) => {
+                if (closeOnBackdrop && event.target === event.currentTarget) onClose?.();
+            }}
+        >
+            <div
+                className={`modal-content ${size === 'large' ? 'modal-lg' : ''}`}
+                style={size === 'large' ? { maxWidth: '1200px', width: '95%' } : {}}
+                role="dialog"
+                aria-modal="true"
+                aria-label={title || 'Dialog'}
+            >
                 <div className="modal-header">
                     <h3>{title}</h3>
-                    <button className="close-btn" onClick={onClose}>&times;</button>
+                    <button type="button" className="close-btn" onClick={onClose} aria-label="Close">&times;</button>
                 </div>
                 <div className="modal-body">
                     {children}
