@@ -22,7 +22,7 @@ import "../styles/barcodeScan.css";
  * product search for stock whose label is missing or unreadable.
  *
  * There is one of these per side of the business. `category` comes from the
- * URL (/vehicles/barcode-scan or /parts/barcode-scan) and decides what a scan
+ * URL (/vehicle-sales/barcode-scan or /parts-sales/barcode-scan) and decides what a scan
  * may resolve to and which collection the document lands in — a vehicle code
  * scanned at the parts counter is reported as not found rather than quietly
  * basketed. `?doc=quotation|booking|order` preselects the document, so arriving
@@ -33,7 +33,7 @@ const CATEGORY = {
     key: "vehicle",
     kind: "vehicle",
     label: "Vehicle",
-    basePath: "/vehicles",
+    basePath: "/vehicle-sales",
     api: salesAPI,
     lead: "Scan a chassis number or barcode to build a quotation, booking or sale.",
     searchPlaceholder: "Search by name or chassis number",
@@ -48,7 +48,7 @@ const CATEGORY = {
     key: "parts",
     kind: "part",
     label: "Parts",
-    basePath: "/parts",
+    basePath: "/parts-sales",
     api: partsSalesAPI,
     lead: "Scan a part barcode to build a quotation, booking or counter sale.",
     searchPlaceholder: "Search by name or part code",

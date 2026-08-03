@@ -7,6 +7,7 @@ import { Package, Search, Plus, Upload, Pencil, Trash2, ScanLine } from "lucide-
 import ErrorPopup from "../components/ErrorPopup";
 import ActionButtons from "../components/ActionButtons";
 import BarcodeButton from "../components/BarcodeButton";
+import BarcodeBulkPrint from "../components/BarcodeBulkPrint";
 import SearchableSelect from "../components/SearchableSelect";
 import DataTable from "../components/DataTable";
 import ConfirmModal from "../components/ConfirmModal";
@@ -690,7 +691,7 @@ const PartsInventory = () => {
         >
           {/* Straight to the counter screen for this side of the business. */}
           <a
-            href="/parts/barcode-scan"
+            href="/parts-sales/barcode-scan"
             className="btn btn-secondary btn-create"
             title="Scan parts into a quotation, booking or sale"
           >
@@ -900,6 +901,7 @@ const PartsInventory = () => {
       {selectedIds.size > 0 && (
         <div className="selection-bar">
           <span className="selection-count">{selectedIds.size} selected</span>
+          <BarcodeBulkPrint kind="part" ids={Array.from(selectedIds)} />
           <button
             className="btn btn-danger btn-sm"
             onClick={() => setDeleteAllTarget(true)}

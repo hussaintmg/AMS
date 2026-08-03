@@ -189,15 +189,19 @@ const AppLayout = () => {
             />
 
             {/*
-              Sales documents are split by what is being sold. Vehicles keep the
-              screens they always had, now under /vehicles; parts get the same
-              screens driven by their own collections, under /parts. The
-              `category` prop is the only thing that differs, and it decides
-              which API namespace every screen below talks to.
+              Sales documents are split by what is being sold: /vehicle-sales
+              and /parts-sales. The `category` prop is the only thing that
+              differs between the two, and it decides which API namespace every
+              screen below talks to.
+
+              These sit apart from the /vehicles and /parts inventory pages on
+              purpose. Page access is matched by path prefix, so nesting them
+              under the inventory paths would have handed the sales screens to
+              anyone who could merely see stock.
             */}
             {[
-              { base: "vehicles", category: "vehicle" },
-              { base: "parts", category: "parts" },
+              { base: "vehicle-sales", category: "vehicle" },
+              { base: "parts-sales", category: "parts" },
             ].flatMap(({ base, category }) => [
               <Route
                 key={`${base}-quotations`}
@@ -251,17 +255,28 @@ const AppLayout = () => {
               />,
             ])}
 
-            {/* Everything that used to live at the top level is now the vehicle
-                side, so old links and bookmarks keep working. */}
-            <Route path="orders" element={<Navigate to="/vehicles/orders" replace />} />
-            <Route path="quotations" element={<Navigate to="/vehicles/quotations" replace />} />
-            <Route path="invoices" element={<Navigate to="/vehicles/invoices" replace />} />
-            <Route path="booking" element={<Navigate to="/vehicles/booking" replace />} />
-            <Route path="barcode-scan" element={<Navigate to="/vehicles/barcode-scan" replace />} />
-            <Route path="sales/orders" element={<Navigate to="/vehicles/orders" replace />} />
-            <Route path="sales/quotations" element={<Navigate to="/vehicles/quotations" replace />} />
-            <Route path="sales/invoices" element={<Navigate to="/vehicles/invoices" replace />} />
-            <Route path="sales/bookings" element={<Navigate to="/vehicles/booking" replace />} />
+            {/* Old links and bookmarks keep working: the plain top-level paths
+                and the first /vehicles|/parts layout both land on the current
+                screens. */}
+            <Route path="vehicles/orders" element={<Navigate to="/vehicle-sales/orders" replace />} />
+            <Route path="vehicles/quotations" element={<Navigate to="/vehicle-sales/quotations" replace />} />
+            <Route path="vehicles/invoices" element={<Navigate to="/vehicle-sales/invoices" replace />} />
+            <Route path="vehicles/booking" element={<Navigate to="/vehicle-sales/booking" replace />} />
+            <Route path="vehicles/barcode-scan" element={<Navigate to="/vehicle-sales/barcode-scan" replace />} />
+            <Route path="parts/orders" element={<Navigate to="/parts-sales/orders" replace />} />
+            <Route path="parts/quotations" element={<Navigate to="/parts-sales/quotations" replace />} />
+            <Route path="parts/invoices" element={<Navigate to="/parts-sales/invoices" replace />} />
+            <Route path="parts/booking" element={<Navigate to="/parts-sales/booking" replace />} />
+            <Route path="parts/barcode-scan" element={<Navigate to="/parts-sales/barcode-scan" replace />} />
+            <Route path="orders" element={<Navigate to="/vehicle-sales/orders" replace />} />
+            <Route path="quotations" element={<Navigate to="/vehicle-sales/quotations" replace />} />
+            <Route path="invoices" element={<Navigate to="/vehicle-sales/invoices" replace />} />
+            <Route path="booking" element={<Navigate to="/vehicle-sales/booking" replace />} />
+            <Route path="barcode-scan" element={<Navigate to="/vehicle-sales/barcode-scan" replace />} />
+            <Route path="sales/orders" element={<Navigate to="/vehicle-sales/orders" replace />} />
+            <Route path="sales/quotations" element={<Navigate to="/vehicle-sales/quotations" replace />} />
+            <Route path="sales/invoices" element={<Navigate to="/vehicle-sales/invoices" replace />} />
+            <Route path="sales/bookings" element={<Navigate to="/vehicle-sales/booking" replace />} />
             <Route
               path="service/*"
               element={

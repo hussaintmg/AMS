@@ -13,18 +13,20 @@ const pages = [
   ['vehicles','Vehicles','/vehicles','inventory','Car','Inventory'], ['vehicle_master','Vehicle Master Data','/vehicle-master','vehicle-master','CarFront','Master Data'],
   ['parts','Parts Inventory','/parts','parts','Cog','Inventory'], ['warehouses','Warehouse Management','/warehouses','warehouses','Warehouse','Master Data'],
   // Vehicle sales. The page keys are unchanged so existing role permissions keep
-  // working; only the paths moved under /vehicles.
-  ['sales_orders','Vehicle Sales Orders','/vehicles/orders','sales','ShoppingCart','Vehicle Sales'],
-  ['quotations','Vehicle Quotations','/vehicles/quotations','sales','FileText','Vehicle Sales'],
-  ['invoices','Vehicle Invoices','/vehicles/invoices','sales','ReceiptText','Vehicle Sales'],
-  ['bookings','Vehicle Bookings','/vehicles/booking','sales','CalendarCheck','Vehicle Sales'],
-  ['vehicle_scan','Vehicle Scan','/vehicles/barcode-scan','sales','ScanLine','Vehicle Sales'],
+  // working; only the paths moved. They sit on their own /vehicle-sales prefix
+  // rather than under /vehicles, because access is matched by path prefix and
+  // nesting them would hand the sales screens to anyone who can see stock.
+  ['sales_orders','Vehicle Sales Orders','/vehicle-sales/orders','sales','ShoppingCart','Vehicle Sales'],
+  ['quotations','Vehicle Quotations','/vehicle-sales/quotations','sales','FileText','Vehicle Sales'],
+  ['invoices','Vehicle Invoices','/vehicle-sales/invoices','sales','ReceiptText','Vehicle Sales'],
+  ['bookings','Vehicle Bookings','/vehicle-sales/booking','sales','CalendarCheck','Vehicle Sales'],
+  ['vehicle_scan','Vehicle Scan','/vehicle-sales/barcode-scan','sales','ScanLine','Vehicle Sales'],
   // Parts sales — separate collections, separate screens, same permission model.
-  ['part_quotations','Parts Quotations','/parts/quotations','sales','FileText','Parts Sales'],
-  ['part_bookings','Parts Bookings','/parts/booking','sales','CalendarCheck','Parts Sales'],
-  ['part_orders','Parts Sales Orders','/parts/orders','sales','ShoppingCart','Parts Sales'],
-  ['part_invoices','Parts Invoices','/parts/invoices','sales','ReceiptText','Parts Sales'],
-  ['part_scan','Parts Scan','/parts/barcode-scan','sales','ScanLine','Parts Sales'],
+  ['part_quotations','Parts Quotations','/parts-sales/quotations','sales','FileText','Parts Sales'],
+  ['part_bookings','Parts Bookings','/parts-sales/booking','sales','CalendarCheck','Parts Sales'],
+  ['part_orders','Parts Sales Orders','/parts-sales/orders','sales','ShoppingCart','Parts Sales'],
+  ['part_invoices','Parts Invoices','/parts-sales/invoices','sales','ReceiptText','Parts Sales'],
+  ['part_scan','Parts Scan','/parts-sales/barcode-scan','sales','ScanLine','Parts Sales'],
   ['services','Services','/service','service','Wrench','Service'], ['service_appointments','Service Appointments','/service/appointments','service','CalendarDays','Service'],
   ['service_master','Service Master Data','/service-master','service-master','Settings','Master Data'], ['reports','Reports','/reports','reports','BarChart3','Reports'],
   ['employees','Employees','/hr/employees','hr','UserRound','HR & Finance'], ['leaves','Leaves','/hr/leaves','leaves','CalendarDays','HR & Finance'],
@@ -59,12 +61,14 @@ async function run() {
   const role = await Role.findOne({ name: 'super_admin' });
   if (!role) throw new Error('super_admin role not found; run create_super_admin.js first');
 
-  // Old paths that no longer exist. The top-level sales paths moved under
-  // /vehicles when parts got their own documents; the frontend still redirects
-  // them, but they must not linger in the sidebar or in role permissions.
+  // Old paths that no longer exist. The frontend still redirects them, but they
+  // must not linger in the sidebar or in role permissions.
   const legacyPaths = [
     '/master-data', '/sales', '/sales/orders', '/sales/quotations', '/sales/invoices', '/sales/bookings', '/settings',
     '/orders', '/quotations', '/invoices', '/booking', '/barcode-scan',
+    // The first split put these under the inventory paths; they now have their own.
+    '/vehicles/orders', '/vehicles/quotations', '/vehicles/invoices', '/vehicles/booking', '/vehicles/barcode-scan',
+    '/parts/orders', '/parts/quotations', '/parts/invoices', '/parts/booking', '/parts/barcode-scan',
   ];
   await Page.deleteMany({ path: { $in: legacyPaths } });
   for (const page of pages) {
@@ -84,7 +88,7 @@ async function run() {
   //
   // Permissions are stored with the path baked in, and access is decided by
   // matching the request path against it. Moving /quotations to
-  // /vehicles/quotations would therefore lock out every non-super-admin role
+  // /vehicle-sales/quotations would therefore lock out every non-super-admin role
   // that already had it. Matching on pageKey — which never changed — keeps
   // those grants intact and only rewrites where the page now lives.
   const pathByKey = Object.fromEntries(pages.map((p) => [p.name, { path: p.path, module: p.module }]));

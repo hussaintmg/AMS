@@ -20,6 +20,7 @@ import ActionButtons from "../components/ActionButtons";
 import BarcodeButton from "../components/BarcodeButton";
 import BulkUploadModal from "../components/BulkUploadModal";
 import ConfirmModal from "../components/ConfirmModal";
+import BarcodeBulkPrint from "../components/BarcodeBulkPrint";
 import { ArrowUpTrayIcon } from "@heroicons/react/24/outline";
 import DataTable from "../components/DataTable";
 import useModalKeyboard from "../hooks/useModalKeyboard";
@@ -645,7 +646,7 @@ const Vehicles = () => {
         >
           {/* Straight to the counter screen for this side of the business. */}
           <a
-            href="/vehicles/barcode-scan"
+            href="/vehicle-sales/barcode-scan"
             className="btn btn-secondary btn-create"
             title="Scan vehicles into a quotation, booking or sale"
           >
@@ -811,6 +812,7 @@ const Vehicles = () => {
       {selectedIds.size > 0 && (
         <div className="selection-bar">
           <span className="selection-count">{selectedIds.size} selected</span>
+          <BarcodeBulkPrint kind="vehicle" ids={Array.from(selectedIds)} />
           <button
             className="btn btn-danger btn-sm"
             onClick={() => setDeleteAllTarget(true)}

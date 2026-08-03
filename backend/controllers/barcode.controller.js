@@ -10,7 +10,8 @@ const Part = require('../models/Part.model');
 const Vehicle = require('../models/Vehicle.model');
 const { AppError } = require('../middleware/errorHandler');
 const {
-  renderBarcodeSvg, renderBarcodeLabelHtml, nextBarcode, backfillBarcodes, isEncodable,
+  renderBarcodeSvg, renderBarcodeLabelHtml, renderBarcodeSheetHtml,
+  nextBarcode, backfillBarcodes, isEncodable,
 } = require('../utils/barcode');
 const { canonicalStatus } = require('../utils/vehicleLifecycle');
 const logger = require('../utils/logger');
@@ -81,6 +82,59 @@ exports.label = async (req, res, next) => {
         : (record.salePrice ? `PKR ${Number(record.salePrice).toLocaleString('en-PK')}` : ''),
     });
     res.set('Content-Type', 'text/html; charset=utf-8').send(html);
+  } catch (error) { next(error); }
+};
+
+/** What one record prints as on a label. */
+const labelFor = (kind, record) => (kind === 'part'
+  ? {
+    value: record.barcode,
+    title: record.name,
+    subtitle: [record.partCode || record.sku, record.brand].filter(Boolean).join(' · '),
+    price: record.sellingPrice ? `PKR ${Number(record.sellingPrice).toLocaleString('en-PK')}` : '',
+  }
+  : {
+    value: record.barcode,
+    title: vehicleLabel(record),
+    subtitle: [record.chassisNumber, record.year].filter(Boolean).join(' · '),
+    price: record.salePrice ? `PKR ${Number(record.salePrice).toLocaleString('en-PK')}` : '',
+  });
+
+/**
+ * POST /api/barcode/:kind/labels { ids, copies }
+ * A printable sheet of labels for many records at once — what the inventory
+ * screens use after selecting rows, so a delivery can be labelled in one pass
+ * instead of opening each product.
+ *
+ * Records with no barcode are assigned one here, exactly as the single-label
+ * route does: selecting stock that predates barcodes still prints.
+ */
+exports.labels = async (req, res, next) => {
+  try {
+    const kind = req.params.kind;
+    const Model = MODELS[kind];
+    if (!Model) throw new AppError('Barcode kind must be part or vehicle', 400);
+
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids.filter(Boolean) : [];
+    if (!ids.length) throw new AppError('Select at least one record to print', 400);
+    // A sheet this large is a mis-click, and rendering it would stall the page.
+    if (ids.length > 500) throw new AppError('Select 500 records or fewer to print at once', 400);
+
+    const copies = Math.min(Math.max(num(req.body?.copies, 1), 1), 50);
+
+    const labels = [];
+    for (const id of ids) {
+      // ensureBarcode also validates the id, so an unknown one fails loudly
+      // rather than silently printing a shorter sheet than was asked for.
+      const record = await ensureBarcode(kind, id);
+      labels.push(labelFor(kind, record));
+    }
+
+    logger.info(`${labels.length} ${kind} label(s) printed by ${req.user?.email || 'system'}`);
+    res.set('Content-Type', 'text/html; charset=utf-8').send(renderBarcodeSheetHtml(labels, {
+      copies,
+      heading: kind === 'part' ? 'Parts barcode labels' : 'Vehicle barcode labels',
+    }));
   } catch (error) { next(error); }
 };
 

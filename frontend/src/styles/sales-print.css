@@ -367,7 +367,7 @@
     gap: 12px;
 }
 .sales-header-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.sales-header-actions .btn{display:inline-flex;align-items:center;gap:6px}
-.sales-bulk-toolbar{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:10px 0;padding:8px 10px;background:#f8fafc;border:1px solid #cbd5e1;border-radius:6px}.sales-bulk-toolbar strong{font-size:12px;color:#334155;margin-right:3px}.sales-bulk-toolbar button{display:inline-flex;align-items:center;gap:5px;border:1px solid #cbd5e1;background:#fff;color:#334155;border-radius:5px;padding:7px 9px;font-size:12px;cursor:pointer}.sales-bulk-toolbar button:hover{background:#eef2f7}.sales-bulk-toolbar button.danger{border-color:#fecaca;color:#b91c1c;background:#fff}.sales-bulk-toolbar button:disabled{opacity:.55;cursor:not-allowed}.sales-select-cell{width:38px!important;text-align:center!important}.sales-select-cell input{width:16px;height:16px;accent-color:#2563eb}.data-table tr.selected-row td{background:#eff6ff}@media(max-width:700px){.sales-bulk-toolbar{align-items:stretch}.sales-bulk-toolbar strong{width:100%}.sales-bulk-toolbar button{flex:1;justify-content:center}}
+.sales-bulk-toolbar{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:10px 0;padding:8px 10px;background:#f8fafc;border:1px solid #cbd5e1;border-radius:6px}.sales-bulk-toolbar strong{font-size:12px;color:#334155;margin-right:3px}.sales-bulk-toolbar button{display:inline-flex;align-items:center;gap:5px;border:1px solid #cbd5e1;background:#fff;color:#334155;border-radius:5px;padding:7px 9px;font-size:12px;cursor:pointer}.sales-bulk-toolbar button:hover{background:#eef2f7}.sales-bulk-toolbar button.danger{border-color:#fecaca;color:#b91c1c;background:#fff}.sales-bulk-toolbar button:disabled{opacity:.55;cursor:not-allowed}.sales-select-cell input{width:16px;height:16px;accent-color:#2563eb;margin:0;display:block}.data-table tr.selected-row td{background:#eff6ff}@media(max-width:700px){.sales-bulk-toolbar{align-items:stretch}.sales-bulk-toolbar strong{width:100%}.sales-bulk-toolbar button{flex:1;justify-content:center}}
 
 .sales-page > .server-pagination {
     display: flex;
@@ -448,3 +448,27 @@
 .data-table tr.sales-row-settled td{background:#f0fdf4}
 .data-table tr.sales-row-settled:hover td{background:#dcfce7}
 .data-table tr.sales-row-settled.selected-row td{background:#dcfce7}
+
+/* ── Selection column width ───────────────────────────────────────────────
+ * .data-table gives every cell `width: 1%` so columns shrink to their content.
+ * With no column left on `auto`, a table wider than its content has nowhere to
+ * put the surplus, so browsers share it across every column — the checkbox one
+ * included, which is why it ended up far wider than a checkbox needs.
+ *
+ * Leaving the other cells `auto` gives that surplus somewhere to go, and the
+ * checkbox column then holds the fixed width it is actually given.
+ */
+.sales-page .data-table th:not(.sales-select-cell),
+.sales-page .data-table td:not(.sales-select-cell) {
+    width: auto;
+}
+
+.sales-page .data-table th.sales-select-cell,
+.sales-page .data-table td.sales-select-cell {
+    width: 34px !important;
+    min-width: 34px;
+    padding-left: 10px !important;
+    padding-right: 4px !important;
+    text-align: center !important;
+    white-space: nowrap;
+}

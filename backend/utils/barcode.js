@@ -119,6 +119,61 @@ function renderBarcodeLabelHtml(value, { title = '', subtitle = '', price = '' }
 }
 
 /**
+ * A sheet of labels for printing many at once.
+ *
+ * Labels flow into a grid that fills whatever paper the browser is set to, so
+ * one sheet works on A4 and on a roll of thermal labels alike. `copies` repeats
+ * each label — a shelf usually needs one per physical unit, not one per product.
+ *
+ * `page-break-inside: avoid` keeps a barcode from being split across two pages,
+ * which would make it unscannable.
+ */
+function renderBarcodeSheetHtml(labels = [], { copies = 1, heading = '' } = {}) {
+  const escape = (text) => String(text == null ? '' : text)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const repeat = Math.min(Math.max(Number(copies) || 1, 1), 50);
+
+  const cells = labels.flatMap((label) => Array.from({ length: repeat }, () => `
+  <div class="label">
+    ${label.title ? `<div class="title">${escape(label.title)}</div>` : ''}
+    ${label.subtitle ? `<div class="subtitle">${escape(label.subtitle)}</div>` : ''}
+    ${renderBarcodeSvg(label.value, { height: 52, moduleWidth: 2 })}
+    ${label.price ? `<div class="price">${escape(label.price)}</div>` : ''}
+  </div>`)).join('');
+
+  const total = labels.length * repeat;
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${escape(heading || 'Barcode labels')}</title>
+<style>
+  @page { margin: 8mm; }
+  body { font-family: Arial, Helvetica, sans-serif; margin: 0; padding: 12px; background: #f8fafc; }
+  .bar { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+  .bar h1 { font-size: 15px; margin: 0; font-weight: 600; }
+  .bar span { color: #475569; font-size: 12px; }
+  .sheet { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
+  .label {
+    border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 6px;
+    text-align: center; background: #fff; break-inside: avoid; page-break-inside: avoid;
+  }
+  .label svg { max-width: 100%; height: auto; }
+  .title { font-size: 12px; font-weight: bold; margin-bottom: 1px; }
+  .subtitle { font-size: 10px; color: #475569; margin-bottom: 5px; }
+  .price { font-size: 11px; font-weight: bold; margin-top: 3px; }
+  @media print {
+    body { background: #fff; padding: 0; }
+    .no-print { display: none; }
+    .label { border: none; }
+  }
+</style></head><body>
+<div class="bar no-print">
+  <h1>${escape(heading || 'Barcode labels')}</h1>
+  <span>${total} label${total === 1 ? '' : 's'}${repeat > 1 ? ` (${labels.length} × ${repeat})` : ''}</span>
+  <button style="padding:7px 15px;cursor:pointer" onclick="window.print()">Print</button>
+</div>
+<div class="sheet">${cells}</div>
+</body></html>`;
+}
+
+/**
  * Allocate the next free barcode for a collection.
  * Scans the highest existing `<PREFIX>-NNNNNN` and steps past it, then confirms
  * the candidate is unused so a manually typed code can never be duplicated.
@@ -162,6 +217,7 @@ module.exports = {
   isEncodable,
   renderBarcodeSvg,
   renderBarcodeLabelHtml,
+  renderBarcodeSheetHtml,
   nextBarcode,
   backfillBarcodes,
 };

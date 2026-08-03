@@ -44,6 +44,16 @@ router.get('/search', authenticate, barcodeController.search);
  *     summary: Assign (or return) the barcode for a part or vehicle
  *     security: [{ bearerAuth: [] }]
  */
+/**
+ * @swagger
+ * /api/barcode/{kind}/labels:
+ *   post:
+ *     tags: [Barcode]
+ *     summary: Printable sheet of labels for many parts or vehicles at once
+ *     security: [{ bearerAuth: [] }]
+ */
+// Assigns a barcode to any selected record that has none, so this needs `edit`.
+router.post('/:kind/labels', authenticate, guard('edit'), barcodeController.labels);
 router.post('/:kind/backfill', authenticate, guard('edit'), barcodeController.backfill);
 router.post('/:kind/:id', authenticate, guard('edit'), barcodeController.assign);
 

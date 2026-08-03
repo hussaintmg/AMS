@@ -96,7 +96,7 @@ function registerAll() {
     statusField: 'status',
     populate: 'customer',
     conditions: { deletedAt: null, cancelledAt: null },
-    urlFn: (doc) => `/vehicles/invoices?search=${encodeURIComponent(doc.invoiceNumber || '')}&open=${doc._id}`,
+    urlFn: (doc) => `/vehicle-sales/invoices?search=${encodeURIComponent(doc.invoiceNumber || '')}&open=${doc._id}`,
   });
 
   registry.registerModule({
@@ -117,7 +117,7 @@ function registerAll() {
     statusField: 'status',
     populate: 'customer',
     conditions: { deletedAt: null },
-    urlFn: (doc) => `/vehicles/orders?search=${encodeURIComponent(doc.orderNumber || '')}&open=${doc._id}`,
+    urlFn: (doc) => `/vehicle-sales/orders?search=${encodeURIComponent(doc.orderNumber || '')}&open=${doc._id}`,
   });
 
   registry.registerModule({
@@ -138,7 +138,7 @@ function registerAll() {
     statusField: 'status',
     populate: 'customer',
     conditions: { deletedAt: null },
-    urlFn: (doc) => `/vehicles/quotations?search=${encodeURIComponent(doc.quotationNumber || '')}&open=${doc._id}`,
+    urlFn: (doc) => `/vehicle-sales/quotations?search=${encodeURIComponent(doc.quotationNumber || '')}&open=${doc._id}`,
   });
 
   registry.registerModule({
@@ -159,17 +159,17 @@ function registerAll() {
     statusField: 'status',
     populate: 'customer',
     conditions: { deletedAt: null },
-    urlFn: (doc) => `/vehicles/booking?search=${encodeURIComponent(doc.bookingNumber || '')}&open=${doc._id}`,
+    urlFn: (doc) => `/vehicle-sales/booking?search=${encodeURIComponent(doc.bookingNumber || '')}&open=${doc._id}`,
   });
 
   // ── Parts sales documents ────────────────────────────────────────────────
   // Separate collections from the vehicle documents above, so each needs its
   // own search module; they share the vehicle side's permission keys.
   [
-    ['part_quotation', 'Parts Quotations', models.PartQuotation, 'quotationNumber', 'quotations', '/parts/quotations', 'FileText'],
-    ['part_booking', 'Parts Bookings', models.PartBooking, 'bookingNumber', 'booking', '/parts/booking', 'CalendarCheck'],
-    ['part_order', 'Parts Orders', models.PartSalesOrder, 'orderNumber', 'orders', '/parts/orders', 'ShoppingCart'],
-    ['part_invoice', 'Parts Invoices', models.PartInvoice, 'invoiceNumber', 'invoices', '/parts/invoices', 'ReceiptText'],
+    ['part_quotation', 'Parts Quotations', models.PartQuotation, 'quotationNumber', 'quotations', '/parts-sales/quotations', 'FileText'],
+    ['part_booking', 'Parts Bookings', models.PartBooking, 'bookingNumber', 'booking', '/parts-sales/booking', 'CalendarCheck'],
+    ['part_order', 'Parts Orders', models.PartSalesOrder, 'orderNumber', 'orders', '/parts-sales/orders', 'ShoppingCart'],
+    ['part_invoice', 'Parts Invoices', models.PartInvoice, 'invoiceNumber', 'invoices', '/parts-sales/invoices', 'ReceiptText'],
   ].forEach(([entityType, moduleName, model, numberField, permissionKey, path, icon]) => {
     registry.registerModule({
       entityType,

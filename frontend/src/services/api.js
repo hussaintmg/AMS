@@ -366,6 +366,9 @@ export const barcodeAPI = {
     // sellable stock comes back unless includeUnavailable is passed.
     search: (params) => api.get('/barcode/search', { params }),
     assign: (kind, id) => api.post(`/barcode/${kind}/${id}`),
+    // Printable sheet of labels for many records at once. Returns HTML, so the
+    // caller hands it to a window rather than reading it as JSON.
+    labelsUrl: (kind) => `${API_URL}/barcode/${kind}/labels`,
     svgUrl: (kind, id, download = false) => `/api/barcode/${kind}/${id}/svg${download ? '?download=true' : ''}`,
     labelUrl: (kind, id) => `/api/barcode/${kind}/${id}/label`,
     backfill: (kind) => api.post(`/barcode/${kind}/backfill`),

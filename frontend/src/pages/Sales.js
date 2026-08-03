@@ -68,7 +68,7 @@ const CATEGORY = {
     vehicle: {
         key: 'vehicle',
         label: 'Vehicle',
-        basePath: '/vehicles',
+        basePath: '/vehicle-sales',
         sales: salesAPI,
         invoices: invoiceAPI,
         can: {
@@ -79,7 +79,7 @@ const CATEGORY = {
     parts: {
         key: 'parts',
         label: 'Parts',
-        basePath: '/parts',
+        basePath: '/parts-sales',
         sales: partsSalesAPI,
         invoices: partsInvoiceAPI,
         // Email, PDF and estimates deliberately run on the vehicle documents'
