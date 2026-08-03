@@ -59,13 +59,17 @@ function beep() {
 
 /**
  * @param onDetected  called with the decoded string for every accepted read
- * @param cooldownMs  how long the same code is ignored for, so one label held
- *                    in front of the lens is not added ten times a second
+ * @param pauseMs    after an accepted read, nothing at all is scanned for this
+ *                   long — one physical scan is one product, then a breath
+ * @param regapMs    the same code is only accepted again after it has been out
+ *                   of view this long, so a label held in front of the lens is
+ *                   added once, not once per second
  */
-function CameraScanner({ onDetected, cooldownMs = 1600, onClose }) {
+function CameraScanner({ onDetected, pauseMs = 1000, regapMs = 1200, onClose }) {
   const videoRef = useRef(null);
   const readerRef = useRef(null);
-  const lastRef = useRef({ code: "", at: 0 });
+  const lastRef = useRef({ code: "", seenAt: 0 });
+  const pausedUntilRef = useRef(0);
   const detectedRef = useRef(onDetected);
   detectedRef.current = onDetected;
 
@@ -148,11 +152,22 @@ function CameraScanner({ onDetected, cooldownMs = 1600, onClose }) {
           const code = String(result.getText() || "").trim();
           if (!code) return;
           const now = Date.now();
-          if (code === lastRef.current.code && now - lastRef.current.at < cooldownMs) return;
-          lastRef.current = { code, at: now };
+          // The same label sitting in front of the lens reports every frame.
+          // Keep refreshing `seenAt` so it is only accepted again once it has
+          // actually left the view for a moment and come back — that is the
+          // operator deliberately scanning it a second time.
+          const stillInView =
+            code === lastRef.current.code && now - lastRef.current.seenAt < regapMs;
+          if (stillInView) lastRef.current.seenAt = now;
+          // One scan, then a short breath: after an accepted read the scanner
+          // ignores everything until the pause is over, so one physical scan
+          // never turns into several products.
+          if (stillInView || now < pausedUntilRef.current) return;
+          lastRef.current = { code, seenAt: now };
+          pausedUntilRef.current = now + pauseMs;
           setLastCode(code);
           setFlash(true);
-          setTimeout(() => setFlash(false), 260);
+          setTimeout(() => setFlash(false), pauseMs);
           beep();
           detectedRef.current?.(code);
         },
@@ -171,7 +186,7 @@ function CameraScanner({ onDetected, cooldownMs = 1600, onClose }) {
         setError(err?.message || "Could not open the camera.");
       }
     }
-  }, [cooldownMs, listCameras, stop]);
+  }, [pauseMs, regapMs, listCameras, stop]);
 
   // `start` and `stop` are stable callbacks, so this opens the camera once and
   // releases it on unmount; switching camera or retrying calls `start` directly.

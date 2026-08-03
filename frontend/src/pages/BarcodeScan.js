@@ -42,8 +42,11 @@ function BarcodeScan() {
   const navigate = useNavigate();
   const { currency } = useErpDocumentSettings();
   const scanRef = useRef(null);
-  // Guards the camera: frames arrive faster than a lookup completes.
-  const resolvingRef = useRef(false);
+  // Lookups run one after another on this chain. The camera can accept a new
+  // scan while the previous lookup is still on the wire; queueing it — instead
+  // of dropping it — means every beep the operator hears ends up in the basket.
+  const queueRef = useRef(Promise.resolve());
+  const pendingRef = useRef(0);
   // Mirror of the basket, so adding a product needs no state updater. See addFound.
   const basketRef = useRef([]);
 
@@ -148,23 +151,27 @@ function BarcodeScan() {
   }, []);
 
   /** Resolve a code — from the scanner box or the camera — and basket it. */
-  const resolveCode = useCallback(async (value) => {
+  const resolveCode = useCallback((value) => {
     const trimmed = String(value || "").trim();
-    if (!trimmed || resolvingRef.current) return;
-    resolvingRef.current = true;
+    if (!trimmed) return Promise.resolve();
+    pendingRef.current += 1;
     setBusy(true);
-    try {
-      const res = await barcodeAPI.scan(trimmed);
-      const found = res?.data?.data;
-      if (!found?.lineItem) throw new Error("Not found");
-      addFound(found);
-      setCode("");
-    } catch (error) {
-      toast.error(error?.response?.data?.message || `Nothing matches "${trimmed}"`);
-    } finally {
-      resolvingRef.current = false;
-      setBusy(false);
-    }
+    const run = queueRef.current.then(async () => {
+      try {
+        const res = await barcodeAPI.scan(trimmed);
+        const found = res?.data?.data;
+        if (!found?.lineItem) throw new Error("Not found");
+        addFound(found);
+        setCode("");
+      } catch (error) {
+        toast.error(error?.response?.data?.message || `Nothing matches "${trimmed}"`);
+      } finally {
+        pendingRef.current -= 1;
+        if (pendingRef.current === 0) setBusy(false);
+      }
+    });
+    queueRef.current = run;
+    return run;
   }, [addFound]);
 
   const handleScan = async (event) => {
@@ -300,6 +307,9 @@ function BarcodeScan() {
           {mode === "keyboard" && (
             <form className="scan-box" onSubmit={handleScan}>
               <ScanLine size={18} className="scan-box-icon" />
+              {/* Never disabled while looking up: a handheld scanner fires the
+                  next code immediately, and a disabled input would eat it. The
+                  queue in resolveCode handles overlapping lookups. */}
               <input
                 ref={scanRef}
                 type="text"
@@ -307,9 +317,8 @@ function BarcodeScan() {
                 onChange={(event) => setCode(event.target.value)}
                 placeholder="Scan a barcode, or type a part code / chassis number"
                 autoComplete="off"
-                disabled={busy}
               />
-              <button type="submit" className="btn btn-primary" disabled={busy || !code.trim()}>
+              <button type="submit" className="btn btn-primary" disabled={!code.trim()}>
                 {busy ? "Looking up…" : "Add"}
               </button>
             </form>
@@ -353,7 +362,9 @@ function BarcodeScan() {
                       <button
                         type="button"
                         onClick={() => addFound(item)}
-                        disabled={inBasket(item)}
+                        // A part already in the basket can be clicked again to
+                        // bump its quantity; only a vehicle is one-of-a-kind.
+                        disabled={item.kind === "vehicle" && inBasket(item)}
                       >
                         <span className={`scan-kind scan-kind-${item.kind}`}>{item.kind}</span>
                         <span className="scan-result-name">
@@ -364,7 +375,9 @@ function BarcodeScan() {
                           </small>
                         </span>
                         <span className="scan-result-price">{money(item.unitPrice)}</span>
-                        <span className="scan-result-add">{inBasket(item) ? "Added" : "Add"}</span>
+                        <span className="scan-result-add">
+                          {inBasket(item) ? (item.kind === "part" ? "+ 1" : "Added") : "Add"}
+                        </span>
                       </button>
                     </li>
                   ))}
