@@ -99,6 +99,17 @@ const CATEGORY = {
 const categoryConfig = (category) => CATEGORY[category] || CATEGORY.vehicle;
 
 /**
+ * Only this side's product lines. Documents created before the vehicle/parts
+ * split can carry both kinds; a parts line has no business showing on a
+ * vehicle screen (or the other way round), in the listings or in an edit form.
+ */
+const categoryLines = (items, categoryKey) =>
+    (Array.isArray(items) ? items : []).filter((line) =>
+        categoryKey === 'parts'
+            ? (line.item_type || line.itemType) === 'part'
+            : (line.item_type || line.itemType) !== 'part');
+
+/**
  * Customer picker with a walk-in switch.
  *
  * A walk-in sale still books against one shared "Walk-in Customer" record so
@@ -470,7 +481,7 @@ function Quotations({ category = 'vehicle' }) {
         setModalMode(mode);
         setSelectedItem(item);
         if (item) {
-            setLineItems((item.line_items || []).map((line, index) => ({
+            setLineItems(categoryLines(item.line_items, config.key).map((line, index) => ({
                 key: `saved-${index}`,
                 itemType: line.item_type === 'part' ? 'part' : 'vehicle',
                 vehicleId: line.vehicle_id || '',
@@ -774,7 +785,7 @@ function Quotations({ category = 'vehicle' }) {
                             <th className="sales-select-cell"><input type="checkbox" aria-label="Select all quotations" checked={data.length>0&&data.every(x=>selectedIds.includes(x.id))} onChange={e=>setSelectedIds(e.target.checked?data.map(x=>x.id):[])}/></th><th>Quote #</th>
                             <th>Date</th>
                             <th>Customer</th>
-                            <th>Vehicle/Parts</th>
+                            <th>{config.key === 'parts' ? 'Parts' : 'Vehicles'}</th>
                             <th>Total</th>
                             <th>Status</th>
                             <th>Actions</th>
@@ -787,7 +798,7 @@ function Quotations({ category = 'vehicle' }) {
                                 <td><strong>{q.quotation_number}</strong></td>
                                 <td>{new Date(q.created_at).toLocaleDateString()}</td>
                                 <td>{q.customer_name}</td>
-                                <td><ProductCell items={q.line_items} fallback={q.item_name || q.vehicle_full_name || 'Parts/Services'} /></td>
+                                <td><ProductCell items={categoryLines(q.line_items, config.key)} fallback={q.item_name || q.vehicle_full_name || 'Parts/Services'} /></td>
                                 <td>PKR {Number(q.total_amount).toLocaleString()}</td>
                                 <td>{getStatusBadge(q.status)}</td>
                                 <td onClick={e=>e.stopPropagation()}>
@@ -826,7 +837,7 @@ function Quotations({ category = 'vehicle' }) {
                                     {getStatusBadge(q.status)}
                                 </div>
                                 <div className="data-card-body">
-                                    <div className="data-card-row"><span className="row-icon">📦</span><span className="row-label">Vehicle/Parts</span><span className="row-value"><ProductCell items={q.line_items} fallback={q.item_name || q.vehicle_full_name || 'Parts/Services'} /></span></div>
+                                    <div className="data-card-row"><span className="row-icon">📦</span><span className="row-label">{config.key === 'parts' ? 'Parts' : 'Vehicles'}</span><span className="row-value"><ProductCell items={categoryLines(q.line_items, config.key)} fallback={q.item_name || q.vehicle_full_name || 'Parts/Services'} /></span></div>
                                     <div className="data-card-row"><span className="row-icon">💰</span><span className="row-label">Total</span><span className="row-value">PKR {Number(q.total_amount).toLocaleString()}</span></div>
                                     <div className="data-card-row"><span className="row-icon">📅</span><span className="row-label">Date</span><span className="row-value">{new Date(q.created_at).toLocaleDateString()}</span></div>
                                 </div>
@@ -1158,7 +1169,7 @@ function Bookings({ category = 'vehicle' }) {
         setModalMode(mode);
         setSelectedItem(item);
         if (item) {
-            setBookingLines((item.line_items || []).map((line, index) => ({
+            setBookingLines(categoryLines(item.line_items, config.key).map((line, index) => ({
                 key: `saved-${index}`,
                 itemType: line.item_type === 'part' ? 'part' : 'vehicle',
                 vehicleId: line.vehicle_id || '',
@@ -1325,7 +1336,7 @@ function Bookings({ category = 'vehicle' }) {
                         <tr>
                             <th className="sales-select-cell"><input type="checkbox" aria-label="Select all bookings" checked={data.length>0&&data.every(x=>selectedIds.includes(x.id))} onChange={e=>setSelectedIds(e.target.checked?data.map(x=>x.id):[])}/></th><th>Booking #</th>
                             <th>Customer</th>
-                            <th>Vehicle/Parts</th>
+                            <th>{config.key === 'parts' ? 'Parts' : 'Vehicles'}</th>
                             <th>Amount Paid</th>
                             <th>Expected Date</th>
                             <th>Status</th>
@@ -1344,7 +1355,7 @@ function Bookings({ category = 'vehicle' }) {
                                     {b.customer_name}
                                     {b.sale_person && <div className="text-muted small">{b.sale_person}</div>}
                                 </td>
-                                <td><ProductCell items={b.line_items} fallback={b.item_name || b.vehicle_full_name || 'Parts/Services'} /></td>
+                                <td><ProductCell items={categoryLines(b.line_items, config.key)} fallback={b.item_name || b.vehicle_full_name || 'Parts/Services'} /></td>
                                 <td>PKR {Number(b.booking_amount).toLocaleString()}</td>
                                 <td>{b.expected_delivery_date ? new Date(b.expected_delivery_date).toLocaleDateString() : '-'}</td>
                                 <td>{getStatusBadge(b.status)}</td>
@@ -1380,7 +1391,7 @@ function Bookings({ category = 'vehicle' }) {
                                     {getStatusBadge(b.status)}
                                 </div>
                                 <div className="data-card-body">
-                                    <div className="data-card-row"><span className="row-icon">🚗</span><span className="row-label">Vehicle/Parts</span><span className="row-value"><ProductCell items={b.line_items} fallback={b.item_name || b.vehicle_full_name || 'Parts/Services'} /></span></div>
+                                    <div className="data-card-row"><span className="row-icon">🚗</span><span className="row-label">{config.key === 'parts' ? 'Parts' : 'Vehicles'}</span><span className="row-value"><ProductCell items={categoryLines(b.line_items, config.key)} fallback={b.item_name || b.vehicle_full_name || 'Parts/Services'} /></span></div>
                                     <div className="data-card-row"><span className="row-icon">💰</span><span className="row-label">Paid</span><span className="row-value">PKR {Number(b.booking_amount).toLocaleString()}</span></div>
                                     <div className="data-card-row"><span className="row-icon">📅</span><span className="row-label">Expected</span><span className="row-value">{b.expected_delivery_date ? new Date(b.expected_delivery_date).toLocaleDateString() : '-'}</span></div>
                                 </div>
@@ -1733,7 +1744,7 @@ function SalesOrders({ category = 'vehicle' }) {
         setModalMode(mode);
         setSelectedItem(item);
         if (item) {
-            setOrderLines((item.line_items || []).map((line, index) => ({
+            setOrderLines(categoryLines(item.line_items, config.key).map((line, index) => ({
                 key: `saved-${index}`,
                 itemType: line.item_type === 'part' ? 'part' : 'vehicle',
                 vehicleId: line.vehicle_id || '',
@@ -2016,7 +2027,7 @@ function SalesOrders({ category = 'vehicle' }) {
                             <th>Date</th>
                             <th>Customer</th>
                             <th>Type</th>
-                            <th>Vehicle/Parts</th>
+                            <th>{config.key === 'parts' ? 'Parts' : 'Vehicles'}</th>
                             <th>Total</th>
                             <th>Paid</th>
                             <th>Invoice</th>
@@ -2039,7 +2050,7 @@ function SalesOrders({ category = 'vehicle' }) {
                                     {o.sale_person && <div className="text-muted small">{o.sale_person}</div>}
                                 </td>
                                 <td><span className={`badge badge-${o.sale_type === 'parts' ? 'secondary' : o.sale_type === 'service' ? 'info' : 'primary'}`} style={{ fontSize: '0.8em' }}>{(o.sale_type || 'vehicle').toUpperCase()}</span></td>
-                                <td><ProductCell items={o.line_items} fallback={o.item_name || `${o.make_name || ''} ${o.model_name || ''} ${o.variant_name || ''}`.trim() || 'Parts/Services'} /></td>
+                                <td><ProductCell items={categoryLines(o.line_items, config.key)} fallback={o.item_name || `${o.make_name || ''} ${o.model_name || ''} ${o.variant_name || ''}`.trim() || 'Parts/Services'} /></td>
                                 <td>PKR {Number(o.grand_total).toLocaleString()}</td>
                                 <td>PKR {Number(o.paid_amount).toLocaleString()}</td>
                                 <td>
@@ -2120,7 +2131,7 @@ function SalesOrders({ category = 'vehicle' }) {
                                     {getStatusBadge(o.status)}
                                 </div>
                                 <div className="data-card-body">
-                                    <div className="data-card-row"><span className="row-icon">📦</span><span className="row-label">Vehicle/Parts</span><span className="row-value"><ProductCell items={o.line_items} fallback={o.item_name || `${o.make_name || ''} ${o.model_name || ''} ${o.variant_name || ''}`.trim() || 'Parts/Services'} /></span></div>
+                                    <div className="data-card-row"><span className="row-icon">📦</span><span className="row-label">{config.key === 'parts' ? 'Parts' : 'Vehicles'}</span><span className="row-value"><ProductCell items={categoryLines(o.line_items, config.key)} fallback={o.item_name || `${o.make_name || ''} ${o.model_name || ''} ${o.variant_name || ''}`.trim() || 'Parts/Services'} /></span></div>
                                     <div className="data-card-row"><span className="row-icon">💰</span><span className="row-label">Total</span><span className="row-value">PKR {Number(o.grand_total).toLocaleString()}</span></div>
                                     <div className="data-card-row"><span className="row-icon">✅</span><span className="row-label">Paid</span><span className="row-value">PKR {Number(o.paid_amount).toLocaleString()}</span></div>
                                     <div className="data-card-row"><span className="row-icon">📄</span><span className="row-label">Invoice</span><span className="row-value">{o.invoice_number ? <span className="badge-pill status-active">{o.invoice_number}</span> : <span style={{ color: '#94a3b8' }}>Not Generated</span>}</span></div>
@@ -3004,7 +3015,7 @@ function Invoices({ category = 'vehicle' }) {
                             <th>Due Date</th>
                             <th>Customer</th>
                             <th>Type</th>
-                            <th>Vehicle/Parts</th>
+                            <th>{config.key === 'parts' ? 'Parts' : 'Vehicles'}</th>
                             <th>Total</th>
                             <th>Paid</th>
                             <th>Balance</th>
@@ -3036,7 +3047,7 @@ function Invoices({ category = 'vehicle' }) {
                                     {inv.sale_person && <div className="text-muted small">{inv.sale_person}</div>}
                                 </td>
                                 <td><span className="badge badge-info">{inv.invoice_type?.toUpperCase()}</span></td>
-                                <td><ProductCell items={inv.line_items} fallback={inv.item_name || 'Parts/Services'} /></td>
+                                <td><ProductCell items={categoryLines(inv.line_items, config.key)} fallback={inv.item_name || 'Parts/Services'} /></td>
                                 <td>PKR {Number(inv.total_amount).toLocaleString()}</td>
                                 <td>PKR {Number(inv.paid_amount || 0).toLocaleString()}</td>
                                 <td style={{ color: inv.balance_amount > 0 ? '#dc2626' : '#16a34a' }}>
