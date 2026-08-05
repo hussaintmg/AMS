@@ -22,9 +22,8 @@ const pages = [
   ['bookings','Vehicle Bookings','/vehicle-sales/booking','sales','CalendarCheck','Vehicle Sales'],
   ['vehicle_scan','Vehicle Scan','/vehicle-sales/barcode-scan','sales','ScanLine','Vehicle Sales'],
   // Parts sales — separate collections, separate screens, same permission model.
+  // The parts flow is quotation → invoice only: no bookings, no sales orders.
   ['part_quotations','Parts Quotations','/parts-sales/quotations','sales','FileText','Parts Sales'],
-  ['part_bookings','Parts Bookings','/parts-sales/booking','sales','CalendarCheck','Parts Sales'],
-  ['part_orders','Parts Sales Orders','/parts-sales/orders','sales','ShoppingCart','Parts Sales'],
   ['part_invoices','Parts Invoices','/parts-sales/invoices','sales','ReceiptText','Parts Sales'],
   ['part_scan','Parts Scan','/parts-sales/barcode-scan','sales','ScanLine','Parts Sales'],
   ['services','Services','/service','service','Wrench','Service'], ['service_appointments','Service Appointments','/service/appointments','service','CalendarDays','Service'],
@@ -69,6 +68,8 @@ async function run() {
     // The first split put these under the inventory paths; they now have their own.
     '/vehicles/orders', '/vehicles/quotations', '/vehicles/invoices', '/vehicles/booking', '/vehicles/barcode-scan',
     '/parts/orders', '/parts/quotations', '/parts/invoices', '/parts/booking', '/parts/barcode-scan',
+    // The parts flow lost its booking and sales-order stages: quotation → invoice.
+    '/parts-sales/booking', '/parts-sales/orders',
   ];
   await Page.deleteMany({ path: { $in: legacyPaths } });
   for (const page of pages) {

@@ -199,46 +199,24 @@ const AppLayout = () => {
               under the inventory paths would have handed the sales screens to
               anyone who could merely see stock.
             */}
+            {/* The parts flow is deliberately shorter than the vehicle one:
+                a parts quotation converts straight to an invoice, so the
+                parts side has no booking or sales-order screens. */}
             {[
-              { base: "vehicle-sales", category: "vehicle" },
-              { base: "parts-sales", category: "parts" },
-            ].flatMap(({ base, category }) => [
-              <Route
-                key={`${base}-quotations`}
-                path={`${base}/quotations`}
-                element={
-                  <ProtectedPage path={`/${base}/quotations`}>
-                    <Sales section="quotations" category={category} />
-                  </ProtectedPage>
-                }
-              />,
-              <Route
-                key={`${base}-booking`}
-                path={`${base}/booking`}
-                element={
-                  <ProtectedPage path={`/${base}/booking`}>
-                    <Sales section="booking" category={category} />
-                  </ProtectedPage>
-                }
-              />,
-              <Route
-                key={`${base}-orders`}
-                path={`${base}/orders`}
-                element={
-                  <ProtectedPage path={`/${base}/orders`}>
-                    <Sales section="orders" category={category} />
-                  </ProtectedPage>
-                }
-              />,
-              <Route
-                key={`${base}-invoices`}
-                path={`${base}/invoices`}
-                element={
-                  <ProtectedPage path={`/${base}/invoices`}>
-                    <Sales section="invoices" category={category} />
-                  </ProtectedPage>
-                }
-              />,
+              { base: "vehicle-sales", category: "vehicle", sections: ["quotations", "booking", "orders", "invoices"] },
+              { base: "parts-sales", category: "parts", sections: ["quotations", "invoices"] },
+            ].flatMap(({ base, category, sections }) => [
+              ...sections.map((section) => (
+                <Route
+                  key={`${base}-${section}`}
+                  path={`${base}/${section}`}
+                  element={
+                    <ProtectedPage path={`/${base}/${section}`}>
+                      <Sales section={section} category={category} />
+                    </ProtectedPage>
+                  }
+                />
+              )),
               <Route
                 key={`${base}-scan`}
                 path={`${base}/barcode-scan`}
@@ -248,11 +226,14 @@ const AppLayout = () => {
                   </ProtectedPage>
                 }
               />,
-              <Route
-                key={`${base}-bookings-alias`}
-                path={`${base}/bookings`}
-                element={<Navigate to={`/${base}/booking`} replace />}
-              />,
+              // Removed or renamed sections land somewhere sensible.
+              ...(sections.includes("booking")
+                ? [<Route key={`${base}-bookings-alias`} path={`${base}/bookings`} element={<Navigate to={`/${base}/booking`} replace />} />]
+                : [
+                  <Route key={`${base}-booking-gone`} path={`${base}/booking`} element={<Navigate to={`/${base}/quotations`} replace />} />,
+                  <Route key={`${base}-bookings-gone`} path={`${base}/bookings`} element={<Navigate to={`/${base}/quotations`} replace />} />,
+                  <Route key={`${base}-orders-gone`} path={`${base}/orders`} element={<Navigate to={`/${base}/invoices`} replace />} />,
+                ]),
             ])}
 
             {/* Old links and bookmarks keep working: the plain top-level paths

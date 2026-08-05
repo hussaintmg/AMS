@@ -44,7 +44,9 @@ router.put('/quotations/:id', can('quotations', 'edit'), controller.updateQuotat
 router.delete('/quotations/:id', can('quotations', 'delete'), controller.deleteQuotation);
 router.patch('/quotations/:id/status', can('quotations', 'edit'), controller.updateQuotationStatus);
 router.post('/quotations/:id/approve', can('quotations', 'approve'), controller.approveQuotation);
-router.post('/quotations/:id/convert', can('quotations', 'edit'), controller.convertQuotationToBooking);
+// The parts flow is quotation → invoice directly; the invoice moves the stock,
+// so converting needs create on invoices.
+router.post('/quotations/:id/convert', can('invoices', 'create'), controller.convertQuotationToInvoice);
 // Email and PDF reuse the vehicle documents' templates — see the controller.
 router.post('/quotations/:id/send-email', can('quotations', 'sendEmail'), controller.sendQuotationEmail);
 router.get('/quotations/:id/estimate/pdf', can('quotations', 'downloadPdf'), controller.downloadQuotationEstimate);

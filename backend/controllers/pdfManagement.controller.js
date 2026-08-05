@@ -2,7 +2,7 @@ const archiver = require('archiver');
 const { PassThrough } = require('stream');
 const { PdfTemplate, PdfUsage, PdfVariable } = require('../models');
 const { renderPdf, renderHtmlPdf } = require('../services/pdfRenderer.service');
-const { TYPES, findDocument, buildDataBag, variableCatalog, companyName } = require('../services/pdfData.service');
+const { TYPES, findDocument, buildDataBag, variableCatalog, companyName, companyInfo } = require('../services/pdfData.service');
 const { resolveTokens } = require('../services/pdfFormat.cjs');
 
 // Set PDF_DEBUG=1 to log resolved variables for each generated document while
@@ -131,7 +131,8 @@ async function loadRecord(type, id) {
   ]);
   if (!found) throw Object.assign(new Error(`${config.label} not found`), { statusCode: 404 });
   const record = found.record;
-  const data = buildDataBag(type, record, { companyName: await companyName() });
+  const company = await companyInfo();
+  const data = buildDataBag(type, record, { companyName: company.name, company });
   if (PDF_DEBUG) {
     const flat = {};
     variableCatalog(type).forEach(({ key }) => { flat[key] = resolveTokens(`{{${key}}}`, data); });

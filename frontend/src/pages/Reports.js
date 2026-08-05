@@ -1,15 +1,19 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { reportAPI } from '../services/api';
+import { reportAPI, partsSalesAPI, partsInvoiceAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
 import '../styles/userManagement.css';
 
 
+// Vehicles and parts are separate businesses with separate documents, so each
+// side gets its own sales and inventory report rather than one mixed view.
 const TABS = [
   { key: 'leads', label: 'Leads Report', icon: '🎯' },
   { key: 'customers', label: 'Customers Report', icon: '👥' },
-  { key: 'sales', label: 'Sales Report', icon: '💰' },
-  { key: 'inventory', label: 'Inventory Report', icon: '📦' },
+  { key: 'sales', label: 'Vehicle Sales', icon: '🚗' },
+  { key: 'partsSales', label: 'Parts Sales', icon: '🔩' },
+  { key: 'inventory', label: 'Vehicle Inventory', icon: '🚙' },
+  { key: 'partsInventory', label: 'Parts Inventory', icon: '📦' },
   { key: 'service', label: 'Service Report', icon: '🔧' },
   { key: 'expenses', label: 'Expenses Report', icon: '💳' },
   { key: 'payments', label: 'Payments Report', icon: '💵' },
@@ -37,12 +41,21 @@ const TAB_CARDS = {
     { key: 'avgOrderValue', label: 'Avg Order Value', default: '—', prefix: 'PKR ' },
     { key: 'receivables', label: 'Receivables', default: '—', prefix: 'PKR ' },
   ],
+  partsSales: [
+    { key: 'totalRevenue', label: 'Total Revenue', default: '—', prefix: 'PKR ' },
+    { key: 'totalInvoices', label: 'Invoices', default: '—' },
+    { key: 'totalQuotations', label: 'Quotations', default: '—' },
+    { key: 'avgInvoiceValue', label: 'Avg Invoice Value', default: '—', prefix: 'PKR ' },
+    { key: 'receivables', label: 'Receivables', default: '—', prefix: 'PKR ' },
+  ],
   inventory: [
+    { key: 'totalVehicles', label: 'Total Vehicles', default: '—' },
+    { key: 'availableVehicles', label: 'Vehicles In Stock', default: '—' },
+  ],
+  partsInventory: [
     { key: 'totalParts', label: 'Total Parts', default: '—' },
     { key: 'lowStockItems', label: 'Low Stock Items', default: '—' },
     { key: 'stockValue', label: 'Parts Stock Value', default: '—', prefix: 'PKR ' },
-    { key: 'totalVehicles', label: 'Total Vehicles', default: '—' },
-    { key: 'availableVehicles', label: 'Vehicles In Stock', default: '—' },
   ],
   service: [
     { key: 'totalJobCards', label: 'Total Job Cards', default: '—' },
@@ -164,29 +177,65 @@ const TAB_FETCHERS = {
         receivables: sum(data.receivables, 'outstanding'),
       },
       sections: [
-        { key: 'orders', title: 'Sales Orders', rows: data.orders },
+        { key: 'orders', title: 'Vehicle Sales Orders', rows: data.orders },
         { key: 'pending', title: 'Pending Deliveries', rows: data.pending },
         { key: 'receivables', title: 'Receivables', rows: data.receivables },
       ],
       errors,
     };
   },
+  partsSales: async (params) => {
+    // The parts documents live in their own collections; their list endpoints
+    // filter with dateFrom/dateTo rather than the report endpoints' startDate.
+    const listParams = { limit: 1000, dateFrom: params.startDate, dateTo: params.endDate };
+    const { data, errors } = await loadAll([
+      { key: 'invoices', label: 'Parts Invoices', load: () => partsInvoiceAPI.getAll(listParams) },
+      { key: 'quotations', label: 'Parts Quotations', load: () => partsSalesAPI.getQuotations(listParams) },
+    ]);
+    const live = data.invoices.filter((row) => row.status !== 'cancelled');
+    const revenue = sum(live, 'total_amount');
+    return {
+      cards: {
+        totalRevenue: revenue,
+        totalInvoices: live.length,
+        totalQuotations: data.quotations.length,
+        avgInvoiceValue: live.length ? Math.round(revenue / live.length) : 0,
+        receivables: sum(live, 'balance_amount'),
+      },
+      sections: [
+        { key: 'invoices', title: 'Parts Invoices', rows: data.invoices },
+        { key: 'quotations', title: 'Parts Quotations', rows: data.quotations },
+      ],
+      errors,
+    };
+  },
   inventory: async (params) => {
     const { data, errors } = await loadAll([
-      { key: 'parts', label: 'Parts Stock', load: () => reportAPI.getInventoryHealth(params) },
       { key: 'vehicles', label: 'Vehicle Stock', load: () => reportAPI.getVehicleStock(params) },
+    ]);
+    return {
+      cards: {
+        totalVehicles: data.vehicles.length,
+        availableVehicles: data.vehicles.filter((row) => !row.stock_out).length,
+      },
+      sections: [
+        { key: 'vehicles', title: 'Vehicle Stock', rows: data.vehicles },
+      ],
+      errors,
+    };
+  },
+  partsInventory: async (params) => {
+    const { data, errors } = await loadAll([
+      { key: 'parts', label: 'Parts Stock', load: () => reportAPI.getInventoryHealth(params) },
     ]);
     return {
       cards: {
         totalParts: data.parts.length,
         lowStockItems: data.parts.filter((row) => row.status === 'low').length,
         stockValue: sum(data.parts, 'stockValue'),
-        totalVehicles: data.vehicles.length,
-        availableVehicles: data.vehicles.filter((row) => !row.stock_out).length,
       },
       sections: [
         { key: 'parts', title: 'Parts Stock', rows: data.parts },
-        { key: 'vehicles', title: 'Vehicle Stock', rows: data.vehicles },
       ],
       errors,
     };
@@ -261,7 +310,7 @@ const TAB_FETCHERS = {
   },
 };
 
-const HIDDEN_COLUMNS = new Set(['id', '_id', 'customerId', 'onLeave', 'departments', 'invoice_id']);
+const HIDDEN_COLUMNS = new Set(['id', '_id', 'customerId', 'onLeave', 'departments', 'invoice_id', 'line_items', 'customer_id', 'quotation_id', 'sales_order_id', 'seller_id']);
 const MONEY_COLUMNS = new Set([
   'amount', 'revenue', 'payment', 'balance', 'outstanding', 'stockValue', 'totalAmount', 'paidAmount',
   'balanceAmount', 'total_purchased', 'total_paid', 'overdue_amount', 'paid', 'subtotal', 'discount',

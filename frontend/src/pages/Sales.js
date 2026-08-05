@@ -222,7 +222,15 @@ async function downloadSalesPdf(documentType, id, filename) {
         const url = URL.createObjectURL(response.data);
         const link = document.createElement('a'); link.href = url; link.download = `${filename || documentType}.pdf`;
         document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
-    } catch (error) { toast.error(error.response?.data?.message || 'PDF download failed'); }
+    } catch (error) {
+        // The request asks for a blob, so a server error arrives as a Blob too —
+        // read it back to surface the real message instead of a generic one.
+        let message = error.response?.data?.message;
+        if (!message && error.response?.data instanceof Blob) {
+            try { message = JSON.parse(await error.response.data.text())?.message; } catch { /* not JSON */ }
+        }
+        toast.error(message || 'PDF download failed');
+    }
 }
 
 async function downloadSalesPdfBulk(documentType, rows) {
@@ -653,6 +661,16 @@ function Quotations({ category = 'vehicle' }) {
     };
 
     const handleConvertClick = (item) => {
+        if (isParts) {
+            // Parts convert straight to an invoice; the only question the modal
+            // asks is the final price of each line (and what was paid).
+            const prices = {};
+            (item.line_items || []).forEach((line) => {
+                if (line.part_id) prices[line.part_id] = String(line.unit_price ?? '');
+            });
+            setConversionForm({ item, prices, paidAmount: '' });
+            return;
+        }
         setConversionForm({
             item,
             vehicleId: '',
@@ -664,18 +682,28 @@ function Quotations({ category = 'vehicle' }) {
     const handleConvertConfirm = async (event) => {
         event.preventDefault();
         if (!conversionForm?.item) return;
-        if (conversionForm.item.sale_type !== 'parts' && !conversionForm.vehicleId) {
+        if (!isParts && !conversionForm.vehicleId) {
             toast.error('Select the actual inventory Vehicle for this Booking.');
             return;
         }
         setConverting(true);
         try {
-            await docApi.convertQuotation(conversionForm.item.id, {
-                vehicleId: conversionForm.vehicleId || undefined,
-                bookingAmount: Number(conversionForm.bookingAmount),
-                expectedDeliveryDate: conversionForm.expectedDeliveryDate,
-            });
-            toast.success('Converted to Booking');
+            if (isParts) {
+                const res = await docApi.convertQuotation(conversionForm.item.id, {
+                    prices: Object.fromEntries(
+                        Object.entries(conversionForm.prices || {}).map(([partId, price]) => [partId, Number(price) || 0]),
+                    ),
+                    paidAmount: Number(conversionForm.paidAmount) || 0,
+                });
+                toast.success(`Invoice ${res?.data?.data?.invoiceNumber || ''} created — stock updated`);
+            } else {
+                await docApi.convertQuotation(conversionForm.item.id, {
+                    vehicleId: conversionForm.vehicleId || undefined,
+                    bookingAmount: Number(conversionForm.bookingAmount),
+                    expectedDeliveryDate: conversionForm.expectedDeliveryDate,
+                });
+                toast.success('Converted to Booking');
+            }
             setConversionForm(null);
             fetchData();
             fetchDropdowns();
@@ -708,29 +736,87 @@ function Quotations({ category = 'vehicle' }) {
     return (
         <div className="card sales-page">
             <ConfirmModal {...confirmModal} loading={sendingEmail} onCancel={() => setConfirmModal({ ...confirmModal, isOpen: false })} />
-            {conversionForm && (
+            {conversionForm && isParts && (() => {
+                // Quantities are fixed by the quotation; only the prices are asked.
+                const partLines = (conversionForm.item.line_items || []).filter((line) => line.part_id);
+                const convTotal = partLines.reduce(
+                    (sum, line) => sum + (Number(conversionForm.prices?.[line.part_id]) || 0) * (Number(line.quantity) || 1),
+                    0,
+                );
+                return (
+                    <Modal title={`Convert ${conversionForm.item.quotation_number} to Invoice`} onClose={() => !converting && setConversionForm(null)}>
+                        <form onSubmit={handleConvertConfirm}>
+                            <p className="text-muted" style={{ marginTop: 0 }}>
+                                Confirm the selling price of each part. Creating the invoice takes the stock off the shelf.
+                            </p>
+                            {partLines.map((line) => (
+                                <div className="form-row" key={line.part_id} style={{ alignItems: 'center' }}>
+                                    <div className="form-group" style={{ flex: 2, marginBottom: 8 }}>
+                                        <label style={{ fontWeight: 600 }}>{line.name || line.description || 'Part'}</label>
+                                        <small className="text-muted">Qty {line.quantity}</small>
+                                    </div>
+                                    <div className="form-group" style={{ flex: 1, marginBottom: 8 }}>
+                                        <label>Unit price *</label>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            step="0.01"
+                                            value={conversionForm.prices?.[line.part_id] ?? ''}
+                                            onChange={(event) => setConversionForm((prev) => ({
+                                                ...prev,
+                                                prices: { ...prev.prices, [line.part_id]: event.target.value },
+                                            }))}
+                                            required
+                                        />
+                                    </div>
+                                </div>
+                            ))}
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label>Total</label>
+                                    <input type="number" value={convTotal} readOnly />
+                                </div>
+                                <div className="form-group">
+                                    <label>Amount received</label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        value={conversionForm.paidAmount}
+                                        onChange={(event) => setConversionForm((prev) => ({ ...prev, paidAmount: event.target.value }))}
+                                        placeholder="What the customer paid now"
+                                    />
+                                </div>
+                            </div>
+                            <div className="modal-actions">
+                                <button type="button" className="btn btn-secondary" onClick={() => setConversionForm(null)} disabled={converting}>Cancel</button>
+                                <button type="submit" className="btn btn-primary" disabled={converting}>{converting ? 'Converting...' : 'Create Invoice'}</button>
+                            </div>
+                        </form>
+                    </Modal>
+                );
+            })()}
+            {conversionForm && !isParts && (
                 <Modal title={`Convert ${conversionForm.item.quotation_number} to Booking`} onClose={() => !converting && setConversionForm(null)}>
                     <form onSubmit={handleConvertConfirm}>
-                        {conversionForm.item.sale_type !== 'parts' && (
-                            <div className="form-group">
-                                <label>Actual inventory Vehicle *</label>
-                                <SearchableSelect
-                                    name="vehicleId"
-                                    value={conversionForm.vehicleId}
-                                    onChange={(event) => setConversionForm((prev) => ({ ...prev, vehicleId: event.target.value }))}
-                                    required
-                                >
-                                    <option value="">Select available Vehicle</option>
-                                    {vehicles
-                                        .filter((vehicle) => ['available', 'at_yard', 'in_stock', 'ready'].includes(String(vehicle.status || '').toLowerCase()))
-                                        .map((vehicle) => (
-                                            <option key={vehicle.id || vehicle._id} value={vehicle.id || vehicle._id}>
-                                                {vehicle.make_name} {vehicle.model_name} {vehicle.variant_name} ({vehicle.color_name || vehicle.color}) — {vehicle.chassis_number || vehicle.vin || vehicle.vehicle_code}
-                                            </option>
-                                        ))}
-                                </SearchableSelect>
-                            </div>
-                        )}
+                        <div className="form-group">
+                            <label>Actual inventory Vehicle *</label>
+                            <SearchableSelect
+                                name="vehicleId"
+                                value={conversionForm.vehicleId}
+                                onChange={(event) => setConversionForm((prev) => ({ ...prev, vehicleId: event.target.value }))}
+                                required
+                            >
+                                <option value="">Select available Vehicle</option>
+                                {vehicles
+                                    .filter((vehicle) => ['available', 'at_yard', 'in_stock', 'ready'].includes(String(vehicle.status || '').toLowerCase()))
+                                    .map((vehicle) => (
+                                        <option key={vehicle.id || vehicle._id} value={vehicle.id || vehicle._id}>
+                                            {vehicle.make_name} {vehicle.model_name} {vehicle.variant_name} ({vehicle.color_name || vehicle.color}) — {vehicle.chassis_number || vehicle.vin || vehicle.vehicle_code}
+                                        </option>
+                                    ))}
+                            </SearchableSelect>
+                        </div>
                         <div className="form-row">
                             <div className="form-group">
                                 <label>Booking Amount *</label>
@@ -813,7 +899,7 @@ function Quotations({ category = 'vehicle' }) {
                                             ...(canEstimate ? [{ icon: <FileText size={18} />, title: 'Estimate PDF (all products)', onClick: () => handleDownloadEstimate(q), className: 'btn-info', disabled: estimateId === q.id, loading: estimateId === q.id }] : []),
                                             ...(canEstimate ? [{ icon: <Mail size={18} />, title: 'Email estimate to customer', onClick: () => handleEmailEstimate(q), className: 'btn-info', disabled: estimateId === q.id, loading: estimateId === q.id }] : []),
                                             ...(canApprove && q.approval_status !== 'approved' && !['converted', 'cancelled'].includes(q.status) ? [{ icon: <CheckCircle size={18} />, title: 'Approve quotation', onClick: () => handleApprove(q, 'approved'), className: 'btn-success', disabled: approvingId === q.id, loading: approvingId === q.id }] : []),
-                                            ...(q.approval_status === 'approved' && q.status !== 'converted' ? [{ icon: <span className="material-icons">shopping_cart</span>, title: 'Convert to booking', onClick: () => handleConvertClick(q), className: 'btn-success' }] : [])
+                                            ...(q.approval_status === 'approved' && q.status !== 'converted' ? [{ icon: <span className="material-icons">shopping_cart</span>, title: isParts ? 'Convert to invoice' : 'Convert to booking', onClick: () => handleConvertClick(q), className: 'btn-success' }] : [])
                                         ]}
                                     />
                                 </td>
@@ -848,11 +934,12 @@ function Quotations({ category = 'vehicle' }) {
                                         onEdit={canEdit && q.status === 'draft' ? () => openModal('edit', q) : null}
                                         onDelete={canEdit && q.status === 'draft' ? () => handleDeleteClick(q.id) : null}
                                         customActions={[
+                                            ...(canDownloadPdf ? [{ icon: <Download size={18} />, title: 'Download PDF', onClick: () => downloadSalesPdf('quotation', q.id, q.quotation_number), className: 'btn-info' }] : []),
                                             ...(canSendEmail ? [{ icon: <Send size={18} className="action-icon" />, title: 'Send quotation email', onClick: () => handleSendEmail(q), className: 'btn-info', disabled: sendingEmail === q.id, loading: sendingEmail === q.id }] : []),
                                             ...(canEstimate ? [{ icon: <FileText size={18} />, title: 'Estimate PDF (all products)', onClick: () => handleDownloadEstimate(q), className: 'btn-info', disabled: estimateId === q.id, loading: estimateId === q.id }] : []),
                                             ...(canEstimate ? [{ icon: <Mail size={18} />, title: 'Email estimate to customer', onClick: () => handleEmailEstimate(q), className: 'btn-info', disabled: estimateId === q.id, loading: estimateId === q.id }] : []),
                                             ...(canApprove && q.approval_status !== 'approved' && !['converted', 'cancelled'].includes(q.status) ? [{ icon: <CheckCircle size={18} />, title: 'Approve quotation', onClick: () => handleApprove(q, 'approved'), className: 'btn-success', disabled: approvingId === q.id, loading: approvingId === q.id }] : []),
-                                            ...(q.approval_status === 'approved' && q.status !== 'converted' ? [{ icon: <span className="material-icons">shopping_cart</span>, title: 'Convert to booking', onClick: () => handleConvertClick(q), className: 'btn-success' }] : [])
+                                            ...(q.approval_status === 'approved' && q.status !== 'converted' ? [{ icon: <span className="material-icons">shopping_cart</span>, title: isParts ? 'Convert to invoice' : 'Convert to booking', onClick: () => handleConvertClick(q), className: 'btn-success' }] : [])
                                         ]}
                                     />
                                 </div>
@@ -1401,6 +1488,7 @@ function Bookings({ category = 'vehicle' }) {
                                         onView={() => openModal('view', b)}
                                         onEdit={canAction && !['cancelled', 'completed'].includes(b.status) ? () => openModal('edit', b) : null}
                                         customActions={[
+                                            ...(canDownloadPdf ? [{ icon: <Download size={18}/>, title: 'Download PDF', onClick: () => downloadSalesPdf('booking', b.id, b.booking_number), className: 'btn-info' }] : []),
                                             ...(canAction && !['cancelled', 'completed', 'converted'].includes(b.status) ? [{ icon: <Truck size={18}/>, title: 'Convert to Sales Order', onClick: () => handleConvertToOrder(b), className: 'btn-success', disabled: convertingId === b.id, loading: convertingId === b.id }] : []),
                                             ...(canSendEmail ? [{ icon: <Send size={18} className="action-icon" />, title: 'Send booking email', onClick: () => handleSendEmail(b), className: 'btn-info', disabled: sendingEmail === b.id, loading: sendingEmail === b.id }] : [])
                                         ]}
@@ -2145,6 +2233,7 @@ function SalesOrders({ category = 'vehicle' }) {
                                         onEdit={() => openModal('edit', o)}
                                         onDelete={() => handleCancelClick(o)}
                                         customActions={[
+                                            ...(canDownloadPdf ? [{ icon: <Download size={18}/>, title: 'Download PDF', onClick: () => downloadSalesPdf('order', o.id, o.order_number), className: 'btn-info' }] : []),
                                             ...(canSendEmail ? [{ icon: <Send size={18} className="action-icon" />, title: 'Send sales order email', onClick: () => handleSendEmail(o), className: 'btn-info', disabled: sendingEmail === o.id, loading: sendingEmail === o.id }] : []),
                                             ...(canDeliverOrInvoice && !o.invoice_number && o.status === 'confirmed' ? [{
                                                 icon: <FileText size={18} className="action-icon" />,
@@ -3118,6 +3207,7 @@ function Invoices({ category = 'vehicle' }) {
                                         onEdit={() => openModal('edit', inv)}
                                         onDelete={() => handleVoidClick(inv)}
                                         customActions={[
+                                            ...(canDownloadPdf ? [{ icon: <Download size={18}/>, title: 'Download PDF', onClick: () => downloadSalesPdf('invoice', inv.id, inv.invoice_number), className: 'btn-info' }] : []),
                                             ...(canSend && inv.status !== 'cancelled' ? [{
                                                 icon: <Send size={18} className="action-icon" />,
                                                 title: 'Send invoice email',

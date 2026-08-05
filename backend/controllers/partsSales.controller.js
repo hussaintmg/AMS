@@ -430,6 +430,132 @@ const approveQuotation = async (req, res, next) => {
 };
 
 /** A quotation becomes a booking only once it has been approved. */
+/**
+ * The parts flow is quotation → invoice, nothing in between. Conversion keeps
+ * every line and its quantity from the quotation; the caller may confirm or
+ * adjust the unit prices (that is the only question the screen asks) and may
+ * record what the customer paid. The invoice raised here is what moves stock.
+ *
+ * `req.body.prices` — optional map of partId → unit price. Lines not in the
+ * map keep their quoted price.
+ */
+const convertQuotationToInvoice = async (req, res, next) => {
+    try {
+        const quotation = await PartQuotation.findById(sanitizeId(req.params.id));
+        if (!quotation) throw new AppError('Quotation not found', 404);
+        if (quotation.status === 'cancelled') throw new AppError('Cancelled quotations cannot be converted', 400);
+        if (quotation.status === 'converted') throw new AppError('This quotation has already been converted', 400);
+        if (quotation.approvalStatus !== 'approved') {
+            throw new AppError('This quotation must be approved before it can be converted to an invoice', 400);
+        }
+
+        const prices = req.body.prices && typeof req.body.prices === 'object' ? req.body.prices : {};
+        const body = {
+            customerId: quotation.customer ? String(quotation.customer) : undefined,
+            walkIn: quotation.walkIn,
+            walkInName: quotation.walkInName,
+            walkInPhone: quotation.walkInPhone,
+            lineItems: (quotation.lineItems || []).map((line) => {
+                const partId = line.part ? String(line.part._id || line.part) : null;
+                const override = partId != null ? prices[partId] : undefined;
+                return {
+                    itemType: 'part',
+                    partId,
+                    quantity: num(line.quantity, 1),
+                    unitPrice: override != null && override !== '' ? num(override) : num(line.unitPrice),
+                    discountAmount: num(line.discountAmount),
+                    taxAmount: num(line.taxAmount),
+                    description: line.description,
+                };
+            }),
+            // Only the document-level residue carries over — the line-level
+            // discount/tax travels on the lines themselves (see documentLevelOnly).
+            ...documentLevelOnly(quotation),
+            additionalCharges: num(quotation.otherCharges),
+            paidAmount: num(req.body.paidAmount),
+            notes: req.body.notes || quotation.notes,
+        };
+
+        const lines = await resolvePartLines(body, { checkStock: true });
+        const { customer, walkIn, walkInName, walkInPhone } = await resolveDocumentCustomer(body, requireCustomer);
+        await assertPartsAvailable(lines);
+
+        const totals = documentTotals(body, lines);
+        if (totals.totalAmount <= 0) throw new AppError('Valid price is required', 400);
+        const tendered = round2(num(body.paidAmount));
+        if (tendered < 0) throw new AppError('Paid amount cannot be negative', 400);
+        const changeDue = round2(Math.max(0, tendered - totals.totalAmount));
+        const paidAmount = changeDue > 0 ? totals.totalAmount : tendered;
+
+        const invoiceNumber = await nextDocNumber(PartInvoice, 'invoiceNumber', 'PINV');
+        const now = new Date();
+        const invoice = await PartInvoice.create({
+            invoiceNumber,
+            quotation: quotation._id,
+            customer: customer._id,
+            walkIn, walkInName, walkInPhone,
+            lineItems: lines,
+            status: statusForPayment(totals.totalAmount, paidAmount),
+            invoiceDate: now,
+            dueDate: new Date(now.getTime() + Math.max(0, num(req.body.dueDays, 30)) * 24 * 60 * 60 * 1000),
+            subtotal: totals.subtotal,
+            taxAmount: totals.taxAmount,
+            discountAmount: totals.discountAmount,
+            otherCharges: totals.otherCharges,
+            totalAmount: totals.totalAmount,
+            paidAmount,
+            balanceAmount: round2(totals.totalAmount - paidAmount),
+            amountTendered: changeDue > 0 ? tendered : 0,
+            changeDue,
+            notes: body.notes,
+            termsAndConditions: quotation.termsAndConditions,
+            salePerson: [req.user.firstName, req.user.lastName].filter(Boolean).join(' '),
+            seller: req.user.id,
+            createdBy: req.user.id,
+        });
+
+        try {
+            const result = await applyInvoiceStock(invoice);
+            if (result.applied) {
+                invoice.stockApplied = true;
+                invoice.stockAppliedAt = new Date();
+                await invoice.save();
+            }
+        } catch (stockError) {
+            // Nothing was consumed if this threw, so the invoice must not stand.
+            await PartInvoice.deleteOne({ _id: invoice._id });
+            throw stockError;
+        }
+
+        quotation.status = 'converted';
+        quotation.updatedBy = req.user.id;
+        await quotation.save();
+
+        await recordCustomerActivity({
+            customerId: customer._id,
+            docType: 'invoice',
+            docId: invoice._id,
+            number: invoiceNumber,
+            amount: totals.totalAmount,
+            description: `Parts invoice ${invoiceNumber} from quotation ${quotation.quotationNumber}`,
+            userId: req.user.id,
+            spentDelta: totals.totalAmount,
+            paidDelta: paidAmount,
+            outstandingDelta: round2(totals.totalAmount - paidAmount),
+        });
+
+        logger.info(`Parts quotation ${quotation.quotationNumber} converted to invoice ${invoiceNumber}`);
+        res.status(201).json({
+            success: true,
+            data: { id: invoice._id, invoiceNumber, changeDue },
+            message: 'Quotation converted to invoice',
+        });
+    } catch (error) {
+        logger.error('Error converting parts quotation to invoice:', error);
+        next(error);
+    }
+};
+
 const convertQuotationToBooking = async (req, res, next) => {
     try {
         const quotation = await PartQuotation.findById(sanitizeId(req.params.id));
@@ -1438,6 +1564,7 @@ module.exports = {
     // Quotations
     getAllQuotations, getQuotationById, createQuotation, updateQuotation,
     deleteQuotation, updateQuotationStatus, approveQuotation, convertQuotationToBooking,
+    convertQuotationToInvoice,
     // Bookings
     getAllBookings, getBookingById, createBooking, updateBooking, deleteBooking,
     // Orders

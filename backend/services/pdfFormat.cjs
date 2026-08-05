@@ -8,7 +8,7 @@
 const { expandBlocks, hasBlocks } = require('./templateLoops.cjs');
 
 // Numeric fields that should render as currency (e.g. PKR 1,250,000).
-const AMOUNT_RE = /(amount|price|subtotal|balance|paid|charge|deposit|total)/i;
+const AMOUNT_RE = /(amount|price|subtotal|balance|paid|charge|deposit|total|changedue|tendered)/i;
 // ...unless they are really counts/ratios, which stay as plain numbers.
 const COUNT_RE = /(percentage|percent|days|quantity|qty|count|number|rate|angle|opacity)/i;
 // Fields that hold dates.

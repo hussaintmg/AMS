@@ -9,6 +9,7 @@ const {
   PartQuotation, PartBooking, PartSalesOrder, PartInvoice,
   BrandingSetting,
 } = require('../models');
+const mongoose = require('mongoose');
 
 /**
  * Vehicles and parts deliberately share one document type each.
@@ -76,6 +77,37 @@ const money = (value) => {
   const number = Number(value);
   return Number.isFinite(number) ? `PKR ${number.toLocaleString('en-PK')}` : '';
 };
+
+/**
+ * "12,506" → "RUPEES TWELVE THOUSAND FIVE HUNDRED AND SIX ONLY" — the line
+ * every printed tax document carries under its grand total.
+ */
+function amountInWords(value) {
+  const number = Math.round(Math.abs(Number(value)));
+  if (!Number.isFinite(number)) return '';
+  if (number === 0) return 'RUPEES ZERO ONLY';
+  const ones = ['', 'ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'SEVEN', 'EIGHT', 'NINE', 'TEN',
+    'ELEVEN', 'TWELVE', 'THIRTEEN', 'FOURTEEN', 'FIFTEEN', 'SIXTEEN', 'SEVENTEEN', 'EIGHTEEN', 'NINETEEN'];
+  const tens = ['', '', 'TWENTY', 'THIRTY', 'FORTY', 'FIFTY', 'SIXTY', 'SEVENTY', 'EIGHTY', 'NINETY'];
+  const below100 = (n) => (n < 20 ? ones[n] : `${tens[Math.floor(n / 10)]}${n % 10 ? ` ${ones[n % 10]}` : ''}`);
+  const below1000 = (n) => {
+    const hundred = Math.floor(n / 100);
+    const rest = n % 100;
+    return [hundred ? `${ones[hundred]} HUNDRED` : '', rest ? `${hundred ? 'AND ' : ''}${below100(rest)}` : '']
+      .filter(Boolean).join(' ');
+  };
+  // Pakistani grouping: crore, lakh, thousand.
+  const parts = [];
+  const crore = Math.floor(number / 10000000);
+  const lakh = Math.floor((number % 10000000) / 100000);
+  const thousand = Math.floor((number % 100000) / 1000);
+  const rest = number % 1000;
+  if (crore) parts.push(`${below100(crore)} CRORE`);
+  if (lakh) parts.push(`${below100(lakh)} LAKH`);
+  if (thousand) parts.push(`${below100(thousand)} THOUSAND`);
+  if (rest) parts.push(below1000(rest));
+  return `RUPEES ${parts.join(' ')} ONLY`;
+}
 
 /**
  * Every sellable line as a flat row, for `{{#each items}}` in a template.
@@ -146,6 +178,17 @@ function buildDataBag(type, record, extras = {}) {
   const generator = record.createdBy && typeof record.createdBy === 'object' ? record.createdBy : {};
   const itemRows = buildItemRows(record);
   const itemsTable = buildItemsTable(itemRows);
+  // Vehicles and parts print in separate sections — `{{#each vehicleItems}}`
+  // and `{{#each partItems}}` let a template draw each group its own table,
+  // like the Dealer Pro documents this ERP replaces.
+  const withGroupMeta = (rows) => Object.assign(rows.slice(), {
+    count: rows.length,
+    totalQuantity: rows.reduce((sum, row) => sum + row.quantity, 0),
+    subtotal: rows.reduce((sum, row) => sum + row.totalPrice, 0),
+    subtotalText: money(rows.reduce((sum, row) => sum + row.totalPrice, 0)),
+  });
+  const vehicleItems = withGroupMeta(itemRows.filter((row) => row.type !== 'part'));
+  const partItems = withGroupMeta(itemRows.filter((row) => row.type === 'part'));
   return {
     // `{{#each items}}` iterates this; `{{items.table}}` prints the whole table.
     items: Object.assign(itemRows.slice(), {
@@ -154,6 +197,8 @@ function buildDataBag(type, record, extras = {}) {
       totalQuantity: itemRows.reduce((sum, row) => sum + row.quantity, 0),
     }),
     lineItems: itemRows,
+    vehicleItems,
+    partItems,
     // Spreading the raw record first means any real schema field is reachable
     // as document.<field> even if it is not in the curated catalog below.
     document: {
@@ -162,6 +207,7 @@ function buildDataBag(type, record, extras = {}) {
       number: record[config.number] || '',
       date: record.createdAt,
       itemName: itemName(record),
+      totalInWords: amountInWords(record.totalAmount),
     },
     // A walk-in sale is booked against the shared walk-in record, but the
     // document must print the buyer who actually stood at the counter.
@@ -178,7 +224,11 @@ function buildDataBag(type, record, extras = {}) {
       ...generator,
       fullName: generator.fullName || join(generator.firstName, generator.lastName),
     },
-    company: { name: extras.companyName || '' },
+    company: {
+      name: extras.companyName || '',
+      phone: '', address: '', city: '', ntn: '', email: '',
+      ...(extras.company || {}),
+    },
     item: {
       name: itemName(record),
       list: itemRows.map((row) => row.description).filter(Boolean).join(', '),
@@ -202,6 +252,13 @@ const COMMON = [
   ['items.table', 'Products table (ready-made HTML)'],
   ['items.totalQuantity', 'Total quantity across products'],
   ['{{#each items}}…{{/each}}', 'Repeat per product — inside use {{this.number}}, {{this.description}}, {{this.code}}, {{this.quantity}}, {{this.unitPriceText}}, {{this.totalPriceText}}'],
+  ['{{#each vehicleItems}}…{{/each}}', 'Repeat per VEHICLE line only — same row fields as items'],
+  ['{{#each partItems}}…{{/each}}', 'Repeat per PART line only — same row fields as items'],
+  ['vehicleItems.count', 'Number of vehicle lines'],
+  ['vehicleItems.subtotalText', 'Vehicles subtotal (formatted)'],
+  ['partItems.count', 'Number of part lines'],
+  ['partItems.subtotalText', 'Parts subtotal (formatted)'],
+  ['document.totalInWords', 'Total amount in words'],
   ['customer.fullName', 'Customer name'],
   ['customer.firstName', 'Customer first name'],
   ['customer.lastName', 'Customer last name'],
@@ -219,6 +276,11 @@ const COMMON = [
   ['generator.email', 'Preparer email'],
   ['generator.phone', 'Preparer phone'],
   ['company.name', 'Company name'],
+  ['company.phone', 'Company phone'],
+  ['company.address', 'Company address'],
+  ['company.city', 'Company city'],
+  ['company.ntn', 'Company NTN / tax id'],
+  ['company.email', 'Company email'],
 ];
 
 // Only offered for document types whose schema actually references a vehicle.
@@ -280,7 +342,28 @@ async function companyName() {
   return branding?.applicationName || '';
 }
 
+/**
+ * The letterhead block: the active ERP-settings company wins (it carries the
+ * phone, address and NTN a printed document needs); branding only supplies a
+ * fallback name.
+ */
+async function companyInfo() {
+  const Company = mongoose.models.Company;
+  const active = Company ? await Company.findOne({ isActive: true }).sort({ createdAt: 1 }).lean().catch(() => null) : null;
+  const fallbackName = await companyName();
+  return {
+    name: active?.companyName || fallbackName,
+    legalName: active?.legalName || '',
+    phone: active?.phone || '',
+    email: active?.email || '',
+    address: active?.address || '',
+    city: active?.city || '',
+    ntn: active?.taxId || '',
+    website: active?.website || '',
+  };
+}
+
 module.exports = {
-  TYPES, findDocument, buildDataBag, variableCatalog, companyName,
-  flattenVehicle, buildItemRows, buildItemsTable,
+  TYPES, findDocument, buildDataBag, variableCatalog, companyName, companyInfo,
+  flattenVehicle, buildItemRows, buildItemsTable, amountInWords,
 };

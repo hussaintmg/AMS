@@ -50,13 +50,14 @@ const CATEGORY = {
     label: "Parts",
     basePath: "/parts-sales",
     api: partsSalesAPI,
-    lead: "Scan a part barcode to build a quotation, booking or counter sale.",
+    lead: "Scan a part barcode to build a quotation or a counter sale.",
     searchPlaceholder: "Search by name or part code",
     scanPlaceholder: "Scan a barcode, or type a part code",
+    // The parts flow is quotation → invoice only; a counter sale invoices
+    // immediately. There are no bookings on this side.
     documents: [
       { key: "quotation", label: "Quotation", hint: "An offer. No stock is touched." },
-      { key: "booking", label: "Booking", hint: "Records intent. Stock stays on the shelf." },
-      { key: "order", label: "Sales Order + Invoice", hint: "Invoices immediately — this is what takes stock off the shelf." },
+      { key: "order", label: "Invoice (Counter Sale)", hint: "Invoices immediately — this is what takes stock off the shelf." },
     ],
   },
 };

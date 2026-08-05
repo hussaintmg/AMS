@@ -11,6 +11,9 @@ const walkInFields = require('./walkIn.fields');
 const partInvoiceSchema = new mongoose.Schema({
   invoiceNumber: { type: String, trim: true, required: [true, 'Invoice number is required'] },
   salesOrder: { type: mongoose.Schema.Types.ObjectId, ref: 'PartSalesOrder', default: null },
+  // The parts flow is quotation → invoice, so an invoice raised by converting
+  // a quotation keeps the link for traceability.
+  quotation: { type: mongoose.Schema.Types.ObjectId, ref: 'PartQuotation', default: null },
   customer: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer' },
   ...walkInFields,
 
