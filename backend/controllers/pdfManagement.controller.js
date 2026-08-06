@@ -1,7 +1,7 @@
 const archiver = require('archiver');
 const { PassThrough } = require('stream');
 const { PdfTemplate, PdfUsage, PdfVariable } = require('../models');
-const { renderPdf, renderHtmlPdf } = require('../services/pdfRenderer.service');
+const { renderDocumentPdf } = require('../services/pdfKitRenderer.service');
 const { TYPES, findDocument, buildDataBag, variableCatalog, companyName, companyInfo } = require('../services/pdfData.service');
 const { resolveTokens } = require('../services/pdfFormat.cjs');
 
@@ -170,29 +170,29 @@ exports.resolvedHtml = async (req, res, next) => {
   } catch (error) { next(error); }
 };
 
-/** Render a template to a PDF buffer, honouring its authoring mode. */
-function renderTemplatePdf(template, record) {
-  if (template.mode === 'html' && template.html) {
-    const config = template.designData?.pages?.[0]?.config || {};
-    return renderHtmlPdf(template.html, template.css || '', record.data, config);
-  }
-  return renderPdf(template.designData?.pages || [], record.data, record.name);
-}
-
+/**
+ * Downloads draw with pdfkit (services/pdfKitRenderer.service.js) — pure
+ * JavaScript, no headless browser — rather than the HTML-template Puppeteer
+ * pipeline above. Production hosting kept failing on missing native
+ * Chromium/shared-library dependencies it had no way to install; pdfkit
+ * has none to be missing. The HTML/Designer template editor and its
+ * client-side print preview (resolvedHtml, above) are unaffected — this
+ * only changes what a Download PDF click produces.
+ */
 exports.downloadOne = async (req, res, next) => {
   try {
-    const template = await activeTemplate(req.params.documentType); const record = await loadRecord(req.params.documentType, req.params.id);
-    const buffer = await renderTemplatePdf(template, record);
+    const record = await loadRecord(req.params.documentType, req.params.id);
+    const buffer = await renderDocumentPdf(req.params.documentType, record.data);
     res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="${record.name}.pdf"`, 'Content-Length': buffer.length }).send(buffer);
   } catch (error) { next(error); }
 };
 exports.downloadBulk = async (req, res, next) => {
   try {
     const ids = Array.isArray(req.body.ids) ? req.body.ids : []; if (!ids.length) return res.status(400).json({ success: false, message: 'ids array is required' });
-    const template = await activeTemplate(req.params.documentType); const output = new PassThrough(); const chunks = [];
+    const output = new PassThrough(); const chunks = [];
     output.on('data', (chunk) => chunks.push(chunk)); const completed = new Promise((resolve, reject) => { output.on('end', resolve); output.on('error', reject); });
     const archive = archiver('zip', { zlib: { level: 6 } }); archive.pipe(output);
-    for (const id of ids) { const record = await loadRecord(req.params.documentType, id); archive.append(await renderTemplatePdf(template, record), { name: `${record.name}.pdf` }); }
+    for (const id of ids) { const record = await loadRecord(req.params.documentType, id); archive.append(await renderDocumentPdf(req.params.documentType, record.data), { name: `${record.name}.pdf` }); }
     await archive.finalize(); await completed; const buffer = Buffer.concat(chunks);
     res.set({ 'Content-Type': 'application/zip', 'Content-Disposition': `attachment; filename="${req.params.documentType}-documents.zip"`, 'Content-Length': buffer.length }).send(buffer);
   } catch (error) { next(error); }
