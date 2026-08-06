@@ -1,14 +1,22 @@
 /**
- * High-fidelity PDF rendering via headless Chrome (puppeteer-core against the
- * system Chrome install). The template's designData is turned into HTML that
- * mirrors the editor canvas, so the downloaded PDF matches the design exactly —
- * no manual coordinate/point conversion, no drift.
+ * High-fidelity PDF rendering via headless Chrome. The template's designData
+ * is turned into HTML that mirrors the editor canvas, so the downloaded PDF
+ * matches the design exactly — no manual coordinate/point conversion, no
+ * drift.
  *
  * A single browser instance is launched lazily and reused across requests
  * (including bulk downloads) for speed.
+ *
+ * Finding a browser to drive: a machine that already has Chrome/Edge
+ * installed (most dev boxes) is used directly — fastest, and nothing extra to
+ * install. A server that has never had a browser on it (most bare Linux
+ * hosting — this is what broke production: "No Chrome/Chromium executable
+ * found") falls back to the Chromium `puppeteer` (not `-core`) downloads for
+ * itself during `npm install`, so PDF generation works out of the box with no
+ * server-level package install or CHROME_PATH configuration required.
  */
 const fs = require('fs');
-const puppeteer = require('puppeteer-core');
+const puppeteerCore = require('puppeteer-core');
 const { buildHtml, buildHtmlFromRaw } = require('./pdfHtml.service');
 
 const CHROME_CANDIDATES = [
@@ -19,25 +27,62 @@ const CHROME_CANDIDATES = [
   process.env.LOCALAPPDATA ? `${process.env.LOCALAPPDATA}\\Google\\Chrome\\Application\\chrome.exe` : null,
   'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
   '/usr/bin/google-chrome',
+  '/usr/bin/google-chrome-stable',
   '/usr/bin/chromium-browser',
   '/usr/bin/chromium',
+  '/snap/bin/chromium',
 ];
 
+/**
+ * A system Chrome/Edge install if one is configured or found on disk;
+ * otherwise the Chromium build the full `puppeteer` package downloaded for
+ * itself at install time (undefined if that package isn't present either —
+ * `npm install` in backend/ pulls it in as a normal dependency).
+ */
 function resolveExecutable() {
   for (const path of CHROME_CANDIDATES) {
-    if (path && fs.existsSync(path)) return path;
+    if (path && fs.existsSync(path)) return { path, bundled: false };
   }
-  throw new Error('No Chrome/Chromium executable found. Set CHROME_PATH to your Chrome binary.');
+  try {
+    // eslint-disable-next-line global-require
+    const bundled = require('puppeteer');
+    const path = bundled.executablePath();
+    if (path && fs.existsSync(path)) return { path, bundled: true };
+  } catch { /* full puppeteer not installed — fall through to the error below */ }
+  throw new Error(
+    'No Chrome/Chromium executable found. Either set CHROME_PATH to a Chrome/Edge binary, '
+    + 'or run `npm install` in backend/ so the puppeteer Chromium download can provide one.',
+  );
 }
 
 let browserPromise = null;
 async function getBrowser() {
   if (!browserPromise) {
-    browserPromise = puppeteer.launch({
-      executablePath: resolveExecutable(),
+    const { path, bundled } = resolveExecutable();
+    // Bundled Chromium ships with everything puppeteer-core needs to drive
+    // it; puppeteer-core itself never downloads a browser, so it is always
+    // the launcher, whichever binary was found.
+    browserPromise = puppeteerCore.launch({
+      executablePath: path,
       headless: 'new',
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
-    }).catch((error) => { browserPromise = null; throw error; });
+      // Minimal, low-memory shared hosting is the common case in production
+      // — these keep a sandboxed Chromium from needing a devtools protocol
+      // shared-memory mount or a working GPU it will never have.
+      // (`--single-process` looks appealing for a small server but crashes
+      // "new" headless Chrome outright — printToPDF fails with "Target
+      // closed" every time. Confirmed by testing; do not add it back.)
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+    }).catch((error) => {
+      browserPromise = null;
+      if (bundled && /libnss3|libatk|error while loading shared libraries/i.test(String(error.message))) {
+        throw new Error(
+          `${error.message}\n\nThe bundled Chromium needs a handful of system shared libraries this `
+          + 'server does not have. On Debian/Ubuntu: apt-get install -y libnss3 libatk1.0-0 libatk-bridge2.0-0 '
+          + 'libcups2 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libpango-1.0-0 libasound2',
+        );
+      }
+      throw error;
+    });
   }
   const browser = await browserPromise;
   if (!browser.connected) { browserPromise = null; return getBrowser(); }
