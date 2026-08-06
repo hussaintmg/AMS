@@ -15,15 +15,89 @@ const FORMATS = { A4: { width: 794, height: 1123 }, A3: { width: 1123, height: 1
 const uid = () => Math.random().toString(36).slice(2, 10);
 const cssObject = (css = []) => Object.fromEntries((Array.isArray(css) ? css : []).filter(Boolean).map(x => [x.property, x.value]));
 const cssArray = obj => Object.entries(obj).map(([property, value]) => ({ property, value: String(value) }));
+// Two sample vehicle lines and two sample part lines, so a template that
+// prints `{{#each vehicleItems}}`/`{{#each partItems}}` has something real to
+// loop over in the live preview — the same shape services/pdfData.service.js
+// builds for the actual PDF.
+const SAMPLE_VEHICLE_ITEMS = [
+  { number: 1, type: 'vehicle', code: 'VIN-SAMPLE-001', name: 'Toyota Corolla XLI', description: 'Toyota Corolla XLI', quantity: 1, unitPriceText: 'PKR 5,000,000', discountAmountText: 'PKR 0', taxAmountText: 'PKR 0', totalPriceText: 'PKR 5,000,000' },
+];
+const SAMPLE_PART_ITEMS = [
+  { number: 1, type: 'part', code: 'SPARE-001', name: 'Brake Pad Set', description: 'Brake Pad Set (SPARE-001)', quantity: 2, unitPriceText: 'PKR 15,000', discountAmountText: 'PKR 0', taxAmountText: 'PKR 2,700', totalPriceText: 'PKR 32,700' },
+  { number: 2, type: 'part', code: 'SPARE-014', name: 'Oil Filter', description: 'Oil Filter (SPARE-014)', quantity: 1, unitPriceText: 'PKR 2,500', discountAmountText: 'PKR 0', taxAmountText: 'PKR 450', totalPriceText: 'PKR 2,950' },
+];
+const withGroupMeta = rows => Object.assign(rows.slice(), {
+  count: rows.length,
+  subtotalText: `PKR ${rows.reduce((s, r) => s + Number(String(r.totalPriceText).replace(/[^\d.]/g, '')), 0).toLocaleString('en-PK')}`,
+});
 const sample = {
-  document: { title: 'QUOTATION', number: 'QT-2026-000001', status: 'draft', date: '15/07/2026', totalAmount: 'PKR 5,250,000', taxAmount: 'PKR 250,000', subtotal: 'PKR 5,000,000', discountAmount: 'PKR 20,000', discountPercentage: '5', additionalCharges: 'PKR 0', vehiclePrice: 'PKR 5,000,000', validUntil: '22/07/2026', validityDays: '7', bookingDate: '15/07/2026', bookingAmount: 'PKR 500,000', deliveryDate: '30/07/2026', priority: 'high', orderDate: '15/07/2026', paymentMode: 'cash', invoiceDate: '15/07/2026', dueDate: '14/08/2026', paidAmount: 'PKR 2,000,000', balanceAmount: 'PKR 3,250,000', notes: 'Thank you for your business.', itemName: 'Toyota Corolla XLI' },
+  document: { title: 'QUOTATION', number: 'QT-2026-000001', status: 'draft', date: '15/07/2026', totalAmount: 'PKR 5,250,000', taxAmount: 'PKR 250,000', subtotal: 'PKR 5,000,000', discountAmount: 'PKR 20,000', discountPercentage: '5', additionalCharges: 'PKR 0', vehiclePrice: 'PKR 5,000,000', validUntil: '22/07/2026', validityDays: '7', bookingDate: '15/07/2026', bookingAmount: 'PKR 500,000', deliveryDate: '30/07/2026', priority: 'high', orderDate: '15/07/2026', paymentMode: 'cash', invoiceDate: '15/07/2026', dueDate: '14/08/2026', paidAmount: 'PKR 2,000,000', balanceAmount: 'PKR 3,250,000', amountTendered: 'PKR 2,000,000', changeDue: '', salePerson: 'Hussain Admin', notes: 'Thank you for your business.', termsAndConditions: 'Payment within 30 days of delivery.', itemName: 'Toyota Corolla XLI', totalInWords: 'RUPEES FIFTY TWO LAKH FIFTY THOUSAND ONLY' },
   customer: { fullName: 'Muhammad Ahmed', firstName: 'Muhammad', lastName: 'Ahmed', companyName: 'Ahmed Motors', email: 'customer@example.com', phone: '0300-0000000', alternatePhone: '0321-1111111', customerCode: 'CUS-000001', address: 'Fareed Durrani Road', city: 'Karachi', state: 'Sindh', country: 'Pakistan', zipCode: '75730' },
   vehicle: { name: 'Toyota Corolla XLI', make: 'Toyota', model: 'Corolla', variant: 'XLI', color: 'White', year: '2025', vin: 'VIN-SAMPLE-001' },
   generator: { fullName: 'Hussain Admin', email: 'sales@company.com', phone: '+92 300 0000000' },
-  company: { name: 'OMODA | JAECOO' },
+  company: { name: 'OMODA | JAECOO', phone: '0302-5227979', address: '120A-E1 Hali Road Gulberg 3', city: 'Lahore', ntn: '9556854', email: 'info@company.com' },
   item: { name: 'Toyota Corolla XLI', list: 'Toyota Corolla XLI, Accessories' },
+  items: [...SAMPLE_VEHICLE_ITEMS, ...SAMPLE_PART_ITEMS],
+  vehicleItems: withGroupMeta(SAMPLE_VEHICLE_ITEMS),
+  partItems: withGroupMeta(SAMPLE_PART_ITEMS),
 };
-const resolve = text => String(text || '').replace(/\{\{\s*([^}]+)\s*\}\}/g, (_, key) => { const v = key.trim().split('.').reduce((o, p) => (o == null ? undefined : o[p]), sample); return v == null || v === '' ? `{{${key.trim()}}}` : v; });
+
+/**
+ * Same block-helper semantics as backend/services/templateLoops.cjs, ported
+ * so the live preview can actually show `{{#each items}}` / `{{#if x}}`
+ * instead of leaving the raw block markup on screen. The real PDF is built
+ * server-side by that file; this copy exists only so the preview agrees with
+ * it — keep the two in sync if the syntax ever changes.
+ */
+const BLOCK_RE = /\{\{\s*#(each|if|unless)\s+([^}]+?)\s*\}\}([\s\S]*?)\{\{\s*\/\1\s*\}\}/;
+const getPath = (source, key) => String(key).split('.').reduce((v, p) => (v == null ? undefined : (p === 'this' || p === '.' ? v : v[p])), source);
+const isEmptyValue = v => v == null || v === false || v === '' || (Array.isArray(v) && v.length === 0) || (typeof v === 'number' && v === 0) || (typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === 0);
+/** `{{this.x}}`, `{{x}}` and `{{@meta}}` resolved against one loop row. */
+function substituteRow(body, row, meta) {
+  return body.replace(/\{\{\s*([^#/{}][^}]*?)\s*\}\}/g, (match, rawKey) => {
+    const key = String(rawKey).trim();
+    if (key.startsWith('@')) return String(meta[key.slice(1)] ?? match);
+    const looksLikeRowField = key === 'this' || key.startsWith('this.')
+      || (row && typeof row === 'object' && Object.prototype.hasOwnProperty.call(row, key.split('.')[0]));
+    if (!looksLikeRowField) return match;
+    const value = key === 'this' ? row : getPath(row, key);
+    return value === undefined ? '' : String(value);
+  });
+}
+function expandBlocks(text, data = {}) {
+  let out = String(text == null ? '' : text);
+  for (let pass = 0; pass < 100; pass += 1) {
+    const match = BLOCK_RE.exec(out);
+    if (!match) break;
+    const [full, helper, rawPath, body] = match;
+    const value = getPath(data, rawPath.trim());
+    let replacement = '';
+    if (helper === 'each') {
+      const rows = Array.isArray(value) ? value : (value && typeof value === 'object' ? Object.values(value) : []);
+      replacement = rows.map((row, index) => {
+        const meta = { index, number: index + 1, first: index === 0, last: index === rows.length - 1, count: rows.length };
+        const rowData = row && typeof row === 'object' ? { ...data, ...row, this: row } : data;
+        const inner = expandBlocks(body, rowData);
+        return substituteRow(inner, row, meta);
+      }).join('');
+    } else if (helper === 'if') {
+      replacement = isEmptyValue(value) ? '' : expandBlocks(body, data);
+    } else if (helper === 'unless') {
+      replacement = isEmptyValue(value) ? expandBlocks(body, data) : '';
+    }
+    out = out.slice(0, match.index) + replacement + out.slice(match.index + full.length);
+  }
+  return out;
+}
+const resolve = text => {
+  const expanded = expandBlocks(text, sample);
+  return expanded.replace(/\{\{\s*([^#/{}][^}]*?)\s*\}\}/g, (match, rawKey) => {
+    const key = rawKey.trim();
+    const v = key === 'this' ? undefined : getPath(sample, key);
+    if (v === undefined) return key.startsWith('this.') ? '' : match;
+    return typeof v === 'object' ? '' : String(v);
+  });
+};
 const newPage = () => ({ config: { format: 'A4', width: 794, height: 1123, backgroundColor: '#ffffff' }, backgroundImage: '', bgSize: 'cover', bgPosition: 'center center', elements: [] });
 const normalizePage = p => ({ ...newPage(), ...p, config: { ...newPage().config, ...(p?.config || {}) }, elements: Array.isArray(p?.elements) ? p.elements.map(e => ({ ...e, id: e.id || uid(), css: Array.isArray(e.css) ? e.css : [] })) : [] });
 
@@ -77,9 +151,24 @@ function parseInlineStyle(styleStr) {
 }
 
 /**
+ * True when the HTML uses `{{#each}}` / `{{#if}}` / `{{#unless}}` — a table
+ * that repeats once per line item, or a block that only sometimes prints.
+ * Designer mode is a fixed canvas of absolute-positioned elements; it has no
+ * way to draw "one row per product" or "only if there's a discount", so a
+ * template built on these blocks cannot be represented there at all.
+ */
+const hasBlockHelpers = (html) => /\{\{\s*#(each|if|unless)\s+/.test(String(html || ''));
+
+/**
  * Inverse of compileDesignToHtml: parse raw HTML back into page elements so the
  * designer reflects edits made in the HTML view. Keeps the existing page config.
  * Falls back to tag/content heuristics when `data-el` markers are absent.
+ *
+ * Only compileDesignToHtml's own output carries `left`/`top` on every element
+ * — hand-written or DMS-style flow HTML (tables, headers, paragraphs) has
+ * none. Leaving those blank would stack every element on top of the last at
+ * (0, 0); instead they are placed one under another in document order so
+ * they land somewhere sane and stay individually visible and draggable.
  */
 function htmlToDesign(html, baseConfig) {
   const config = { ...baseConfig };
@@ -87,17 +176,30 @@ function htmlToDesign(html, baseConfig) {
   try {
     const doc = new DOMParser().parseFromString(html || '', 'text/html');
     const container = doc.querySelector('.pdf-page') || doc.body;
+    let stackTop = 24;
     elements = Array.from(container.children).map(node => {
       const tag = node.tagName.toLowerCase();
       const marker = node.getAttribute('data-el');
-      const css = cssArray(parseInlineStyle(node.getAttribute('style')));
-      const base = { id: uid(), text: '', imageUrl: '', url: '', qrValue: '', css };
+      const css = parseInlineStyle(node.getAttribute('style'));
+      // No inline position (this node was never placed on the canvas): stack
+      // it below whatever came before, full-width, sized to its own content.
+      if (css.left == null && css.top == null) {
+        const text = (node.textContent || '').trim();
+        const rows = Math.max(1, Math.ceil(text.length / 90)) + (node.tagName === 'TABLE' ? (node.rows?.length || 3) : 0);
+        const height = Math.min(400, 22 * rows);
+        css.left = '24px';
+        css.top = `${stackTop}px`;
+        css.width = css.width || '740px';
+        stackTop += height + 10;
+      }
+      const finalCss = cssArray(css);
+      const base = { id: uid(), text: '', imageUrl: '', url: '', qrValue: '', css: finalCss };
       if (marker === 'image' || tag === 'img') return { ...base, type: 'image', imageUrl: node.getAttribute('src') || '' };
       if (marker === 'link' || tag === 'a') return { ...base, type: 'link', url: node.getAttribute('href') || '', text: node.textContent || '' };
       if (marker === 'line' || tag === 'hr') return { ...base, type: 'line' };
       if (marker === 'qr') return { ...base, type: 'qr', qrValue: node.getAttribute('data-qr') || '' };
       if (marker === 'rectangle') return { ...base, type: 'rectangle' };
-      // Unmarked <div>: decide by content.
+      // Unmarked <div>/<table>/etc.: decide by content.
       const text = (node.textContent || '').trim();
       if (marker === 'text' || text) return { ...base, type: 'text', text: node.textContent || '' };
       return { ...base, type: 'rectangle' };
@@ -177,6 +279,10 @@ export default function PdfTemplateEditor() {
   const [showDesignerPreview, setShowDesignerPreview] = useState(false);
   const htmlRef = useRef(null);
   const sidebarVarBtnRef = useRef(null);
+  // Pristine html/css captured the moment a block-helper template is sent to
+  // Designer, so switching back can restore it byte-for-byte instead of
+  // compiling from Designer's lossy static approximation. See switchMode.
+  const preDesignerRef = useRef(null);
 
   // Open the Variables popover anchored to its trigger. Using fixed positioning
   // lets the menu escape the sidebar's overflow:auto (no more clipping).
@@ -337,11 +443,39 @@ export default function PdfTemplateEditor() {
     if (newMode === current) return;
     setSelectedId(null);
     if (newMode === 'html') {
-      // Designer → HTML: compile the current design so the HTML reflects it.
+      // Designer → HTML. A block-helper template (product loop / conditional
+      // section) was never actually representable on the Designer canvas —
+      // what's sitting there is only a static, position-only approximation.
+      // Compiling THAT back to HTML would permanently throw away the real
+      // {{#each}}/{{#if}} markup, so the exact HTML/CSS captured on the way
+      // in is restored instead, undoing anything Designer did to it.
+      if (preDesignerRef.current) {
+        const restore = preDesignerRef.current;
+        preDesignerRef.current = null;
+        setTemplate(t => ({ ...t, mode: 'html', html: restore.html, css: restore.css }));
+        toast('Restored the original HTML — Designer can only show a static snapshot of product-loop templates, so nothing there is kept.', { icon: 'ℹ️', duration: 5000 });
+        return;
+      }
       const c = compileDesignToHtml(page);
       setTemplate(t => ({ ...t, mode: 'html', html: c.html, css: c.css }));
     } else {
-      // HTML → Designer: parse the HTML back into the current page.
+      // HTML → Designer: parse the HTML back into the current page. A
+      // template built on {{#each}}/{{#if}} — a table that repeats per
+      // product, a block that only sometimes prints — has no equivalent in
+      // Designer's fixed canvas of absolute-positioned elements; converting
+      // it can only ever approximate the real layout with static placeholder
+      // boxes. Ask first rather than silently reshuffling it, and remember
+      // the pristine source so switching back can restore it exactly.
+      if (hasBlockHelpers(template.html)) {
+        if (!window.confirm(
+          'This template repeats rows per product or shows sections conditionally ' +
+          '(#each / #if). Designer view can only show one fixed snapshot of it — ' +
+          'the product loop and conditional blocks will collapse to a single static ' +
+          'copy, and the real per-product table will only be correct in HTML mode.\n\n' +
+          'Switch to Designer anyway?'
+        )) return;
+        preDesignerRef.current = { html: template.html, css: template.css };
+      }
       setTemplate(t => {
         const nextPages = t.designData.pages.map((p, i) => i === pageIndex ? htmlToDesign(t.html, p) : p);
         return { ...t, mode: 'designer', designData: { ...t.designData, pages: nextPages } };
