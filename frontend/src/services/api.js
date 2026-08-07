@@ -238,6 +238,8 @@ export const pdfManagementAPI = {
     bulkVariables: (data) => api.post('/pdf-management/variables/bulk', data),
     deleteVariable: (id) => api.delete(`/pdf-management/variables/${id}`),
     getResolvedHtml: (documentType, id) => api.get(`/pdf-management/resolved-html/${documentType}/${id}`),
+    // The document as it will print / download — same layout as the PDF.
+    getPrintHtml: (documentType, id) => api.get(`/pdf-management/print-html/${documentType}/${id}`),
     download: (documentType, id) => api.get(`/pdf-management/download/${documentType}/${id}`, { responseType: 'blob' }),
     downloadBulk: (documentType, ids) => api.post(`/pdf-management/download/${documentType}/bulk`, { ids }, { responseType: 'blob' }),
 };

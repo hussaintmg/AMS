@@ -16,7 +16,10 @@
  * totals box) that the HTML templates were built to match.
  */
 const PDFDocument = require('pdfkit');
-const { formatCurrency } = require('./pdfFormat.cjs');
+const {
+  TITLES, NOTE_BY_TYPE, clean,
+  summaryRows, billedToGrid, headerMeta, productSections,
+} = require('./salesDocumentLayout.cjs');
 
 const PAGE = { size: 'A4', margin: 40 };
 const INK = '#1e293b';
@@ -24,21 +27,6 @@ const MUTED = '#64748b';
 const LINE = '#cbd5e1';
 const HEAD_BG = '#f1f5f9';
 const SECTION_BG = '#e2e8f0';
-
-const TITLES = {
-  quotation: 'QUOTATION',
-  booking: 'BOOKING CONFIRMATION',
-  order: 'SALES ORDER',
-  invoice: 'SALES TAX INVOICE',
-};
-
-const fmtMoney = (value) => (value == null || value === '' ? '' : formatCurrency(value));
-const fmtDate = (value) => {
-  if (!value) return '';
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString('en-GB');
-};
-const clean = (value) => String(value == null ? '' : value).trim();
 
 /** Bottom of the usable page area; content past this needs a new page. */
 function pageBottom(doc) {
@@ -125,97 +113,6 @@ function drawBox(doc, x, y, width, height, draw) {
   draw(x + 8, y + 8, width - 16);
 }
 
-function renderQuotation(doc, data) {
-  const d = data.document || {};
-  return [
-    { label: 'Valid Until', value: fmtDate(d.validUntil) },
-    { label: 'Validity', value: d.validityDays ? `${d.validityDays} days` : '' },
-    { label: 'Quotation Date', value: fmtDate(d.date) },
-  ];
-}
-function renderBooking(doc, data) {
-  const d = data.document || {};
-  return [
-    { label: 'Booking Date', value: fmtDate(d.bookingDate) },
-    { label: 'Expected Delivery', value: fmtDate(d.deliveryDate) },
-    { label: 'Priority', value: clean(d.priority) },
-  ];
-}
-function renderOrder(doc, data) {
-  const d = data.document || {};
-  return [
-    { label: 'Order Date', value: fmtDate(d.orderDate) },
-    { label: 'Delivery', value: fmtDate(d.deliveryDate) },
-    { label: 'Payment Mode', value: clean(d.paymentMode) },
-  ];
-}
-function renderInvoice(doc, data) {
-  const d = data.document || {};
-  return [
-    { label: 'Invoice Date', value: fmtDate(d.invoiceDate) },
-    { label: 'Due Date', value: fmtDate(d.dueDate) },
-    { label: 'Sale Person', value: clean(d.salePerson) },
-  ];
-}
-const META_BY_TYPE = { quotation: renderQuotation, booking: renderBooking, order: renderOrder, invoice: renderInvoice };
-
-const NOTE_BY_TYPE = {
-  quotation: 'This is a quotation, not an invoice. Prices hold until the validity date shown. Stock is neither reserved nor consumed by this document.',
-  booking: 'Reserved units are held against this booking. Stock is released only when the invoice is raised.',
-  order: 'Goods are billed on the invoice raised against this order. Please quote the order number in all correspondence.',
-  invoice: 'Goods leave stock against this invoice. Sales tax, where applicable, is charged on the retail price exclusive of sales tax.',
-};
-
-/** Document-specific rows for the bottom-right SUMMARY box, label + amount. */
-function summaryRows(type, data) {
-  const d = data.document || {};
-  const rows = [];
-  if (data.vehicleItems?.count) rows.push(['Total Vehicles', data.vehicleItems.subtotalText]);
-  if (data.partItems?.count) rows.push(['Total Parts', data.partItems.subtotalText]);
-  if (type === 'quotation') {
-    if (d.discountAmount) rows.push(['Less; Discount', fmtMoney(d.discountAmount)]);
-    if (d.taxAmount) rows.push(['Add; Tax', fmtMoney(d.taxAmount)]);
-    if (d.additionalCharges) rows.push(['Add; Other Charges', fmtMoney(d.additionalCharges)]);
-    rows.push(['NET', fmtMoney(d.totalAmount)]);
-  } else if (type === 'booking') {
-    rows.push(['Total Amount', fmtMoney(d.totalAmount)]);
-    rows.push(['Deposit Received', fmtMoney(d.bookingAmount)]);
-    rows.push(['NET', fmtMoney(d.balanceAmount)]);
-  } else if (type === 'order') {
-    if (d.discountAmount) rows.push(['Less; Discount', fmtMoney(d.discountAmount)]);
-    if (d.taxAmount) rows.push(['Add; Tax', fmtMoney(d.taxAmount)]);
-    rows.push(['Gross Amount', fmtMoney(d.totalAmount)]);
-    rows.push(['Paid', fmtMoney(d.paidAmount)]);
-    rows.push(['NET', fmtMoney(d.balanceAmount)]);
-  } else {
-    if (d.discountAmount) rows.push(['Less; Discount', fmtMoney(d.discountAmount)]);
-    if (d.taxAmount) rows.push(['Add; Sales Tax', fmtMoney(d.taxAmount)]);
-    rows.push(['Gross Amount', fmtMoney(d.totalAmount)]);
-    rows.push(['Paid', fmtMoney(d.paidAmount)]);
-    if (d.changeDue) rows.push(['Change Returned', fmtMoney(d.changeDue)]);
-    rows.push(['NET', fmtMoney(d.balanceAmount)]);
-  }
-  return rows;
-}
-
-const VEHICLE_COLUMNS = [
-  { label: '#', width: 24, get: (r) => r.number },
-  { label: 'Vehicle', width: 210, get: (r) => r.description },
-  { label: 'Chassis No.', width: 110, get: (r) => r.code },
-  { label: 'Qty', width: 34, align: 'right', get: (r) => r.quantity },
-  { label: 'Unit Price', width: 80, align: 'right', get: (r) => r.unitPriceText },
-  { label: 'Amount', width: 87, align: 'right', get: (r) => r.totalPriceText },
-];
-const PART_COLUMNS = [
-  { label: 'Part #', width: 80, get: (r) => r.code },
-  { label: 'Part Name', width: 160, get: (r) => r.name || r.description },
-  { label: 'Qty', width: 30, align: 'right', get: (r) => r.quantity },
-  { label: 'Unit Price', width: 75, align: 'right', get: (r) => r.unitPriceText },
-  { label: 'Discount', width: 65, align: 'right', get: (r) => r.discountAmountText },
-  { label: 'Tax', width: 65, align: 'right', get: (r) => r.taxAmountText },
-  { label: 'Total', width: 70, align: 'right', get: (r) => r.totalPriceText },
-];
-
 /**
  * Draw one sales document (quotation/booking/order/invoice) and resolve to a
  * PDF Buffer. `data` is exactly services/pdfData.service.js's buildDataBag()
@@ -233,7 +130,6 @@ function renderDocumentPdf(type, data) {
     const width = doc.page.width - doc.page.margins.left - doc.page.margins.right;
     const d = data.document || {};
     const company = data.company || {};
-    const customer = data.customer || {};
 
     // ── Header: centred company block, document number/date top-right ──
     doc.font('Helvetica-Bold').fontSize(16).fillColor(INK)
@@ -242,9 +138,8 @@ function renderDocumentPdf(type, data) {
     [company.phone && `Tel: ${company.phone}`, company.address && `Address: ${company.address}`, company.ntn && `NTN Number: ${company.ntn}`]
       .filter(Boolean).forEach((line) => doc.text(line, left, doc.y, { width, align: 'center' }));
 
-    const headerRight = `${d.number ? `${type === 'invoice' ? 'Invoice' : type === 'order' ? 'Order' : type === 'booking' ? 'Booking' : 'Quotation'} # : ${d.number}` : ''}\nDate : ${fmtDate(d.date)}\nStatus : ${clean(d.status).toUpperCase()}`;
     doc.font('Helvetica').fontSize(9).fillColor(INK)
-      .text(headerRight, left + width - 180, 40, { width: 180, align: 'right' });
+      .text(headerMeta(type, data).join('\n'), left + width - 180, 40, { width: 180, align: 'right' });
 
     doc.moveDown(0.8);
     doc.font('Helvetica-Bold').fontSize(14).fillColor(INK).text(TITLES[type] || 'DOCUMENT', left, doc.y, { width, align: 'center' });
@@ -253,14 +148,7 @@ function renderDocumentPdf(type, data) {
     // ── Billed To grid — every cell is a self-contained "Label : value",
     // exactly like the DMS reference invoice, so no cell depends on another
     // row or column to make sense on its own. ──
-    const metaRows = (META_BY_TYPE[type] || (() => []))(doc, data);
-    const metaCell = (i) => (metaRows[i]?.label ? `${metaRows[i].label} : ${metaRows[i].value || ''}` : '');
-    const gridRows = [
-      ['Billed To :', `Prepared By : ${clean(data.generator?.fullName)}`, metaCell(0)],
-      [`Customer : ${customer.fullName || ''}`, `Contact # : ${customer.phone || ''}`, metaCell(1)],
-      [`Address : ${[customer.address, customer.city].filter(Boolean).join(' ')}`, `Email : ${customer.email || ''}`, metaCell(2)],
-      [`Company : ${customer.companyName || ''}`, `Customer # : ${customer.customerCode || ''}`, ''],
-    ];
+    const gridRows = billedToGrid(type, data);
     const colW = width / 3;
     const colWidths = [colW, colW, colW];
     doc.font('Helvetica').fontSize(9);
@@ -277,45 +165,62 @@ function renderDocumentPdf(type, data) {
     doc.moveDown(0.6);
 
     // ── Product sections: vehicles, then parts — either may be absent ──
-    drawProductSection(doc, left, width, 'Vehicles', data.vehicleItems || [], VEHICLE_COLUMNS, 'Total Vehicles Rs. :', data.vehicleItems?.subtotalText || '');
-    drawProductSection(doc, left, width, 'Spare Parts & Lubricants', data.partItems || [], PART_COLUMNS, 'Total Spare Parts Rs. :', data.partItems?.subtotalText || '');
+    productSections(data).forEach((section) => {
+      drawProductSection(doc, left, width, section.title, section.rows, section.columns, section.totalLabel, section.totalText);
+    });
 
-    // ── Note + amount in words, side by side ──
+    // ── Note + amount in words, side by side. Both boxes are measured before
+    // they are drawn: a fixed 46pt height silently clipped a long standing note
+    // (and, on a busy page, the whole row). ──
     const noteWidth = width * 0.58, wordsWidth = width - noteWidth - 12;
-    ensureRoom(doc, 46);
+    const standingNote = NOTE_BY_TYPE[type] || '';
+    doc.font('Helvetica-Bold').fontSize(8);
+    const boxHeight = Math.max(
+      46,
+      doc.heightOfString(standingNote, { width: noteWidth - 16 }) + 16,
+      doc.heightOfString(d.totalInWords || '', { width: wordsWidth - 16 }) + 28,
+    );
+    ensureRoom(doc, boxHeight);
     const rowY = doc.y;
-    drawBox(doc, left, rowY, noteWidth, 46, (x, y, w) => doc.font('Helvetica-Bold').fontSize(8).fillColor(MUTED).text(NOTE_BY_TYPE[type] || '', x, y, { width: w }));
-    drawBox(doc, left + noteWidth + 12, rowY, wordsWidth, 46, (x, y, w) => {
+    drawBox(doc, left, rowY, noteWidth, boxHeight, (x, y, w) => doc.font('Helvetica-Bold').fontSize(8).fillColor(MUTED).text(standingNote, x, y, { width: w }));
+    drawBox(doc, left + noteWidth + 12, rowY, wordsWidth, boxHeight, (x, y, w) => {
       doc.font('Helvetica-Bold').fontSize(8).fillColor(INK).text('Total amount in words:', x, y, { width: w });
       doc.font('Helvetica-Bold').fontSize(9).fillColor(INK).text(d.totalInWords || '', x, y + 12, { width: w, underline: true });
     });
-    doc.y = rowY + 46 + 10;
+    doc.y = rowY + boxHeight + 10;
 
     // ── Notes/Terms on the left, SUMMARY box on the right ──
+    //
+    // Both columns start on the same line, so the page must have room for the
+    // taller of the two before either is drawn. Reserving only the summary's
+    // height is what used to lose the Notes: a document whose notes did not fit
+    // in what was left of the page had pdfkit break to a new page part-way
+    // through drawing them, after which the summary box — still positioned at
+    // the old y — was painted over the continuation. Quotations and bookings
+    // felt it most, their summaries being the shortest, so the least room was
+    // reserved. The summary is also drawn first now, so even notes longer than
+    // a full page flow on underneath it instead of through it.
     const rows = summaryRows(type, data);
     const summaryHeight = 24 + rows.length * 18;
-    ensureRoom(doc, summaryHeight);
-    const bottomY = doc.y;
     const notesWidth = width * 0.55, summaryWidth = width - notesWidth - 12;
-    let noteY = bottomY;
-    doc.font('Helvetica').fontSize(9).fillColor(INK);
-    if (d.notes) {
-      doc.font('Helvetica-Bold').fontSize(10).text('Notes', left, noteY, { width: notesWidth });
-      noteY = doc.y;
-      doc.font('Helvetica').fontSize(9).fillColor(MUTED).text(clean(d.notes), left, noteY, { width: notesWidth });
-      noteY = doc.y + 6;
-    }
-    if (d.termsAndConditions) {
-      doc.font('Helvetica-Bold').fontSize(10).fillColor(INK).text('Terms & Conditions', left, noteY, { width: notesWidth });
-      noteY = doc.y;
-      doc.font('Helvetica').fontSize(9).fillColor(MUTED).text(clean(d.termsAndConditions), left, noteY, { width: notesWidth });
-    }
+    const notesBlocks = [
+      { title: 'Notes', body: clean(d.notes) },
+      { title: 'Terms & Conditions', body: clean(d.termsAndConditions) },
+    ].filter((block) => block.body);
+    const notesHeight = notesBlocks.reduce((total, block) => {
+      doc.font('Helvetica-Bold').fontSize(10);
+      const titleHeight = doc.heightOfString(block.title, { width: notesWidth });
+      doc.font('Helvetica').fontSize(9);
+      return total + titleHeight + doc.heightOfString(block.body, { width: notesWidth }) + 6;
+    }, 0);
+    ensureRoom(doc, Math.max(summaryHeight, notesHeight));
+    const bottomY = doc.y;
 
     const sx = left + notesWidth + 12;
     doc.rect(sx, bottomY, summaryWidth, 20).fillAndStroke(HEAD_BG, LINE);
     doc.font('Helvetica-Bold').fontSize(10).fillColor(INK).text('SUMMARY', sx, bottomY + 5, { width: summaryWidth, align: 'center' });
     let sy = bottomY + 20;
-    rows.forEach(([label, value], i) => {
+    rows.forEach(([label, value]) => {
       const isNet = label === 'NET';
       doc.rect(sx, sy, summaryWidth, 18).stroke(LINE);
       doc.font(isNet ? 'Helvetica-Bold' : 'Helvetica').fontSize(isNet ? 10 : 9).fillColor(INK)
@@ -324,6 +229,14 @@ function renderDocumentPdf(type, data) {
       sy += 18;
     });
 
+    let noteY = bottomY;
+    notesBlocks.forEach((block) => {
+      doc.font('Helvetica-Bold').fontSize(10).fillColor(INK).text(block.title, left, noteY, { width: notesWidth });
+      doc.font('Helvetica').fontSize(9).fillColor(MUTED).text(block.body, left, doc.y, { width: notesWidth });
+      noteY = doc.y + 6;
+    });
+
+    doc.y = Math.max(sy, noteY);
     doc.end();
   });
 }

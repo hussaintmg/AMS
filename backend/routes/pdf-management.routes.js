@@ -17,6 +17,8 @@ router.post('/variables', admin, controller.createVariable);
 router.post('/variables/bulk', admin, controller.bulkVariables);
 router.delete('/variables/:id', admin, controller.deleteVariable);
 router.get('/resolved-html/:documentType/:id', authenticate, controller.resolvedHtml);
+// What the View modal renders and what Print prints — same layout as the download.
+router.get('/print-html/:documentType/:id', authenticate, controller.printHtml);
 router.get('/download/:documentType/:id', authenticate, controller.downloadOne);
 router.post('/download/:documentType/bulk', authenticate, controller.downloadBulk);
 module.exports = router;

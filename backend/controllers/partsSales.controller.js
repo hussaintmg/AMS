@@ -31,6 +31,7 @@ const { recordCustomerActivity } = require('../utils/customerSync');
 const { resolveLineItems, summarizeLineItems, linesToRequested, round2 } = require('../services/lineItems.service');
 const { applyInvoiceStock, revertInvoiceStock, assertPartsAvailable } = require('../services/partStock.service');
 const { resolveDocumentCustomer } = require('../utils/walkInCustomer');
+const { resolvePaymentMethod } = require('../utils/paymentMethod.util');
 const { allowedOwnerIds, canDo } = require('../utils/roleJobs');
 const { sendCustomerDocumentEmail } = require('../services/documentEmail.service');
 const { buildEstimatePdf, buildEstimateEmailContext, defaultEstimateEmailHtml } = require('../services/estimate.service');
@@ -431,13 +432,12 @@ const approveQuotation = async (req, res, next) => {
 
 /** A quotation becomes a booking only once it has been approved. */
 /**
- * The parts flow is quotation → invoice, nothing in between. Conversion keeps
- * every line and its quantity from the quotation; the caller may confirm or
- * adjust the unit prices (that is the only question the screen asks) and may
- * record what the customer paid. The invoice raised here is what moves stock.
- *
- * `req.body.prices` — optional map of partId → unit price. Lines not in the
- * map keep their quoted price.
+ * The parts flow is quotation → invoice, nothing in between. Conversion is a
+ * faithful copy: every line, quantity and price carries over exactly as it was
+ * quoted and approved — the screen no longer offers to re-price anything, since
+ * an approved quotation is the price the customer agreed to. All the invoice
+ * step asks for is how the counter was paid and how much was handed over. The
+ * invoice raised here is what moves stock.
  */
 const convertQuotationToInvoice = async (req, res, next) => {
     try {
@@ -449,25 +449,21 @@ const convertQuotationToInvoice = async (req, res, next) => {
             throw new AppError('This quotation must be approved before it can be converted to an invoice', 400);
         }
 
-        const prices = req.body.prices && typeof req.body.prices === 'object' ? req.body.prices : {};
+        const paymentMethod = await resolvePaymentMethod(req.body.paymentMethodId);
         const body = {
             customerId: quotation.customer ? String(quotation.customer) : undefined,
             walkIn: quotation.walkIn,
             walkInName: quotation.walkInName,
             walkInPhone: quotation.walkInPhone,
-            lineItems: (quotation.lineItems || []).map((line) => {
-                const partId = line.part ? String(line.part._id || line.part) : null;
-                const override = partId != null ? prices[partId] : undefined;
-                return {
-                    itemType: 'part',
-                    partId,
-                    quantity: num(line.quantity, 1),
-                    unitPrice: override != null && override !== '' ? num(override) : num(line.unitPrice),
-                    discountAmount: num(line.discountAmount),
-                    taxAmount: num(line.taxAmount),
-                    description: line.description,
-                };
-            }),
+            lineItems: (quotation.lineItems || []).map((line) => ({
+                itemType: 'part',
+                partId: line.part ? String(line.part._id || line.part) : null,
+                quantity: num(line.quantity, 1),
+                unitPrice: num(line.unitPrice),
+                discountAmount: num(line.discountAmount),
+                taxAmount: num(line.taxAmount),
+                description: line.description,
+            })),
             // Only the document-level residue carries over — the line-level
             // discount/tax travels on the lines themselves (see documentLevelOnly).
             ...documentLevelOnly(quotation),
@@ -507,6 +503,8 @@ const convertQuotationToInvoice = async (req, res, next) => {
             balanceAmount: round2(totals.totalAmount - paidAmount),
             amountTendered: changeDue > 0 ? tendered : 0,
             changeDue,
+            paymentMethod: paymentMethod.id,
+            paymentMode: paymentMethod.name,
             notes: body.notes,
             termsAndConditions: quotation.termsAndConditions,
             salePerson: [req.user.firstName, req.user.lastName].filter(Boolean).join(' '),
@@ -867,6 +865,8 @@ async function createInvoiceForOrder(order, { userId = null, dueDays = 30 } = {}
         totalAmount,
         paidAmount,
         balanceAmount: round2(totalAmount - paidAmount),
+        paymentMethod: order.paymentMethod || null,
+        paymentMode: order.paymentMode || '',
         salePerson: order.salePerson,
         seller: order.seller,
         createdBy: userId,
@@ -910,6 +910,7 @@ async function createInvoiceForOrder(order, { userId = null, dueDays = 30 } = {}
 async function createOrderInternal({ body, userId, user, bookingId = null, quotationId = null }) {
     const lines = await resolvePartLines(body, { checkStock: true });
     const { customer, walkIn, walkInName, walkInPhone } = await resolveDocumentCustomer(body, requireCustomer);
+    const paymentMethod = await resolvePaymentMethod(body.paymentMethodId);
 
     const totals = documentTotals(body, lines);
     if (totals.totalAmount <= 0) throw new AppError('Valid price is required', 400);
@@ -940,7 +941,8 @@ async function createOrderInternal({ body, userId, user, bookingId = null, quota
         totalAmount: totals.totalAmount,
         paidAmount,
         balanceAmount: round2(totals.totalAmount - paidAmount),
-        paymentMode: body.paymentMode || 'cash',
+        paymentMode: paymentMethod.name || body.paymentMode || 'cash',
+        paymentMethod: paymentMethod.id,
         orderDate: now,
         deliveryDate: body.expectedDeliveryDate ? new Date(body.expectedDeliveryDate) : null,
         notes: body.notes,
@@ -1154,6 +1156,8 @@ const mapInvoice = (inv) => ({
     balance_amount: inv.balanceAmount || 0,
     amount_tendered: inv.amountTendered || 0,
     change_due: inv.changeDue || 0,
+    payment_method_id: inv.paymentMethod || null,
+    payment_method_name: inv.paymentMode || '',
     stock_applied: inv.stockApplied === true,
     terms_and_conditions: inv.termsAndConditions || '',
 });

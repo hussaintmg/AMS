@@ -38,6 +38,7 @@ const {
 } = require('../services/lineItems.service');
 const { reserveBookingVehicles, releaseBookingVehicles, revertInvoiceStock } = require('../services/stockLedger.service');
 const { resolveDocumentCustomer } = require('../utils/walkInCustomer');
+const { resolvePaymentMethod } = require('../utils/paymentMethod.util');
 
 /**
  * These documents are the vehicle side of the business. Parts have their own
@@ -1248,11 +1249,15 @@ async function createOrderInternal({
     salePerson = '',
 }) {
     const {
-        paymentMode, financeCompany, financeAmount, exchangeVehicleDetails,
+        financeCompany, financeAmount, exchangeVehicleDetails,
         expectedDeliveryDate, notes,
     } = body;
 
     const { customer, walkIn, walkInName, walkInPhone } = await resolveDocumentCustomer(body, requireCustomer);
+    // A method picked from the Payment Methods master wins over the free-text
+    // mode older callers still send.
+    const method = await resolvePaymentMethod(body.paymentMethodId);
+    const paymentMode = method.name || body.paymentMode;
 
     const requested = readRequestedItems(body);
     if (!requested.length) throw new AppError('Add at least one vehicle to the sales order', 400);
@@ -1348,7 +1353,8 @@ async function createOrderInternal({
                 paymentNumber,
                 invoice: invoice._id,
                 customer: customer._id,
-                method: { name: paymentMode || 'cash', code: '', type: '' },
+                methodRef: method.id,
+                method: { name: paymentMode || 'cash', code: method.code, type: method.type },
                 amount: totals.paidAmount,
                 paymentDate: now,
                 notes: `Initial payment with sales order ${orderNumber}`,
@@ -1426,7 +1432,10 @@ const createDirectSalesOrder = async (req, res, next) => {
 
 const convertBookingToOrder = async (req, res, next) => {
     try {
-        const { vehicleId, paidAmount, paymentMode, registrationCharges, insuranceCharges, notes } = req.body;
+        const {
+            vehicleId, paidAmount, paymentMode, paymentMethodId,
+            registrationCharges, insuranceCharges, notes,
+        } = req.body;
 
         const booking = await Booking.findById(req.params.id);
         if (!booking) throw new AppError('Booking not found', 404);
@@ -1461,7 +1470,13 @@ const convertBookingToOrder = async (req, res, next) => {
                 vehiclePrice: booking.totalAmount,
                 registrationCharges,
                 insuranceCharges,
-                paidAmount: paidAmount !== undefined ? paidAmount : booking.bookingAmount,
+                // Whatever was taken as the booking deposit is already paid, so
+                // anything collected at handover adds to it rather than
+                // replacing it (the parts side does the same).
+                paidAmount: paidAmount !== undefined
+                    ? num(paidAmount) + num(booking.bookingAmount)
+                    : booking.bookingAmount,
+                paymentMethodId,
                 paymentMode: paymentMode || 'cash',
                 expectedDeliveryDate: booking.deliveryDate,
                 notes,

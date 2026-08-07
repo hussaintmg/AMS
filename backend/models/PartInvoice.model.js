@@ -42,6 +42,11 @@ const partInvoiceSchema = new mongoose.Schema({
   amountTendered: { type: Number, default: 0 },
   changeDue: { type: Number, default: 0 },
 
+  // How the counter was paid. The reference survives a rename; the name is the
+  // snapshot that gets printed on the receipt (see utils/paymentMethod.util.js).
+  paymentMethod: { type: mongoose.Schema.Types.ObjectId, ref: 'PaymentMethod', default: null },
+  paymentMode: { type: String, trim: true, default: '' },
+
   salePerson: { type: String, trim: true, default: '' },
   seller: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   notes: { type: String },

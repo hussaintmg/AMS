@@ -29,7 +29,10 @@ const partSalesOrderSchema = new mongoose.Schema({
   totalAmount: { type: Number, default: 0 },
   paidAmount: { type: Number, default: 0 },
   balanceAmount: { type: Number, default: 0 },
+  // paymentMode is the method's name as it stood at the sale; paymentMethod is
+  // the reference that survives a rename (see utils/paymentMethod.util.js).
   paymentMode: { type: String, trim: true, default: '' },
+  paymentMethod: { type: mongoose.Schema.Types.ObjectId, ref: 'PaymentMethod', default: null },
 
   orderDate: { type: Date },
   deliveryDate: { type: Date },

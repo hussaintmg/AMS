@@ -41,6 +41,7 @@ import {
 import { printSalesModal } from '../utils/printSalesModal';
 import { renderSalesTemplate } from '../utils/documentTemplateRender';
 import { useSalesHtmlTemplate } from '../hooks/useSalesHtmlTemplate';
+import { useSalesDocumentPrintHtml } from '../hooks/useSalesDocumentPrintHtml';
 import useErpDocumentSettings from '../hooks/useErpDocumentSettings';
 import RenderedHtmlDocumentTemplate from '../components/sales/RenderedHtmlDocumentTemplate';
 import ProductCell from '../components/sales/ProductCell';
@@ -335,17 +336,26 @@ function Quotations({ category = 'vehicle' }) {
     const [selectedItem, setSelectedItem] = useState(null);
     const [selectedIds,setSelectedIds]=useState([]);
     const [sendingEmail, setSendingEmail] = useState(null);
+    // What the printed / downloaded quotation looks like. The ERP-Settings HTML
+    // template below is only reached if the server document cannot be built.
+    const { documentHtml, documentLoading } = useSalesDocumentPrintHtml(
+        'quotation',
+        selectedItem?.id,
+        showModal && modalMode === 'view'
+    );
     const { templateHtml, templateLoading } = useSalesHtmlTemplate(
         'quotation',
         companyInfo?.id,
         showModal && modalMode === 'view'
     );
+    const viewLoading = documentLoading || templateLoading;
 
     // Dropdowns
     const [customers, setCustomers] = useState([]);
     const [vehicles, setVehicles] = useState([]);
     const [vehicleVariants, setVehicleVariants] = useState([]);
     const [parts, setParts] = useState([]);
+    const [paymentMethods, setPaymentMethods] = useState([]);
 
     // A quotation may quote any mix of vehicles and parts; lineItems is the
     // source of truth and vehiclePrice below is only the derived subtotal.
@@ -451,7 +461,8 @@ function Quotations({ category = 'vehicle' }) {
                 fetchAllCustomersForDropdown(),
                 vehicleAPI.getAll({ limit: 200 }),
                 vehicleAPI.getVariants(),
-                partsAPI.getAll({ limit: 200 })
+                partsAPI.getAll({ limit: 200 }),
+                paymentMethodsAPI.getAll({ status: 'active' })
             ]);
 
             setCustomers(results[0].status === 'fulfilled' ? results[0].value || [] : []);
@@ -459,6 +470,7 @@ function Quotations({ category = 'vehicle' }) {
             const variants = results[2].status === 'fulfilled' ? (results[2].value?.data?.data || []) : [];
             setVehicleVariants(variants);
             setParts(results[3].status === 'fulfilled' && results[3].value?.data?.data?.parts ? results[3].value.data.data.parts : []);
+            setPaymentMethods(results[4].status === 'fulfilled' ? results[4].value?.data?.data || [] : []);
         } catch (error) {
             console.error('Error fetching dropdowns:', error);
         }
@@ -662,13 +674,10 @@ function Quotations({ category = 'vehicle' }) {
 
     const handleConvertClick = (item) => {
         if (isParts) {
-            // Parts convert straight to an invoice; the only question the modal
-            // asks is the final price of each line (and what was paid).
-            const prices = {};
-            (item.line_items || []).forEach((line) => {
-                if (line.part_id) prices[line.part_id] = String(line.unit_price ?? '');
-            });
-            setConversionForm({ item, prices, paidAmount: '' });
+            // Parts convert straight to an invoice. The approved quotation is
+            // the price the customer agreed to, so nothing is re-priced here —
+            // the modal only asks how the counter was paid.
+            setConversionForm({ item, paymentMethodId: '', paidAmount: '' });
             return;
         }
         setConversionForm({
@@ -686,13 +695,15 @@ function Quotations({ category = 'vehicle' }) {
             toast.error('Select the actual inventory Vehicle for this Booking.');
             return;
         }
+        if (isParts && !conversionForm.paymentMethodId) {
+            toast.error('Select how this sale was paid.');
+            return;
+        }
         setConverting(true);
         try {
             if (isParts) {
                 const res = await docApi.convertQuotation(conversionForm.item.id, {
-                    prices: Object.fromEntries(
-                        Object.entries(conversionForm.prices || {}).map(([partId, price]) => [partId, Number(price) || 0]),
-                    ),
+                    paymentMethodId: conversionForm.paymentMethodId,
                     paidAmount: Number(conversionForm.paidAmount) || 0,
                 });
                 toast.success(`Invoice ${res?.data?.data?.invoiceNumber || ''} created — stock updated`);
@@ -737,44 +748,56 @@ function Quotations({ category = 'vehicle' }) {
         <div className="card sales-page">
             <ConfirmModal {...confirmModal} loading={sendingEmail} onCancel={() => setConfirmModal({ ...confirmModal, isOpen: false })} />
             {conversionForm && isParts && (() => {
-                // Quantities are fixed by the quotation; only the prices are asked.
+                // Nothing on the quotation is editable here: it was approved at
+                // these prices, so the invoice bills exactly that. The lines are
+                // shown for confirmation only.
                 const partLines = (conversionForm.item.line_items || []).filter((line) => line.part_id);
-                const convTotal = partLines.reduce(
-                    (sum, line) => sum + (Number(conversionForm.prices?.[line.part_id]) || 0) * (Number(line.quantity) || 1),
+                const convTotal = Number(conversionForm.item.total_amount) || partLines.reduce(
+                    (sum, line) => sum + (Number(line.unit_price) || 0) * (Number(line.quantity) || 1),
                     0,
                 );
                 return (
                     <Modal title={`Convert ${conversionForm.item.quotation_number} to Invoice`} onClose={() => !converting && setConversionForm(null)}>
                         <form onSubmit={handleConvertConfirm}>
                             <p className="text-muted" style={{ marginTop: 0 }}>
-                                Confirm the selling price of each part. Creating the invoice takes the stock off the shelf.
+                                The approved prices carry over as they are. Creating the invoice takes the stock off the shelf.
                             </p>
-                            {partLines.map((line) => (
-                                <div className="form-row" key={line.part_id} style={{ alignItems: 'center' }}>
-                                    <div className="form-group" style={{ flex: 2, marginBottom: 8 }}>
-                                        <label style={{ fontWeight: 600 }}>{line.name || line.description || 'Part'}</label>
-                                        <small className="text-muted">Qty {line.quantity}</small>
-                                    </div>
-                                    <div className="form-group" style={{ flex: 1, marginBottom: 8 }}>
-                                        <label>Unit price *</label>
-                                        <input
-                                            type="number"
-                                            min="0"
-                                            step="0.01"
-                                            value={conversionForm.prices?.[line.part_id] ?? ''}
-                                            onChange={(event) => setConversionForm((prev) => ({
-                                                ...prev,
-                                                prices: { ...prev.prices, [line.part_id]: event.target.value },
-                                            }))}
-                                            required
-                                        />
-                                    </div>
-                                </div>
-                            ))}
+                            <table className="data-table" style={{ marginBottom: '1rem' }}>
+                                <thead>
+                                    <tr>
+                                        <th>Part</th>
+                                        <th style={{ textAlign: 'right' }}>Qty</th>
+                                        <th style={{ textAlign: 'right' }}>Unit price</th>
+                                        <th style={{ textAlign: 'right' }}>Amount</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {partLines.map((line) => (
+                                        <tr key={line.part_id}>
+                                            <td>{line.name || line.description || 'Part'}</td>
+                                            <td style={{ textAlign: 'right' }}>{line.quantity}</td>
+                                            <td style={{ textAlign: 'right' }}>{formatPKR(line.unit_price)}</td>
+                                            <td style={{ textAlign: 'right' }}>
+                                                {formatPKR((Number(line.unit_price) || 0) * (Number(line.quantity) || 1))}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
                             <div className="form-row">
                                 <div className="form-group">
-                                    <label>Total</label>
-                                    <input type="number" value={convTotal} readOnly />
+                                    <label>Payment method *</label>
+                                    <SearchableSelect
+                                        name="paymentMethodId"
+                                        value={conversionForm.paymentMethodId}
+                                        onChange={(event) => setConversionForm((prev) => ({ ...prev, paymentMethodId: event.target.value }))}
+                                        required
+                                    >
+                                        <option value="">How was this paid?</option>
+                                        {paymentMethods.map((method) => (
+                                            <option key={method.id} value={String(method.id)}>{method.name}</option>
+                                        ))}
+                                    </SearchableSelect>
                                 </div>
                                 <div className="form-group">
                                     <label>Amount received</label>
@@ -787,6 +810,10 @@ function Quotations({ category = 'vehicle' }) {
                                         placeholder="What the customer paid now"
                                     />
                                 </div>
+                            </div>
+                            <div className="form-group">
+                                <label>Total</label>
+                                <input type="text" value={formatPKR(convTotal)} readOnly />
                             </div>
                             <div className="modal-actions">
                                 <button type="button" className="btn btn-secondary" onClick={() => setConversionForm(null)} disabled={converting}>Cancel</button>
@@ -963,13 +990,15 @@ function Quotations({ category = 'vehicle' }) {
                 <Modal
                     title={modalMode === 'view' ? `Quotation ${selectedItem?.quotation_number || ''}` : `${modalMode === 'create' ? 'Create' : 'Edit'} Quotation`}
                     onClose={closeModal}
-                    size={modalMode === 'view' ? 'medium' : 'large'}
+                    size="large"
                     overlayClassName={modalMode === 'view' ? 'sales-print-modal' : undefined}
                 >
                     {modalMode === 'view' ? (
                         <>
-                            {templateLoading ? (
+                            {viewLoading ? (
                                 <div className="spinner" />
+                            ) : documentHtml ? (
+                                <RenderedHtmlDocumentTemplate htmlString={documentHtml} />
                             ) : templateHtml ? (
                                 <RenderedHtmlDocumentTemplate
                                     htmlString={renderSalesTemplate('quotation', templateHtml, {
@@ -1015,7 +1044,7 @@ function Quotations({ category = 'vehicle' }) {
                             )}
                             <div className="modal-actions">
                                 <button type="button" className="btn btn-secondary" onClick={closeModal}>Close</button>
-                                <button type="button" className="btn btn-primary" onClick={runSalesPrint} disabled={templateLoading}>Print</button>
+                                <button type="button" className="btn btn-primary" onClick={runSalesPrint} disabled={viewLoading}>Print</button>
                             </div>
                         </>
                     ) : (
@@ -1116,14 +1145,21 @@ function Bookings({ category = 'vehicle' }) {
     const [selectedItem, setSelectedItem] = useState(null);
     const [selectedIds,setSelectedIds]=useState([]);
     const [sendingEmail, setSendingEmail] = useState(null);
+    const { documentHtml, documentLoading } = useSalesDocumentPrintHtml(
+        'booking',
+        selectedItem?.id,
+        showModal && modalMode === 'view'
+    );
     const { templateHtml, templateLoading } = useSalesHtmlTemplate(
         'booking',
         companyInfo?.id,
         showModal && modalMode === 'view'
     );
+    const viewLoading = documentLoading || templateLoading;
     const [customers, setCustomers] = useState([]);
     const [vehicles, setVehicles] = useState([]);
     const [parts, setParts] = useState([]);
+    const [paymentMethods, setPaymentMethods] = useState([]);
 
     // A booking can reserve several vehicles and order several parts at once.
     const [bookingLines, setBookingLines] = useState([]);
@@ -1221,11 +1257,13 @@ function Bookings({ category = 'vehicle' }) {
             const results = await Promise.allSettled([
                 fetchAllCustomersForDropdown(),
                 vehicleAPI.getAll({ limit: 200 }),
-                partsAPI.getAll({ limit: 500 })
+                partsAPI.getAll({ limit: 500 }),
+                paymentMethodsAPI.getAll({ status: 'active' })
             ]);
             setCustomers(results[0].status === 'fulfilled' ? results[0].value || [] : []);
             setVehicles(results[1].status === 'fulfilled' && results[1].value?.data?.data?.vehicles ? results[1].value?.data?.data?.vehicles : []);
             setParts(results[2].status === 'fulfilled' ? results[2].value?.data?.data?.parts || [] : []);
+            setPaymentMethods(results[3].status === 'fulfilled' ? results[3].value?.data?.data || [] : []);
         } catch (error) {
             console.error('Error fetching dropdowns:', error);
         }
@@ -1359,13 +1397,36 @@ function Bookings({ category = 'vehicle' }) {
         }
     };
 
+    // Converting a booking raises its invoice, so the counter is asked how the
+    // balance was settled rather than just being asked to confirm.
     const [convertingId, setConvertingId] = useState(null);
-    const handleConvertToOrder = async (item) => {
-        if (!window.confirm(`Convert booking ${item.booking_number} to a sales order?`)) return;
+    const [conversionForm, setConversionForm] = useState(null);
+
+    const handleConvertClick = (item) => {
+        const outstanding = Math.max(0, (Number(item.total_amount) || 0) - (Number(item.booking_amount) || 0));
+        setConversionForm({
+            item,
+            paymentMethodId: '',
+            paidAmount: outstanding ? String(outstanding) : '',
+        });
+    };
+
+    const handleConvertConfirm = async (event) => {
+        event.preventDefault();
+        if (!conversionForm?.item) return;
+        if (!conversionForm.paymentMethodId) {
+            toast.error('Select how this sale was paid.');
+            return;
+        }
+        const item = conversionForm.item;
         setConvertingId(item.id);
         try {
-            const res = await docApi.convertBooking(item.id, {});
+            const res = await docApi.convertBooking(item.id, {
+                paymentMethodId: conversionForm.paymentMethodId,
+                paidAmount: Number(conversionForm.paidAmount) || 0,
+            });
             toast.success(`Booking converted to order ${res.data?.data?.orderNumber || ''}`);
+            setConversionForm(null);
             fetchData();
         } catch (error) {
             toast.error(error.response?.data?.message || 'Failed to convert booking');
@@ -1383,6 +1444,62 @@ function Bookings({ category = 'vehicle' }) {
 
     return (
         <div className="card sales-page">
+            {conversionForm && (
+                <Modal
+                    title={`Convert ${conversionForm.item.booking_number} to Sales Order`}
+                    onClose={() => convertingId === null && setConversionForm(null)}
+                >
+                    <form onSubmit={handleConvertConfirm}>
+                        <p className="text-muted" style={{ marginTop: 0 }}>
+                            The booking's products and prices carry over as they are. This raises the invoice,
+                            which is what takes the stock off the shelf.
+                        </p>
+                        <div className="form-row">
+                            <div className="form-group">
+                                <label>Order value</label>
+                                <input type="text" value={formatPKR(conversionForm.item.total_amount)} readOnly />
+                            </div>
+                            <div className="form-group">
+                                <label>Already paid (deposit)</label>
+                                <input type="text" value={formatPKR(conversionForm.item.booking_amount)} readOnly />
+                            </div>
+                        </div>
+                        <div className="form-row">
+                            <div className="form-group">
+                                <label>Payment method *</label>
+                                <SearchableSelect
+                                    name="paymentMethodId"
+                                    value={conversionForm.paymentMethodId}
+                                    onChange={(event) => setConversionForm((prev) => ({ ...prev, paymentMethodId: event.target.value }))}
+                                    required
+                                >
+                                    <option value="">How was this paid?</option>
+                                    {paymentMethods.map((method) => (
+                                        <option key={method.id} value={String(method.id)}>{method.name}</option>
+                                    ))}
+                                </SearchableSelect>
+                            </div>
+                            <div className="form-group">
+                                <label>Amount received now</label>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    value={conversionForm.paidAmount}
+                                    onChange={(event) => setConversionForm((prev) => ({ ...prev, paidAmount: event.target.value }))}
+                                    placeholder="Balance collected at handover"
+                                />
+                            </div>
+                        </div>
+                        <div className="modal-actions">
+                            <button type="button" className="btn btn-secondary" onClick={() => setConversionForm(null)} disabled={convertingId !== null}>Cancel</button>
+                            <button type="submit" className="btn btn-primary" disabled={convertingId !== null}>
+                                {convertingId !== null ? 'Converting...' : 'Create Sales Order'}
+                            </button>
+                        </div>
+                    </form>
+                </Modal>
+            )}
             <div className="card-header d-flex justify-content-between align-items-center">
                 <h3>{config.label} Bookings</h3>
                 <div className="sales-header-actions">
@@ -1452,7 +1569,7 @@ function Bookings({ category = 'vehicle' }) {
                                         onView={() => openModal('view', b)}
                                         onEdit={canAction && !['cancelled', 'completed'].includes(b.status) ? () => openModal('edit', b) : null}
                                         customActions={[
-                                            ...(canAction && !['cancelled', 'completed', 'converted'].includes(b.status) ? [{ icon: <Truck size={18}/>, title: 'Convert to Sales Order', onClick: () => handleConvertToOrder(b), className: 'btn-success', disabled: convertingId === b.id, loading: convertingId === b.id }] : []),
+                                            ...(canAction && !['cancelled', 'completed', 'converted'].includes(b.status) ? [{ icon: <Truck size={18}/>, title: 'Convert to Sales Order', onClick: () => handleConvertClick(b), className: 'btn-success', disabled: convertingId === b.id, loading: convertingId === b.id }] : []),
                                             ...(canDownloadPdf ? [{ icon: <Download size={18}/>, title: 'Download PDF', onClick: () => downloadSalesPdf('booking', b.id, b.booking_number), className: 'btn-info' }] : []),
                                             ...(canSendEmail ? [{ icon: <Send size={18} className="action-icon" />, title: 'Send booking email', onClick: () => handleSendEmail(b), className: 'btn-info', disabled: sendingEmail === b.id, loading: sendingEmail === b.id }] : [])
                                         ]}
@@ -1489,7 +1606,7 @@ function Bookings({ category = 'vehicle' }) {
                                         onEdit={canAction && !['cancelled', 'completed'].includes(b.status) ? () => openModal('edit', b) : null}
                                         customActions={[
                                             ...(canDownloadPdf ? [{ icon: <Download size={18}/>, title: 'Download PDF', onClick: () => downloadSalesPdf('booking', b.id, b.booking_number), className: 'btn-info' }] : []),
-                                            ...(canAction && !['cancelled', 'completed', 'converted'].includes(b.status) ? [{ icon: <Truck size={18}/>, title: 'Convert to Sales Order', onClick: () => handleConvertToOrder(b), className: 'btn-success', disabled: convertingId === b.id, loading: convertingId === b.id }] : []),
+                                            ...(canAction && !['cancelled', 'completed', 'converted'].includes(b.status) ? [{ icon: <Truck size={18}/>, title: 'Convert to Sales Order', onClick: () => handleConvertClick(b), className: 'btn-success', disabled: convertingId === b.id, loading: convertingId === b.id }] : []),
                                             ...(canSendEmail ? [{ icon: <Send size={18} className="action-icon" />, title: 'Send booking email', onClick: () => handleSendEmail(b), className: 'btn-info', disabled: sendingEmail === b.id, loading: sendingEmail === b.id }] : [])
                                         ]}
                                     />
@@ -1515,13 +1632,15 @@ function Bookings({ category = 'vehicle' }) {
                     <Modal
                         title={modalMode === 'view' ? `Booking ${selectedItem?.booking_number || ''}` : `${modalMode === 'create' ? 'Create' : 'Edit'} Booking`}
                         onClose={closeModal}
-                        size={modalMode === 'view' ? 'medium' : 'large'}
+                        size="large"
                         overlayClassName={modalMode === 'view' ? 'sales-print-modal' : undefined}
                     >
                         {modalMode === 'view' ? (
                             <>
-                                {templateLoading ? (
+                                {viewLoading ? (
                                     <div className="spinner" />
+                                ) : documentHtml ? (
+                                    <RenderedHtmlDocumentTemplate htmlString={documentHtml} />
                                 ) : templateHtml ? (
                                     <RenderedHtmlDocumentTemplate
                                         htmlString={renderSalesTemplate('booking', templateHtml, {
@@ -1561,7 +1680,7 @@ function Bookings({ category = 'vehicle' }) {
                                 )}
                                 <div className="modal-actions">
                                     <button type="button" className="btn btn-secondary" onClick={closeModal}>Close</button>
-                                    <button type="button" className="btn btn-primary" onClick={runSalesPrint} disabled={templateLoading}>Print</button>
+                                    <button type="button" className="btn btn-primary" onClick={runSalesPrint} disabled={viewLoading}>Print</button>
                                 </div>
                             </>
                         ) : (
@@ -1679,11 +1798,17 @@ function SalesOrders({ category = 'vehicle' }) {
     const [selectedItem, setSelectedItem] = useState(null);
     const [selectedIds,setSelectedIds]=useState([]);
     const [sendingEmail, setSendingEmail] = useState(null);
+    const { documentHtml, documentLoading } = useSalesDocumentPrintHtml(
+        'order',
+        selectedItem?.id,
+        showModal && modalMode === 'view'
+    );
     const { templateHtml, templateLoading } = useSalesHtmlTemplate(
         'order',
         companyInfo?.id,
         showModal && modalMode === 'view'
     );
+    const viewLoading = documentLoading || templateLoading;
     const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', onConfirm: null });
     const [showBulkUpload, setShowBulkUpload] = useState(false);
 
@@ -2306,8 +2431,10 @@ function SalesOrders({ category = 'vehicle' }) {
                 >
                     {modalMode === 'view' ? (
                         <>
-                            {templateLoading ? (
+                            {viewLoading ? (
                                 <div className="spinner" />
+                            ) : documentHtml ? (
+                                <RenderedHtmlDocumentTemplate htmlString={documentHtml} />
                             ) : templateHtml ? (
                                 <RenderedHtmlDocumentTemplate
                                     htmlString={renderSalesTemplate('order', templateHtml, {
@@ -2388,7 +2515,7 @@ function SalesOrders({ category = 'vehicle' }) {
                             )}
                             <div className="modal-actions" style={{ marginTop: '1rem' }}>
                                 <button type="button" className="btn btn-secondary" onClick={closeModal}>Close</button>
-                                <button type="button" className="btn btn-primary" onClick={runSalesPrint} disabled={templateLoading}>Print</button>
+                                <button type="button" className="btn btn-primary" onClick={runSalesPrint} disabled={viewLoading}>Print</button>
                             </div>
                         </>
                     ) : (
@@ -2610,11 +2737,17 @@ function Invoices({ category = 'vehicle' }) {
     const [invoiceDetails, setInvoiceDetails] = useState(null);
     const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', onConfirm: null });
     const [companyInfo, setCompanyInfo] = useState(null);
+    const { documentHtml, documentLoading } = useSalesDocumentPrintHtml(
+        'invoice',
+        invoiceDetails?.id,
+        showModal && modalMode === 'view'
+    );
     const { templateHtml, templateLoading } = useSalesHtmlTemplate(
         'invoice',
         companyInfo?.id,
         showModal && modalMode === 'view'
     );
+    const viewLoading = documentLoading || templateLoading;
 
     // Filters & Pagination
     const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 0 });
@@ -3289,8 +3422,10 @@ function Invoices({ category = 'vehicle' }) {
             {showModal && modalMode === 'view' && invoiceDetails && (
                 <Modal title={`Invoice ${invoiceDetails.invoice_number}`} onClose={closeModal} size="large" overlayClassName="sales-print-modal">
                     <>
-                    {templateLoading ? (
+                    {viewLoading ? (
                         <div className="spinner" style={{ minHeight: '200px' }} />
+                    ) : documentHtml ? (
+                        <RenderedHtmlDocumentTemplate htmlString={documentHtml} />
                     ) : templateHtml ? (
                         <RenderedHtmlDocumentTemplate
                             htmlString={renderSalesTemplate('invoice', templateHtml, { companyInfo, invoiceDetails })}
@@ -3457,7 +3592,7 @@ function Invoices({ category = 'vehicle' }) {
                                 Record Payment
                             </button>
                         )}
-                        <button className="btn btn-primary" onClick={runSalesPrint} disabled={templateLoading}>Print</button>
+                        <button className="btn btn-primary" onClick={runSalesPrint} disabled={viewLoading}>Print</button>
                     </div>
                     </>
                 </Modal>

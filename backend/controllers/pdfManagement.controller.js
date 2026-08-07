@@ -4,6 +4,7 @@ const { PdfTemplate, PdfUsage, PdfVariable } = require('../models');
 const { renderDocumentPdf } = require('../services/pdfKitRenderer.service');
 const { TYPES, findDocument, buildDataBag, variableCatalog, companyName, companyInfo } = require('../services/pdfData.service');
 const { resolveTokens } = require('../services/pdfFormat.cjs');
+const { buildSalesDocumentHtml } = require('../services/salesDocumentHtml.service');
 
 // Set PDF_DEBUG=1 to log resolved variables for each generated document while
 // testing. Left off by default so normal runs stay quiet.
@@ -167,6 +168,22 @@ exports.resolvedHtml = async (req, res, next) => {
         css: template.css || '',
       },
     });
+  } catch (error) { next(error); }
+};
+
+/**
+ * The document as HTML, laid out exactly like the PDF a download produces.
+ *
+ * This is what the View modal shows and what Print sends to the printer, so
+ * all three routes out of a sales document — view, print, download — are the
+ * same document rendered by the same layout (services/salesDocumentLayout.cjs)
+ * over the same data bag. No template needs to be assigned for it to work.
+ */
+exports.printHtml = async (req, res, next) => {
+  try {
+    const record = await loadRecord(req.params.documentType, req.params.id);
+    const { html, css } = buildSalesDocumentHtml(req.params.documentType, record.data);
+    res.json({ success: true, data: { name: record.name, html, css } });
   } catch (error) { next(error); }
 };
 

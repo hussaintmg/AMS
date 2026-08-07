@@ -345,6 +345,51 @@
     body.ams-print-sales-doc .sales-print-modal td {
         border: 0.5pt solid #e5e7eb !important;
     }
+
+    /*
+     * ...but not inside the server-rendered document, which draws its own
+     * borders and uses two borderless tables purely to place the note boxes and
+     * the notes/summary columns side by side. Blanket-bordering every cell put
+     * a box around that scaffolding and made the printed page look nothing like
+     * the downloaded PDF.
+     */
+    body.ams-print-sales-doc .sales-print-modal .ams-sd th,
+    body.ams-print-sales-doc .sales-print-modal .ams-sd td {
+        border: 1px solid #cbd5e1 !important;
+    }
+
+    body.ams-print-sales-doc .sales-print-modal .ams-sd .ams-sd__foot > tbody > tr > td {
+        border: none !important;
+    }
+
+    /*
+     * A printed document carries its own letterhead, so the modal's title bar
+     * would only repeat it above the page.
+     */
+    body.ams-print-sales-doc .sales-print-modal .modal-header {
+        display: none !important;
+    }
+}
+
+/*
+ * The server-rendered sales document (services/salesDocumentHtml.service.js)
+ * arrives with its own <style>, so the page only has to give it room: no card
+ * padding around it on screen, and nothing between it and the paper edge when
+ * printed.
+ */
+.html-sales-doc-root .ams-sd {
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+@media print {
+    body.ams-print-sales-doc .html-sales-doc-root {
+        padding: 0 !important;
+    }
+
+    body.ams-print-sales-doc .html-sales-doc-root .ams-sd {
+        max-width: none;
+    }
 }
 
 /* Mobile card views for Sales tables */
