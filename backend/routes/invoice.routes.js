@@ -194,6 +194,7 @@ router.delete('/:id', authenticate, authorizeAction('invoices', 'delete'), invoi
  *               status: { type: string, enum: [draft, sent, partial, paid, overdue, cancelled] }
  */
 router.put('/:id/status', authenticate, authorizeAction('invoices', 'edit'), invoiceController.updateInvoiceStatus);
+router.put('/:id/payment-method', authenticate, authorizeAction('invoices', 'edit'), invoiceController.updatePaymentMethod);
 
 /**
  * @swagger

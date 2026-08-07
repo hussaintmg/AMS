@@ -1278,6 +1278,23 @@ const updateInvoiceStatus = async (req, res, next) => {
     } catch (error) { next(error); }
 };
 
+const updateInvoicePaymentMethod = async (req, res, next) => {
+    try {
+        const invoice = await PartInvoice.findById(sanitizeId(req.params.id));
+        if (!invoice) throw new AppError('Invoice not found', 404);
+        if (invoice.status === 'cancelled' || num(invoice.balanceAmount) <= 0) {
+            throw new AppError('Payment method can only be updated while a balance remains', 400);
+        }
+
+        const paymentMethod = await resolvePaymentMethod(req.body.paymentMethodId, { required: true });
+        invoice.paymentMethod = paymentMethod.id;
+        invoice.paymentMode = paymentMethod.name;
+        invoice.updatedBy = req.user.id;
+        await invoice.save();
+        res.json({ success: true, message: 'Payment method updated successfully' });
+    } catch (error) { next(error); }
+};
+
 /** Cancelling a parts invoice is what puts its stock back on the shelf. */
 const deleteInvoice = async (req, res, next) => {
     try {
@@ -1326,6 +1343,11 @@ const recordPayment = async (req, res, next) => {
         invoice.paidAmount = round2(num(invoice.paidAmount) + amount);
         invoice.balanceAmount = round2(num(invoice.totalAmount) - invoice.paidAmount);
         invoice.status = statusForPayment(num(invoice.totalAmount), invoice.paidAmount);
+        if (req.body.paymentMethodId) {
+            const paymentMethod = await resolvePaymentMethod(req.body.paymentMethodId);
+            invoice.paymentMethod = paymentMethod.id;
+            invoice.paymentMode = paymentMethod.name;
+        }
         invoice.updatedBy = req.user.id;
         await invoice.save();
 
@@ -1574,7 +1596,7 @@ module.exports = {
     // Orders
     getAllOrders, getOrderById, createOrder, convertBookingToOrder, updateOrderStatus, deleteOrder,
     // Invoices
-    getAllInvoices, getInvoiceById, createInvoice, updateInvoiceStatus, deleteInvoice, recordPayment,
+    getAllInvoices, getInvoiceById, createInvoice, updateInvoiceStatus, updateInvoicePaymentMethod, deleteInvoice, recordPayment,
     // Email — same templates as the vehicle documents
     sendQuotationEmail, sendBookingEmail, sendOrderEmail, sendInvoiceEmail,
     downloadQuotationEstimate, sendQuotationEstimateEmail, bulkDocuments,

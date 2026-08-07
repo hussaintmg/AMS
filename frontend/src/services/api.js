@@ -349,6 +349,7 @@ export const partsInvoiceAPI = {
     getById: (id) => api.get(`/parts-sales/invoices/${id}`),
     create: (data) => api.post('/parts-sales/invoices', data),
     updateStatus: (id, status) => api.put(`/parts-sales/invoices/${id}/status`, { status }),
+    updatePaymentMethod: (id, paymentMethodId) => api.put(`/parts-sales/invoices/${id}/payment-method`, { paymentMethodId }),
     // Cancelling is what returns the stock to the shelf.
     delete: (id, data) => api.delete(`/parts-sales/invoices/${id}`, { data }),
     recordPayment: (id, data) => api.post(`/parts-sales/invoices/${id}/payments`, data),
@@ -493,6 +494,7 @@ export const invoiceAPI = {
     update: (id, data) => api.put(`/invoices/${id}`, data),
     delete: (id, data) => api.delete(`/invoices/${id}`, { data }),
     updateStatus: (id, status) => api.put(`/invoices/${id}/status`, { status }),
+    updatePaymentMethod: (id, paymentMethodId) => api.put(`/invoices/${id}/payment-method`, { paymentMethodId }),
     send: (id) => api.post(`/invoices/${id}/send`),
     sendEmail: (id) => api.post(`/invoices/${id}/send-email`),
     bulk: (operation, ids) => api.post('/invoices/bulk', { operation, ids }),

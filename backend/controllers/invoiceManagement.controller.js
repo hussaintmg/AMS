@@ -82,6 +82,8 @@ const mapInvoiceRow = (inv) => ({
     stock_applied: inv.stockApplied === true,
     amount_tendered: inv.amountTendered || 0,
     change_due: inv.changeDue || 0,
+    payment_method_id: inv.paymentMethod || null,
+    payment_method_name: inv.paymentMode || '',
     notes: inv.notes || '',
     terms_and_conditions: inv.termsAndConditions || '',
     created_at: inv.createdAt,
@@ -657,6 +659,8 @@ const recordPayment = async (req, res, next) => {
         invoice.paidAmount = round2(num(invoice.paidAmount) + paymentAmount);
         invoice.balanceAmount = round2(num(invoice.totalAmount) - invoice.paidAmount);
         invoice.status = invoice.balanceAmount <= 0 ? 'paid' : 'partial';
+        invoice.paymentMethod = method._id;
+        invoice.paymentMode = method.name;
         invoice.amountTendered = round2(num(invoice.amountTendered) + tendered);
         invoice.changeDue = changeDue;
         invoice.updatedBy = req.user.id;
@@ -704,6 +708,27 @@ const recordPayment = async (req, res, next) => {
         });
     } catch (error) {
         logger.error('Error recording payment:', error);
+        next(error);
+    }
+};
+
+const updatePaymentMethod = async (req, res, next) => {
+    try {
+        const invoice = await Invoice.findById(sanitizeId(req.params.id));
+        if (!invoice) throw new AppError('Invoice not found', 404);
+        if (invoice.status === 'cancelled' || num(invoice.balanceAmount) <= 0) {
+            throw new AppError('Payment method can only be updated while a balance remains', 400);
+        }
+
+        const method = await PaymentMethod.findById(sanitizeId(req.body.paymentMethodId)).lean();
+        if (!method || !method.isActive) throw new AppError('A valid active payment method is required', 400);
+
+        invoice.paymentMethod = method._id;
+        invoice.paymentMode = method.name;
+        invoice.updatedBy = req.user.id;
+        await invoice.save();
+        res.json({ success: true, message: 'Payment method updated successfully' });
+    } catch (error) {
         next(error);
     }
 };
@@ -818,6 +843,7 @@ module.exports = {
     updateInvoiceItem,
     removeInvoiceItem,
     recordPayment,
+    updatePaymentMethod,
     getPaymentMethods,
     getInvoiceStats,
     getQRCodeData,

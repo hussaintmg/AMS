@@ -30,6 +30,7 @@ const columnWidths = (columns) => {
 
 function productSectionHtml(section) {
   const widths = columnWidths(section.columns);
+  const gridClass = section.columns.length > 6 ? 'ams-sd__grid ams-sd__grid--compact' : 'ams-sd__grid';
   const head = section.columns
     .map((column, i) => `<th style="width:${widths[i]}${column.align === 'right' ? ';text-align:right' : ''}">${esc(column.label)}</th>`)
     .join('');
@@ -37,7 +38,7 @@ function productSectionHtml(section) {
     .map((column) => `<td${column.align === 'right' ? ' class="r"' : ''}>${esc(column.get(row))}</td>`)
     .join('')}</tr>`).join('');
   return `<div class="ams-sd__section-title">${esc(section.title)}</div>
-<table class="ams-sd__grid">
+<table class="${gridClass}">
   <thead><tr>${head}</tr></thead>
   <tbody>${body}</tbody>
   <tfoot><tr>
@@ -63,12 +64,12 @@ const CSS = `
 .ams-sd__grid thead th { background: #f1f5f9; font-weight: bold; }
 .ams-sd__grid tfoot td { background: #f1f5f9; font-weight: bold; }
 .ams-sd__grid .r, .ams-sd__grid th[style*="right"] { text-align: right; }
-.ams-sd__boxes { width: 100%; border-collapse: separate; border-spacing: 12px 0; table-layout: fixed; margin: 0 -12px 10px; }
+.ams-sd__boxes { width: 100%; border-collapse: separate; border-spacing: 12px 0; table-layout: fixed; margin: 0 0 10px; }
 .ams-sd__boxes > tbody > tr > td { border: 1px solid #cbd5e1; padding: 8px; vertical-align: top; }
 .ams-sd__standing { width: 58%; font-size: 11px; font-weight: bold; color: #64748b; }
 .ams-sd__words-label { font-size: 11px; font-weight: bold; color: #1e293b; }
 .ams-sd__words { font-size: 12px; font-weight: bold; text-decoration: underline; margin-top: 3px; }
-.ams-sd__foot { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 12px 0; margin: 0 -12px; }
+.ams-sd__foot { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 12px 0; margin: 0; }
 .ams-sd__foot > tbody > tr > td { vertical-align: top; padding: 0; }
 .ams-sd__notes-col { width: 55%; }
 .ams-sd__notes-title { font-size: 13px; font-weight: bold; color: #1e293b; margin-bottom: 2px; }
@@ -82,6 +83,8 @@ const CSS = `
   .ams-sd { font-size: 10pt; }
   .ams-sd__grid tr, .ams-sd__billed tr { page-break-inside: avoid; }
   .ams-sd__section-title { page-break-after: avoid; }
+  .ams-sd__grid--compact th, .ams-sd__grid--compact td { font-size: 8pt; padding: 3pt 2pt; overflow-wrap: anywhere; }
+  .ams-sd__grid--compact th { white-space: normal; }
 }
 `;
 

@@ -75,6 +75,7 @@ router.get('/invoices', can('invoices', 'view'), controller.getAllInvoices);
 router.get('/invoices/:id', can('invoices', 'view'), controller.getInvoiceById);
 router.post('/invoices', can('invoices', 'create'), controller.createInvoice);
 router.put('/invoices/:id/status', can('invoices', 'edit'), controller.updateInvoiceStatus);
+router.put('/invoices/:id/payment-method', can('invoices', 'edit'), controller.updateInvoicePaymentMethod);
 router.post('/invoices/:id/payments', can('invoices', 'edit'), controller.recordPayment);
 router.post('/invoices/:id/send-email', can('invoices', 'sendEmail'), controller.sendInvoiceEmail);
 // Cancelling is what returns the stock, so it is the only way to void an invoice.

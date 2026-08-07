@@ -2760,6 +2760,8 @@ function Invoices({ category = 'vehicle' }) {
 
     // Payment Modal
     const [showPaymentModal, setShowPaymentModal] = useState(false);
+    const [showPaymentMethodModal, setShowPaymentMethodModal] = useState(false);
+    const [updatingPaymentMethod, setUpdatingPaymentMethod] = useState(false);
     const [paymentData, setPaymentData] = useState({ amount: '', paymentMethodId: '', referenceNumber: '', notes: '' });
     const [paymentMethods, setPaymentMethods] = useState([]);
     const [invoiceStatuses, setInvoiceStatuses] = useState([]);
@@ -3152,6 +3154,28 @@ function Invoices({ category = 'vehicle' }) {
         setShowPaymentModal(true);
     };
 
+    const openPaymentMethodModal = (item) => {
+        setSelectedItem(item);
+        setPaymentData({ amount: '', paymentMethodId: String(item.payment_method_id || ''), referenceNumber: '', notes: '' });
+        setShowPaymentMethodModal(true);
+    };
+
+    const handleUpdatePaymentMethod = async (e) => {
+        e.preventDefault();
+        if (!selectedItem?.id || !paymentData.paymentMethodId || updatingPaymentMethod) return;
+        setUpdatingPaymentMethod(true);
+        try {
+            await docApi.updatePaymentMethod(selectedItem.id, paymentData.paymentMethodId);
+            toast.success('Payment method updated successfully');
+            setShowPaymentMethodModal(false);
+            fetchData();
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Failed to update payment method');
+        } finally {
+            setUpdatingPaymentMethod(false);
+        }
+    };
+
     const handlePaymentChange = (e) => setPaymentData({ ...paymentData, [e.target.name]: e.target.value });
 
     const handleRecordPayment = async (e) => {
@@ -3299,6 +3323,11 @@ function Invoices({ category = 'vehicle' }) {
                                                 title: 'Record Payment',
                                                 onClick: () => openPaymentModal(inv),
                                                 className: 'btn-success'
+                                            }, {
+                                                icon: <Pencil size={18} className="action-icon" />,
+                                                title: 'Update Payment Method',
+                                                onClick: () => openPaymentMethodModal(inv),
+                                                className: 'btn-info'
                                             }] : [])
                                         ]}
                                     />
@@ -3354,6 +3383,11 @@ function Invoices({ category = 'vehicle' }) {
                                                 title: 'Record Payment',
                                                 onClick: () => openPaymentModal(inv),
                                                 className: 'btn-success'
+                                            }, {
+                                                icon: <Pencil size={18} className="action-icon" />,
+                                                title: 'Update Payment Method',
+                                                onClick: () => openPaymentMethodModal(inv),
+                                                className: 'btn-info'
                                             }] : [])
                                         ]}
                                     />
@@ -3833,6 +3867,27 @@ function Invoices({ category = 'vehicle' }) {
                             <button type="button" className="btn btn-secondary" onClick={() => setShowPaymentModal(false)} disabled={recordingPayment}>Cancel</button>
                             <button type="submit" className="btn btn-success" disabled={recordingPayment}>
                                 {recordingPayment ? <><span className="spinner-mini"></span> Recording...</> : 'Record Payment'}
+                            </button>
+                        </div>
+                    </form>
+                </Modal>
+            )}
+
+            {showPaymentMethodModal && selectedItem && (
+                <Modal title={`Update Payment Method - ${selectedItem.invoice_number}`} onClose={() => setShowPaymentMethodModal(false)} size="medium">
+                    <form onSubmit={handleUpdatePaymentMethod}>
+                        <p className="text-muted">This applies to the remaining balance only; existing payment records are unchanged.</p>
+                        <div className="form-group">
+                            <label>Payment Method *</label>
+                            <SearchableSelect name="paymentMethodId" value={paymentData.paymentMethodId} onChange={handlePaymentChange} required>
+                                <option value="">Select Payment Method</option>
+                                {paymentMethods.map(pm => <option key={pm.id} value={pm.id}>{pm.name}</option>)}
+                            </SearchableSelect>
+                        </div>
+                        <div className="modal-actions">
+                            <button type="button" className="btn btn-secondary" onClick={() => setShowPaymentMethodModal(false)} disabled={updatingPaymentMethod}>Cancel</button>
+                            <button type="submit" className="btn btn-primary" disabled={updatingPaymentMethod || !paymentData.paymentMethodId}>
+                                {updatingPaymentMethod ? 'Updating...' : 'Update Payment Method'}
                             </button>
                         </div>
                     </form>

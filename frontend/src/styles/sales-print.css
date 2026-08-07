@@ -150,16 +150,16 @@
     }
 
     body.ams-print-sales-doc .sales-print-modal {
-        position: fixed !important;
-        inset: 0 !important;
-        width: 100% !important;
-        max-width: 100% !important;
-        min-height: 100vh !important;
+        position: static !important;
+        inset: auto !important;
+        width: auto !important;
+        max-width: none !important;
+        min-height: 0 !important;
         height: auto !important;
         background: #fff !important;
-        padding: 10mm 12mm !important;
+        padding: 0 !important;
         margin: 0 !important;
-        z-index: 2147483646 !important;
+        z-index: auto !important;
         display: block !important;
         overflow: visible !important;
         backdrop-filter: none !important;

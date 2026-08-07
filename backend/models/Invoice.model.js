@@ -44,6 +44,10 @@ const invoiceSchema = new mongoose.Schema({
   // it is never added to paidAmount and never reduces the balance.
   amountTendered: { type: Number, default: 0 },
   changeDue: { type: Number, default: 0 },
+  // The preferred method for the remaining balance. Individual payments keep
+  // their own method snapshot for audit history.
+  paymentMethod: { type: mongoose.Schema.Types.ObjectId, ref: 'PaymentMethod', default: null },
+  paymentMode: { type: String, trim: true, default: '' },
   notes: { type: String },
   termsAndConditions: { type: String },
   cancelledAt: { type: Date, default: null },
