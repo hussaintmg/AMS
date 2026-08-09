@@ -169,19 +169,33 @@ const generateRefreshToken = (userId) => {
  * enough on its own. The action is still judged against *that* page's job — a
  * scanner-only role needs "create" on Vehicle Scan, not on Quotations.
  *
+ * `actions` is what makes this safe: the scan screen only ever raises new
+ * documents, so it grants `create` and nothing else. Holding it must never
+ * become a way to edit or delete a document raised somewhere else.
+ *
  * The parts routers pass their own list explicitly rather than appearing here:
  * a role that may raise a parts quotation has no business raising a vehicle one.
  */
+const SCAN_CREATE_ONLY = { page: 'vehicle_scan', actions: ['create'] };
 const PAGE_ALIASES = {
-  quotations: ['quotations', 'vehicle_scan'],
-  bookings: ['bookings', 'vehicle_scan'],
-  sales_orders: ['sales_orders', 'vehicle_scan'],
-  invoices: ['invoices', 'vehicle_scan'],
+  quotations: ['quotations', SCAN_CREATE_ONLY],
+  bookings: ['bookings', SCAN_CREATE_ONLY],
+  sales_orders: ['sales_orders', SCAN_CREATE_ONLY],
+  invoices: ['invoices', SCAN_CREATE_ONLY],
 };
 
-const pageKeysFor = (pageKey) => {
-  if (Array.isArray(pageKey)) return pageKey.flat(Infinity).filter(Boolean);
-  return PAGE_ALIASES[pageKey] || [pageKey];
+/**
+ * Normalise whatever a route passed into the pages that may satisfy `action`.
+ * Accepts a page name, a list of page names, or entries of the shape
+ * `{ page, actions }` that only count for the actions they name.
+ */
+const pageKeysFor = (pageKey, action) => {
+  const raw = Array.isArray(pageKey) ? pageKey : (PAGE_ALIASES[pageKey] || [pageKey]);
+  return raw
+    .flat(Infinity)
+    .filter(Boolean)
+    .filter((entry) => typeof entry === 'string' || !entry.actions || entry.actions.includes(action))
+    .map((entry) => (typeof entry === 'string' ? entry : entry.page));
 };
 
 /**
@@ -194,7 +208,7 @@ const pageKeysFor = (pageKey) => {
  *   pages lead to the endpoint (see PAGE_ALIASES) any one of them suffices.
  */
 const authorizeAction = (pageKey, action = 'view') => {
-  const candidates = pageKeysFor(pageKey);
+  const candidates = pageKeysFor(pageKey, action);
   return (req, res, next) => {
     if (!req.user) return next(new AppError('Authentication required', 401));
     if (req.user.isSuperAdmin) return next();
@@ -212,10 +226,38 @@ const authorizeAction = (pageKey, action = 'view') => {
   };
 };
 
+const METHOD_ACTIONS = { GET: 'view', HEAD: 'view', POST: 'create', PUT: 'edit', PATCH: 'edit', DELETE: 'delete' };
+
+/**
+ * Guard a whole router in one line, deriving the action from the HTTP method.
+ *
+ * Written for the routers built before Role Jobs existed, which gate nothing
+ * beyond "are you signed in" — master data, service appointments, job cards.
+ * Listing thirty routes individually there is churn with no reader benefit;
+ * the method already says what the request does.
+ *
+ * `overrides` handles the cases where it does not: a POST to a sub-path of an
+ * existing record (adding a part to a job card, completing it) edits that
+ * record rather than creating a new one. Each entry is
+ * `{ pattern, method?, action }`, matched against the router-relative path,
+ * first match wins.
+ *
+ * Mount it *instead of* the per-route `authenticate`, not alongside it, or
+ * every request verifies its token twice.
+ */
+const authorizeRouter = (pageKey, overrides = []) => (req, res, next) => {
+  const rule = overrides.find((entry) => (
+    entry.pattern.test(req.path) && (!entry.method || entry.method === req.method)
+  ));
+  const action = rule?.action || METHOD_ACTIONS[req.method] || 'view';
+  return authorizeAction(pageKey, action)(req, res, next);
+};
+
 module.exports = {
   authenticate,
   authorize,
   authorizeAction,
+  authorizeRouter,
   authorizePage,
   checkPermission,
   generateToken,

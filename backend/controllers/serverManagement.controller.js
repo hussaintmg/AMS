@@ -17,6 +17,7 @@ const { getPublicFileUrl } = require('../utils/url');
 const Log = require('../models/mongo/Log.model');
 const { syncFromUser } = require('../utils/relationshipSync');
 const { pageFieldKeys, catalogForUi } = require('../constants/fieldPermissions');
+const { PAGE_CAPABILITIES, capabilitiesFor, ACTION_LABELS } = require('../constants/pageCapabilities');
 
 const uploadRoot = path.join(__dirname, '..', 'uploads', 'branding');
 const DEFAULT_PAGE_ICON = 'FileText';
@@ -937,7 +938,19 @@ exports.getRoleJobs = async (req, res, next) => {
       .populate('jobs.dataScope.users', 'firstName lastName email')
       .lean();
     if (!role) throw new AppError('Role not found', 404);
-    res.json({ success: true, data: { role, jobs: role.jobs || [], fieldCatalog: catalogForUi() } });
+    res.json({
+      success: true,
+      data: {
+        role,
+        jobs: role.jobs || [],
+        fieldCatalog: catalogForUi(),
+        // So the screen can offer each page only the actions it really has.
+        // The whole table is sent, not just this role's pages, because the
+        // legacy "sales" permission expands into four document pages client-side.
+        capabilities: PAGE_CAPABILITIES,
+        actionLabels: ACTION_LABELS,
+      },
+    });
   } catch (error) { next(error); }
 };
 
@@ -966,19 +979,28 @@ exports.saveRoleJobs = async (req, res, next) => {
     const incoming = Array.isArray(req.body.jobs) ? req.body.jobs : [];
     role.jobs = incoming.filter((job) => allowedPages.has(job.pageKey)).map((job) => {
       const page = allowedPages.get(job.pageKey);
-      const mode = ['own', 'selected_roles', 'selected_users', 'all'].includes(job.dataScope?.mode) ? job.dataScope.mode : 'own';
+      const capability = capabilitiesFor(job.pageKey);
+      // An action the page does not implement is stored as false whatever the
+      // client sent, so the saved role never claims a permission that has no
+      // endpoint behind it.
+      const granted = (action) => capability.actions.includes(action) && job.actions?.[action] === true;
+      // Pages whose records belong to the whole company are never scoped by
+      // creator; storing "own" there would read as a restriction that no
+      // controller applies.
+      const requested = ['own', 'selected_roles', 'selected_users', 'all'].includes(job.dataScope?.mode) ? job.dataScope.mode : 'own';
+      const mode = capability.dataScope ? requested : 'all';
       return {
         pageKey: job.pageKey,
         module: page.module || job.module || job.pageKey,
         actions: {
           view: true,
-          create: job.actions?.create === true,
-          edit: job.actions?.edit === true,
-          delete: job.actions?.delete === true,
-          sendEmail: job.actions?.sendEmail === true,
-          downloadPdf: job.actions?.downloadPdf === true,
-          export: job.actions?.export === true,
-          approve: job.actions?.approve === true,
+          create: granted('create'),
+          edit: granted('edit'),
+          delete: granted('delete'),
+          sendEmail: granted('sendEmail'),
+          downloadPdf: granted('downloadPdf'),
+          export: granted('export'),
+          approve: granted('approve'),
         },
         dataScope: {
           mode,

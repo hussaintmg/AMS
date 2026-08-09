@@ -9,8 +9,12 @@
 
 const express = require('express');
 const router = express.Router();
-const { authenticate } = require('../middleware/auth');
+const { authenticate, authorizeRouter } = require('../middleware/auth');
 const vehicleMasterController = require('../controllers/vehicleMaster.controller');
+
+// Makes, models, variants and colours are company-wide reference data. Reading
+// them needs the page; changing them needs the matching Role Jobs action.
+router.use(authenticate, authorizeRouter('vehicle_master'));
 
 /**
  * @swagger
@@ -35,7 +39,7 @@ const vehicleMasterController = require('../controllers/vehicleMaster.controller
  *       200:
  *         description: Statistics retrieved successfully
  */
-router.get('/stats', authenticate, vehicleMasterController.getStats);
+router.get('/stats', vehicleMasterController.getStats);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // MAKES
@@ -64,7 +68,7 @@ router.get('/stats', authenticate, vehicleMasterController.getStats);
  *       200:
  *         description: Makes retrieved successfully
  */
-router.get('/makes', authenticate, vehicleMasterController.getMakes);
+router.get('/makes', vehicleMasterController.getMakes);
 
 /**
  * @swagger
@@ -95,7 +99,7 @@ router.get('/makes', authenticate, vehicleMasterController.getMakes);
  *       201:
  *         description: Make created successfully
  */
-router.post('/makes', authenticate, vehicleMasterController.createMake);
+router.post('/makes', vehicleMasterController.createMake);
 
 /**
  * @swagger
@@ -130,7 +134,7 @@ router.post('/makes', authenticate, vehicleMasterController.createMake);
  *       200:
  *         description: Make updated successfully
  */
-router.put('/makes/:id', authenticate, vehicleMasterController.updateMake);
+router.put('/makes/:id', vehicleMasterController.updateMake);
 
 /**
  * @swagger
@@ -150,7 +154,7 @@ router.put('/makes/:id', authenticate, vehicleMasterController.updateMake);
  *       200:
  *         description: Make deleted successfully
  */
-router.delete('/makes/:id', authenticate, vehicleMasterController.deleteMake);
+router.delete('/makes/:id', vehicleMasterController.deleteMake);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // MODELS
@@ -178,7 +182,7 @@ router.delete('/makes/:id', authenticate, vehicleMasterController.deleteMake);
  *       200:
  *         description: Models retrieved successfully
  */
-router.get('/models', authenticate, vehicleMasterController.getModels);
+router.get('/models', vehicleMasterController.getModels);
 
 /**
  * @swagger
@@ -218,7 +222,7 @@ router.get('/models', authenticate, vehicleMasterController.getModels);
  *       201:
  *         description: Model created successfully
  */
-router.post('/models', authenticate, vehicleMasterController.createModel);
+router.post('/models', vehicleMasterController.createModel);
 
 /**
  * @swagger
@@ -238,7 +242,7 @@ router.post('/models', authenticate, vehicleMasterController.createModel);
  *       200:
  *         description: Model updated successfully
  */
-router.put('/models/:id', authenticate, vehicleMasterController.updateModel);
+router.put('/models/:id', vehicleMasterController.updateModel);
 
 /**
  * @swagger
@@ -258,7 +262,7 @@ router.put('/models/:id', authenticate, vehicleMasterController.updateModel);
  *       200:
  *         description: Model deleted successfully
  */
-router.delete('/models/:id', authenticate, vehicleMasterController.deleteModel);
+router.delete('/models/:id', vehicleMasterController.deleteModel);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // VARIANTS
@@ -285,7 +289,7 @@ router.delete('/models/:id', authenticate, vehicleMasterController.deleteModel);
  *       200:
  *         description: Variants retrieved successfully
  */
-router.get('/variants', authenticate, vehicleMasterController.getVariants);
+router.get('/variants', vehicleMasterController.getVariants);
 
 /**
  * @swagger
@@ -317,7 +321,7 @@ router.get('/variants', authenticate, vehicleMasterController.getVariants);
  *       201:
  *         description: Variant created successfully
  */
-router.post('/variants', authenticate, vehicleMasterController.createVariant);
+router.post('/variants', vehicleMasterController.createVariant);
 
 /**
  * @swagger
@@ -337,7 +341,7 @@ router.post('/variants', authenticate, vehicleMasterController.createVariant);
  *       200:
  *         description: Variant updated successfully
  */
-router.put('/variants/:id', authenticate, vehicleMasterController.updateVariant);
+router.put('/variants/:id', vehicleMasterController.updateVariant);
 
 /**
  * @swagger
@@ -357,7 +361,7 @@ router.put('/variants/:id', authenticate, vehicleMasterController.updateVariant)
  *       200:
  *         description: Variant deleted successfully
  */
-router.delete('/variants/:id', authenticate, vehicleMasterController.deleteVariant);
+router.delete('/variants/:id', vehicleMasterController.deleteVariant);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // COLORS
@@ -380,7 +384,7 @@ router.delete('/variants/:id', authenticate, vehicleMasterController.deleteVaria
  *       200:
  *         description: Colors retrieved successfully
  */
-router.get('/colors', authenticate, vehicleMasterController.getColors);
+router.get('/colors', vehicleMasterController.getColors);
 
 /**
  * @swagger
@@ -411,7 +415,7 @@ router.get('/colors', authenticate, vehicleMasterController.getColors);
  *       201:
  *         description: Color created successfully
  */
-router.post('/colors', authenticate, vehicleMasterController.createColor);
+router.post('/colors', vehicleMasterController.createColor);
 
 /**
  * @swagger
@@ -431,7 +435,7 @@ router.post('/colors', authenticate, vehicleMasterController.createColor);
  *       200:
  *         description: Color updated successfully
  */
-router.put('/colors/:id', authenticate, vehicleMasterController.updateColor);
+router.put('/colors/:id', vehicleMasterController.updateColor);
 
 /**
  * @swagger
@@ -451,7 +455,7 @@ router.put('/colors/:id', authenticate, vehicleMasterController.updateColor);
  *       200:
  *         description: Color deleted successfully
  */
-router.delete('/colors/:id', authenticate, vehicleMasterController.deleteColor);
+router.delete('/colors/:id', vehicleMasterController.deleteColor);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // PART CATEGORIES
@@ -485,7 +489,7 @@ router.delete('/colors/:id', authenticate, vehicleMasterController.deleteColor);
  *       200:
  *         description: Categories retrieved successfully
  */
-router.get('/categories', authenticate, vehicleMasterController.getCategories);
+router.get('/categories', vehicleMasterController.getCategories);
 
 /**
  * @swagger
@@ -516,7 +520,7 @@ router.get('/categories', authenticate, vehicleMasterController.getCategories);
  *       201:
  *         description: Category created successfully
  */
-router.post('/categories', authenticate, vehicleMasterController.createCategory);
+router.post('/categories', vehicleMasterController.createCategory);
 
 /**
  * @swagger
@@ -551,7 +555,7 @@ router.post('/categories', authenticate, vehicleMasterController.createCategory)
  *       200:
  *         description: Category updated successfully
  */
-router.put('/categories/:id', authenticate, vehicleMasterController.updateCategory);
+router.put('/categories/:id', vehicleMasterController.updateCategory);
 
 /**
  * @swagger
@@ -571,7 +575,7 @@ router.put('/categories/:id', authenticate, vehicleMasterController.updateCatego
  *       200:
  *         description: Category deleted successfully
  */
-router.delete('/categories/:id', authenticate, vehicleMasterController.deleteCategory);
+router.delete('/categories/:id', vehicleMasterController.deleteCategory);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SUPPLIERS
@@ -594,7 +598,7 @@ router.delete('/categories/:id', authenticate, vehicleMasterController.deleteCat
  *       200:
  *         description: Suppliers retrieved successfully
  */
-router.get('/suppliers', authenticate, vehicleMasterController.getSuppliers);
+router.get('/suppliers', vehicleMasterController.getSuppliers);
 
 /**
  * @swagger
@@ -618,7 +622,7 @@ router.get('/suppliers', authenticate, vehicleMasterController.getSuppliers);
  *       201:
  *         description: Supplier created successfully
  */
-router.post('/suppliers', authenticate, vehicleMasterController.createSupplier);
+router.post('/suppliers', vehicleMasterController.createSupplier);
 
 /**
  * @swagger
@@ -638,7 +642,7 @@ router.post('/suppliers', authenticate, vehicleMasterController.createSupplier);
  *       200:
  *         description: Supplier updated successfully
  */
-router.put('/suppliers/:id', authenticate, vehicleMasterController.updateSupplier);
+router.put('/suppliers/:id', vehicleMasterController.updateSupplier);
 
 /**
  * @swagger
@@ -658,17 +662,17 @@ router.put('/suppliers/:id', authenticate, vehicleMasterController.updateSupplie
  *       200:
  *         description: Supplier deleted successfully
  */
-router.delete('/suppliers/:id', authenticate, vehicleMasterController.deleteSupplier);
+router.delete('/suppliers/:id', vehicleMasterController.deleteSupplier);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // VEHICLE CONDITIONS
 // ═══════════════════════════════════════════════════════════════════════════
 
-router.get('/conditions', authenticate, vehicleMasterController.getConditions);
-router.post('/conditions', authenticate, vehicleMasterController.createCondition);
-router.put('/conditions/:id', authenticate, vehicleMasterController.updateCondition);
-router.delete('/conditions/:id', authenticate, vehicleMasterController.deleteCondition);
+router.get('/conditions', vehicleMasterController.getConditions);
+router.post('/conditions', vehicleMasterController.createCondition);
+router.put('/conditions/:id', vehicleMasterController.updateCondition);
+router.delete('/conditions/:id', vehicleMasterController.deleteCondition);
 
-router.patch('/toggle/:type/:id', authenticate, vehicleMasterController.toggleActive);
+router.patch('/toggle/:type/:id', vehicleMasterController.toggleActive);
 
 module.exports = router;

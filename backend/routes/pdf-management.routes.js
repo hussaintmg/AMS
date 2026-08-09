@@ -1,8 +1,14 @@
 const express = require('express');
 const controller = require('../controllers/pdfManagement.controller');
-const { authenticate, authorizeAction } = require('../middleware/auth');
+const { authenticate, authorizeRouter } = require('../middleware/auth');
 const router = express.Router();
-const admin = [authenticate, authorizeAction('pdf_management', 'edit')];
+// The template designer: listing needs the page, changing a template needs the
+// matching Role Jobs action. Rendering and downloading a document (further
+// down) stays on plain `authenticate`, because it is gated by the permission
+// on the document itself, not on this page.
+const admin = [authenticate, authorizeRouter('pdf_management', [
+  { pattern: /^\/variables\/bulk$/, action: 'create' },
+])];
 
 router.get('/templates', admin, controller.listTemplates);
 router.post('/templates', admin, controller.createTemplate);

@@ -2,8 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const { authenticate } = require('../middleware/auth');
-const { authorizeAction } = require('../middleware/auth');
+const { authenticate, authorizeRouter } = require('../middleware/auth');
 
 const templatesCtrl = require('../controllers/emailTemplates.controller');
 const usageCtrl = require('../controllers/emailUsage.controller');
@@ -57,7 +56,22 @@ const uploadDataFile = multer({
   limits: { fileSize: 5 * 1024 * 1024 }
 });
 
-const authAndPage = [authenticate, authorizeAction('email_templates', 'view')];
+// Every route here already lists `authAndPage`, which used to check `view` no
+// matter what the request did — so anyone who could open Email Templates could
+// also rewrite and delete them. Deriving the action from the method turns those
+// fifty-odd routes into real create/edit/delete permissions without touching
+// each one.
+const authAndPage = [authenticate, authorizeRouter('email_templates', [
+  // Rendering a preview reads a template; it does not create one.
+  { pattern: /^\/(preview|components\/[^/]+\/preview)/, action: 'view' },
+  // Sending anything, including the SMTP smoke test, is the send permission.
+  { pattern: /^\/(test-send|config\/test)/, action: 'sendEmail' },
+  { pattern: /^\/queue\//, action: 'sendEmail' },
+  // Everything else that acts on an existing record edits it: activate,
+  // deactivate, restore a version, replace an asset, validate a usage row.
+  { pattern: /^\/[^/]+\/[^/]+\/.+/, method: 'POST', action: 'edit' },
+  { pattern: /^\/config$/, action: 'edit' },
+])];
 
 /**
  * @swagger

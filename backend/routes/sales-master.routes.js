@@ -6,9 +6,13 @@
 const express = require('express');
 const router = express.Router();
 const { query } = require('../config/database');
-const { authenticate } = require('../middleware/auth');
+const { authenticate, authorizeRouter } = require('../middleware/auth');
 const { AppError } = require('../middleware/errorHandler');
 const ctrl = require('../controllers/salesMasterController');
+
+// Payment terms, delivery terms, discount types and the rest are company-wide
+// reference data: the page grants reading, Role Jobs grants changing.
+router.use(authenticate, authorizeRouter('sales_master'));
 
 // ═══════════════════════════════════════════════════════════════════════════
 // NEW MONGODB ENTITY ROUTES (6 sections)
@@ -34,7 +38,7 @@ const swaggerTags = 'Sales Master Data';
  *       200:
  *         description: Stats retrieved
  */
-router.get('/stats', authenticate, ctrl.getStats);
+router.get('/stats', ctrl.getStats);
 
 // ── Payment Terms ──────────────────────────────────────────────────────
 
@@ -82,8 +86,8 @@ router.get('/stats', authenticate, ctrl.getStats);
  *       201:
  *         description: Created
  */
-router.get('/payment-terms', authenticate, ctrl.getPaymentTerms);
-router.post('/payment-terms', authenticate, ctrl.createPaymentTerm);
+router.get('/payment-terms', ctrl.getPaymentTerms);
+router.post('/payment-terms', ctrl.createPaymentTerm);
 
 /**
  * @swagger
@@ -113,8 +117,8 @@ router.post('/payment-terms', authenticate, ctrl.createPaymentTerm);
  *       200:
  *         description: Deleted
  */
-router.put('/payment-terms/:id', authenticate, ctrl.updatePaymentTerm);
-router.delete('/payment-terms/:id', authenticate, ctrl.deletePaymentTerm);
+router.put('/payment-terms/:id', ctrl.updatePaymentTerm);
+router.delete('/payment-terms/:id', ctrl.deletePaymentTerm);
 
 // ── Delivery Terms ─────────────────────────────────────────────────────
 
@@ -161,8 +165,8 @@ router.delete('/payment-terms/:id', authenticate, ctrl.deletePaymentTerm);
  *       201:
  *         description: Created
  */
-router.get('/delivery-terms', authenticate, ctrl.getDeliveryTerms);
-router.post('/delivery-terms', authenticate, ctrl.createDeliveryTerm);
+router.get('/delivery-terms', ctrl.getDeliveryTerms);
+router.post('/delivery-terms', ctrl.createDeliveryTerm);
 
 /**
  * @swagger
@@ -190,8 +194,8 @@ router.post('/delivery-terms', authenticate, ctrl.createDeliveryTerm);
  *       200:
  *         description: Deleted
  */
-router.put('/delivery-terms/:id', authenticate, ctrl.updateDeliveryTerm);
-router.delete('/delivery-terms/:id', authenticate, ctrl.deleteDeliveryTerm);
+router.put('/delivery-terms/:id', ctrl.updateDeliveryTerm);
+router.delete('/delivery-terms/:id', ctrl.deleteDeliveryTerm);
 
 // ── Quotation Validities ───────────────────────────────────────────────
 
@@ -239,8 +243,8 @@ router.delete('/delivery-terms/:id', authenticate, ctrl.deleteDeliveryTerm);
  *       201:
  *         description: Created
  */
-router.get('/quotation-validities', authenticate, ctrl.getQuotationValidities);
-router.post('/quotation-validities', authenticate, ctrl.createQuotationValidity);
+router.get('/quotation-validities', ctrl.getQuotationValidities);
+router.post('/quotation-validities', ctrl.createQuotationValidity);
 
 /**
  * @swagger
@@ -268,8 +272,8 @@ router.post('/quotation-validities', authenticate, ctrl.createQuotationValidity)
  *       200:
  *         description: Deleted
  */
-router.put('/quotation-validities/:id', authenticate, ctrl.updateQuotationValidity);
-router.delete('/quotation-validities/:id', authenticate, ctrl.deleteQuotationValidity);
+router.put('/quotation-validities/:id', ctrl.updateQuotationValidity);
+router.delete('/quotation-validities/:id', ctrl.deleteQuotationValidity);
 
 // ── Discount Types ─────────────────────────────────────────────────────
 
@@ -318,8 +322,8 @@ router.delete('/quotation-validities/:id', authenticate, ctrl.deleteQuotationVal
  *       201:
  *         description: Created
  */
-router.get('/discount-types', authenticate, ctrl.getDiscountTypes);
-router.post('/discount-types', authenticate, ctrl.createDiscountType);
+router.get('/discount-types', ctrl.getDiscountTypes);
+router.post('/discount-types', ctrl.createDiscountType);
 
 /**
  * @swagger
@@ -347,8 +351,8 @@ router.post('/discount-types', authenticate, ctrl.createDiscountType);
  *       200:
  *         description: Deleted
  */
-router.put('/discount-types/:id', authenticate, ctrl.updateDiscountType);
-router.delete('/discount-types/:id', authenticate, ctrl.deleteDiscountType);
+router.put('/discount-types/:id', ctrl.updateDiscountType);
+router.delete('/discount-types/:id', ctrl.deleteDiscountType);
 
 // ── Sales Order Types ──────────────────────────────────────────────────
 
@@ -395,8 +399,8 @@ router.delete('/discount-types/:id', authenticate, ctrl.deleteDiscountType);
  *       201:
  *         description: Created
  */
-router.get('/sales-order-types', authenticate, ctrl.getSalesOrderTypes);
-router.post('/sales-order-types', authenticate, ctrl.createSalesOrderType);
+router.get('/sales-order-types', ctrl.getSalesOrderTypes);
+router.post('/sales-order-types', ctrl.createSalesOrderType);
 
 /**
  * @swagger
@@ -424,8 +428,8 @@ router.post('/sales-order-types', authenticate, ctrl.createSalesOrderType);
  *       200:
  *         description: Deleted
  */
-router.put('/sales-order-types/:id', authenticate, ctrl.updateSalesOrderType);
-router.delete('/sales-order-types/:id', authenticate, ctrl.deleteSalesOrderType);
+router.put('/sales-order-types/:id', ctrl.updateSalesOrderType);
+router.delete('/sales-order-types/:id', ctrl.deleteSalesOrderType);
 
 // ── Invoice Types ──────────────────────────────────────────────────────
 
@@ -472,8 +476,8 @@ router.delete('/sales-order-types/:id', authenticate, ctrl.deleteSalesOrderType)
  *       201:
  *         description: Created
  */
-router.get('/invoice-types', authenticate, ctrl.getInvoiceTypes);
-router.post('/invoice-types', authenticate, ctrl.createInvoiceType);
+router.get('/invoice-types', ctrl.getInvoiceTypes);
+router.post('/invoice-types', ctrl.createInvoiceType);
 
 /**
  * @swagger
@@ -501,15 +505,15 @@ router.post('/invoice-types', authenticate, ctrl.createInvoiceType);
  *       200:
  *         description: Deleted
  */
-router.put('/invoice-types/:id', authenticate, ctrl.updateInvoiceType);
-router.delete('/invoice-types/:id', authenticate, ctrl.deleteInvoiceType);
+router.put('/invoice-types/:id', ctrl.updateInvoiceType);
+router.delete('/invoice-types/:id', ctrl.deleteInvoiceType);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // BACKWARD-COMPAT MYSQL ROUTES (original Sales Master status lookups)
 // ═══════════════════════════════════════════════════════════════════════════
 
 const createHelperRoutes = (entityName, tableName, linkedTable, linkedColumn) => {
-    router.get(`/${entityName}`, authenticate, async (req, res, next) => {
+    router.get(`/${entityName}`, async (req, res, next) => {
         try {
             const activeOnly = req.query.active === 'true';
             let sql = `
@@ -523,7 +527,7 @@ const createHelperRoutes = (entityName, tableName, linkedTable, linkedColumn) =>
         } catch (error) { next(error); }
     });
 
-    router.post(`/${entityName}`, authenticate, async (req, res, next) => {
+    router.post(`/${entityName}`, async (req, res, next) => {
         try {
             const { name, display_name, color, sort_order } = req.body;
             if (!name) throw new AppError('Name is required', 400);
@@ -535,7 +539,7 @@ const createHelperRoutes = (entityName, tableName, linkedTable, linkedColumn) =>
         } catch (error) { next(error); }
     });
 
-    router.put(`/${entityName}/:id`, authenticate, async (req, res, next) => {
+    router.put(`/${entityName}/:id`, async (req, res, next) => {
         try {
             const { name, display_name, color, sort_order, is_active } = req.body;
             await query(
@@ -546,7 +550,7 @@ const createHelperRoutes = (entityName, tableName, linkedTable, linkedColumn) =>
         } catch (error) { next(error); }
     });
 
-    router.delete(`/${entityName}/:id`, authenticate, async (req, res, next) => {
+    router.delete(`/${entityName}/:id`, async (req, res, next) => {
         try {
             const [item] = await query(`SELECT name FROM ${tableName} WHERE id = ?`, [req.params.id]);
             if (item) {

@@ -9,8 +9,23 @@
 
 const express = require('express');
 const router = express.Router();
-const { authenticate } = require('../middleware/auth');
+const { authenticate, authorizeRouter } = require('../middleware/auth');
 const serviceController = require('../controllers/serviceManagement.controller');
+
+router.use(authenticate);
+
+// Two pages share this router. Appointments are the Service Appointments page;
+// job cards and the lookup lists are the Services page.
+//
+// Everything hanging off an existing job card — its services, its parts, marking
+// it complete — is an edit of that card, whatever HTTP verb it uses. Only
+// `POST /job-cards` itself creates one.
+const JOB_CARD_SUB_RESOURCE = { pattern: /^\/[^/]+\/.+/, action: 'edit' };
+router.use('/appointments', authorizeRouter('service_appointments'));
+router.use('/job-cards', authorizeRouter('services', [JOB_CARD_SUB_RESOURCE]));
+router.use('/types', authorizeRouter('services'));
+router.use('/technicians', authorizeRouter('services'));
+router.use('/advisors', authorizeRouter('services'));
 
 // ═══════════════════════════════════════════════════════════════════════════
 // APPOINTMENTS ROUTES
@@ -56,7 +71,7 @@ const serviceController = require('../controllers/serviceManagement.controller')
  *       200:
  *         description: List of appointments
  */
-router.get('/appointments', authenticate, serviceController.getAllAppointments);
+router.get('/appointments', serviceController.getAllAppointments);
 
 /**
  * @swagger
@@ -70,7 +85,7 @@ router.get('/appointments', authenticate, serviceController.getAllAppointments);
  *       200:
  *         description: Appointment statistics
  */
-router.get('/appointments/stats', authenticate, serviceController.getAppointmentStats);
+router.get('/appointments/stats', serviceController.getAppointmentStats);
 
 /**
  * @swagger
@@ -90,7 +105,7 @@ router.get('/appointments/stats', authenticate, serviceController.getAppointment
  *       200:
  *         description: Appointment details
  */
-router.get('/appointments/:id', authenticate, serviceController.getAppointmentById);
+router.get('/appointments/:id', serviceController.getAppointmentById);
 
 /**
  * @swagger
@@ -132,7 +147,7 @@ router.get('/appointments/:id', authenticate, serviceController.getAppointmentBy
  *       201:
  *         description: Appointment created
  */
-router.post('/appointments', authenticate, serviceController.createAppointment);
+router.post('/appointments', serviceController.createAppointment);
 
 /**
  * @swagger
@@ -152,7 +167,7 @@ router.post('/appointments', authenticate, serviceController.createAppointment);
  *       200:
  *         description: Appointment updated
  */
-router.put('/appointments/:id', authenticate, serviceController.updateAppointment);
+router.put('/appointments/:id', serviceController.updateAppointment);
 
 /**
  * @swagger
@@ -182,7 +197,7 @@ router.put('/appointments/:id', authenticate, serviceController.updateAppointmen
  *       200:
  *         description: Status updated
  */
-router.patch('/appointments/:id/status', authenticate, serviceController.updateAppointmentStatus);
+router.patch('/appointments/:id/status', serviceController.updateAppointmentStatus);
 
 /**
  * @swagger
@@ -202,7 +217,7 @@ router.patch('/appointments/:id/status', authenticate, serviceController.updateA
  *       200:
  *         description: Appointment cancelled
  */
-router.delete('/appointments/:id', authenticate, serviceController.deleteAppointment);
+router.delete('/appointments/:id', serviceController.deleteAppointment);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // JOB CARDS ROUTES
@@ -252,7 +267,7 @@ router.delete('/appointments/:id', authenticate, serviceController.deleteAppoint
  *       200:
  *         description: List of job cards
  */
-router.get('/job-cards', authenticate, serviceController.getAllJobCards);
+router.get('/job-cards', serviceController.getAllJobCards);
 
 /**
  * @swagger
@@ -266,7 +281,7 @@ router.get('/job-cards', authenticate, serviceController.getAllJobCards);
  *       200:
  *         description: Job card statistics
  */
-router.get('/job-cards/stats', authenticate, serviceController.getJobCardStats);
+router.get('/job-cards/stats', serviceController.getJobCardStats);
 
 /**
  * @swagger
@@ -286,7 +301,7 @@ router.get('/job-cards/stats', authenticate, serviceController.getJobCardStats);
  *       200:
  *         description: Job card details with services and parts
  */
-router.get('/job-cards/:id', authenticate, serviceController.getJobCardById);
+router.get('/job-cards/:id', serviceController.getJobCardById);
 
 /**
  * @swagger
@@ -331,7 +346,7 @@ router.get('/job-cards/:id', authenticate, serviceController.getJobCardById);
  *       201:
  *         description: Job card created
  */
-router.post('/job-cards', authenticate, serviceController.createJobCard);
+router.post('/job-cards', serviceController.createJobCard);
 
 /**
  * @swagger
@@ -351,7 +366,7 @@ router.post('/job-cards', authenticate, serviceController.createJobCard);
  *       200:
  *         description: Job card updated
  */
-router.put('/job-cards/:id', authenticate, serviceController.updateJobCard);
+router.put('/job-cards/:id', serviceController.updateJobCard);
 
 /**
  * @swagger
@@ -381,7 +396,7 @@ router.put('/job-cards/:id', authenticate, serviceController.updateJobCard);
  *       200:
  *         description: Status updated
  */
-router.patch('/job-cards/:id/status', authenticate, serviceController.updateJobCardStatus);
+router.patch('/job-cards/:id/status', serviceController.updateJobCardStatus);
 
 /**
  * @swagger
@@ -409,7 +424,7 @@ router.patch('/job-cards/:id/status', authenticate, serviceController.updateJobC
  *       200:
  *         description: Job card completed
  */
-router.post('/job-cards/:id/complete', authenticate, serviceController.completeJobCard);
+router.post('/job-cards/:id/complete', serviceController.completeJobCard);
 
 /**
  * @swagger
@@ -429,7 +444,7 @@ router.post('/job-cards/:id/complete', authenticate, serviceController.completeJ
  *       200:
  *         description: Job card cancelled
  */
-router.delete('/job-cards/:id', authenticate, serviceController.deleteJobCard);
+router.delete('/job-cards/:id', serviceController.deleteJobCard);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // JOB CARD SERVICES ROUTES
@@ -473,7 +488,7 @@ router.delete('/job-cards/:id', authenticate, serviceController.deleteJobCard);
  *       201:
  *         description: Service added
  */
-router.post('/job-cards/:id/services', authenticate, serviceController.addJobCardService);
+router.post('/job-cards/:id/services', serviceController.addJobCardService);
 
 /**
  * @swagger
@@ -484,7 +499,7 @@ router.post('/job-cards/:id/services', authenticate, serviceController.addJobCar
  *     security:
  *       - bearerAuth: []
  */
-router.put('/job-cards/:id/services/:serviceId', authenticate, serviceController.updateJobCardService);
+router.put('/job-cards/:id/services/:serviceId', serviceController.updateJobCardService);
 
 /**
  * @swagger
@@ -495,7 +510,7 @@ router.put('/job-cards/:id/services/:serviceId', authenticate, serviceController
  *     security:
  *       - bearerAuth: []
  */
-router.delete('/job-cards/:id/services/:serviceId', authenticate, serviceController.deleteJobCardService);
+router.delete('/job-cards/:id/services/:serviceId', serviceController.deleteJobCardService);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // JOB CARD PARTS ROUTES
@@ -538,7 +553,7 @@ router.delete('/job-cards/:id/services/:serviceId', authenticate, serviceControl
  *       201:
  *         description: Part added
  */
-router.post('/job-cards/:id/parts', authenticate, serviceController.addJobCardPart);
+router.post('/job-cards/:id/parts', serviceController.addJobCardPart);
 
 /**
  * @swagger
@@ -549,7 +564,7 @@ router.post('/job-cards/:id/parts', authenticate, serviceController.addJobCardPa
  *     security:
  *       - bearerAuth: []
  */
-router.put('/job-cards/:id/parts/:partId', authenticate, serviceController.updateJobCardPart);
+router.put('/job-cards/:id/parts/:partId', serviceController.updateJobCardPart);
 
 /**
  * @swagger
@@ -560,7 +575,7 @@ router.put('/job-cards/:id/parts/:partId', authenticate, serviceController.updat
  *     security:
  *       - bearerAuth: []
  */
-router.delete('/job-cards/:id/parts/:partId', authenticate, serviceController.deleteJobCardPart);
+router.delete('/job-cards/:id/parts/:partId', serviceController.deleteJobCardPart);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // LOOKUP ROUTES
@@ -578,7 +593,7 @@ router.delete('/job-cards/:id/parts/:partId', authenticate, serviceController.de
  *       200:
  *         description: List of service types
  */
-router.get('/types/list', authenticate, serviceController.getServiceTypes);
+router.get('/types/list', serviceController.getServiceTypes);
 
 /**
  * @swagger
@@ -592,7 +607,7 @@ router.get('/types/list', authenticate, serviceController.getServiceTypes);
  *       200:
  *         description: List of technicians
  */
-router.get('/technicians/list', authenticate, serviceController.getTechnicians);
+router.get('/technicians/list', serviceController.getTechnicians);
 
 /**
  * @swagger
@@ -606,6 +621,6 @@ router.get('/technicians/list', authenticate, serviceController.getTechnicians);
  *       200:
  *         description: List of service advisors
  */
-router.get('/advisors/list', authenticate, serviceController.getAdvisors);
+router.get('/advisors/list', serviceController.getAdvisors);
 
 module.exports = router;

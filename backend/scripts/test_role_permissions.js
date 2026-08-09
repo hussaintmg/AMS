@@ -158,7 +158,16 @@ async function scenarioScanCreatesQuotation() {
   check('Vehicle scan page alone is past the guard on bookings', booking.status !== 403,
     `HTTP ${booking.status} ${booking.body?.message || ''}`);
 
-  // Parts scan reaches the parts namespace through the parts page keys.
+  // A vehicle counter sale: Sales Order + Invoice in one call.
+  const directOrder = await call(token, 'POST', '/sales/direct', {
+    customerId, lineItems: vehicleLine, paidAmount: 100, paymentMode: 'cash',
+  });
+  check('Vehicle scan page alone is past the guard on the counter sale', directOrder.status !== 403,
+    `HTTP ${directOrder.status} ${directOrder.body?.message || ''}`);
+
+  // ── Parts counter ────────────────────────────────────────────────────────
+  // Every document the Parts Scan screen offers must go through on the scan
+  // page alone: quotation, counter sale (order → invoice) and a direct invoice.
   token = await applyRole({
     pages: ['part_scan', 'customers'],
     jobs: [
@@ -170,18 +179,42 @@ async function scenarioScanCreatesQuotation() {
   check('Parts scan page alone can create a parts quotation', partQuote.status === 201 || partQuote.status === 200,
     `HTTP ${partQuote.status} ${partQuote.body?.message || ''}`);
 
-  // Scanning grants create, not delete.
+  const partOrder = await call(token, 'POST', '/parts-sales/orders', {
+    customerId, lineItems: partLine, paidAmount: 100, paymentMode: 'cash',
+  });
+  check('Parts scan page alone can create a counter sale (order + invoice)',
+    partOrder.status === 201 || partOrder.status === 200,
+    `HTTP ${partOrder.status} ${partOrder.body?.message || ''}`);
+
+  const partInvoice = await call(token, 'POST', '/parts-sales/invoices', { customerId, lineItems: partLine });
+  check('Parts scan page alone is past the guard on a parts invoice', partInvoice.status !== 403,
+    `HTTP ${partInvoice.status} ${partInvoice.body?.message || ''}`);
+
+  const partBooking = await call(token, 'POST', '/parts-sales/bookings', {
+    customerId, lineItems: partLine, bookingAmount: 100, totalAmount: 100,
+  });
+  check('Parts scan page alone is past the guard on a parts booking', partBooking.status !== 403,
+    `HTTP ${partBooking.status} ${partBooking.body?.message || ''}`);
+
+  // Scanning grants create and nothing else — not edit, not delete.
   const listed = await call(token, 'GET', '/parts-sales/quotations?limit=1');
-  const someId = listed.body?.data?.[0]?.id;
+  const someId = listed.body?.data?.[0]?.id || partQuote.body?.data?.id;
   if (someId) {
     check('Scan page create does not imply delete',
       (await call(token, 'DELETE', `/parts-sales/quotations/${someId}`)).status === 403);
+    check('Scan page create does not imply edit',
+      (await call(token, 'PUT', `/parts-sales/quotations/${someId}`, { notes: 'x' })).status === 403);
   }
+  // …nor a bulk spreadsheet import of the same documents.
+  check('Scan page create does not imply bulk import',
+    (await call(token, 'POST', '/bulk-import/sales-orders', {})).status === 403);
 
   // And the negative: no scan page, no quotation page → still denied.
   token = await applyRole({ pages: ['customers'], jobs: [{ pageKey: 'customers', actions: {} }] });
   const denied = await call(token, 'POST', '/quotations', { customerId, lineItems: vehicleLine });
   check('A role with neither sales nor scan pages is denied', denied.status === 403, `HTTP ${denied.status}`);
+  check('A role without the parts scan page cannot raise a parts counter sale',
+    (await call(token, 'POST', '/parts-sales/orders', { customerId, lineItems: partLine })).status === 403);
 }
 
 async function scenarioActions() {
@@ -374,6 +407,53 @@ async function scenarioCatalogEndpoint() {
     (await call(testerToken, 'GET', '/server-management/field-catalog')).status === 403);
 }
 
+/**
+ * The Role Jobs screen renders from PAGE_CAPABILITIES, so a page that claims an
+ * action with no endpoint behind it is a checkbox that quietly does nothing.
+ * The route audit is the reference; this keeps the two from drifting.
+ */
+async function scenarioCapabilityTable() {
+  section('Page capability table vs. the routes');
+  const { build } = require('./audit_page_operations');
+  const { PAGE_CAPABILITIES } = require('../constants/pageCapabilities');
+
+  // Rendered in the browser from a template, so there is no endpoint to guard —
+  // the checkbox gates the download button itself.
+  const CLIENT_SIDE = ['quotations', 'bookings', 'sales_orders', 'invoices', 'part_quotations', 'part_invoices']
+    .reduce((acc, page) => ({ ...acc, [page]: ['downloadPdf'] }), {});
+
+  const report = build();
+  const routeActions = {};
+  report.pages.forEach((page) => {
+    routeActions[page.pageKey] = page.actions.filter((action) => !['view', 'bulk', 'superAdmin'].includes(action));
+  });
+
+  const overclaimed = [];
+  const missing = [];
+  Object.entries(PAGE_CAPABILITIES).forEach(([page, capability]) => {
+    const real = [...(routeActions[page] || []), ...(CLIENT_SIDE[page] || [])];
+    capability.actions.filter((a) => !real.includes(a)).forEach((a) => overclaimed.push(`${page}.${a}`));
+    (routeActions[page] || []).filter((a) => !capability.actions.includes(a)).forEach((a) => missing.push(`${page}.${a}`));
+  });
+
+  check('No page offers an action with no endpoint behind it', overclaimed.length === 0, overclaimed.join(', '));
+  check('No guarded action is missing from the capability table', missing.length === 0, missing.join(', '));
+
+  const unknown = Object.keys(routeActions).filter((page) => !PAGE_CAPABILITIES[page]);
+  check('Every page the routes guard appears in the table', unknown.length === 0, unknown.join(', '));
+
+  // Endpoints reachable by any signed-in user. Personal data (your own profile,
+  // your own notifications) is legitimately outside the page model; anything
+  // else that writes is a hole.
+  const SELF_SERVICE = /^\/api\/(profile|notifications)\b/;
+  // Guarded per uploaded file type inside the handler, which static analysis
+  // cannot see. See routes/uploader.routes.js → authorizeSelectedImports.
+  const DYNAMIC = /^\/api\/uploader\/batch$/;
+  const holes = report.unguarded.filter((e) => e.writes.length && !SELF_SERVICE.test(e.path) && !DYNAMIC.test(e.path));
+  check('No write endpoint is left without a permission check', holes.length === 0,
+    holes.map((e) => `${e.method} ${e.path}`).join(', '));
+}
+
 async function scenarioSuperAdminUntouched() {
   section('Super admin is never restricted');
   const email = String(process.env.SUPER_ADMIN_EMAIL || '').toLowerCase();
@@ -407,6 +487,9 @@ async function demo() {
       },
       { pageKey: 'invoices', actions: {}, dataScope: { mode: 'all' }, fields: { mode: 'selected', allowed: ['document', 'customer', 'products'] } },
       { pageKey: 'vehicle_scan', actions: { create: true } },
+      // Deliberately left without Create, to show what the scan screen says
+      // when a role may open it but not raise anything.
+      { pageKey: 'part_scan', actions: {} },
       { pageKey: 'parts', actions: {}, dataScope: { mode: 'all' }, fields: { mode: 'selected', allowed: ['identity', 'stock', 'selling_price'] } },
     ],
   });
@@ -416,6 +499,7 @@ async function demo() {
   console.log('  Invoices ........ read-only, no money columns');
   console.log('  Parts ........... no purchase price');
   console.log('  Vehicle Scan .... may raise quotations, bookings and orders');
+  console.log('  Parts Scan ...... may open the screen but not create (on purpose)');
 }
 
 async function run() {
@@ -429,6 +513,7 @@ async function run() {
   await scenarioDataScope();
   await scenarioFieldPermissions();
   await scenarioCatalogEndpoint();
+  await scenarioCapabilityTable();
   await scenarioSuperAdminUntouched();
 
   console.log(`\n${pass} passed, ${fail} failed`);

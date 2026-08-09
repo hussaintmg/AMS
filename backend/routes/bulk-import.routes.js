@@ -57,9 +57,12 @@ router.post('/vehicles', authorizeAction('vehicles', 'create'), uploadSingle('fi
 
 router.post('/parts', authorizeAction('parts', 'create'), uploadSingle('file'), bulkImportController.importParts);
 
+// The page list is given explicitly so this does not inherit the barcode
+// scanner's "create" alias — raising one order at the counter is a long way
+// from importing a spreadsheet of them.
 router.post(
     '/sales-orders',
-    authorizeAction('sales_orders', 'create'),
+    authorizeAction(['sales_orders'], 'create'),
     uploadSingle('file'),
     bulkImportController.importSalesOrders
 );

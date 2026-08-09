@@ -37,11 +37,12 @@ router.use('/orders', fieldMask(['sales_orders']));
  * shared alias table because the reverse must not hold: holding Parts
  * Quotations is not permission to raise a vehicle quotation.
  */
+const SCAN = { page: 'part_scan', actions: ['create'] };
 const PARTS_PAGES = {
-    quotations: ['part_quotations', 'quotations', 'part_scan'],
-    invoices: ['part_invoices', 'invoices', 'part_scan'],
-    bookings: ['bookings', 'part_scan'],
-    sales_orders: ['sales_orders', 'part_scan'],
+    quotations: ['part_quotations', 'quotations', SCAN],
+    invoices: ['part_invoices', 'invoices', SCAN],
+    bookings: ['bookings', SCAN],
+    sales_orders: ['sales_orders', SCAN],
 };
 
 const can = (page, action) => authorizeAction(PARTS_PAGES[page] || page, action);

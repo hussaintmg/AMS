@@ -3,6 +3,8 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import { Camera, Keyboard, PackageSearch, ScanLine, Search, Trash2, UserRound, X } from "lucide-react";
 import { barcodeAPI, salesAPI, partsSalesAPI, customerAPI } from "../services/api";
+import { useAuth } from "../context/AuthContext";
+import { canRoleDo, getRoleJob } from "../utils/roleJobs";
 import useErpDocumentSettings from "../hooks/useErpDocumentSettings";
 import SearchableSelect from "../components/SearchableSelect";
 import CameraScanner from "../components/CameraScanner";
@@ -38,10 +40,16 @@ const CATEGORY = {
     lead: "Scan a chassis number or barcode to build a quotation, booking or sale.",
     searchPlaceholder: "Search by name or chassis number",
     scanPlaceholder: "Scan a barcode, or type a chassis number",
+    scanPage: "vehicle_scan",
+    // Which Role Jobs pages may raise each document. Mirrors the guards on the
+    // endpoints these buttons call, so the screen offers exactly what the API
+    // will accept instead of failing with "Access denied" after the basket is
+    // full. Holding the scan page is enough; so is holding the document's own
+    // page with Create ticked.
     documents: [
-      { key: "quotation", label: "Quotation", hint: "An offer. Nothing is reserved." },
-      { key: "booking", label: "Booking", hint: "Reserves the vehicles for this customer." },
-      { key: "order", label: "Sales Order + Invoice", hint: "Invoices immediately — this is what marks vehicles sold." },
+      { key: "quotation", label: "Quotation", hint: "An offer. Nothing is reserved.", pages: ["vehicle_scan", "quotations"] },
+      { key: "booking", label: "Booking", hint: "Reserves the vehicles for this customer.", pages: ["vehicle_scan", "bookings"] },
+      { key: "order", label: "Sales Order + Invoice", hint: "Invoices immediately — this is what marks vehicles sold.", pages: ["vehicle_scan", "sales_orders"] },
     ],
   },
   parts: {
@@ -55,9 +63,10 @@ const CATEGORY = {
     scanPlaceholder: "Scan a barcode, or type a part code",
     // The parts flow is quotation → invoice only; a counter sale invoices
     // immediately. There are no bookings on this side.
+    scanPage: "part_scan",
     documents: [
-      { key: "quotation", label: "Quotation", hint: "An offer. No stock is touched." },
-      { key: "order", label: "Invoice (Counter Sale)", hint: "Invoices immediately — this is what takes stock off the shelf." },
+      { key: "quotation", label: "Quotation", hint: "An offer. No stock is touched.", pages: ["part_scan", "part_quotations", "quotations"] },
+      { key: "order", label: "Invoice (Counter Sale)", hint: "Invoices immediately — this is what takes stock off the shelf.", pages: ["part_scan", "sales_orders"] },
     ],
   },
 };
@@ -82,6 +91,16 @@ function BarcodeScan({ category = "vehicle" }) {
   const config = CATEGORY[category] || CATEGORY.vehicle;
   const isParts = config.key === "parts";
   const navigate = useNavigate();
+  const { user } = useAuth();
+  // Only offer the documents this role may actually raise. Anything else would
+  // let the operator fill a basket and then be told "Access denied".
+  const allowedDocuments = useMemo(
+    () => config.documents.filter((entry) => entry.pages.some((page) => canRoleDo(user, page, "create"))),
+    [config.documents, user],
+  );
+  // A role that has never been through Role Jobs has no create rights anywhere;
+  // say so plainly rather than showing an empty picker.
+  const scanJobMissing = !getRoleJob(user, config.scanPage);
   const [searchParams] = useSearchParams();
   const { currency } = useErpDocumentSettings();
   const scanRef = useRef(null);
@@ -95,9 +114,11 @@ function BarcodeScan({ category = "vehicle" }) {
 
   // Arriving from Quotations should start a quotation, not the default sale.
   const requestedDoc = searchParams.get("doc");
-  const [docType, setDocType] = useState(
-    config.documents.some((entry) => entry.key === requestedDoc) ? requestedDoc : "order",
-  );
+  const [docType, setDocType] = useState(() => {
+    if (allowedDocuments.some((entry) => entry.key === requestedDoc)) return requestedDoc;
+    if (allowedDocuments.some((entry) => entry.key === "order")) return "order";
+    return allowedDocuments[0]?.key || "order";
+  });
   const [mode, setMode] = useState("keyboard");
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
@@ -368,7 +389,8 @@ function BarcodeScan({ category = "vehicle" }) {
     }
   };
 
-  const activeDoc = config.documents.find((entry) => entry.key === docType);
+  const activeDoc = allowedDocuments.find((entry) => entry.key === docType) || config.documents.find((entry) => entry.key === docType);
+  const canCreateActiveDoc = allowedDocuments.some((entry) => entry.key === docType);
   const activeMode = MODES.find((entry) => entry.key === mode);
   const inBasket = (item) =>
     basket.some((row) => row.partId === item.lineItem?.partId && row.vehicleId === item.lineItem?.vehicleId);
@@ -558,7 +580,7 @@ function BarcodeScan({ category = "vehicle" }) {
           <div className="scan-card">
             <label>Document</label>
             <div className="scan-doc-types">
-              {config.documents.map((entry) => (
+              {allowedDocuments.map((entry) => (
                 <button
                   key={entry.key}
                   type="button"
@@ -569,7 +591,16 @@ function BarcodeScan({ category = "vehicle" }) {
                 </button>
               ))}
             </div>
-            <p className="scan-hint">{activeDoc?.hint}</p>
+            {allowedDocuments.length === 0 ? (
+              <p className="scan-hint scan-hint-denied">
+                Your role can open this screen but may not create anything from it.
+                {scanJobMissing
+                  ? ` Ask an administrator to add ${config.label} Scan under Server Management → Role Jobs and tick Create.`
+                  : ` Ask an administrator to tick Create on ${config.label} Scan under Server Management → Role Jobs.`}
+              </p>
+            ) : (
+              <p className="scan-hint">{activeDoc?.hint}</p>
+            )}
           </div>
 
           <div className="scan-card">
@@ -653,7 +684,7 @@ function BarcodeScan({ category = "vehicle" }) {
               type="button"
               className="btn btn-primary scan-submit"
               onClick={submit}
-              disabled={saving || !basket.length || (!walkIn && !customerId)}
+              disabled={saving || !basket.length || (!walkIn && !customerId) || !canCreateActiveDoc}
             >
               {saving ? "Creating…" : `Create ${activeDoc?.label}`}
             </button>

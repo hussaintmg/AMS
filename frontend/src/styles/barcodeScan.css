@@ -471,6 +471,17 @@
   color: var(--text-muted);
 }
 
+/* Shown instead of the document picker when the role may not raise anything. */
+.scan-hint-denied {
+  margin-top: 4px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  border: 1px solid #fecaca;
+  background: #fef2f2;
+  color: #b91c1c;
+  line-height: 1.5;
+}
+
 .scan-totals {
   display: flex;
   flex-direction: column;
