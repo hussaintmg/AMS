@@ -938,15 +938,22 @@ exports.getRoleJobs = async (req, res, next) => {
       .populate('jobs.dataScope.users', 'firstName lastName email')
       .lean();
     if (!role) throw new AppError('Role not found', 404);
+    // Every page, not only the ones already granted. Role Jobs used to list
+    // just the granted ones, which left no way to reach a page that had never
+    // been ticked in Roles Permissions — the Parts Scan screen would tell an
+    // operator to ask for "Create" on a card that was nowhere to be found.
+    const pages = await Page.find({ isActive: { $ne: false } })
+      .select('name label module path group sortOrder')
+      .sort({ sortOrder: 1 })
+      .lean();
     res.json({
       success: true,
       data: {
         role,
         jobs: role.jobs || [],
+        pages,
         fieldCatalog: catalogForUi(),
         // So the screen can offer each page only the actions it really has.
-        // The whole table is sent, not just this role's pages, because the
-        // legacy "sales" permission expands into four document pages client-side.
         capabilities: PAGE_CAPABILITIES,
         actionLabels: ACTION_LABELS,
       },
@@ -965,18 +972,37 @@ exports.saveRoleJobs = async (req, res, next) => {
     const role = await Role.findById(req.params.id);
     if (!role) throw new AppError('Role not found', 404);
     if (role.name === 'super_admin') throw new AppError('Super admin always has full access', 403);
-    const resourceMap = {
-      sales: [
-        { pageKey: 'quotations', module: 'quotations' }, { pageKey: 'bookings', module: 'bookings' },
-        { pageKey: 'sales_orders', module: 'sales_orders' }, { pageKey: 'invoices', module: 'invoices' },
-      ],
-    };
-    const allowedPages = new Map();
-    (role.permissions || []).filter((item) => item.canView && item.isActive !== false).forEach((item) => {
-      const resources = resourceMap[item.pageKey] || [{ pageKey: item.pageKey, module: item.module || item.pageKey }];
-      resources.forEach((resource) => allowedPages.set(resource.pageKey, resource));
-    });
+    const pages = await Page.find({ isActive: { $ne: false } }).select('name label module path').lean();
+    const pageByKey = new Map(pages.map((page) => [page.name, page]));
+
     const incoming = Array.isArray(req.body.jobs) ? req.body.jobs : [];
+    // The screen now lists every page with its own "Allow this page" switch, so
+    // this is where page access is granted as well as what may be done with it.
+    const requestedPages = new Set(incoming.filter((job) => job.allowed !== false).map((job) => job.pageKey));
+
+    // Rows for keys that are not live pages (`sales`, `payments`, and other
+    // leftovers from before the pages were split) are carried through
+    // untouched: this screen did not offer them, so it must not revoke them.
+    const legacy = (role.permissions || []).filter((item) => !pageByKey.has(item.pageKey));
+    const existing = new Map((role.permissions || []).map((item) => [item.pageKey, item]));
+    role.permissions = [
+      ...legacy,
+      ...[...requestedPages].filter((key) => pageByKey.has(key)).map((key) => {
+        const page = pageByKey.get(key);
+        return {
+          pageKey: key,
+          path: existing.get(key)?.path || page.path,
+          module: existing.get(key)?.module || page.module,
+          canView: true,
+          isActive: true,
+        };
+      }),
+    ];
+
+    const allowedPages = new Map([...requestedPages]
+      .filter((key) => pageByKey.has(key))
+      .map((key) => [key, { pageKey: key, module: pageByKey.get(key).module || key }]));
+
     role.jobs = incoming.filter((job) => allowedPages.has(job.pageKey)).map((job) => {
       const page = allowedPages.get(job.pageKey);
       const capability = capabilitiesFor(job.pageKey);

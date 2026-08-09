@@ -392,6 +392,9 @@ function ServerManagement() {
   const [fieldCatalog, setFieldCatalog] = useState({});
   const [pageCapabilities, setPageCapabilities] = useState({});
   const [actionLabels, setActionLabels] = useState({});
+  // Every page is listed now, so the screen needs a way to narrow it down.
+  const [roleJobSearch, setRoleJobSearch] = useState('');
+  const [roleJobShowAll, setRoleJobShowAll] = useState(false);
   const [showLeadAssignmentRoleModal, setShowLeadAssignmentRoleModal] = useState(false);
   const [leadAssignmentRoleModalLoading, setLeadAssignmentRoleModalLoading] = useState(false);
   const [logRoleSearch, setLogRoleSearch] = useState("");
@@ -2231,24 +2234,32 @@ function ServerManagement() {
       setFieldCatalog(catalog);
       setPageCapabilities(res?.data?.capabilities || {});
       setActionLabels(res?.data?.actionLabels || {});
-      const resourceMap = { sales: [{pageKey:'quotations',module:'quotations',label:'Quotations'},{pageKey:'bookings',module:'bookings',label:'Bookings'},{pageKey:'sales_orders',module:'sales_orders',label:'Sales Orders'},{pageKey:'invoices',module:'invoices',label:'Invoices'}] };
-      // Pages come back keyed on `name`; older code looked for `key` and so
-      // always fell through to showing the raw page key as the card title.
-      const labelFor = (pageKey) => pagesArr.find((page) => page.name === pageKey || page.key === pageKey)?.label || pageKey;
-      const enabledPages = (role?.permissions || []).filter((item) => item.canView && item.isActive !== false).flatMap((item) => resourceMap[item.pageKey] || [{...item,label:labelFor(item.pageKey)}]);
-      setRoleJobs(enabledPages.map((page) => {
-        const current = saved.find((job) => job.pageKey === page.pageKey) || {};
+      // The document pages used to live behind one "sales" permission. A role
+      // still carrying that row keeps access to all four.
+      const LEGACY_SALES = ['quotations', 'bookings', 'sales_orders', 'invoices'];
+      const grantedKeys = new Set(
+        (role?.permissions || [])
+          .filter((item) => item.canView && item.isActive !== false)
+          .flatMap((item) => (item.pageKey === 'sales' ? LEGACY_SALES : [item.pageKey])),
+      );
+
+      // Every active page is listed, granted or not, so access can be given
+      // here rather than sending the administrator back to Roles Permissions.
+      setRoleJobs((res?.data?.pages || []).map((page) => {
+        const current = saved.find((job) => job.pageKey === page.name) || {};
         return {
-          pageKey: page.pageKey,
-          module: page.module || page.pageKey,
-          label: page.label || labelFor(page.pageKey),
+          pageKey: page.name,
+          module: page.module || page.name,
+          label: page.label || page.name,
+          group: page.group || 'Other',
+          allowed: grantedKeys.has(page.name),
           actions: { view: true, create: false, edit: false, delete: false, sendEmail: false, downloadPdf: false, export: false, ...(current.actions || {}) },
           dataScope: { mode: current.dataScope?.mode || 'own', roles: (current.dataScope?.roles || []).map((item) => String(item._id || item)), users: (current.dataScope?.users || []).map((item) => String(item._id || item)) },
           // "all" is stored whenever nothing is withheld, so a page whose
           // catalog later grows keeps showing the new columns.
           fields: current.fields?.mode === 'selected'
             ? { mode: 'selected', allowed: (current.fields.allowed || []).map(String) }
-            : { mode: 'all', allowed: (catalog[page.pageKey] || []).map((field) => field.key) },
+            : { mode: 'all', allowed: (catalog[page.name] || []).map((field) => field.key) },
         };
       }));
     } catch (err) { showApiError(err, 'Failed to load role jobs'); }
@@ -2352,12 +2363,30 @@ function ServerManagement() {
     }));
 
     return (
-      <section className="sm-role-job-card" key={job.pageKey} data-role-job={job.pageKey} tabIndex="-1">
+      <section
+        className={`sm-role-job-card ${job.allowed ? '' : 'sm-role-job-card-off'}`}
+        key={job.pageKey}
+        data-role-job={job.pageKey}
+        tabIndex="-1"
+      >
         <div className="sm-role-job-heading">
           <div><strong>{job.label}</strong><span>{job.module}</span></div>
-          {capability.dataScope && <span className="sm-own-data">Own data always visible</span>}
+          <div className="sm-role-job-headright">
+            {job.allowed && capability.dataScope && <span className="sm-own-data">Own data always visible</span>}
+            <label className="sm-page-toggle">
+              <input
+                type="checkbox"
+                checked={job.allowed}
+                onChange={() => updateRoleJob(job.pageKey, (item) => ({ ...item, allowed: !item.allowed }))}
+              />
+              <span>Allow this page</span>
+            </label>
+          </div>
         </div>
 
+        {!job.allowed ? (
+          <p className="sm-role-job-note">This role cannot open {job.label}. Turn on “Allow this page” to configure it.</p>
+        ) : (<>
         {capability.actions.length > 0 ? (
           <div className="sm-role-job-actions">
             {capability.actions.map((key) => (
@@ -2419,19 +2448,79 @@ function ServerManagement() {
         )}
 
         {renderJobFields(job)}
+        </>)}
       </section>
     );
   };
 
   const renderRoleJobs = () => {
+    const needle = roleJobSearch.trim().toLowerCase();
+    const visible = roleJobs.filter((job) => {
+      if (!roleJobShowAll && !job.allowed) return false;
+      if (!needle) return true;
+      return `${job.label} ${job.pageKey} ${job.group}`.toLowerCase().includes(needle);
+    });
+    const allowedCount = roleJobs.filter((job) => job.allowed).length;
+    // Cards keep the sidebar's own grouping, so a page is where the
+    // administrator already expects to find it.
+    const grouped = visible.reduce((acc, job) => {
+      (acc[job.group] = acc[job.group] || []).push(job);
+      return acc;
+    }, {});
+
     return <form className="sm-panel" onSubmit={(event) => { event.preventDefault(); saveRoleJobs(); }}>
-      <div className="sm-panel-header"><div><h2>Role Jobs</h2><p>Configure what a role can do, whose business data it can see, and which fields of that data it may read. Own data is always included.</p></div><div style={{display:'flex',gap:8}}><button type="button" className="btn btn-secondary" onClick={() => setShowLeadAssignmentRoleModal(true)}>+ Create Role</button><button className="btn btn-primary" disabled={!selectedJobRoleId || roleJobsSaving}>{roleJobsSaving?'Saving...':'Save'}</button></div></div>
-      <div className="sm-form-grid sm-form-stack"><label>Management Role</label><select className="form-input" value={selectedJobRoleId} onChange={(event) => loadRoleJobs(event.target.value)} style={{maxWidth:420}}><option value="">Select a role</option>{roleArr.filter((role) => role.name !== 'super_admin').map((role) => <option key={getRoleId(role)} value={getRoleId(role)}>{role.displayName || role.name}</option>)}</select></div>
+      <div className="sm-panel-header">
+        <div>
+          <h2>Role Jobs</h2>
+          <p>Give a role its pages, then set what it can do there, whose business data it can see, and which fields of that data it may read. Own data is always included.</p>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button type="button" className="btn btn-secondary" onClick={() => setShowLeadAssignmentRoleModal(true)}>+ Create Role</button>
+          <button className="btn btn-primary" disabled={!selectedJobRoleId || roleJobsSaving}>{roleJobsSaving ? 'Saving...' : 'Save'}</button>
+        </div>
+      </div>
+
+      <div className="sm-form-grid sm-form-stack">
+        <label>Management Role</label>
+        <select className="form-input" value={selectedJobRoleId} onChange={(event) => loadRoleJobs(event.target.value)} style={{ maxWidth: 420 }}>
+          <option value="">Select a role</option>
+          {roleArr.filter((role) => role.name !== 'super_admin').map((role) => (
+            <option key={getRoleId(role)} value={getRoleId(role)}>{role.displayName || role.name}</option>
+          ))}
+        </select>
+      </div>
+
+      {selectedJobRoleId && !roleJobsLoading && (
+        <div className="sm-role-job-toolbar">
+          <input
+            type="search"
+            className="form-input"
+            placeholder="Find a page — try “scan”"
+            value={roleJobSearch}
+            onChange={(event) => setRoleJobSearch(event.target.value)}
+          />
+          <label className="sm-page-toggle">
+            <input type="checkbox" checked={roleJobShowAll} onChange={() => setRoleJobShowAll((on) => !on)} />
+            <span>Show pages this role cannot open</span>
+          </label>
+          <span className="sm-role-job-count">{allowedCount} of {roleJobs.length} pages allowed</span>
+        </div>
+      )}
+
       {roleJobsLoading
         ? <p className="sm-empty">Loading role jobs...</p>
-        : selectedJobRoleId && roleJobs.length === 0
-          ? <p className="sm-empty">Assign pages to this role in Roles Permissions first.</p>
-          : <div className="sm-role-job-list">{roleJobs.map(renderRoleJobCard)}</div>}
+        : !selectedJobRoleId
+          ? <p className="sm-empty">Select a role to configure it.</p>
+          : visible.length === 0
+            ? <p className="sm-empty">{needle ? `No page matches “${roleJobSearch}”.` : 'This role has no pages yet — tick “Show pages this role cannot open” to grant some.'}</p>
+            : <div className="sm-role-job-groups">
+              {Object.entries(grouped).map(([group, jobs]) => (
+                <div className="sm-role-job-group" key={group}>
+                  <h3 className="sm-role-job-group-name">{group}</h3>
+                  <div className="sm-role-job-list">{jobs.map(renderRoleJobCard)}</div>
+                </div>
+              ))}
+            </div>}
     </form>;
   };
 

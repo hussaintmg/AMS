@@ -454,6 +454,57 @@ async function scenarioCapabilityTable() {
     holes.map((e) => `${e.method} ${e.path}`).join(', '));
 }
 
+/**
+ * Role Jobs now grants page access as well as configuring it. Before this, a
+ * page that had never been ticked in Roles Permissions simply had no card, so
+ * the Parts Scan screen could tell an operator to ask for "Create" on a control
+ * that did not exist anywhere.
+ */
+async function scenarioGrantPageFromRoleJobs() {
+  section('Granting a page from Role Jobs');
+  const password = process.env.SUPER_ADMIN_PASSWORD;
+  if (!password) { console.log('  SKIP  SUPER_ADMIN_PASSWORD not set'); return; }
+  const admin = await login(String(process.env.SUPER_ADMIN_EMAIL || '').toLowerCase(), password);
+
+  // Start from a role that cannot open the parts scanner at all.
+  await applyRole({ pages: ['customers'], jobs: [{ pageKey: 'customers', actions: {} }] });
+  const { Role } = require('../models');
+  const roleId = (await Role.findOne({ name: ROLE_NAME }).select('_id').lean())._id.toString();
+
+  const loaded = await call(admin, 'GET', `/server-management/roles/${roleId}/jobs`);
+  const listed = (loaded.body?.data?.pages || []).map((p) => p.name);
+  check('Role Jobs lists every page, not just the granted ones', listed.includes('part_scan') && listed.includes('vehicle_scan'),
+    `${listed.length} pages listed`);
+
+  // Grant it the way the screen does: allowed + create, in one save.
+  const saved = await call(admin, 'PUT', `/server-management/roles/${roleId}/jobs`, {
+    jobs: [
+      { pageKey: 'customers', allowed: true, actions: {} },
+      { pageKey: 'part_scan', allowed: true, actions: { create: true } },
+    ],
+  });
+  check('Saving with "allow this page" grants page access', saved.status === 200, `HTTP ${saved.status}`);
+
+  const { partId, customerId } = await fixtureProducts();
+  const token = await login(USER_EMAIL, USER_PASSWORD);
+  const quote = await call(token, 'POST', '/parts-sales/quotations', {
+    customerId, validityDays: 7, lineItems: [{ itemType: 'part', partId, quantity: 1, unitPrice: 100 }],
+  });
+  check('The role can now raise a parts quotation from the scanner',
+    quote.status === 201 || quote.status === 200, `HTTP ${quote.status} ${quote.body?.message || ''}`);
+
+  // And turning it back off revokes both the page and the job.
+  await call(admin, 'PUT', `/server-management/roles/${roleId}/jobs`, {
+    jobs: [
+      { pageKey: 'customers', allowed: true, actions: {} },
+      { pageKey: 'part_scan', allowed: false, actions: { create: true } },
+    ],
+  });
+  const after = await login(USER_EMAIL, USER_PASSWORD);
+  check('Turning the page off revokes it again',
+    (await call(after, 'POST', '/parts-sales/quotations', { customerId, lineItems: [{ itemType: 'part', partId, quantity: 1, unitPrice: 100 }] })).status === 403);
+}
+
 async function scenarioSuperAdminUntouched() {
   section('Super admin is never restricted');
   const email = String(process.env.SUPER_ADMIN_EMAIL || '').toLowerCase();
@@ -514,6 +565,7 @@ async function run() {
   await scenarioFieldPermissions();
   await scenarioCatalogEndpoint();
   await scenarioCapabilityTable();
+  await scenarioGrantPageFromRoleJobs();
   await scenarioSuperAdminUntouched();
 
   console.log(`\n${pass} passed, ${fail} failed`);

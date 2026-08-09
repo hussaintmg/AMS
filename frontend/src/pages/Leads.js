@@ -9,6 +9,8 @@ import ActionButtons from '../components/ActionButtons';
 import ConfirmModal from '../components/ConfirmModal';
 import BulkUploadModal from '../components/BulkUploadModal';
 import ServerPagination from '../components/ServerPagination';
+import { useAuth } from '../context/AuthContext';
+import { fieldAccessor } from '../utils/roleJobs';
 import '../styles/leadManagement.css';
 import '../styles/filters.css';
 
@@ -24,6 +26,9 @@ const statsIcons = {
 
 function LeadsPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  // Columns the role may not read are stripped by the API; don't draw them.
+  const showField = fieldAccessor(user, 'leads');
   const [urlParams] = useSearchParams();
   const { leads, meta, stats, pagination, search, filters, loading, handleSearch, handleFilter, clearFilters, goToPage, setPageSize, refreshLeads, deleteLead, loadLeads, convertLead } = useLeads();
   const [showForm, setShowForm] = useState(false);
@@ -196,13 +201,13 @@ function LeadsPage() {
             <tr>
               <th style={{ width: 40 }}><input type="checkbox" checked={selectedIds.size === leads.length && leads.length > 0} onChange={toggleSelectAll} /></th>
               <th>Customer</th>
-              <th>Contact</th>
-              <th>Source</th>
-              <th>Priority</th>
-              <th>Status</th>
-              <th>Assigned To</th>
-              <th>Value</th>
-              <th>Follow-Up</th>
+              {(showField('phone') || showField('email')) && <th>Contact</th>}
+              {showField('classification') && <th>Source</th>}
+              {showField('classification') && <th>Priority</th>}
+              {showField('classification') && <th>Status</th>}
+              {showField('assignment') && <th>Assigned To</th>}
+              {showField('value') && <th>Value</th>}
+              {showField('activity') && <th>Follow-Up</th>}
               <th>Actions</th>
             </tr>
           </thead>
@@ -214,21 +219,26 @@ function LeadsPage() {
                   <div className="user-cell">
                     <div className="user-info">
                       <span className="user-name">{lead.customerName}</span>
-                      {lead.email && <div className="user-emp-id">{lead.email}</div>}
+                      {showField('email') && lead.email && <div className="user-emp-id">{lead.email}</div>}
                     </div>
                   </div>
                 </td>
-                <td>
-                  <div className="contact-info">{lead.email}<br />{lead.phone}</div>
-                </td>
-                <td>{lead.source?.name || '-'}</td>
-                <td>
-                  {lead.priority ? (
-                    <span className="priority-badge" style={{ background: (lead.priority.color || '#6b7280') + '22', color: lead.priority.color || '#6b7280' }}>
-                      {lead.priority.name}
-                    </span>
-                  ) : '-'}
-                </td>
+                {(showField('phone') || showField('email')) && (
+                  <td>
+                    <div className="contact-info">{showField('email') && lead.email}{showField('email') && showField('phone') && <br />}{showField('phone') && lead.phone}</div>
+                  </td>
+                )}
+                {showField('classification') && <td>{lead.source?.name || '-'}</td>}
+                {showField('classification') && (
+                  <td>
+                    {lead.priority ? (
+                      <span className="priority-badge" style={{ background: (lead.priority.color || '#6b7280') + '22', color: lead.priority.color || '#6b7280' }}>
+                        {lead.priority.name}
+                      </span>
+                    ) : '-'}
+                  </td>
+                )}
+                {showField('classification') && (
                 <td>
                   {lead.convertedToCustomer ? (
                     <span className="status-badge clickable" style={{ background: '#dcfce7', color: '#16a34a', cursor: 'pointer' }} onClick={(e) => { e.stopPropagation(); navigate('/customers'); }}>
@@ -238,9 +248,10 @@ function LeadsPage() {
                     <span className={`status-badge ${lead.status === 'Lost' || lead.lostReason ? 'status-inactive' : 'status-active'}`}>{lead.status || 'N/A'}</span>
                   )}
                 </td>
-                <td>{lead.assignedTo ? `${lead.assignedTo.firstName || ''} ${lead.assignedTo.lastName || ''}`.trim() || lead.assignedTo.email : '-'}</td>
-                <td>{lead.leadValue ? Number(lead.leadValue).toLocaleString() : '-'}</td>
-                <td>{lead.nextFollowUpAt ? new Date(lead.nextFollowUpAt).toLocaleDateString() : '-'}</td>
+                )}
+                {showField('assignment') && <td>{lead.assignedTo ? `${lead.assignedTo.firstName || ''} ${lead.assignedTo.lastName || ''}`.trim() || lead.assignedTo.email : '-'}</td>}
+                {showField('value') && <td>{lead.leadValue ? Number(lead.leadValue).toLocaleString() : '-'}</td>}
+                {showField('activity') && <td>{lead.nextFollowUpAt ? new Date(lead.nextFollowUpAt).toLocaleDateString() : '-'}</td>}
                 <td>
                   <ActionButtons
                     showView

@@ -811,6 +811,18 @@
   }
 }
 .sm-role-job-list{display:grid;gap:12px;margin-top:18px}.sm-role-job-card{border:1px solid var(--border-light,#e2e8f0);border-radius:8px;padding:16px;background:#fff}.sm-role-job-card:focus-within{border-color:#3b82f6;box-shadow:0 0 0 2px #3b82f61a}.sm-role-job-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}.sm-role-job-heading>div{display:flex;flex-direction:column}.sm-role-job-heading span{font-size:12px;color:#64748b}.sm-own-data{background:#ecfdf5;color:#047857!important;padding:4px 7px;border-radius:4px}.sm-role-job-actions{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}.sm-role-job-actions label,.sm-scope-options label{display:flex;align-items:center;gap:6px;border:1px solid #dbe2ea;border-radius:5px;padding:7px 9px;font-size:12px}.sm-role-job-scope>label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5px}.sm-role-job-scope>select{width:min(360px,100%);padding:8px;border:1px solid #cbd5e1;border-radius:5px}.sm-scope-options{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:6px;margin-top:9px;max-height:210px;overflow-y:auto}
+/* Role Jobs lists every page, so it needs a filter row and grouping. */
+.sm-role-job-toolbar{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-top:16px}
+.sm-role-job-toolbar .form-input{max-width:280px}
+.sm-role-job-count{margin-left:auto;font-size:12px;color:#64748b}
+.sm-role-job-groups{display:flex;flex-direction:column;gap:22px;margin-top:18px}
+.sm-role-job-group-name{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#94a3b8}
+.sm-role-job-group .sm-role-job-list{margin-top:0}
+.sm-role-job-headright{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.sm-page-toggle{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:#475569;white-space:nowrap;cursor:pointer}
+.sm-role-job-card-off{background:#f8fafc;border-style:dashed}
+.sm-role-job-card-off .sm-role-job-heading strong{color:#64748b}
+
 /* Per-field visibility, below the data-scope picker on each Role Jobs card. */
 .sm-role-job-fields{margin-top:16px;padding-top:14px;border-top:1px dashed #e2e8f0}
 .sm-role-job-fields-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}

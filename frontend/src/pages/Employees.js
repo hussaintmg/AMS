@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { fieldAccessor } from "../utils/roleJobs";
 import { useEmployees } from "../context/EmployeesContext";
 import toast from "react-hot-toast";
 import ErrorPopup from "../components/ErrorPopup";
@@ -19,6 +20,7 @@ const Employees = () => {
   const canBulkUpload = ["super_admin", "admin", "hr_admin"].includes(
     currentUser?.role,
   );
+  const showField = fieldAccessor(currentUser, 'employees');
   const {
     employees: ctxEmployees,
     departments,
@@ -307,10 +309,10 @@ const Employees = () => {
                   />
                 </th>
                 <th>Employee</th>
-                <th>Email</th>
-                <th>Department</th>
-                <th>Designation</th>
-                <th>Status</th>
+                {showField('contact') && <th>Email</th>}
+                {showField('employment') && <th>Department</th>}
+                {showField('employment') && <th>Designation</th>}
+                {showField('employment') && <th>Status</th>}
                 <th>Actions</th>
               </tr>
             </thead>
@@ -351,17 +353,19 @@ const Employees = () => {
                         </div>
                       </div>
                     </td>
-                    <td>{emp.email || "-"}</td>
-                    <td>{deptName}</td>
-                    <td>{emp.designation || "-"}</td>
-                    <td>
-                      <span
-                        className={`status-badge ${statusText === "active" ? "status-active" : "status-inactive"}`}
-                      >
-                        {statusText.charAt(0).toUpperCase() +
-                          statusText.slice(1)}
-                      </span>
-                    </td>
+                    {showField('contact') && <td>{emp.email || "-"}</td>}
+                    {showField('employment') && <td>{deptName}</td>}
+                    {showField('employment') && <td>{emp.designation || "-"}</td>}
+                    {showField('employment') && (
+                      <td>
+                        <span
+                          className={`status-badge ${statusText === "active" ? "status-active" : "status-inactive"}`}
+                        >
+                          {statusText.charAt(0).toUpperCase() +
+                            statusText.slice(1)}
+                        </span>
+                      </td>
+                    )}
                     <td onClick={(e) => e.stopPropagation()}>
                       <ActionButtons
                         onEdit={() => openModal("edit", emp)}

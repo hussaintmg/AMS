@@ -13,6 +13,7 @@ import SearchableSelect from "../components/SearchableSelect";
 import VehicleMasterModal from "../components/vehicle/VehicleMasterModal";
 import { useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { fieldAccessor } from "../utils/roleJobs";
 import { vehicleAPI, adminAPI, vehicleMasterAPI } from "../services/api";
 import toast from "react-hot-toast";
 import ErrorPopup from "../components/ErrorPopup";
@@ -29,6 +30,7 @@ import "../styles/vehicleInventory.css";
 
 const Vehicles = () => {
   const { user: currentUser } = useAuth();
+  const showField = fieldAccessor(currentUser, 'vehicles');
 
   // State
   const [vehicles, setVehicles] = useState([]);
@@ -497,6 +499,9 @@ const Vehicles = () => {
     return `PKR ${Number(amount).toLocaleString()}`;
   };
 
+  // Columns are tagged with the catalog field that governs them; the ones this
+  // role may not read are dropped at the bottom of the list. The API withholds
+  // those keys anyway — this is what stops an always-blank column being drawn.
   const vehicleColumns = [
     {
       header: (
@@ -521,11 +526,13 @@ const Vehicles = () => {
     {
       header: "VIN",
       accessor: "vin",
+      field: "identifiers",
       render: (row) => <strong className="vin-code">{row.vin}</strong>,
     },
     {
       header: "Vehicle",
       accessor: "make_name",
+      field: "identity",
       render: (row) => (
         <div className="vehicle-info">
           <span className="vehicle-name">
@@ -543,6 +550,7 @@ const Vehicles = () => {
     {
       header: "Color",
       accessor: "color_name",
+      field: "identity",
       render: (row) => (
         <span
           className="color-badge"
@@ -552,10 +560,11 @@ const Vehicles = () => {
         </span>
       ),
     },
-    { header: "Year", accessor: "year" },
+    { header: "Year", accessor: "year", field: "identity" },
     {
       header: "Status",
       accessor: "status",
+      field: "stock",
       render: (row) => {
         const statusStyle = getStatusStyle(row.status);
         return (
@@ -569,6 +578,7 @@ const Vehicles = () => {
     {
       header: "Dispatch",
       accessor: "dispatch_no",
+      field: "dispatch",
       render: (row) =>
         row.is_dispatched ? (
           <div className="vehicle-info">
@@ -591,15 +601,16 @@ const Vehicles = () => {
         ),
       hideOnMobile: true,
     },
-    { header: "Condition", accessor: "condition_type" },
+    { header: "Condition", accessor: "condition_type", field: "stock" },
     {
       header: "Selling Price",
       accessor: "selling_price",
+      field: "selling_price",
       render: (row) => (
         <span className="price-cell">{formatCurrency(row.selling_price)}</span>
       ),
     },
-    { header: "Warehouse", accessor: "warehouse_name" },
+    { header: "Warehouse", accessor: "warehouse_name", field: "location" },
     {
       header: "Actions",
       accessor: "actions",
@@ -624,7 +635,7 @@ const Vehicles = () => {
       ),
       hideOnMobile: true,
     },
-  ];
+  ].filter((column) => !column.field || showField(column.field));
 
   return (
     <div className="vehicle-inventory-page">

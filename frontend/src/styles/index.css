@@ -1844,7 +1844,16 @@ label:has(> .label-add-link) > .label-add-link {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
-.main-content .data-table { min-width: max-content; }
+/* One rule for how a data table sizes inside its scroller, so page-level
+   stylesheets have nothing to disagree with.
+     width: 100%       → fill the card; no blank strip when a role's field
+                         permissions hide columns and the table gets narrower
+     min-width: max-content → but never squash: a genuinely wide table pushes
+                         past the card and the container scrolls instead. */
+.main-content .data-table {
+  width: 100%;
+  min-width: max-content;
+}
 
 /* Search fields which do not render a separate icon element. */
 .lead-master-filter-search, .filters-bar > .form-control[placeholder^="Search"], .status-toolbar {
