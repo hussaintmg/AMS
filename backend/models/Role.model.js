@@ -38,6 +38,13 @@ const roleJobSchema = new mongoose.Schema({
     mode: { type: String, enum: ['own', 'selected_roles', 'selected_users', 'all'], default: 'own' },
     roles: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Role' }],
     users: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  },
+  // Which columns of those records the role may read — customer phone, purchase
+  // price, salesperson and so on. "all" is the default so an existing role keeps
+  // seeing everything it saw before this setting existed.
+  fields: {
+    mode: { type: String, enum: ['all', 'selected'], default: 'all' },
+    allowed: [{ type: String, trim: true }],
   }
 }, { _id: false });
 

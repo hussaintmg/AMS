@@ -9,6 +9,8 @@ import ActionButtons from '../components/ActionButtons';
 import ConfirmModal from '../components/ConfirmModal';
 import BulkUploadModal from '../components/BulkUploadModal';
 import ServerPagination from '../components/ServerPagination';
+import { useAuth } from '../context/AuthContext';
+import { fieldAccessor, canRoleDo } from '../utils/roleJobs';
 import '../styles/leadManagement.css';
 import '../styles/filters.css';
 
@@ -36,6 +38,13 @@ function CustomersPage() {
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [deleteAllTarget, setDeleteAllTarget] = useState(null);
   const [deletingAll, setDeletingAll] = useState(false);
+  // Columns the role may not read are withheld by the API; don't draw them.
+  // Same for the write actions — the API refuses them, so don't offer them.
+  const { user } = useAuth();
+  const showField = fieldAccessor(user, 'customers');
+  const canCreateCustomer = canRoleDo(user, 'customers', 'create');
+  const canEditCustomer = canRoleDo(user, 'customers', 'edit');
+  const canDeleteCustomer = canRoleDo(user, 'customers', 'delete');
 
   const toggleSelect = (id) => {
     setSelectedIds(prev => {
@@ -168,12 +177,13 @@ function CustomersPage() {
             <tr>
               <th style={{ width: 40 }}><input type="checkbox" checked={selectedIds.size === customers.length && customers.length > 0} onChange={toggleSelectAll} /></th>
               <th>Customer</th>
-              <th>Email</th>
-              <th>Source</th>
-              <th>Type</th>
-              <th>Status</th>
-              <th>Assigned To</th>
-              <th>Department</th>
+              {showField('email') && <th>Email</th>}
+              {showField('phone') && <th>Phone</th>}
+              {showField('classification') && <th>Source</th>}
+              {showField('classification') && <th>Type</th>}
+              {showField('classification') && <th>Status</th>}
+              {showField('assignment') && <th>Assigned To</th>}
+              {showField('assignment') && <th>Department</th>}
               <th>Active Status</th>
               <th>Created Date</th>
               <th>Actions</th>
@@ -186,26 +196,27 @@ function CustomersPage() {
                 <td>
                   <div className="user-cell">
                     <div className="user-info">
-                      <span className="user-name">{c.firstName} {c.lastName}</span>
+                      <span className="user-name">{showField('name') ? `${c.firstName || ''} ${c.lastName || ''}`.trim() || '-' : (showField('code') ? c.customerCode : '-')}</span>
                     </div>
                   </div>
                 </td>
-                <td>{c.email || '-'}</td>
-                <td>{c.source?.name || '-'}</td>
-                <td>{c.type?.name || '-'}</td>
-                <td>{c.status || '-'}</td>
-                <td>{c.assignedTo ? `${c.assignedTo.firstName || ''} ${c.assignedTo.lastName || ''}`.trim() || c.assignedTo.email : '-'}</td>
-                <td>{c.department?.name || '-'}</td>
+                {showField('email') && <td>{c.email || '-'}</td>}
+                {showField('phone') && <td>{c.phone || '-'}</td>}
+                {showField('classification') && <td>{c.source?.name || '-'}</td>}
+                {showField('classification') && <td>{c.type?.name || '-'}</td>}
+                {showField('classification') && <td>{c.status || '-'}</td>}
+                {showField('assignment') && <td>{c.assignedTo ? `${c.assignedTo.firstName || ''} ${c.assignedTo.lastName || ''}`.trim() || c.assignedTo.email : '-'}</td>}
+                {showField('assignment') && <td>{c.department?.name || '-'}</td>}
                 <td><span className={`status-badge ${c.isActive ? 'status-active' : 'status-inactive'}`}>{c.isActive ? 'Active' : 'Inactive'}</span></td>
                 <td>{c.createdAt ? new Date(c.createdAt).toLocaleDateString() : '-'}</td>
                 <td>
                   <ActionButtons
-                    onEdit={() => { setEditCustomer(c); setShowForm(true); }}
-                    onToggle={() => toggleCustomerStatus(c._id).then((res) => { if (res?.success) toast.success(res.message); }).catch(() => toast.error('Failed to toggle status'))}
-                    onDelete={() => setDeleteTarget(c)}
+                    onEdit={canEditCustomer ? () => { setEditCustomer(c); setShowForm(true); } : null}
+                    onToggle={canEditCustomer ? () => toggleCustomerStatus(c._id).then((res) => { if (res?.success) toast.success(res.message); }).catch(() => toast.error('Failed to toggle status')) : null}
+                    onDelete={canDeleteCustomer ? () => setDeleteTarget(c) : null}
                     status={c.isActive}
                     title={c.customerCode}
-                    showToggle
+                    showToggle={canEditCustomer}
                   />
                 </td>
               </tr>
@@ -228,18 +239,18 @@ function CustomersPage() {
             <div key={c._id} className={`user-card ${!c.isActive ? 'card-inactive' : ''}`} onClick={() => openDrawer(c._id)}>
               <div className="user-card-header">
                 <div className="user-card-title">
-                  <span className="user-card-name">{c.firstName} {c.lastName}</span>
-                  <span className="user-card-role">{c.customerCode}</span>
+                  {showField('name') && <span className="user-card-name">{c.firstName} {c.lastName}</span>}
+                  {showField('code') && <span className="user-card-role">{c.customerCode}</span>}
                 </div>
                 <span className={`status-badge ${c.isActive ? 'status-active' : 'status-inactive'}`}>{c.isActive ? 'Active' : 'Inactive'}</span>
               </div>
               <div className="user-card-body">
-                <div className="user-card-field"><span className="field-label">Email</span><span className="field-value">{c.email || '-'}</span></div>
-                <div className="user-card-field"><span className="field-label">Phone</span><span className="field-value">{c.phone || '-'}</span></div>
-                <div className="user-card-field"><span className="field-label">Source</span><span className="field-value">{c.source?.name || '-'}</span></div>
-                <div className="user-card-field"><span className="field-label">Type</span><span className="field-value">{c.type?.name || '-'}</span></div>
-                <div className="user-card-field"><span className="field-label">Status</span><span className="field-value">{c.status || '-'}</span></div>
-                <div className="user-card-field"><span className="field-label">Department</span><span className="field-value">{c.department?.name || '-'}</span></div>
+                {showField('email') && <div className="user-card-field"><span className="field-label">Email</span><span className="field-value">{c.email || '-'}</span></div>}
+                {showField('phone') && <div className="user-card-field"><span className="field-label">Phone</span><span className="field-value">{c.phone || '-'}</span></div>}
+                {showField('classification') && <div className="user-card-field"><span className="field-label">Source</span><span className="field-value">{c.source?.name || '-'}</span></div>}
+                {showField('classification') && <div className="user-card-field"><span className="field-label">Type</span><span className="field-value">{c.type?.name || '-'}</span></div>}
+                {showField('classification') && <div className="user-card-field"><span className="field-label">Status</span><span className="field-value">{c.status || '-'}</span></div>}
+                {showField('assignment') && <div className="user-card-field"><span className="field-label">Department</span><span className="field-value">{c.department?.name || '-'}</span></div>}
               </div>
               <div className="user-card-actions">
                 <ActionButtons
@@ -350,18 +361,22 @@ function CustomersPage() {
           <p className="subtitle">Manage customer records</p>
         </div>
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
-          <button
-            type="button"
-            className="btn btn-secondary btn-create"
-            onClick={() => setShowBulkUpload(true)}
-            title="Bulk upload customers (CSV / XLSX)"
-          >
-            <Upload size={18} style={{ marginRight: 6 }} />
-            Upload
-          </button>
-          <button className="btn btn-primary btn-create" onClick={() => { setEditCustomer(null); setShowForm(true); }}>
-            <Plus size={20} /> Add New Customer
-          </button>
+          {canCreateCustomer && (
+            <button
+              type="button"
+              className="btn btn-secondary btn-create"
+              onClick={() => setShowBulkUpload(true)}
+              title="Bulk upload customers (CSV / XLSX)"
+            >
+              <Upload size={18} style={{ marginRight: 6 }} />
+              Upload
+            </button>
+          )}
+          {canCreateCustomer && (
+            <button className="btn btn-primary btn-create" onClick={() => { setEditCustomer(null); setShowForm(true); }}>
+              <Plus size={20} /> Add New Customer
+            </button>
+          )}
         </div>
       </div>
 
@@ -372,7 +387,7 @@ function CustomersPage() {
       {selectedIds.size > 0 && (
         <div className="selection-bar">
           <span className="selection-count">{selectedIds.size} selected</span>
-          <button className="btn btn-danger btn-sm" onClick={() => setDeleteAllTarget(true)}>Delete Selected</button>
+          {canDeleteCustomer && <button className="btn btn-danger btn-sm" onClick={() => setDeleteAllTarget(true)}>Delete Selected</button>}
           <button className="btn btn-secondary btn-sm" onClick={() => setSelectedIds(new Set())}>Deselect All</button>
         </div>
       )}

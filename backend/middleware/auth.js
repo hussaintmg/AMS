@@ -162,24 +162,50 @@ const generateRefreshToken = (userId) => {
 };
 
 /**
+ * Pages that grant the same vehicle-sales endpoint.
+ *
+ * The barcode scanner raises quotations, bookings and orders without the
+ * operator ever opening the Sales pages, so holding Vehicle Scan has to be
+ * enough on its own. The action is still judged against *that* page's job — a
+ * scanner-only role needs "create" on Vehicle Scan, not on Quotations.
+ *
+ * The parts routers pass their own list explicitly rather than appearing here:
+ * a role that may raise a parts quotation has no business raising a vehicle one.
+ */
+const PAGE_ALIASES = {
+  quotations: ['quotations', 'vehicle_scan'],
+  bookings: ['bookings', 'vehicle_scan'],
+  sales_orders: ['sales_orders', 'vehicle_scan'],
+  invoices: ['invoices', 'vehicle_scan'],
+};
+
+const pageKeysFor = (pageKey) => {
+  if (Array.isArray(pageKey)) return pageKey.flat(Infinity).filter(Boolean);
+  return PAGE_ALIASES[pageKey] || [pageKey];
+};
+
+/**
  * Permission-based authorization middleware.
  * Flow:
  *   1. Super admin → always allowed
  *   2. Resolve page access: customPermissions > role.permissions (via canAccessTarget)
  *   3. Resolve action permission: role.jobs (via canDo)
- *   Both must pass for access to be granted.
+ *   Both must pass, on the same page, for access to be granted. Where several
+ *   pages lead to the endpoint (see PAGE_ALIASES) any one of them suffices.
  */
 const authorizeAction = (pageKey, action = 'view') => {
+  const candidates = pageKeysFor(pageKey);
   return (req, res, next) => {
     if (!req.user) return next(new AppError('Authentication required', 401));
     if (req.user.isSuperAdmin) return next();
 
-    if (!canAccessTarget(req.user, { pageKey, path: pageKey, module: pageKey })) {
-      return next(new AppError(`Access denied: no access to ${pageKey}`, 403));
+    const reachable = candidates.filter((key) => canAccessTarget(req.user, { pageKey: key, path: key, module: key }));
+    if (!reachable.length) {
+      return next(new AppError(`Access denied: no access to ${candidates[0]}`, 403));
     }
 
-    if (!canDo(req.user, pageKey, action)) {
-      return next(new AppError(`Permission denied: cannot ${action} ${pageKey}`, 403));
+    if (!reachable.some((key) => canDo(req.user, key, action))) {
+      return next(new AppError(`Permission denied: cannot ${action} ${candidates[0]}`, 403));
     }
 
     next();

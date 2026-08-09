@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { fieldAccessor } from "../utils/roleJobs";
 import { partsAPI, vehicleMasterAPI } from "../services/api";
 import toast from "react-hot-toast";
 import { Package, Search, Plus, Upload, Pencil, Trash2, ScanLine } from "lucide-react";
@@ -36,6 +37,9 @@ const PartsInventory = () => {
   // and the inventory-value card; the API enforces the same rule on its own, so
   // another role gets responses without the field either way.
   const canSeePurchasePrice = isSuperAdmin;
+  // Everything else on this page can be withheld per role from Server
+  // Management → Role Jobs → Visible data fields.
+  const showField = fieldAccessor(currentUser, 'parts');
 
   // State
   const [parts, setParts] = useState([]);
@@ -593,7 +597,7 @@ const PartsInventory = () => {
         </div>
       ),
     },
-    {
+    ...(showField('classification') ? [{
       header: "Source",
       accessor: "source_type",
       render: (row) => {
@@ -601,8 +605,8 @@ const PartsInventory = () => {
         return <span className={`badge ${badge.class}`}>{badge.text}</span>;
       },
     },
-    { header: "Category", accessor: "category_name" },
-    {
+    { header: "Category", accessor: "category_name" }] : []),
+    ...(showField('stock') ? [{
       header: "Stock",
       accessor: "current_stock",
       render: (row) => (
@@ -619,8 +623,8 @@ const PartsInventory = () => {
         const badge = getStockStatusBadge(row.current_stock);
         return <span className={`badge ${badge.class}`}>{badge.text}</span>;
       },
-    },
-    ...(canSeePurchasePrice
+    }] : []),
+    ...(canSeePurchasePrice && showField('purchase_price')
       ? [
           {
             header: "Purchase Price",
@@ -631,13 +635,13 @@ const PartsInventory = () => {
           },
         ]
       : []),
-    {
+    ...(showField('selling_price') ? [{
       header: "Selling Price",
       accessor: "selling_price",
       render: (row) => (
         <span className="price-cell">{formatCurrency(row.selling_price)}</span>
       ),
-    },
+    }] : []),
     {
       header: "Actions",
       accessor: "actions",

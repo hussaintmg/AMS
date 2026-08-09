@@ -16,6 +16,7 @@ const { logFileOperation } = require('../utils/apiLogger');
 const { getPublicFileUrl } = require('../utils/url');
 const Log = require('../models/mongo/Log.model');
 const { syncFromUser } = require('../utils/relationshipSync');
+const { pageFieldKeys, catalogForUi } = require('../constants/fieldPermissions');
 
 const uploadRoot = path.join(__dirname, '..', 'uploads', 'branding');
 const DEFAULT_PAGE_ICON = 'FileText';
@@ -915,6 +916,19 @@ exports.getServiceAdvisorRoles = serviceAdvisorHandlers.get;
 exports.updateServiceAdvisorRoles = serviceAdvisorHandlers.update;
 exports.getServiceAdvisorUsers = serviceAdvisorHandlers.users;
 
+/**
+ * Keep only field keys the page actually publishes, and collapse "everything
+ * ticked" back to mode "all" so a later catalog addition stays visible rather
+ * than being silently withheld by a stale allow-list.
+ */
+const normalizeJobFields = (pageKey, fields) => {
+  const catalogKeys = pageFieldKeys(pageKey);
+  if (!catalogKeys.length || fields?.mode !== 'selected') return { mode: 'all', allowed: [] };
+  const allowed = catalogKeys.filter((key) => (fields.allowed || []).map(String).includes(key));
+  if (allowed.length === catalogKeys.length) return { mode: 'all', allowed: [] };
+  return { mode: 'selected', allowed };
+};
+
 exports.getRoleJobs = async (req, res, next) => {
   try {
     const role = await Role.findById(req.params.id)
@@ -923,7 +937,13 @@ exports.getRoleJobs = async (req, res, next) => {
       .populate('jobs.dataScope.users', 'firstName lastName email')
       .lean();
     if (!role) throw new AppError('Role not found', 404);
-    res.json({ success: true, data: { role, jobs: role.jobs || [] } });
+    res.json({ success: true, data: { role, jobs: role.jobs || [], fieldCatalog: catalogForUi() } });
+  } catch (error) { next(error); }
+};
+
+exports.getFieldCatalog = async (req, res, next) => {
+  try {
+    res.json({ success: true, data: catalogForUi() });
   } catch (error) { next(error); }
 };
 
@@ -964,7 +984,8 @@ exports.saveRoleJobs = async (req, res, next) => {
           mode,
           roles: mode === 'selected_roles' ? (job.dataScope?.roles || []) : [],
           users: mode === 'selected_users' ? (job.dataScope?.users || []) : [],
-        }
+        },
+        fields: normalizeJobFields(job.pageKey, job.fields),
       };
     });
     role.updatedBy = getUserId(req); await role.save();

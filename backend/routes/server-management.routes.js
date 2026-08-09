@@ -686,6 +686,7 @@ router.put('/users/:id/permissions', requireSuperAdmin, controller.updateUserPer
 router.put('/roles/:id/permissions', requireSuperAdmin, controller.updateRolePermissions);
 router.put('/users/:id/logs-permissions', requireSuperAdmin, controller.updateUserLogsPermissions);
 router.put('/roles/:id/logs-permissions', requireSuperAdmin, controller.saveRoleLogsPermissions);
+router.get('/field-catalog', requireSuperAdmin, controller.getFieldCatalog);
 router.get('/roles/:id/jobs', requireSuperAdmin, controller.getRoleJobs);
 router.put('/roles/:id/jobs', requireSuperAdmin, controller.saveRoleJobs);
 

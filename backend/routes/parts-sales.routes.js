@@ -20,7 +20,31 @@ const controller = require('../controllers/partsSales.controller');
 
 router.use(authenticate);
 
-const can = (page, action) => authorizeAction(page, action);
+// Field visibility follows the parts screens' own pages where the role has them
+// configured, and falls back to the vehicle sales pages these endpoints borrow
+// their action permissions from.
+const { fieldMask } = require('../utils/fieldPermissions');
+router.use('/quotations', fieldMask(['part_quotations', 'quotations']));
+router.use('/invoices', fieldMask(['part_invoices', 'invoices']));
+router.use('/bookings', fieldMask(['bookings']));
+router.use('/orders', fieldMask(['sales_orders']));
+
+/**
+ * Which pages open a parts endpoint. These screens borrow the vehicle sales
+ * page keys for their actions, and the Parts Scan screen raises documents
+ * without any list page of its own — so the parts pages, the borrowed vehicle
+ * page and the scanner all count. Listed here rather than in the middleware's
+ * shared alias table because the reverse must not hold: holding Parts
+ * Quotations is not permission to raise a vehicle quotation.
+ */
+const PARTS_PAGES = {
+    quotations: ['part_quotations', 'quotations', 'part_scan'],
+    invoices: ['part_invoices', 'invoices', 'part_scan'],
+    bookings: ['bookings', 'part_scan'],
+    sales_orders: ['sales_orders', 'part_scan'],
+};
+
+const can = (page, action) => authorizeAction(PARTS_PAGES[page] || page, action);
 
 // ── Stats ──────────────────────────────────────────────────────────────────
 router.get('/stats', can('parts', 'view'), controller.getStats);

@@ -10,6 +10,7 @@ const { sendMail } = require('../utils/mailer');
 const forgotPasswordEmailTemplate = require('../constants/forgotPasswordEmailTemplate');
 const emailSender = require('../services/emailSender.service');
 const { getPermissionSettings, resolvePagePermissions } = require('../utils/permissionResolver');
+const { fieldPermissionsForUser } = require('../utils/fieldPermissions');
 
 const RESET_WINDOW_MS = 60 * 60 * 1000;
 const isProduction = process.env.NODE_ENV === 'production';
@@ -621,6 +622,9 @@ router.get('/me', authenticate, async (req, res) => {
       } : req.user.role_name,
       customPermissions: req.user.customPermissions || [],
       permissions: req.user.pagePermissions,
+      // Only the pages whose columns are restricted appear here; an absent page
+      // means "show everything".
+      fieldPermissions: fieldPermissionsForUser(req.user),
       logPermissionSource: req.user.logPermissionSource || 'role',
       logsPermissions: req.user.logsPermissions || [],
       logPermissionMode: req.user.effectiveLogPermission?.source || 'role',

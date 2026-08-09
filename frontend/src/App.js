@@ -203,8 +203,16 @@ const AppLayout = () => {
                 a parts quotation converts straight to an invoice, so the
                 parts side has no booking or sales-order screens. */}
             {[
-              { base: "vehicle-sales", category: "vehicle", sections: ["quotations", "booking", "orders", "invoices"] },
-              { base: "parts-sales", category: "parts", sections: ["quotations", "invoices"] },
+              {
+                base: "vehicle-sales",
+                category: "vehicle",
+                sections: ["quotations", "booking", "orders", "invoices"],
+              },
+              {
+                base: "parts-sales",
+                category: "parts",
+                sections: ["quotations", "invoices"],
+              },
             ].flatMap(({ base, category, sections }) => [
               ...sections.map((section) => (
                 <Route
@@ -228,36 +236,111 @@ const AppLayout = () => {
               />,
               // Removed or renamed sections land somewhere sensible.
               ...(sections.includes("booking")
-                ? [<Route key={`${base}-bookings-alias`} path={`${base}/bookings`} element={<Navigate to={`/${base}/booking`} replace />} />]
+                ? [
+                    <Route
+                      key={`${base}-bookings-alias`}
+                      path={`${base}/bookings`}
+                      element={<Navigate to={`/${base}/booking`} replace />}
+                    />,
+                  ]
                 : [
-                  <Route key={`${base}-booking-gone`} path={`${base}/booking`} element={<Navigate to={`/${base}/quotations`} replace />} />,
-                  <Route key={`${base}-bookings-gone`} path={`${base}/bookings`} element={<Navigate to={`/${base}/quotations`} replace />} />,
-                  <Route key={`${base}-orders-gone`} path={`${base}/orders`} element={<Navigate to={`/${base}/invoices`} replace />} />,
-                ]),
+                    <Route
+                      key={`${base}-booking-gone`}
+                      path={`${base}/booking`}
+                      element={<Navigate to={`/${base}/quotations`} replace />}
+                    />,
+                    <Route
+                      key={`${base}-bookings-gone`}
+                      path={`${base}/bookings`}
+                      element={<Navigate to={`/${base}/quotations`} replace />}
+                    />,
+                    <Route
+                      key={`${base}-orders-gone`}
+                      path={`${base}/orders`}
+                      element={<Navigate to={`/${base}/invoices`} replace />}
+                    />,
+                  ]),
             ])}
 
             {/* Old links and bookmarks keep working: the plain top-level paths
                 and the first /vehicles|/parts layout both land on the current
                 screens. */}
-            <Route path="vehicles/orders" element={<Navigate to="/vehicle-sales/orders" replace />} />
-            <Route path="vehicles/quotations" element={<Navigate to="/vehicle-sales/quotations" replace />} />
-            <Route path="vehicles/invoices" element={<Navigate to="/vehicle-sales/invoices" replace />} />
-            <Route path="vehicles/booking" element={<Navigate to="/vehicle-sales/booking" replace />} />
-            <Route path="vehicles/barcode-scan" element={<Navigate to="/vehicle-sales/barcode-scan" replace />} />
-            <Route path="parts/orders" element={<Navigate to="/parts-sales/orders" replace />} />
-            <Route path="parts/quotations" element={<Navigate to="/parts-sales/quotations" replace />} />
-            <Route path="parts/invoices" element={<Navigate to="/parts-sales/invoices" replace />} />
-            <Route path="parts/booking" element={<Navigate to="/parts-sales/booking" replace />} />
-            <Route path="parts/barcode-scan" element={<Navigate to="/parts-sales/barcode-scan" replace />} />
-            <Route path="orders" element={<Navigate to="/vehicle-sales/orders" replace />} />
-            <Route path="quotations" element={<Navigate to="/vehicle-sales/quotations" replace />} />
-            <Route path="invoices" element={<Navigate to="/vehicle-sales/invoices" replace />} />
-            <Route path="booking" element={<Navigate to="/vehicle-sales/booking" replace />} />
-            <Route path="barcode-scan" element={<Navigate to="/vehicle-sales/barcode-scan" replace />} />
-            <Route path="sales/orders" element={<Navigate to="/vehicle-sales/orders" replace />} />
-            <Route path="sales/quotations" element={<Navigate to="/vehicle-sales/quotations" replace />} />
-            <Route path="sales/invoices" element={<Navigate to="/vehicle-sales/invoices" replace />} />
-            <Route path="sales/bookings" element={<Navigate to="/vehicle-sales/booking" replace />} />
+            <Route
+              path="vehicles/orders"
+              element={<Navigate to="/vehicle-sales/orders" replace />}
+            />
+            <Route
+              path="vehicles/quotations"
+              element={<Navigate to="/vehicle-sales/quotations" replace />}
+            />
+            <Route
+              path="vehicles/invoices"
+              element={<Navigate to="/vehicle-sales/invoices" replace />}
+            />
+            <Route
+              path="vehicles/booking"
+              element={<Navigate to="/vehicle-sales/booking" replace />}
+            />
+            <Route
+              path="vehicles/barcode-scan"
+              element={<Navigate to="/vehicle-sales/barcode-scan" replace />}
+            />
+            <Route
+              path="parts/orders"
+              element={<Navigate to="/parts-sales/orders" replace />}
+            />
+            <Route
+              path="parts/quotations"
+              element={<Navigate to="/parts-sales/quotations" replace />}
+            />
+            <Route
+              path="parts/invoices"
+              element={<Navigate to="/parts-sales/invoices" replace />}
+            />
+            <Route
+              path="parts/booking"
+              element={<Navigate to="/parts-sales/booking" replace />}
+            />
+            <Route
+              path="parts/barcode-scan"
+              element={<Navigate to="/parts-sales/barcode-scan" replace />}
+            />
+            <Route
+              path="orders"
+              element={<Navigate to="/vehicle-sales/orders" replace />}
+            />
+            <Route
+              path="quotations"
+              element={<Navigate to="/vehicle-sales/quotations" replace />}
+            />
+            <Route
+              path="invoices"
+              element={<Navigate to="/vehicle-sales/invoices" replace />}
+            />
+            <Route
+              path="booking"
+              element={<Navigate to="/vehicle-sales/booking" replace />}
+            />
+            <Route
+              path="barcode-scan"
+              element={<Navigate to="/vehicle-sales/barcode-scan" replace />}
+            />
+            <Route
+              path="sales/orders"
+              element={<Navigate to="/vehicle-sales/orders" replace />}
+            />
+            <Route
+              path="sales/quotations"
+              element={<Navigate to="/vehicle-sales/quotations" replace />}
+            />
+            <Route
+              path="sales/invoices"
+              element={<Navigate to="/vehicle-sales/invoices" replace />}
+            />
+            <Route
+              path="sales/bookings"
+              element={<Navigate to="/vehicle-sales/booking" replace />}
+            />
             <Route
               path="service/*"
               element={

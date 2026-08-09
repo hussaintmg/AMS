@@ -387,6 +387,8 @@ function ServerManagement() {
   const [roleJobs, setRoleJobs] = useState([]);
   const [roleJobsLoading, setRoleJobsLoading] = useState(false);
   const [roleJobsSaving, setRoleJobsSaving] = useState(false);
+  // Which columns each page can restrict, as published by the API.
+  const [fieldCatalog, setFieldCatalog] = useState({});
   const [showLeadAssignmentRoleModal, setShowLeadAssignmentRoleModal] = useState(false);
   const [leadAssignmentRoleModalLoading, setLeadAssignmentRoleModalLoading] = useState(false);
   const [logRoleSearch, setLogRoleSearch] = useState("");
@@ -2222,6 +2224,8 @@ function ServerManagement() {
       const { data: res } = await serverManagementAPI.getRoleJobs(roleId);
       const role = res?.data?.role;
       const saved = res?.data?.jobs || [];
+      const catalog = Object.fromEntries((res?.data?.fieldCatalog || []).map((page) => [page.pageKey, page.fields || []]));
+      setFieldCatalog(catalog);
       const resourceMap = { sales: [{pageKey:'quotations',module:'quotations',label:'Quotations'},{pageKey:'bookings',module:'bookings',label:'Bookings'},{pageKey:'sales_orders',module:'sales_orders',label:'Sales Orders'},{pageKey:'invoices',module:'invoices',label:'Invoices'}] };
       const enabledPages = (role?.permissions || []).filter((item) => item.canView && item.isActive !== false).flatMap((item) => resourceMap[item.pageKey] || [{...item,label:pages.find((page) => page.key === item.pageKey)?.label || item.pageKey}]);
       setRoleJobs(enabledPages.map((page) => {
@@ -2232,6 +2236,11 @@ function ServerManagement() {
           label: page.label || pages.find((item) => item.key === page.pageKey)?.label || page.pageKey,
           actions: { view: true, create: false, edit: false, delete: false, sendEmail: false, downloadPdf: false, export: false, ...(current.actions || {}) },
           dataScope: { mode: current.dataScope?.mode || 'own', roles: (current.dataScope?.roles || []).map((item) => String(item._id || item)), users: (current.dataScope?.users || []).map((item) => String(item._id || item)) },
+          // "all" is stored whenever nothing is withheld, so a page whose
+          // catalog later grows keeps showing the new columns.
+          fields: current.fields?.mode === 'selected'
+            ? { mode: 'selected', allowed: (current.fields.allowed || []).map(String) }
+            : { mode: 'all', allowed: (catalog[page.pageKey] || []).map((field) => field.key) },
         };
       }));
     } catch (err) { showApiError(err, 'Failed to load role jobs'); }
@@ -2250,12 +2259,72 @@ function ServerManagement() {
     finally { savingRef.current.roleJobs = false; setRoleJobsSaving(false); }
   };
 
+  /** Toggle one restrictable column on or off for a page. */
+  const toggleJobField = (pageKey, fieldKey) => updateRoleJob(pageKey, (item) => {
+    const allowed = item.fields.allowed.includes(fieldKey)
+      ? item.fields.allowed.filter((key) => key !== fieldKey)
+      : [...item.fields.allowed, fieldKey];
+    const catalogKeys = (fieldCatalog[pageKey] || []).map((field) => field.key);
+    return { ...item, fields: { mode: allowed.length === catalogKeys.length ? 'all' : 'selected', allowed } };
+  });
+
+  const setAllJobFields = (pageKey, on) => updateRoleJob(pageKey, (item) => {
+    const catalogKeys = (fieldCatalog[pageKey] || []).map((field) => field.key);
+    return { ...item, fields: on ? { mode: 'all', allowed: catalogKeys } : { mode: 'selected', allowed: [] } };
+  });
+
+  /**
+   * The "which columns may this role read" block of one page card. Pages with
+   * nothing restrictable (a dashboard, a master-data screen) say so instead of
+   * rendering an empty box.
+   */
+  const renderJobFields = (job) => {
+    const catalog = fieldCatalog[job.pageKey] || [];
+    if (!catalog.length) return <p className="sm-role-job-note">No per-field settings for this page — access to the page shows all of its data.</p>;
+
+    const groups = catalog.reduce((acc, field) => {
+      (acc[field.group || 'Other'] = acc[field.group || 'Other'] || []).push(field);
+      return acc;
+    }, {});
+    const allOn = job.fields.mode === 'all';
+    const selectedCount = allOn ? catalog.length : job.fields.allowed.length;
+
+    return (
+      <div className="sm-role-job-fields">
+        <div className="sm-role-job-fields-head">
+          <label>Visible data fields <span className="sm-field-count">{selectedCount} of {catalog.length}</span></label>
+          <span className="sm-field-bulk">
+            <button type="button" className="btn-link" onClick={() => setAllJobFields(job.pageKey, true)}>Select all</button>
+            <button type="button" className="btn-link" onClick={() => setAllJobFields(job.pageKey, false)}>Clear all</button>
+          </span>
+        </div>
+        {Object.entries(groups).map(([group, fields]) => (
+          <div className="sm-field-group" key={group}>
+            <span className="sm-field-group-name">{group}</span>
+            <div className="sm-scope-options">
+              {fields.map((field) => (
+                <label key={field.key}>
+                  <input
+                    type="checkbox"
+                    checked={allOn || job.fields.allowed.includes(field.key)}
+                    onChange={() => toggleJobField(job.pageKey, field.key)}
+                  />
+                  {field.label}
+                </label>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   const renderRoleJobs = () => {
     const actionLabels = { create: 'Create', edit: 'Edit', delete: 'Delete', approve: 'Approve', sendEmail: 'Send email', downloadPdf: 'Download PDF', export: 'Export' };
     return <form className="sm-panel" onSubmit={(event) => { event.preventDefault(); saveRoleJobs(); }}>
-      <div className="sm-panel-header"><div><h2>Role Jobs</h2><p>Configure what a role can do and whose business data it can see. Own data is always included.</p></div><div style={{display:'flex',gap:8}}><button type="button" className="btn btn-secondary" onClick={() => setShowLeadAssignmentRoleModal(true)}>+ Create Role</button><button className="btn btn-primary" disabled={!selectedJobRoleId || roleJobsSaving}>{roleJobsSaving?'Saving...':'Save'}</button></div></div>
+      <div className="sm-panel-header"><div><h2>Role Jobs</h2><p>Configure what a role can do, whose business data it can see, and which fields of that data it may read. Own data is always included.</p></div><div style={{display:'flex',gap:8}}><button type="button" className="btn btn-secondary" onClick={() => setShowLeadAssignmentRoleModal(true)}>+ Create Role</button><button className="btn btn-primary" disabled={!selectedJobRoleId || roleJobsSaving}>{roleJobsSaving?'Saving...':'Save'}</button></div></div>
       <div className="sm-form-grid sm-form-stack"><label>Management Role</label><select className="form-input" value={selectedJobRoleId} onChange={(event) => loadRoleJobs(event.target.value)} style={{maxWidth:420}}><option value="">Select a role</option>{roleArr.filter((role) => role.name !== 'super_admin').map((role) => <option key={getRoleId(role)} value={getRoleId(role)}>{role.displayName || role.name}</option>)}</select></div>
-      {roleJobsLoading ? <p className="sm-empty">Loading role jobs...</p> : selectedJobRoleId && roleJobs.length === 0 ? <p className="sm-empty">Assign pages to this role in Roles Permissions first.</p> : <div className="sm-role-job-list">{roleJobs.map((job) => <section className="sm-role-job-card" key={job.pageKey} data-role-job={job.pageKey} tabIndex="-1"><div className="sm-role-job-heading"><div><strong>{job.label}</strong><span>{job.module}</span></div><span className="sm-own-data">Own data always visible</span></div><div className="sm-role-job-actions">{Object.entries(actionLabels).map(([key,label]) => <label key={key}><input type="checkbox" checked={job.actions[key] === true} onChange={() => updateRoleJob(job.pageKey, (item) => ({...item,actions:{...item.actions,[key]:!item.actions[key]}}))}/><span>{label}</span></label>)}</div><div className="sm-role-job-scope"><label>Additional data visibility</label><select value={job.dataScope.mode} onChange={(event) => updateRoleJob(job.pageKey, (item) => ({...item,dataScope:{...item.dataScope,mode:event.target.value}}))}><option value="own">Own only</option><option value="selected_roles">Own + selected roles</option><option value="selected_users">Own + selected users</option><option value="all">All data</option></select>{job.dataScope.mode === 'selected_roles' && <div className="sm-scope-options">{scopeRoleOptions.filter((role) => String(getRoleId(role)) !== String(selectedJobRoleId)).map((role) => {const id=String(getRoleId(role));return <label key={id}><input type="checkbox" checked={job.dataScope.roles.includes(id)} onChange={() => updateRoleJob(job.pageKey,(item)=>({...item,dataScope:{...item.dataScope,roles:item.dataScope.roles.includes(id)?item.dataScope.roles.filter((value)=>value!==id):[...item.dataScope.roles,id]}}))}/>{role.displayName||role.name}</label>})}</div>}{job.dataScope.mode === 'selected_users' && <div className="sm-scope-options">{scopeUserOptions.map((person) => {const id=String(person._id||person.id);return <label key={id}><input type="checkbox" checked={job.dataScope.users.includes(id)} onChange={() => updateRoleJob(job.pageKey,(item)=>({...item,dataScope:{...item.dataScope,users:item.dataScope.users.includes(id)?item.dataScope.users.filter((value)=>value!==id):[...item.dataScope.users,id]}}))}/>{person.firstName} {person.lastName}</label>})}</div>}</div></section>)}</div>}
+      {roleJobsLoading ? <p className="sm-empty">Loading role jobs...</p> : selectedJobRoleId && roleJobs.length === 0 ? <p className="sm-empty">Assign pages to this role in Roles Permissions first.</p> : <div className="sm-role-job-list">{roleJobs.map((job) => <section className="sm-role-job-card" key={job.pageKey} data-role-job={job.pageKey} tabIndex="-1"><div className="sm-role-job-heading"><div><strong>{job.label}</strong><span>{job.module}</span></div><span className="sm-own-data">Own data always visible</span></div><div className="sm-role-job-actions">{Object.entries(actionLabels).map(([key,label]) => <label key={key}><input type="checkbox" checked={job.actions[key] === true} onChange={() => updateRoleJob(job.pageKey, (item) => ({...item,actions:{...item.actions,[key]:!item.actions[key]}}))}/><span>{label}</span></label>)}</div><div className="sm-role-job-scope"><label>Additional data visibility</label><select value={job.dataScope.mode} onChange={(event) => updateRoleJob(job.pageKey, (item) => ({...item,dataScope:{...item.dataScope,mode:event.target.value}}))}><option value="own">Own only</option><option value="selected_roles">Own + selected roles</option><option value="selected_users">Own + selected users</option><option value="all">All data</option></select>{job.dataScope.mode === 'selected_roles' && <div className="sm-scope-options">{scopeRoleOptions.filter((role) => String(getRoleId(role)) !== String(selectedJobRoleId)).map((role) => {const id=String(getRoleId(role));return <label key={id}><input type="checkbox" checked={job.dataScope.roles.includes(id)} onChange={() => updateRoleJob(job.pageKey,(item)=>({...item,dataScope:{...item.dataScope,roles:item.dataScope.roles.includes(id)?item.dataScope.roles.filter((value)=>value!==id):[...item.dataScope.roles,id]}}))}/>{role.displayName||role.name}</label>})}</div>}{job.dataScope.mode === 'selected_users' && <div className="sm-scope-options">{scopeUserOptions.map((person) => {const id=String(person._id||person.id);return <label key={id}><input type="checkbox" checked={job.dataScope.users.includes(id)} onChange={() => updateRoleJob(job.pageKey,(item)=>({...item,dataScope:{...item.dataScope,users:item.dataScope.users.includes(id)?item.dataScope.users.filter((value)=>value!==id):[...item.dataScope.users,id]}}))}/>{person.firstName} {person.lastName}</label>})}</div>}</div>{renderJobFields(job)}</section>)}</div>}
     </form>;
   };
 

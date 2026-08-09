@@ -14,6 +14,10 @@
 
 const express = require('express');
 const router = express.Router();
+const { fieldMask } = require('../utils/fieldPermissions');
+
+// Withhold the columns this role may not read, whatever the endpoint returns.
+router.use(fieldMask('invoices'));
 const { authenticate, authorizeAction } = require('../middleware/auth');
 const invoiceController = require('../controllers/invoiceManagement.controller');
 const bulkPermission = require('../middleware/bulkSalesPermission');

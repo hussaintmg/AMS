@@ -9,6 +9,10 @@
 
 const express = require('express');
 const router = express.Router();
+const { fieldMask } = require('../utils/fieldPermissions');
+
+// Withhold the columns this role may not read, whatever the endpoint returns.
+router.use(fieldMask('vehicles'));
 const { authenticate, authorizeAction } = require('../middleware/auth');
 const vehicleController = require('../controllers/vehicleInventory.controller');
 const { query } = require('../config/database');

@@ -8,7 +8,10 @@ const getJob = (user, pageKey) => {
 const canDo = (user, pageKey, action = 'view') => {
   const job = getJob(user, pageKey);
   if (job?.superAdmin) return true;
-  if (!job) return false;
+  // Granting the page in Roles Permissions is itself the read grant, so a role
+  // that has never been through Role Jobs is read-only rather than locked out.
+  // Anything that writes still needs the job to say so explicitly.
+  if (!job) return action === 'view';
   return action === 'view' ? job.actions?.view !== false : job.actions?.[action] === true;
 };
 

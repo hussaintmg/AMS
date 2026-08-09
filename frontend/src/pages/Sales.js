@@ -47,9 +47,18 @@ import RenderedHtmlDocumentTemplate from '../components/sales/RenderedHtmlDocume
 import ProductCell from '../components/sales/ProductCell';
 import '../styles/sales-print.css';
 import '../styles/userManagement.css';
-import { getRoleJob, canRoleDo } from '../utils/roleJobs';
+import { getRoleJob, canRoleDo, fieldAccessor } from '../utils/roleJobs';
 
 const policyAllows = (user, resource, action, legacy) => getRoleJob(user, resource) ? canRoleDo(user, resource, action) : legacy;
+
+/**
+ * Whether the role may read a given field of the document on screen. The API
+ * already strips what it withholds, so this only stops us drawing a column that
+ * would always be blank. Parts screens are checked against their own page first
+ * and fall back to the vehicle sales page they share permissions with.
+ */
+const documentFieldAccessor = (user, categoryKey, vehiclePage, partsPage) =>
+    fieldAccessor(user, categoryKey === 'parts' ? [partsPage, vehiclePage] : [vehiclePage]);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // VEHICLE vs PARTS
@@ -382,6 +391,7 @@ function Quotations({ category = 'vehicle' }) {
     const canSendEmail = config.can.email && policyAllows(user, 'quotations', 'sendEmail', canCreate);
     const canDownloadPdf = config.can.pdf && policyAllows(user, 'quotations', 'downloadPdf', true);
     const canEstimate = config.can.estimate && canDownloadPdf;
+    const showField = documentFieldAccessor(user, config.key, 'quotations', 'part_quotations');
 
     // Detail drawer
     const [drawerItem, setDrawerItem] = useState(null);
@@ -897,9 +907,9 @@ function Quotations({ category = 'vehicle' }) {
                         <tr>
                             <th className="sales-select-cell"><input type="checkbox" aria-label="Select all quotations" checked={data.length>0&&data.every(x=>selectedIds.includes(x.id))} onChange={e=>setSelectedIds(e.target.checked?data.map(x=>x.id):[])}/></th><th>Quote #</th>
                             <th>Date</th>
-                            <th>Customer</th>
-                            <th>{config.key === 'parts' ? 'Parts' : 'Vehicles'}</th>
-                            <th>Total</th>
+                            {showField('customer') && <th>Customer</th>}
+                            {showField('products') && <th>{config.key === 'parts' ? 'Parts' : 'Vehicles'}</th>}
+                            {showField('amounts') && <th>Total</th>}
                             <th>Status</th>
                             <th>Actions</th>
                         </tr>
@@ -910,9 +920,9 @@ function Quotations({ category = 'vehicle' }) {
                                 <td className="sales-select-cell" onClick={e=>e.stopPropagation()}><input type="checkbox" checked={selectedIds.includes(q.id)} onChange={e=>setSelectedIds(ids=>e.target.checked?[...new Set([...ids,q.id])]:ids.filter(id=>id!==q.id))}/></td>
                                 <td><strong>{q.quotation_number}</strong></td>
                                 <td>{new Date(q.created_at).toLocaleDateString()}</td>
-                                <td>{q.customer_name}</td>
-                                <td><ProductCell items={categoryLines(q.line_items, config.key)} fallback={q.item_name || q.vehicle_full_name || 'Parts/Services'} /></td>
-                                <td>PKR {Number(q.total_amount).toLocaleString()}</td>
+                                {showField('customer') && <td>{q.customer_name}</td>}
+                                {showField('products') && <td><ProductCell items={categoryLines(q.line_items, config.key)} fallback={q.item_name || q.vehicle_full_name || 'Parts/Services'} /></td>}
+                                {showField('amounts') && <td>PKR {Number(q.total_amount).toLocaleString()}</td>}
                                 <td>{getStatusBadge(q.status)}</td>
                                 <td onClick={e=>e.stopPropagation()}>
                                     <ActionButtons
@@ -932,7 +942,7 @@ function Quotations({ category = 'vehicle' }) {
                                 </td>
                             </tr>
                         ))}
-                        {data.length === 0 && <tr><td colSpan="7" className="text-center p-4">No quotations found</td></tr>}
+                        {data.length === 0 && <tr><td colSpan="8" className="text-center p-4">No quotations found</td></tr>}
                     </tbody>
                 </table>
             </div>
@@ -945,13 +955,13 @@ function Quotations({ category = 'vehicle' }) {
                                     <input className="sales-mobile-select" type="checkbox" checked={selectedIds.includes(q.id)} onChange={e=>setSelectedIds(ids=>e.target.checked?[...new Set([...ids,q.id])]:ids.filter(id=>id!==q.id))}/><div className="data-card-avatar avatar-amber">Q</div>
                                     <div className="data-card-info">
                                         <span className="data-card-title">{q.quotation_number}</span>
-                                        <span className="data-card-subtitle">{q.customer_name}</span>
+                                        {showField('customer') && <span className="data-card-subtitle">{q.customer_name}</span>}
                                     </div>
                                     {getStatusBadge(q.status)}
                                 </div>
                                 <div className="data-card-body">
-                                    <div className="data-card-row"><span className="row-icon">📦</span><span className="row-label">{config.key === 'parts' ? 'Parts' : 'Vehicles'}</span><span className="row-value"><ProductCell items={categoryLines(q.line_items, config.key)} fallback={q.item_name || q.vehicle_full_name || 'Parts/Services'} /></span></div>
-                                    <div className="data-card-row"><span className="row-icon">💰</span><span className="row-label">Total</span><span className="row-value">PKR {Number(q.total_amount).toLocaleString()}</span></div>
+                                    {showField('products') && <div className="data-card-row"><span className="row-icon">📦</span><span className="row-label">{config.key === 'parts' ? 'Parts' : 'Vehicles'}</span><span className="row-value"><ProductCell items={categoryLines(q.line_items, config.key)} fallback={q.item_name || q.vehicle_full_name || 'Parts/Services'} /></span></div>}
+                                    {showField('amounts') && <div className="data-card-row"><span className="row-icon">💰</span><span className="row-label">Total</span><span className="row-value">PKR {Number(q.total_amount).toLocaleString()}</span></div>}
                                     <div className="data-card-row"><span className="row-icon">📅</span><span className="row-label">Date</span><span className="row-value">{new Date(q.created_at).toLocaleDateString()}</span></div>
                                 </div>
                                 <div className="data-card-footer">
@@ -1179,6 +1189,7 @@ function Bookings({ category = 'vehicle' }) {
 
     const canAction = policyAllows(user, 'bookings', 'edit', ['super_admin','admin','sales_manager'].includes(user?.role));
     const canDelete = policyAllows(user, 'bookings', 'delete', ['super_admin','sales_manager'].includes(user?.role));
+    const showField = documentFieldAccessor(user, config.key, 'bookings', 'bookings');
 
     // Detail drawer
     const [drawerItem, setDrawerItem] = useState(null);
@@ -1539,9 +1550,9 @@ function Bookings({ category = 'vehicle' }) {
                     <thead>
                         <tr>
                             <th className="sales-select-cell"><input type="checkbox" aria-label="Select all bookings" checked={data.length>0&&data.every(x=>selectedIds.includes(x.id))} onChange={e=>setSelectedIds(e.target.checked?data.map(x=>x.id):[])}/></th><th>Booking #</th>
-                            <th>Customer</th>
-                            <th>{config.key === 'parts' ? 'Parts' : 'Vehicles'}</th>
-                            <th>Amount Paid</th>
+                            {showField('customer') && <th>Customer</th>}
+                            {showField('products') && <th>{config.key === 'parts' ? 'Parts' : 'Vehicles'}</th>}
+                            {showField('amounts') && <th>Amount Paid</th>}
                             <th>Expected Date</th>
                             <th>Status</th>
                             <th>Actions</th>
@@ -1555,12 +1566,12 @@ function Bookings({ category = 'vehicle' }) {
                                     <strong>{b.booking_number}</strong>
                                     {b.external_order_number && <div className="text-muted small">{b.external_order_number}</div>}
                                 </td>
-                                <td>
+                                {showField('customer') && <td>
                                     {b.customer_name}
-                                    {b.sale_person && <div className="text-muted small">{b.sale_person}</div>}
-                                </td>
-                                <td><ProductCell items={categoryLines(b.line_items, config.key)} fallback={b.item_name || b.vehicle_full_name || 'Parts/Services'} /></td>
-                                <td>PKR {Number(b.booking_amount).toLocaleString()}</td>
+                                    {showField('sales_person') && b.sale_person && <div className="text-muted small">{b.sale_person}</div>}
+                                </td>}
+                                {showField('products') && <td><ProductCell items={categoryLines(b.line_items, config.key)} fallback={b.item_name || b.vehicle_full_name || 'Parts/Services'} /></td>}
+                                {showField('amounts') && <td>PKR {Number(b.booking_amount).toLocaleString()}</td>}
                                 <td>{b.expected_delivery_date ? new Date(b.expected_delivery_date).toLocaleDateString() : '-'}</td>
                                 <td>{getStatusBadge(b.status)}</td>
                                 <td onClick={e=>e.stopPropagation()}>
@@ -1577,7 +1588,7 @@ function Bookings({ category = 'vehicle' }) {
                                 </td>
                             </tr>
                         ))}
-                        {data.length === 0 && <tr><td colSpan="7" className="text-center p-4">No bookings found</td></tr>}
+                        {data.length === 0 && <tr><td colSpan="8" className="text-center p-4">No bookings found</td></tr>}
                     </tbody>
                 </table>
             </div>
@@ -1590,13 +1601,13 @@ function Bookings({ category = 'vehicle' }) {
                                     <input className="sales-mobile-select" type="checkbox" checked={selectedIds.includes(b.id)} onChange={e=>setSelectedIds(ids=>e.target.checked?[...new Set([...ids,b.id])]:ids.filter(id=>id!==b.id))}/><div className="data-card-avatar avatar-purple">B</div>
                                     <div className="data-card-info">
                                         <span className="data-card-title">{b.booking_number}</span>
-                                        <span className="data-card-subtitle">{b.customer_name}</span>
+                                        {showField('customer') && <span className="data-card-subtitle">{b.customer_name}</span>}
                                     </div>
                                     {getStatusBadge(b.status)}
                                 </div>
                                 <div className="data-card-body">
-                                    <div className="data-card-row"><span className="row-icon">🚗</span><span className="row-label">{config.key === 'parts' ? 'Parts' : 'Vehicles'}</span><span className="row-value"><ProductCell items={categoryLines(b.line_items, config.key)} fallback={b.item_name || b.vehicle_full_name || 'Parts/Services'} /></span></div>
-                                    <div className="data-card-row"><span className="row-icon">💰</span><span className="row-label">Paid</span><span className="row-value">PKR {Number(b.booking_amount).toLocaleString()}</span></div>
+                                    {showField('products') && <div className="data-card-row"><span className="row-icon">🚗</span><span className="row-label">{config.key === 'parts' ? 'Parts' : 'Vehicles'}</span><span className="row-value"><ProductCell items={categoryLines(b.line_items, config.key)} fallback={b.item_name || b.vehicle_full_name || 'Parts/Services'} /></span></div>}
+                                    {showField('amounts') && <div className="data-card-row"><span className="row-icon">💰</span><span className="row-label">Paid</span><span className="row-value">PKR {Number(b.booking_amount).toLocaleString()}</span></div>}
                                     <div className="data-card-row"><span className="row-icon">📅</span><span className="row-label">Expected</span><span className="row-value">{b.expected_delivery_date ? new Date(b.expected_delivery_date).toLocaleDateString() : '-'}</span></div>
                                 </div>
                                 <div className="data-card-footer">
@@ -1840,6 +1851,7 @@ function SalesOrders({ category = 'vehicle' }) {
     const canEditInvoice = config.can.editInvoice;
     const canSendEmail = config.can.email && policyAllows(user, 'sales_orders', 'sendEmail', ['super_admin','admin','sales_manager','sales_executive'].includes(user?.role));
     const canDownloadPdf = config.can.pdf && policyAllows(user, 'sales_orders', 'downloadPdf', true);
+    const showField = documentFieldAccessor(user, config.key, 'sales_orders', 'sales_orders');
 
     // Detail drawer
     const [drawerItem, setDrawerItem] = useState(null);
@@ -2238,11 +2250,11 @@ function SalesOrders({ category = 'vehicle' }) {
                         <tr>
                             <th className="sales-select-cell"><input type="checkbox" aria-label="Select all sales orders" checked={data.length>0&&data.every(x=>selectedIds.includes(x.id))} onChange={e=>setSelectedIds(e.target.checked?data.map(x=>x.id):[])}/></th><th>Order #</th>
                             <th>Date</th>
-                            <th>Customer</th>
-                            <th>Type</th>
-                            <th>{config.key === 'parts' ? 'Parts' : 'Vehicles'}</th>
-                            <th>Total</th>
-                            <th>Paid</th>
+                            {showField('customer') && <th>Customer</th>}
+                            {showField('products') && <th>Type</th>}
+                            {showField('products') && <th>{config.key === 'parts' ? 'Parts' : 'Vehicles'}</th>}
+                            {showField('amounts') && <th>Total</th>}
+                            {showField('payments') && <th>Paid</th>}
                             <th>Invoice</th>
                             <th>Status</th>
                             <th>Actions</th>
@@ -2258,14 +2270,14 @@ function SalesOrders({ category = 'vehicle' }) {
                                     {o.booking_number && <div className="text-muted small">Booking {o.booking_number}</div>}
                                 </td>
                                 <td>{new Date(o.created_at).toLocaleDateString()}</td>
-                                <td>
+                                {showField('customer') && <td>
                                     {o.customer_name}
-                                    {o.sale_person && <div className="text-muted small">{o.sale_person}</div>}
-                                </td>
-                                <td><span className={`badge badge-${o.sale_type === 'parts' ? 'secondary' : o.sale_type === 'service' ? 'info' : 'primary'}`} style={{ fontSize: '0.8em' }}>{(o.sale_type || 'vehicle').toUpperCase()}</span></td>
-                                <td><ProductCell items={categoryLines(o.line_items, config.key)} fallback={o.item_name || `${o.make_name || ''} ${o.model_name || ''} ${o.variant_name || ''}`.trim() || 'Parts/Services'} /></td>
-                                <td>PKR {Number(o.grand_total).toLocaleString()}</td>
-                                <td>PKR {Number(o.paid_amount).toLocaleString()}</td>
+                                    {showField('sales_person') && o.sale_person && <div className="text-muted small">{o.sale_person}</div>}
+                                </td>}
+                                {showField('products') && <td><span className={`badge badge-${o.sale_type === 'parts' ? 'secondary' : o.sale_type === 'service' ? 'info' : 'primary'}`} style={{ fontSize: '0.8em' }}>{(o.sale_type || 'vehicle').toUpperCase()}</span></td>}
+                                {showField('products') && <td><ProductCell items={categoryLines(o.line_items, config.key)} fallback={o.item_name || `${o.make_name || ''} ${o.model_name || ''} ${o.variant_name || ''}`.trim() || 'Parts/Services'} /></td>}
+                                {showField('amounts') && <td>PKR {Number(o.grand_total).toLocaleString()}</td>}
+                                {showField('payments') && <td>PKR {Number(o.paid_amount).toLocaleString()}</td>}
                                 <td>
                                     {o.invoice_number ? (
                                         <span className="badge badge-success" title={`Status: ${o.invoice_status}`}>
@@ -2325,7 +2337,7 @@ function SalesOrders({ category = 'vehicle' }) {
                                 </td>
                             </tr>
                         ))}
-                        {data.length === 0 && <tr><td colSpan="10" className="text-center p-4">No sales orders found</td></tr>}
+                        {data.length === 0 && <tr><td colSpan="11" className="text-center p-4">No sales orders found</td></tr>}
                     </tbody>
                 </table>
             </div>
@@ -2338,15 +2350,15 @@ function SalesOrders({ category = 'vehicle' }) {
                                     <input className="sales-mobile-select" type="checkbox" checked={selectedIds.includes(o.id)} onChange={e=>setSelectedIds(ids=>e.target.checked?[...new Set([...ids,o.id])]:ids.filter(id=>id!==o.id))}/><div className="data-card-avatar avatar-green">{o.sale_type === 'parts' ? 'P' : o.sale_type === 'service' ? 'S' : 'V'}</div>
                                     <div className="data-card-info">
                                         <span className="data-card-title">{o.order_number}</span>
-                                        <span className="data-card-subtitle">{o.customer_name}</span>
+                                        {showField('customer') && <span className="data-card-subtitle">{o.customer_name}</span>}
                                     </div>
-                                    <span className={`badge-pill ${o.sale_type === 'parts' ? 'status-inactive' : o.sale_type === 'service' ? 'status-pending' : 'status-active'}`}>{(o.sale_type || 'vehicle').toUpperCase()}</span>
+                                    {showField('products') && <span className={`badge-pill ${o.sale_type === 'parts' ? 'status-inactive' : o.sale_type === 'service' ? 'status-pending' : 'status-active'}`}>{(o.sale_type || 'vehicle').toUpperCase()}</span>}
                                     {getStatusBadge(o.status)}
                                 </div>
                                 <div className="data-card-body">
-                                    <div className="data-card-row"><span className="row-icon">📦</span><span className="row-label">{config.key === 'parts' ? 'Parts' : 'Vehicles'}</span><span className="row-value"><ProductCell items={categoryLines(o.line_items, config.key)} fallback={o.item_name || `${o.make_name || ''} ${o.model_name || ''} ${o.variant_name || ''}`.trim() || 'Parts/Services'} /></span></div>
-                                    <div className="data-card-row"><span className="row-icon">💰</span><span className="row-label">Total</span><span className="row-value">PKR {Number(o.grand_total).toLocaleString()}</span></div>
-                                    <div className="data-card-row"><span className="row-icon">✅</span><span className="row-label">Paid</span><span className="row-value">PKR {Number(o.paid_amount).toLocaleString()}</span></div>
+                                    {showField('products') && <div className="data-card-row"><span className="row-icon">📦</span><span className="row-label">{config.key === 'parts' ? 'Parts' : 'Vehicles'}</span><span className="row-value"><ProductCell items={categoryLines(o.line_items, config.key)} fallback={o.item_name || `${o.make_name || ''} ${o.model_name || ''} ${o.variant_name || ''}`.trim() || 'Parts/Services'} /></span></div>}
+                                    {showField('amounts') && <div className="data-card-row"><span className="row-icon">💰</span><span className="row-label">Total</span><span className="row-value">PKR {Number(o.grand_total).toLocaleString()}</span></div>}
+                                    {showField('payments') && <div className="data-card-row"><span className="row-icon">✅</span><span className="row-label">Paid</span><span className="row-value">PKR {Number(o.paid_amount).toLocaleString()}</span></div>}
                                     <div className="data-card-row"><span className="row-icon">📄</span><span className="row-label">Invoice</span><span className="row-value">{o.invoice_number ? <span className="badge-pill status-active">{o.invoice_number}</span> : <span style={{ color: '#94a3b8' }}>Not Generated</span>}</span></div>
                                 </div>
                                 <div className="data-card-footer">
@@ -2783,6 +2795,7 @@ function Invoices({ category = 'vehicle' }) {
     const canEdit = config.can.editInvoice && policyAllows(user, 'invoices', 'edit', ['super_admin','admin','accountant'].includes(user?.role));
     const canDelete = policyAllows(user, 'invoices', 'delete', user?.role === 'super_admin');
     const canRecordPayment = ['super_admin', 'admin', 'sales_manager', 'accountant'].includes(user?.role);
+    const showField = documentFieldAccessor(user, config.key, 'invoices', 'part_invoices');
 
     // Detail drawer (status + payment ledger)
     const [drawerInvoice, setDrawerInvoice] = useState(null);
@@ -3259,12 +3272,12 @@ function Invoices({ category = 'vehicle' }) {
                             <th className="sales-select-cell"><input type="checkbox" aria-label="Select all invoices" checked={data.length>0&&data.every(x=>selectedIds.includes(x.id))} onChange={e=>setSelectedIds(e.target.checked?data.map(x=>x.id):[])}/></th><th>Invoice #</th>
                             <th>Date</th>
                             <th>Due Date</th>
-                            <th>Customer</th>
-                            <th>Type</th>
-                            <th>{config.key === 'parts' ? 'Parts' : 'Vehicles'}</th>
-                            <th>Total</th>
-                            <th>Paid</th>
-                            <th>Balance</th>
+                            {showField('customer') && <th>Customer</th>}
+                            {showField('products') && <th>Type</th>}
+                            {showField('products') && <th>{config.key === 'parts' ? 'Parts' : 'Vehicles'}</th>}
+                            {showField('amounts') && <th>Total</th>}
+                            {showField('payments') && <th>Paid</th>}
+                            {showField('payments') && <th>Balance</th>}
                             <th>Status</th>
                             <th>Actions</th>
                         </tr>
@@ -3288,17 +3301,17 @@ function Invoices({ category = 'vehicle' }) {
                                 </td>
                                 <td>{new Date(inv.invoice_date).toLocaleDateString()}</td>
                                 <td>{new Date(inv.due_date).toLocaleDateString()}</td>
-                                <td>
+                                {showField('customer') && <td>
                                     {inv.customer_name}
-                                    {inv.sale_person && <div className="text-muted small">{inv.sale_person}</div>}
-                                </td>
-                                <td><span className="badge badge-info">{inv.invoice_type?.toUpperCase()}</span></td>
-                                <td><ProductCell items={categoryLines(inv.line_items, config.key)} fallback={inv.item_name || 'Parts/Services'} /></td>
-                                <td>PKR {Number(inv.total_amount).toLocaleString()}</td>
-                                <td>PKR {Number(inv.paid_amount || 0).toLocaleString()}</td>
-                                <td style={{ color: inv.balance_amount > 0 ? '#dc2626' : '#16a34a' }}>
+                                    {showField('sales_person') && inv.sale_person && <div className="text-muted small">{inv.sale_person}</div>}
+                                </td>}
+                                {showField('products') && <td><span className="badge badge-info">{inv.invoice_type?.toUpperCase()}</span></td>}
+                                {showField('products') && <td><ProductCell items={categoryLines(inv.line_items, config.key)} fallback={inv.item_name || 'Parts/Services'} /></td>}
+                                {showField('amounts') && <td>PKR {Number(inv.total_amount).toLocaleString()}</td>}
+                                {showField('payments') && <td>PKR {Number(inv.paid_amount || 0).toLocaleString()}</td>}
+                                {showField('payments') && <td style={{ color: inv.balance_amount > 0 ? '#dc2626' : '#16a34a' }}>
                                     PKR {Number(inv.balance_amount).toLocaleString()}
-                                </td>
+                                </td>}
                                 <td>{getStatusBadge(inv.status)}</td>
                                 <td onClick={e=>e.stopPropagation()}>
                                     <ActionButtons
@@ -3334,7 +3347,7 @@ function Invoices({ category = 'vehicle' }) {
                                 </td>
                             </tr>
                         ))}
-                        {data.length === 0 && <tr><td colSpan="11" className="text-center p-4">No invoices found</td></tr>}
+                        {data.length === 0 && <tr><td colSpan="12" className="text-center p-4">No invoices found</td></tr>}
                     </tbody>
                 </table>
             </div>
@@ -3347,18 +3360,18 @@ function Invoices({ category = 'vehicle' }) {
                                     <input className="sales-mobile-select" type="checkbox" checked={selectedIds.includes(inv.id)} onChange={e=>setSelectedIds(ids=>e.target.checked?[...new Set([...ids,inv.id])]:ids.filter(id=>id!==inv.id))}/><div className="data-card-avatar avatar-rose">I</div>
                                     <div className="data-card-info">
                                         <span className="data-card-title">{inv.invoice_number}</span>
-                                        <span className="data-card-subtitle">{inv.customer_name}</span>
+                                        {showField('customer') && <span className="data-card-subtitle">{inv.customer_name}</span>}
                                     </div>
-                                    <span className="badge-pill status-pending">{inv.invoice_type?.toUpperCase()}</span>
+                                    {showField('products') && <span className="badge-pill status-pending">{inv.invoice_type?.toUpperCase()}</span>}
                                     {getStatusBadge(inv.status)}
                                 </div>
                                 <div className="data-card-body">
-                                    <div className="data-card-row"><span className="row-icon">💰</span><span className="row-label">Total</span><span className="row-value">PKR {Number(inv.total_amount).toLocaleString()}</span></div>
-                                    <div className="data-card-row"><span className="row-icon">✅</span><span className="row-label">Paid</span><span className="row-value">PKR {Number(inv.paid_amount || 0).toLocaleString()}</span></div>
-                                    <div className="data-card-row">
+                                    {showField('amounts') && <div className="data-card-row"><span className="row-icon">💰</span><span className="row-label">Total</span><span className="row-value">PKR {Number(inv.total_amount).toLocaleString()}</span></div>}
+                                    {showField('payments') && <div className="data-card-row"><span className="row-icon">✅</span><span className="row-label">Paid</span><span className="row-value">PKR {Number(inv.paid_amount || 0).toLocaleString()}</span></div>}
+                                    {showField('payments') && <div className="data-card-row">
                                         <span className="row-icon">⚖️</span><span className="row-label">Balance</span>
                                         <span className="row-value" style={{ color: inv.balance_amount > 0 ? '#dc2626' : '#16a34a' }}>PKR {Number(inv.balance_amount).toLocaleString()}</span>
-                                    </div>
+                                    </div>}
                                 </div>
                                 <div className="data-card-footer">
                                     <ActionButtons
