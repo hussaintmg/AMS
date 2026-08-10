@@ -517,3 +517,31 @@
     text-align: center !important;
     white-space: nowrap;
 }
+
+/*
+ * The View modal, while the document and its template are still loading.
+ *
+ * Roughly a page tall so the modal does not resize under the reader when the
+ * real content lands, and centred rather than pinned to the top-left corner —
+ * which is where a bare `.spinner` ends up in a block-layout modal body.
+ */
+.doc-preview-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    min-height: min(420px, 55vh);
+    padding: 2rem 1rem;
+    color: var(--text-muted, #64748b);
+}
+
+.doc-preview-loading p {
+    margin: 0;
+    font-size: 0.9rem;
+}
+
+/* The placeholder is never part of the printed document. */
+@media print {
+    .doc-preview-loading { display: none !important; }
+}

@@ -248,6 +248,26 @@ function runSalesPrint() {
     printSalesModal();
 }
 
+/**
+ * What the View modal shows while the document and its template load.
+ *
+ * It used to be a bare `<div className="spinner" />` — a 40px ring sitting in
+ * the top-left corner of an otherwise empty white modal, with nothing saying
+ * what was happening. On the invoice modal it was worse: a `minHeight: 200px`
+ * on the ring itself stretched the circle into a 40×200 oval.
+ *
+ * The placeholder holds roughly the height of a page of document so the modal
+ * does not jump when the real content arrives, and says what it is waiting for.
+ */
+function DocumentPreviewLoading() {
+    return (
+        <div className="doc-preview-loading" role="status" aria-live="polite">
+            <div className="spinner" />
+            <p>Preparing the document…</p>
+        </div>
+    );
+}
+
 async function downloadSalesPdf(documentType, id, filename) {
     try {
         const response = await pdfManagementAPI.download(documentType, id);
@@ -1046,7 +1066,7 @@ function Quotations({ category = 'vehicle' }) {
                     {modalMode === 'view' ? (
                         <>
                             {viewLoading ? (
-                                <div className="spinner" />
+                                <DocumentPreviewLoading />
                             ) : documentHtml ? (
                                 <RenderedHtmlDocumentTemplate htmlString={documentHtml} />
                             ) : templateHtml ? (
@@ -1690,7 +1710,7 @@ function Bookings({ category = 'vehicle' }) {
                         {modalMode === 'view' ? (
                             <>
                                 {viewLoading ? (
-                                    <div className="spinner" />
+                                    <DocumentPreviewLoading />
                                 ) : documentHtml ? (
                                     <RenderedHtmlDocumentTemplate htmlString={documentHtml} />
                                 ) : templateHtml ? (
@@ -2492,7 +2512,7 @@ function SalesOrders({ category = 'vehicle' }) {
                     {modalMode === 'view' ? (
                         <>
                             {viewLoading ? (
-                                <div className="spinner" />
+                                <DocumentPreviewLoading />
                             ) : documentHtml ? (
                                 <RenderedHtmlDocumentTemplate htmlString={documentHtml} />
                             ) : templateHtml ? (
@@ -3519,7 +3539,7 @@ function Invoices({ category = 'vehicle' }) {
                 <Modal title={`Invoice ${invoiceDetails.invoice_number}`} onClose={closeModal} size="large" overlayClassName="sales-print-modal">
                     <>
                     {viewLoading ? (
-                        <div className="spinner" style={{ minHeight: '200px' }} />
+                        <DocumentPreviewLoading />
                     ) : documentHtml ? (
                         <RenderedHtmlDocumentTemplate htmlString={documentHtml} />
                     ) : templateHtml ? (

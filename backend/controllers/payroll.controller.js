@@ -62,6 +62,8 @@ const mapPeriod = (p) => {
         // Totals let the list show at a glance what a month still owes.
         net_total: net,
         paid_total: paid,
+        // The row-level "Given" figure, summed — see `already_given` in mapLine.
+        given_total: round2(lines.reduce((sum, l) => sum + (l.advanceDeduction || 0) + (l.paidAmount || 0), 0)),
         remaining_total: round2(lines.reduce((sum, l) => sum + remainingOf(l), 0)),
         unpaid_count: lines.filter((l) => paymentStatusOf(l) !== 'paid' && (l.netAmount || 0) > 0).length,
         posted_at: p.postedAt || null,
@@ -92,6 +94,16 @@ const mapLine = (line) => {
         advance_balance: line.advanceBalance || 0,
         net_amount: line.netAmount || 0,
         paid_amount: round2(line.paidAmount),
+        /**
+         * What the employee has actually had in hand for this period.
+         *
+         * `paid_amount` counts only salary paid out, which is the right figure
+         * for the ledger and the wrong one to show a person: on a 40,000 salary
+         * with a 20,000 advance already taken, the screen said "Paid 0" beside
+         * "Remaining 20,000" — and the employee is holding 20,000. An advance is
+         * salary paid early, so it belongs here.
+         */
+        already_given: round2((line.advanceDeduction || 0) + (line.paidAmount || 0)),
         remaining_amount: remainingOf(line),
         payment_status: paymentStatusOf(line),
         payments: (line.payments || []).map(mapPayment),

@@ -589,8 +589,8 @@ const Payroll = () => {
                                 <strong>{money(linesData.period.net_total)}</strong>
                             </div>
                             <div className="adv-stat">
-                                <span>Paid so far</span>
-                                <strong className="adv-good">{money(linesData.period.paid_total)}</strong>
+                                <span>Given so far</span>
+                                <strong className="adv-good">{money(linesData.period.given_total ?? linesData.period.paid_total)}</strong>
                             </div>
                             <div className="adv-stat adv-stat-main">
                                 <span>Remaining</span>
@@ -610,7 +610,7 @@ const Payroll = () => {
                                         {showField('employee') && <th>Employee</th>}
                                         {showField('earnings') && <><th>Gross</th><th>Deductions</th></>}
                                         {showField('advances') && <><th>Advance recovered</th><th>Advance balance</th></>}
-                                        {showField('net_pay') && <><th>Net</th><th>Paid</th><th>Remaining</th><th>Status</th></>}
+                                        {showField('net_pay') && <><th>Net</th><th>Given</th><th>Remaining</th><th>Status</th></>}
                                         {canRun && <th>Action</th>}
                                     </tr>
                                 </thead>
@@ -651,7 +651,12 @@ const Payroll = () => {
                                             </>}
                                             {showField('net_pay') && <>
                                                 <td><strong>{money(ln.net_amount)}</strong></td>
-                                                <td className="adv-good">{money(ln.paid_amount)}</td>
+                                                <td className="adv-good">
+                                                    {money(ln.already_given)}
+                                                    {Number(ln.advance_deduction) > 0 && (
+                                                        <small className="text-muted"> incl. {money(ln.advance_deduction)} advance</small>
+                                                    )}
+                                                </td>
                                                 <td className={Number(ln.remaining_amount) > 0 ? 'adv-owed' : undefined}>
                                                     {Number(ln.remaining_amount) > 0 ? money(ln.remaining_amount) : '—'}
                                                 </td>
@@ -717,8 +722,13 @@ const Payroll = () => {
                                         </div>
                                         <div className="data-card-row">
                                             <span className="row-icon">💵</span>
-                                            <span className="row-label">Paid</span>
-                                            <span className="row-value adv-good">{money(ln.paid_amount)}</span>
+                                            <span className="row-label">Given</span>
+                                            <span className="row-value adv-good">
+                                                {money(ln.already_given)}
+                                                {Number(ln.advance_deduction) > 0 && (
+                                                    <small className="text-muted"> incl. advance</small>
+                                                )}
+                                            </span>
                                         </div>
                                         {Number(ln.remaining_amount) > 0 && (
                                             <div className="data-card-row">
