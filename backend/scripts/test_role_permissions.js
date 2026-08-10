@@ -664,7 +664,7 @@ async function scenarioCapabilityTable() {
   // counts as unrestricted, so it received the full record.
   //
   // Only the models that hold business records count. A reference list is
-  // deliberately open (see docs/permission-audit.md, F7) because pickers on
+  // deliberately open (see PERMISSION-AUDIT.md, F7) because pickers on
   // other pages need it, and personal endpoints answer about the caller.
   const BUSINESS_MODELS = [
     'Quotation', 'Booking', 'SalesOrder', 'Invoice', 'Payment',

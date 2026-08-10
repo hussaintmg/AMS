@@ -7,7 +7,7 @@
  * LEAK (data served to a role that was never given the page) or a BLOCK (a grant
  * the API does not honour).
  *
- * This is the check that found F1–F5 in docs/permission-audit.md. It is written
+ * This is the check that found F1–F5 in PERMISSION-AUDIT.md. It is written
  * to run against any installation, so the same sweep can be pointed at a live
  * server with a token rather than a fresh role:
  *
@@ -69,7 +69,7 @@ const PROBES = {
 /**
  * Pages whose probe is legitimately reachable without holding the page, so a
  * 200 there is not a leak. Kept short and justified — every entry is a decision
- * recorded in docs/permission-audit.md.
+ * recorded in PERMISSION-AUDIT.md.
  */
 const OPEN_BY_DESIGN = new Set([
   // Service types and labour rates are pickers on the job-card form.
