@@ -337,6 +337,49 @@ what the role can open instead.
 
 ---
 
+---
+
+## F16 · The phone view was not gated at all — FIXED
+
+**Severity: high. Found on erpoj.com signed in as the parts-manager account.**
+
+Customers gates its desktop toolbar and its table rows, and the live role holds
+Customers with *view only* — so the Add button was correctly absent. The mobile
+card list underneath it was not gated at all: every customer card still carried
+Edit, Deactivate and Delete.
+
+The phone view is the one a counter actually uses, so this was the permission
+being bypassed entirely for the people most likely to hit it. Both call sites now
+read the same three variables.
+
+Confirmed both ways at 375px: with view only the cards carry no action buttons at
+all; the desktop rows were already correct.
+
+---
+
+## F17 · Parts Inventory offered Delete to a role that has none — FIXED
+
+**Severity: medium. Found live, on the account you gave me.**
+
+The parts-manager role holds Parts with create and edit and *no* delete. The
+screen was drawing, on every row and every source-type chip:
+
+| Control | Server wants | Role has |
+| --- | --- | --- |
+| Row Delete | `parts.delete` | no |
+| Chip Delete "3rd Party" | `parts.delete` | no |
+| Bulk "Delete Selected" | `parts.delete` | no |
+| Add Part / Upload / + Source Type | `parts.create` | yes |
+| Row Edit / Chip Rename | `parts.edit` | yes |
+
+Verified against the live API with ids that do not exist, so nothing was removed:
+`DELETE /api/parts/:id` and `DELETE /api/parts/source-types/:id` both returned
+403, while `PUT /api/parts/source-types/:id` returned 404 — the guard let the
+rename through and only the record was missing.
+
+Now gated. Re-checked on a local mirror of that exact role: Add Part, Upload,
++ Source Type and Rename remain; every Delete is gone.
+
 ## F8 · Dashboard company-wide counts ignore data scope — OPEN
 
 **Severity: low.** See F3. `outstandingReceivables`, `totalCustomers`,
@@ -412,3 +455,63 @@ super admin can ever reach those screens. `node scripts/seed_pages_and_permissio
 creates them, and now also renames the nine drifted pages back (carrying every
 role's permissions and job rows with them) instead of failing on the unique path
 index the way it used to.
+
+---
+
+## F18 · The sales screens asked about the wrong side of the business — FIXED
+
+**Severity: high. This is "we cannot work properly in sales" in one line.**
+
+`Sales.js` serves both the vehicle and the parts documents, and every action
+check named the *vehicle* page whatever side was on screen. A role holding
+`part_quotations` with Create therefore got asked about `quotations`, which it
+does not hold — and then fell through to a list of hard-coded role names it is
+not in.
+
+Seen live on the parts-manager account, on Parts Quotations:
+
+| Button | Should be | Was |
+| --- | --- | --- |
+| + New Quotation | shown (has `part_quotations.create`) | **absent** |
+| Download PDF | hidden (no `downloadPdf`) | shown |
+| Estimate PDF | hidden | shown |
+| Email estimate | hidden | shown |
+
+Exactly backwards: the one thing the role was granted was missing, and three
+things it was not granted were offered. The fallbacks explain it — `create`
+falls back to a role-name list, `downloadPdf` falls back to `true`.
+
+Fixed with `documentPolicy`, which resolves the page the same way the field
+accessor already resolves columns: the parts page first on a parts screen, then
+the vehicle page it borrows permissions from, and only then the legacy default.
+Applied across all four sections — quotations, bookings, orders, invoices.
+
+While there: emailing an estimate was gated on Download PDF. The two hit
+different endpoints and the server guards them as `downloadPdf` and `sendEmail`
+respectively, so they are now separate.
+
+Verified on a local mirror of the live role: Parts Quotations now shows
+**+ New Quotation** and, on each row, **View only** — no Edit, Delete, PDF or
+estimate.
+
+---
+
+## F19 · The sidebar offered pages the router then refused — FIXED
+
+**Severity: medium. This is the "Leads is in my menu but will not open" report,
+properly fixed this time.**
+
+F12 fixed the guard that `authorizeAction` uses. The sidebar is built through
+`canAccessTarget` with the *page document* as the target, so it still carried the
+page's real module — and `permissionAllowsView` matched a stored row on its
+module. A module covers several pages: Customers and Leads are both `crm`, every
+sales document is `sales`. So a role holding Customers and the parts documents
+was shown Leads, Vehicle Sales Orders, Vehicle Quotations, Vehicle Invoices,
+Vehicle Bookings and Vehicle Scan — six pages the router refuses.
+
+A row's module may now only stand in for a page when the row has nothing better
+to identify itself with: no pageKey and no path. A row that carries its own key
+and path is a page grant, not a module grant.
+
+Verified locally on the mirrored role: the sidebar now lists its six granted
+pages and nothing else.

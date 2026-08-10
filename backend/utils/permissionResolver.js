@@ -72,13 +72,24 @@ const resolvePagePermissions = (user) => {
  */
 const permissionAllowsView = (permission, target) => {
   if (!permission || (permission.canView !== true && permission.actions?.view !== true)) return false;
-  const candidates = [target.pageKey, target.key, target.name, target.path, target.module].filter(Boolean);
+  const candidates = [target.pageKey, target.key, target.name, target.path].filter(Boolean);
   const byName = candidates.some((candidate) => (
     permission.pageKey === candidate ||
-    permission.path === candidate ||
-    permission.module === candidate
+    permission.path === candidate
   ));
   if (byName) return true;
+
+  // A module covers several pages — Customers and Leads are both `crm`, every
+  // sales document is `sales` — so a row's module may only stand in for the page
+  // when the row has nothing better to identify itself with. A row that carries
+  // its own pageKey and path is not a module grant, and treating it as one let a
+  // parts role's sidebar fill up with the vehicle sales pages, each of which the
+  // router then refused.
+  if (!permission.pageKey && !permission.path && permission.module) {
+    return [target.pageKey, target.key, target.name, target.path, target.module]
+      .filter(Boolean)
+      .includes(permission.module);
+  }
 
   const stored = normalizePath(permission.path);
   if (!stored) return false;

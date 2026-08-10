@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { fieldAccessor } from "../utils/roleJobs";
+import { fieldAccessor, canRoleDo, getRoleJob } from "../utils/roleJobs";
 import { partsAPI, vehicleMasterAPI } from "../services/api";
 import toast from "react-hot-toast";
 import { Package, Search, Plus, Upload, Pencil, Trash2, ScanLine } from "lucide-react";
@@ -40,6 +40,23 @@ const PartsInventory = () => {
   // Everything else on this page can be withheld per role from Server
   // Management → Role Jobs → Visible data fields.
   const showField = fieldAccessor(currentUser, 'parts');
+
+  /**
+   * What this role may do here.
+   *
+   * The screen had none of this: Add Part, Upload, the row Edit/Delete and the
+   * Rename/Delete on every source-type chip were drawn for anyone who could open
+   * Parts, and the server's 403 was the first the operator heard of it. Verified
+   * live on the parts-manager role, which holds create and edit but not delete —
+   * it was being offered Delete on every part and every chip.
+   *
+   * A role that has never been through Role Jobs keeps the old behaviour, so
+   * nothing in use today stops working.
+   */
+  const allows = (action) => (getRoleJob(currentUser, 'parts') ? canRoleDo(currentUser, 'parts', action) : true);
+  const canCreatePart = allows('create');
+  const canEditPart = allows('edit');
+  const canDeletePart = allows('delete');
 
   // State
   const [parts, setParts] = useState([]);
@@ -663,11 +680,11 @@ const PartsInventory = () => {
             subtitle={row.part_number || row.sku || ""}
           />
           <ActionButtons
-            onEdit={() => openModal("edit", row)}
-            onDelete={() => openDeleteConfirm(row)}
+            onEdit={canEditPart ? () => openModal("edit", row) : null}
+            onDelete={canDeletePart ? () => openDeleteConfirm(row) : null}
             title={row.part_number}
-            showEdit
-            showDelete
+            showEdit={canEditPart}
+            showDelete={canDeletePart}
           />
         </div>
       ),
@@ -702,22 +719,27 @@ const PartsInventory = () => {
             <ScanLine size={18} style={{ marginRight: 6 }} />
             Scan
           </a>
-          <button
-            type="button"
-            className="btn btn-secondary btn-create"
-            onClick={() => setShowBulkUpload(true)}
-            title="Bulk upload parts (CSV / XLSX)"
-          >
-            <Upload size={18} style={{ marginRight: 6 }} />
-            Upload
-          </button>
-          <button
-            className="btn btn-primary btn-create"
-            onClick={() => openModal("create")}
-          >
-            <Plus size={18} />
-            <span>Add Part</span>
-          </button>
+          {/* Both create parts, so both need Create. */}
+          {canCreatePart && (
+            <button
+              type="button"
+              className="btn btn-secondary btn-create"
+              onClick={() => setShowBulkUpload(true)}
+              title="Bulk upload parts (CSV / XLSX)"
+            >
+              <Upload size={18} style={{ marginRight: 6 }} />
+              Upload
+            </button>
+          )}
+          {canCreatePart && (
+            <button
+              className="btn btn-primary btn-create"
+              onClick={() => openModal("create")}
+            >
+              <Plus size={18} />
+              <span>Add Part</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -796,16 +818,18 @@ const PartsInventory = () => {
               {type.name}
             </button>
             <span className="tab-item-actions">
-              <button
-                type="button"
-                className="tab-item-action"
-                title={`Rename "${type.name}"`}
-                onClick={() => openSourceTypeEdit(type)}
-              >
-                <Pencil size={13} />
-              </button>
+              {canEditPart && (
+                <button
+                  type="button"
+                  className="tab-item-action"
+                  title={`Rename "${type.name}"`}
+                  onClick={() => openSourceTypeEdit(type)}
+                >
+                  <Pencil size={13} />
+                </button>
+              )}
               {/* Built-ins are reported on across the system, so they rename but never delete */}
-              {!type.is_system && (
+              {canDeletePart && !type.is_system && (
                 <button
                   type="button"
                   className="tab-item-action tab-item-action-danger"
@@ -818,18 +842,20 @@ const PartsInventory = () => {
             </span>
           </div>
         ))}
-        <button
-          type="button"
-          className="tab-btn tab-btn-add"
-          onClick={() => {
-            setEditingSourceType(null);
-            setShowSourceTypeModal(true);
-          }}
-          title="Add a new source type"
-        >
-          <Plus size={14} />
-          <span>Source Type</span>
-        </button>
+        {canCreatePart && (
+          <button
+            type="button"
+            className="tab-btn tab-btn-add"
+            onClick={() => {
+              setEditingSourceType(null);
+              setShowSourceTypeModal(true);
+            }}
+            title="Add a new source type"
+          >
+            <Plus size={14} />
+            <span>Source Type</span>
+          </button>
+        )}
       </div>
 
       {/* Filters */}
@@ -906,12 +932,14 @@ const PartsInventory = () => {
         <div className="selection-bar">
           <span className="selection-count">{selectedIds.size} selected</span>
           <BarcodeBulkPrint kind="part" ids={Array.from(selectedIds)} />
-          <button
-            className="btn btn-danger btn-sm"
-            onClick={() => setDeleteAllTarget(true)}
-          >
-            Delete Selected
-          </button>
+          {canDeletePart && (
+            <button
+              className="btn btn-danger btn-sm"
+              onClick={() => setDeleteAllTarget(true)}
+            >
+              Delete Selected
+            </button>
+          )}
           <button
             className="btn btn-secondary btn-sm"
             onClick={() => setSelectedIds(new Set())}

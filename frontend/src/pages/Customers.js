@@ -253,13 +253,17 @@ function CustomersPage() {
                 {showField('assignment') && <div className="user-card-field"><span className="field-label">Department</span><span className="field-value">{c.department?.name || '-'}</span></div>}
               </div>
               <div className="user-card-actions">
+                {/* Same permissions as the desktop row above. These were left
+                    ungated, so a view-only role saw no Add button and still had
+                    Edit, Deactivate and Delete on every card — the phone view is
+                    the one a counter actually uses. */}
                 <ActionButtons
-                  onEdit={() => { setEditCustomer(c); setShowForm(true); }}
-                  onToggle={() => toggleCustomerStatus(c._id).then((res) => { if (res?.success) toast.success(res.message); }).catch(() => toast.error('Failed'))}
-                  onDelete={() => setDeleteTarget(c)}
+                  onEdit={canEditCustomer ? () => { setEditCustomer(c); setShowForm(true); } : null}
+                  onToggle={canEditCustomer ? () => toggleCustomerStatus(c._id).then((res) => { if (res?.success) toast.success(res.message); }).catch(() => toast.error('Failed')) : null}
+                  onDelete={canDeleteCustomer ? () => setDeleteTarget(c) : null}
                   status={c.isActive}
                   title={c.customerCode}
-                  showToggle
+                  showToggle={canEditCustomer}
                 />
               </div>
             </div>

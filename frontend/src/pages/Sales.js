@@ -60,6 +60,28 @@ const policyAllows = (user, resource, action, legacy) => getRoleJob(user, resour
 const documentFieldAccessor = (user, categoryKey, vehiclePage, partsPage) =>
     fieldAccessor(user, categoryKey === 'parts' ? [partsPage, vehiclePage] : [vehiclePage]);
 
+/**
+ * What the role may *do* on the document in front of it, on the right side of
+ * the business.
+ *
+ * These screens serve both sides, and every action check used to name the
+ * vehicle page whatever side was on screen — so a parts role's grants on Parts
+ * Quotations were never consulted. Holding `part_quotations` with Create, the
+ * Parts Quotations screen still drew no New button, because it asked about
+ * `quotations`, found no job for it, and fell through to a list of hard-coded
+ * role names the role was not in. Conversely Download PDF and the estimate
+ * buttons appeared, because *their* fallback is `true`.
+ *
+ * Resolved the way the field accessor already resolves columns: the parts page
+ * first on a parts screen, then the vehicle page it borrows permissions from,
+ * and only if the role holds neither does the legacy default apply.
+ */
+const documentPolicy = (user, categoryKey, vehiclePage, partsPage) => {
+    const pages = categoryKey === 'parts' ? [partsPage, vehiclePage] : [vehiclePage];
+    const held = pages.find((page) => getRoleJob(user, page));
+    return (action, legacy) => (held ? canRoleDo(user, held, action) : legacy);
+};
+
 // ═══════════════════════════════════════════════════════════════════════════
 // VEHICLE vs PARTS
 // ═══════════════════════════════════════════════════════════════════════════
@@ -383,14 +405,19 @@ function Quotations({ category = 'vehicle' }) {
     });
     const debouncedSearch = useDebounce(filters.search, 300);
 
-    const canCreate = policyAllows(user, 'quotations', 'create', ['super_admin','admin','sales_manager','sales_executive'].includes(user?.role));
-    const canEdit = policyAllows(user, 'quotations', 'edit', ['super_admin','admin','sales_manager'].includes(user?.role));
-    const canDelete = policyAllows(user, 'quotations', 'delete', canEdit);
+    const allows = documentPolicy(user, config.key, 'quotations', 'part_quotations');
+    const canCreate = allows('create', ['super_admin','admin','sales_manager','sales_executive'].includes(user?.role));
+    const canEdit = allows('edit', ['super_admin','admin','sales_manager'].includes(user?.role));
+    const canDelete = allows('delete', canEdit);
     // Parts documents have no email templates or PDF templates of their own yet,
     // so those actions are declared unavailable rather than rendered and failing.
-    const canSendEmail = config.can.email && policyAllows(user, 'quotations', 'sendEmail', canCreate);
-    const canDownloadPdf = config.can.pdf && policyAllows(user, 'quotations', 'downloadPdf', true);
+    const canSendEmail = config.can.email && allows('sendEmail', canCreate);
+    const canDownloadPdf = config.can.pdf && allows('downloadPdf', true);
+    // The two estimate buttons hit different endpoints and are guarded
+    // differently on the server — one renders the PDF, the other mails it — so
+    // emailing an estimate was being offered on the strength of Download PDF.
     const canEstimate = config.can.estimate && canDownloadPdf;
+    const canEmailEstimate = config.can.estimate && canSendEmail;
     const showField = documentFieldAccessor(user, config.key, 'quotations', 'part_quotations');
 
     // Detail drawer
@@ -629,7 +656,7 @@ function Quotations({ category = 'vehicle' }) {
         }
     };
 
-    const canApprove = policyAllows(user, 'quotations', 'approve', ['super_admin','admin','sales_manager'].includes(user?.role));
+    const canApprove = allows('approve', ['super_admin','admin','sales_manager'].includes(user?.role));
     /**
      * Turning the quotation into the next document.
      *
@@ -642,7 +669,7 @@ function Quotations({ category = 'vehicle' }) {
      */
     const canConvert = isParts
         ? policyAllows(user, 'part_invoices', 'create', policyAllows(user, 'invoices', 'create', canEdit))
-        : policyAllows(user, 'quotations', 'edit', canEdit);
+        : allows('edit', canEdit);
     const [approvingId, setApprovingId] = useState(null);
     const [estimateId, setEstimateId] = useState(null);
 
@@ -947,7 +974,7 @@ function Quotations({ category = 'vehicle' }) {
                                             ...(canDownloadPdf ? [{ icon: <Download size={18} />, title: 'Download PDF', onClick: () => downloadSalesPdf('quotation', q.id, q.quotation_number), className: 'btn-info' }] : []),
                                             ...(canSendEmail ? [{ icon: <Send size={18} className="action-icon" />, title: 'Send quotation email', onClick: () => handleSendEmail(q), className: 'btn-info', disabled: sendingEmail === q.id, loading: sendingEmail === q.id }] : []),
                                             ...(canEstimate ? [{ icon: <FileText size={18} />, title: 'Estimate PDF (all products)', onClick: () => handleDownloadEstimate(q), className: 'btn-info', disabled: estimateId === q.id, loading: estimateId === q.id }] : []),
-                                            ...(canEstimate ? [{ icon: <Mail size={18} />, title: 'Email estimate to customer', onClick: () => handleEmailEstimate(q), className: 'btn-info', disabled: estimateId === q.id, loading: estimateId === q.id }] : []),
+                                            ...(canEmailEstimate ? [{ icon: <Mail size={18} />, title: 'Email estimate to customer', onClick: () => handleEmailEstimate(q), className: 'btn-info', disabled: estimateId === q.id, loading: estimateId === q.id }] : []),
                                             ...(canApprove && q.approval_status !== 'approved' && !['converted', 'cancelled'].includes(q.status) ? [{ icon: <CheckCircle size={18} />, title: 'Approve quotation', onClick: () => handleApprove(q, 'approved'), className: 'btn-success', disabled: approvingId === q.id, loading: approvingId === q.id }] : []),
                                             ...(canConvert && q.approval_status === 'approved' && q.status !== 'converted' ? [{ icon: <span className="material-icons">shopping_cart</span>, title: isParts ? 'Convert to invoice' : 'Convert to booking', onClick: () => handleConvertClick(q), className: 'btn-success' }] : [])
                                         ]}
@@ -987,7 +1014,7 @@ function Quotations({ category = 'vehicle' }) {
                                             ...(canDownloadPdf ? [{ icon: <Download size={18} />, title: 'Download PDF', onClick: () => downloadSalesPdf('quotation', q.id, q.quotation_number), className: 'btn-info' }] : []),
                                             ...(canSendEmail ? [{ icon: <Send size={18} className="action-icon" />, title: 'Send quotation email', onClick: () => handleSendEmail(q), className: 'btn-info', disabled: sendingEmail === q.id, loading: sendingEmail === q.id }] : []),
                                             ...(canEstimate ? [{ icon: <FileText size={18} />, title: 'Estimate PDF (all products)', onClick: () => handleDownloadEstimate(q), className: 'btn-info', disabled: estimateId === q.id, loading: estimateId === q.id }] : []),
-                                            ...(canEstimate ? [{ icon: <Mail size={18} />, title: 'Email estimate to customer', onClick: () => handleEmailEstimate(q), className: 'btn-info', disabled: estimateId === q.id, loading: estimateId === q.id }] : []),
+                                            ...(canEmailEstimate ? [{ icon: <Mail size={18} />, title: 'Email estimate to customer', onClick: () => handleEmailEstimate(q), className: 'btn-info', disabled: estimateId === q.id, loading: estimateId === q.id }] : []),
                                             ...(canApprove && q.approval_status !== 'approved' && !['converted', 'cancelled'].includes(q.status) ? [{ icon: <CheckCircle size={18} />, title: 'Approve quotation', onClick: () => handleApprove(q, 'approved'), className: 'btn-success', disabled: approvingId === q.id, loading: approvingId === q.id }] : []),
                                             ...(canConvert && q.approval_status === 'approved' && q.status !== 'converted' ? [{ icon: <span className="material-icons">shopping_cart</span>, title: isParts ? 'Convert to invoice' : 'Convert to booking', onClick: () => handleConvertClick(q), className: 'btn-success' }] : [])
                                         ]}
@@ -1200,8 +1227,9 @@ function Bookings({ category = 'vehicle' }) {
     });
     const debouncedSearch = useDebounce(filters.search, 300);
 
-    const canAction = policyAllows(user, 'bookings', 'edit', ['super_admin','admin','sales_manager'].includes(user?.role));
-    const canDelete = policyAllows(user, 'bookings', 'delete', ['super_admin','sales_manager'].includes(user?.role));
+    const allows = documentPolicy(user, config.key, 'bookings', 'bookings');
+    const canAction = allows('edit', ['super_admin','admin','sales_manager'].includes(user?.role));
+    const canDelete = allows('delete', ['super_admin','sales_manager'].includes(user?.role));
     const showField = documentFieldAccessor(user, config.key, 'bookings', 'bookings');
 
     // Detail drawer
@@ -1237,9 +1265,9 @@ function Bookings({ category = 'vehicle' }) {
             setSavingStatus(false);
         }
     };
-    const canCreate = policyAllows(user, 'bookings', 'create', canAction);
-    const canSendEmail = config.can.email && policyAllows(user, 'bookings', 'sendEmail', ['super_admin','admin','sales_manager','sales_executive'].includes(user?.role));
-    const canDownloadPdf = config.can.pdf && policyAllows(user, 'bookings', 'downloadPdf', true);
+    const canCreate = allows('create', canAction);
+    const canSendEmail = config.can.email && allows('sendEmail', ['super_admin','admin','sales_manager','sales_executive'].includes(user?.role));
+    const canDownloadPdf = config.can.pdf && allows('downloadPdf', true);
 
     const statusOptions = useSalesStatusOptions('bookings', [
         { label: 'Pending', value: 'pending' },
@@ -1853,23 +1881,24 @@ function SalesOrders({ category = 'vehicle' }) {
         expectedDeliveryDate: '', notes: ''
     });
 
-    const canCreate = policyAllows(user, 'sales_orders', 'create', ['super_admin','admin','sales_manager'].includes(user?.role));
+    const allows = documentPolicy(user, config.key, 'sales_orders', 'part_invoices');
+    const canCreate = allows('create', ['super_admin','admin','sales_manager'].includes(user?.role));
     // A parts order raises its invoice on the spot — that is what moves stock —
     // so there is nothing to invoice later and nothing to edit afterwards.
     // Dispatch and delivery are a vehicle concern only.
-    const canEdit = config.can.editOrder && policyAllows(user, 'sales_orders', 'edit', ['super_admin','sales_manager'].includes(user?.role));
-    const canDelete = policyAllows(user, 'sales_orders', 'delete', user?.role === 'super_admin');
+    const canEdit = config.can.editOrder && allows('edit', ['super_admin','sales_manager'].includes(user?.role));
+    const canDelete = allows('delete', user?.role === 'super_admin');
     // Delivering an order and raising its invoice are both writes on this page,
     // so the role's job decides — the hard-coded role names stay only as the
     // fallback for a role that has never been through Role Jobs.
     const canDeliverOrInvoice = config.can.deliver
-        && policyAllows(user, 'sales_orders', 'edit', ['super_admin', 'admin', 'sales_manager', 'accountant'].includes(user?.role));
+        && allows('edit', ['super_admin', 'admin', 'sales_manager', 'accountant'].includes(user?.role));
     // These two used to be the category's capability flag alone, which says
     // whether the *screen* has the feature, never whether this role may use it.
     const canEditInvoice = config.can.editInvoice && policyAllows(user, 'invoices', 'edit', canEdit);
     const canDeleteInvoice = policyAllows(user, 'invoices', 'delete', canDelete);
-    const canSendEmail = config.can.email && policyAllows(user, 'sales_orders', 'sendEmail', ['super_admin','admin','sales_manager','sales_executive'].includes(user?.role));
-    const canDownloadPdf = config.can.pdf && policyAllows(user, 'sales_orders', 'downloadPdf', true);
+    const canSendEmail = config.can.email && allows('sendEmail', ['super_admin','admin','sales_manager','sales_executive'].includes(user?.role));
+    const canDownloadPdf = config.can.pdf && allows('downloadPdf', true);
     const showField = documentFieldAccessor(user, config.key, 'sales_orders', 'sales_orders');
 
     // Detail drawer
@@ -2808,11 +2837,12 @@ function Invoices({ category = 'vehicle' }) {
         items: [{ description: '', quantity: 1, unitPrice: '', taxAmount: '0' }]
     });
 
-    const canCreate = policyAllows(user, 'invoices', 'create', ['super_admin','admin','sales_manager','accountant'].includes(user?.role));
+    const allows = documentPolicy(user, config.key, 'invoices', 'part_invoices');
+    const canCreate = allows('create', ['super_admin','admin','sales_manager','accountant'].includes(user?.role));
     // A parts invoice has already consumed stock by the time it exists, so its
     // lines are not editable; cancelling it (delete) is what returns the stock.
-    const canEdit = config.can.editInvoice && policyAllows(user, 'invoices', 'edit', ['super_admin','admin','accountant'].includes(user?.role));
-    const canDelete = policyAllows(user, 'invoices', 'delete', user?.role === 'super_admin');
+    const canEdit = config.can.editInvoice && allows('edit', ['super_admin','admin','accountant'].includes(user?.role));
+    const canDelete = allows('delete', user?.role === 'super_admin');
     const canRecordPayment = ['super_admin', 'admin', 'sales_manager', 'accountant'].includes(user?.role);
     const showField = documentFieldAccessor(user, config.key, 'invoices', 'part_invoices');
 
@@ -2862,8 +2892,8 @@ function Invoices({ category = 'vehicle' }) {
             return false;
         }
     };
-    const canSend = config.can.email && policyAllows(user, 'invoices', 'sendEmail', ['super_admin','admin','sales_manager','accountant'].includes(user?.role));
-    const canDownloadPdf = config.can.pdf && policyAllows(user, 'invoices', 'downloadPdf', true);
+    const canSend = config.can.email && allows('sendEmail', ['super_admin','admin','sales_manager','accountant'].includes(user?.role));
+    const canDownloadPdf = config.can.pdf && allows('downloadPdf', true);
 
     const fetchData = useCallback(async () => {
         try {
