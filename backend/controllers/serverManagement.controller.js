@@ -18,7 +18,7 @@ const Log = require('../models/mongo/Log.model');
 const { syncFromUser } = require('../utils/relationshipSync');
 const { pageFieldKeys, catalogForUi } = require('../constants/fieldPermissions');
 const { PAGE_CAPABILITIES, capabilitiesFor, ACTION_LABELS } = require('../constants/pageCapabilities');
-const { keyForPath } = require('../utils/pageRegistry');
+const { keyForPath, canonicalKey } = require('../utils/pageRegistry');
 
 const uploadRoot = path.join(__dirname, '..', 'uploads', 'branding');
 const DEFAULT_PAGE_ICON = 'FileText';
@@ -956,15 +956,30 @@ exports.getRoleJobs = async (req, res, next) => {
       .select('name label module path group sortOrder')
       .sort({ sortOrder: 1 })
       .lean();
+    // Both tables below are keyed by the page names this build was written
+    // with, and the screen looks each card up by the name the page carries in
+    // *this* database. Those differ wherever a page was added by hand — live
+    // holds the parts scanner as "Parts Barcode Scan" — and a card that finds no
+    // entry falls back to offering every action. That put Create, Delete and
+    // Approve on the read-only Dispatch report, which `saveRoleJobs` then
+    // silently dropped, and left five pages with no column controls at all.
+    // Re-keying here means the screen asks about the page in front of it.
+    const canonical = new Map(pages.map((page) => [page.name, canonicalKey(page.name, role.permissions)]));
+    const forPages = (table) => Object.fromEntries(
+      pages.map((page) => [page.name, table[canonical.get(page.name)]]).filter(([, value]) => value),
+    );
+    const catalogByKey = Object.fromEntries(catalogForUi().map((entry) => [entry.pageKey, entry]));
+
     res.json({
       success: true,
       data: {
         role,
         jobs: role.jobs || [],
         pages,
-        fieldCatalog: catalogForUi(),
+        fieldCatalog: Object.entries(forPages(catalogByKey))
+          .map(([pageKey, entry]) => ({ ...entry, pageKey })),
         // So the screen can offer each page only the actions it really has.
-        capabilities: PAGE_CAPABILITIES,
+        capabilities: forPages(PAGE_CAPABILITIES),
         actionLabels: ACTION_LABELS,
       },
     });
