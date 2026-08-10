@@ -7,10 +7,20 @@
 const express = require('express');
 const router = express.Router();
 const { query } = require('../config/database');
-const { authenticate } = require('../middleware/auth');
+const { authenticate, authorizeAction } = require('../middleware/auth');
 const { AppError } = require('../middleware/errorHandler');
 
-router.get('/', authenticate, async (req, res, next) => {
+/**
+ * Payments belong to invoices, so that is the page they are judged on.
+ *
+ * These handlers still talk to the MySQL stub left over from the MongoDB
+ * migration and so return nothing at all — but they were also the only reads on
+ * this side with no page guard, and an empty response today is not a reason to
+ * leave the endpoint open when the stub is finally replaced.
+ */
+const canView = authorizeAction('invoices', 'view');
+
+router.get('/', authenticate, canView, async (req, res, next) => {
     try {
         const { type, page = 1, limit = 20 } = req.query;
         let sql = `SELECT p.*, CONCAT(c.first_name, ' ', c.last_name) as customer_name, pm.name as payment_method
@@ -54,7 +64,7 @@ router.post('/', authenticate, async (req, res, next) => {
     } catch (error) { next(error); }
 });
 
-router.get('/methods/list', authenticate, async (req, res, next) => {
+router.get('/methods/list', authenticate, canView, async (req, res, next) => {
     try {
         const methods = await query('SELECT * FROM payment_methods WHERE is_active = TRUE');
         res.json({ success: true, data: methods });

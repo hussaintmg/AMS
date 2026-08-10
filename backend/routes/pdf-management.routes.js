@@ -22,9 +22,33 @@ router.get('/variables/preview/:documentType', authenticate, controller.variable
 router.post('/variables', admin, controller.createVariable);
 router.post('/variables/bulk', admin, controller.bulkVariables);
 router.delete('/variables/:id', admin, controller.deleteVariable);
-router.get('/resolved-html/:documentType/:id', authenticate, controller.resolvedHtml);
+/**
+ * Rendering a document is judged on the document's own page, not on this one.
+ *
+ * That was always the intention and was never actually implemented: these four
+ * routes took `authenticate` alone, so any signed-in account could render or
+ * download any quotation, booking, order or invoice by id — and a rendered
+ * document carries every column the API would otherwise have withheld. The
+ * loader tries the vehicle model and its parts twin, so both sides' pages are
+ * accepted here the same way.
+ */
+const DOCUMENT_PAGES = {
+  quotation: ['quotations', 'part_quotations'],
+  booking: ['bookings'],
+  order: ['sales_orders', 'part_invoices'],
+  invoice: ['invoices', 'part_invoices'],
+};
+
+const canReachDocument = (action) => (req, res, next) => {
+  const pages = DOCUMENT_PAGES[req.params.documentType];
+  // An unknown type resolves to no document at all; let the controller answer.
+  if (!pages) return next();
+  return authorizeRouter(pages, [{ pattern: /.*/, action }])(req, res, next);
+};
+
+router.get('/resolved-html/:documentType/:id', authenticate, canReachDocument('view'), controller.resolvedHtml);
 // What the View modal renders and what Print prints — same layout as the download.
-router.get('/print-html/:documentType/:id', authenticate, controller.printHtml);
-router.get('/download/:documentType/:id', authenticate, controller.downloadOne);
-router.post('/download/:documentType/bulk', authenticate, controller.downloadBulk);
+router.get('/print-html/:documentType/:id', authenticate, canReachDocument('view'), controller.printHtml);
+router.get('/download/:documentType/:id', authenticate, canReachDocument('downloadPdf'), controller.downloadOne);
+router.post('/download/:documentType/bulk', authenticate, canReachDocument('downloadPdf'), controller.downloadBulk);
 module.exports = router;

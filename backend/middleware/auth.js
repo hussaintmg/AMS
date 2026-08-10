@@ -4,7 +4,7 @@ const { AppError } = require('./errorHandler');
 const { getPermissionSettings, resolvePagePermissions, canAccessTarget, routeTarget } = require('../utils/permissionResolver');
 const { resolveEffectiveLogPermission } = require('../utils/logPermissionResolver');
 const { canDo, getJob } = require('../utils/roleJobs');
-const { pathFor, moduleFor } = require('../utils/pageRegistry');
+const { pathFor } = require('../utils/pageRegistry');
 const logger = require('../utils/logger');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'ams_super_secret_key';
@@ -215,10 +215,18 @@ const authorizeAction = (pageKey, action = 'view') => {
     if (!req.user) return next(new AppError('Authentication required', 401));
     if (req.user.isSuperAdmin) return next();
 
-    // The page's real path goes into the target, not the key repeated three
-    // times: a role granted before the screen moved carries the old path, and
-    // that is the only thing left tying its grant to this page.
-    const target = (key) => ({ pageKey: key, path: pathFor(key) || key, module: moduleFor(key) || key });
+    // The page's real *path* goes into the target — a role granted before the
+    // screen moved carries the old path, and that is the only thing still tying
+    // its grant to this page.
+    //
+    // `module` stays the key. A permission row is also matched on its module,
+    // and a module is shared by several pages: Customers and Leads are both
+    // "crm", Quotations and Invoices are both "sales". Putting the page's real
+    // module here made a grant on any one page in a module open every other
+    // page in it. The key keeps that comparison as the dead legacy branch it
+    // was meant to be — it only fires for a row whose module literally names
+    // the page.
+    const target = (key) => ({ pageKey: key, path: pathFor(key) || key, module: key });
     const reachable = candidates.filter((key) => canAccessTarget(req.user, target(key)));
     if (!reachable.length) {
       logDenial(req, candidates, action, 'page not granted');

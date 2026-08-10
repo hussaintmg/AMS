@@ -656,6 +656,49 @@ async function scenarioCapabilityTable() {
   const holes = report.unguarded.filter((e) => e.writes.length && !SELF_SERVICE.test(e.path) && !DYNAMIC.test(e.path));
   check('No write endpoint is left without a permission check', holes.length === 0,
     holes.map((e) => `${e.method} ${e.path}`).join(', '));
+
+  // The same question for reads, which is where this had actually gone wrong:
+  // every write on the four vehicle sales routers was guarded and none of the
+  // reads were, so any signed-in account could fetch the whole quotation book.
+  // Field masking does not catch it either — a role with no job for a page
+  // counts as unrestricted, so it received the full record.
+  //
+  // Only the models that hold business records count. A reference list is
+  // deliberately open (see docs/permission-audit.md, F7) because pickers on
+  // other pages need it, and personal endpoints answer about the caller.
+  const BUSINESS_MODELS = [
+    'Quotation', 'Booking', 'SalesOrder', 'Invoice', 'Payment',
+    'PartQuotation', 'PartBooking', 'PartSalesOrder', 'PartInvoice',
+    'Customer', 'Lead', 'Vehicle', 'Part', 'Employee', 'Payroll', 'Expense',
+    'LedgerEntry', 'Leave', 'JobCard', 'ServiceAppointment',
+  ];
+  const OPEN_BY_DESIGN = [
+    /^\/api\/(auth|profile|notifications)\b/,
+    // The scanner's own lookup: this *is* the scan page's endpoint, and it is
+    // guarded by holding that page.
+    /^\/api\/barcode\b/,
+    // Permission-filtered inside the service — each result carries the page it
+    // belongs to and is dropped if the caller lacks it.
+    /^\/api\/search\b/,
+    // Scoped by log permissions rather than by page.
+    /^\/api\/logs\b/,
+    // Per-user filtered: the sidebar is built from what it returns.
+    /^\/api\/server-management\/(sidebar|branding)$/,
+    // Assign-to pickers used across CRM, HR and sales.
+    /^\/api\/users\b/,
+    // The payment-method picker every document screen draws. It touches
+    // `Payment` only to count how many use each method — method names and a
+    // tally, never a payment record — so it is a reference list despite the
+    // model it reads.
+    /^\/api\/payment-methods\b/,
+  ];
+  const readHoles = report.unguarded.filter((e) => (
+    e.method === 'GET' &&
+    e.reads.some((model) => BUSINESS_MODELS.includes(model)) &&
+    !OPEN_BY_DESIGN.some((pattern) => pattern.test(e.path))
+  ));
+  check('No endpoint serves business records without a permission check', readHoles.length === 0,
+    readHoles.map((e) => `${e.path} → ${e.reads.join('/')}`).join(', '));
 }
 
 /**

@@ -29,6 +29,11 @@ router.use((req, res, next) => (
   DISPATCH_PATHS.includes(req.path) ? next() : fieldMask('sales_orders')(req, res, next)
 ));
 const { authenticate, authorizeAction } = require('../middleware/auth');
+
+/** Reading an order needs the page — see the note in quotation.routes.js. */
+const canView = authorizeAction('sales_orders', 'view');
+/** The dispatch report is its own page, and the orders page also opens it. */
+const canViewDispatch = authorizeAction(['dispatch', 'sales_orders'], 'view');
 const salesController = require('../controllers/salesManagement.controller');
 const bulkPermission = require('../middleware/bulkSalesPermission');
 
@@ -40,7 +45,7 @@ const bulkPermission = require('../middleware/bulkSalesPermission');
  *     summary: Get overall sales statistics
  *     security: [{ bearerAuth: [] }]
  */
-router.get('/stats', authenticate, salesController.getSalesStats);
+router.get('/stats', authenticate, canView, salesController.getSalesStats);
 router.post('/bulk', authenticate, bulkPermission('sales_orders'), salesController.bulkSalesDocuments);
 
 /**
@@ -51,11 +56,11 @@ router.post('/bulk', authenticate, bulkPermission('sales_orders'), salesControll
  *     summary: Get sales order statistics
  *     security: [{ bearerAuth: [] }]
  */
-router.get('/order-stats', authenticate, salesController.getOrderStats);
+router.get('/order-stats', authenticate, canView, salesController.getOrderStats);
 
-router.get('/dispatch-stats', authenticate, salesController.getDispatchStats);
+router.get('/dispatch-stats', authenticate, canViewDispatch, salesController.getDispatchStats);
 
-router.get('/dispatched', authenticate, salesController.getDispatchedOrders);
+router.get('/dispatched', authenticate, canViewDispatch, salesController.getDispatchedOrders);
 
 /**
  * @swagger
@@ -75,7 +80,7 @@ router.get('/dispatched', authenticate, salesController.getDispatchedOrders);
  *         in: query
  *         schema: { type: string }
  */
-router.get('/with-invoices', authenticate, salesController.getSalesOrdersWithInvoices);
+router.get('/with-invoices', authenticate, canView, salesController.getSalesOrdersWithInvoices);
 
 /**
  * @swagger
@@ -95,7 +100,7 @@ router.get('/with-invoices', authenticate, salesController.getSalesOrdersWithInv
  *         in: query
  *         schema: { type: string }
  */
-router.get('/', authenticate, salesController.getAllSalesOrders);
+router.get('/', authenticate, canView, salesController.getAllSalesOrders);
 
 /**
  * @swagger
@@ -105,7 +110,7 @@ router.get('/', authenticate, salesController.getAllSalesOrders);
  *     summary: Get sales order by ID
  *     security: [{ bearerAuth: [] }]
  */
-router.get('/:id', authenticate, salesController.getSalesOrderById);
+router.get('/:id', authenticate, canView, salesController.getSalesOrderById);
 
 /**
  * @swagger
@@ -115,7 +120,7 @@ router.get('/:id', authenticate, salesController.getSalesOrderById);
  *     summary: Get sales order audit history
  *     security: [{ bearerAuth: [] }]
  */
-router.get('/:id/history', authenticate, salesController.getSalesOrderHistory);
+router.get('/:id/history', authenticate, canView, salesController.getSalesOrderHistory);
 
 /**
  * @swagger

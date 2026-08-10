@@ -19,6 +19,9 @@ const { fieldMask } = require('../utils/fieldPermissions');
 // Withhold the columns this role may not read, whatever the endpoint returns.
 router.use(fieldMask('bookings'));
 const { authenticate, authorizeAction } = require('../middleware/auth');
+
+/** Reading a booking needs the page — see the note in quotation.routes.js. */
+const canView = authorizeAction('bookings', 'view');
 const salesController = require('../controllers/salesManagement.controller');
 const bulkPermission = require('../middleware/bulkSalesPermission');
 
@@ -30,7 +33,7 @@ const bulkPermission = require('../middleware/bulkSalesPermission');
  *     summary: Get booking statistics
  *     security: [{ bearerAuth: [] }]
  */
-router.get('/stats', authenticate, salesController.getBookingStats);
+router.get('/stats', authenticate, canView, salesController.getBookingStats);
 router.post('/bulk', authenticate, bulkPermission('bookings'), salesController.bulkSalesDocuments);
 
 /**
@@ -54,7 +57,7 @@ router.post('/bulk', authenticate, bulkPermission('bookings'), salesController.b
  *         in: query
  *         schema: { type: string }
  */
-router.get('/', authenticate, salesController.getAllBookings);
+router.get('/', authenticate, canView, salesController.getAllBookings);
 
 /**
  * @swagger
@@ -64,7 +67,7 @@ router.get('/', authenticate, salesController.getAllBookings);
  *     summary: Get booking by ID
  *     security: [{ bearerAuth: [] }]
  */
-router.get('/:id', authenticate, salesController.getBookingById);
+router.get('/:id', authenticate, canView, salesController.getBookingById);
 
 /**
  * @swagger

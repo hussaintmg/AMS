@@ -19,6 +19,9 @@ const { fieldMask } = require('../utils/fieldPermissions');
 // Withhold the columns this role may not read, whatever the endpoint returns.
 router.use(fieldMask('invoices'));
 const { authenticate, authorizeAction } = require('../middleware/auth');
+
+/** Reading an invoice needs the page — see the note in quotation.routes.js. */
+const canView = authorizeAction('invoices', 'view');
 const invoiceController = require('../controllers/invoiceManagement.controller');
 const bulkPermission = require('../middleware/bulkSalesPermission');
 
@@ -30,7 +33,7 @@ const bulkPermission = require('../middleware/bulkSalesPermission');
  *     summary: Get invoice statistics
  *     security: [{ bearerAuth: [] }]
  */
-router.get('/stats', authenticate, invoiceController.getInvoiceStats);
+router.get('/stats', authenticate, canView, invoiceController.getInvoiceStats);
 router.post('/bulk', authenticate, bulkPermission('invoices'), invoiceController.bulkInvoices);
 
 /**
@@ -79,7 +82,7 @@ router.get('/payment-methods', authenticate, invoiceController.getPaymentMethods
  *         in: query
  *         schema: { type: integer, default: 20 }
  */
-router.get('/', authenticate, invoiceController.getAllInvoices);
+router.get('/', authenticate, canView, invoiceController.getAllInvoices);
 
 /**
  * @swagger
@@ -89,7 +92,7 @@ router.get('/', authenticate, invoiceController.getAllInvoices);
  *     summary: Get invoice by ID with items and payments
  *     security: [{ bearerAuth: [] }]
  */
-router.get('/:id', authenticate, invoiceController.getInvoiceById);
+router.get('/:id', authenticate, canView, invoiceController.getInvoiceById);
 
 /**
  * @swagger
@@ -99,7 +102,7 @@ router.get('/:id', authenticate, invoiceController.getInvoiceById);
  *     summary: Get QR code data for invoice
  *     security: [{ bearerAuth: [] }]
  */
-router.get('/:id/qr-data', authenticate, invoiceController.getQRCodeData);
+router.get('/:id/qr-data', authenticate, canView, invoiceController.getQRCodeData);
 
 /**
  * @swagger
@@ -284,6 +287,6 @@ router.post('/:id/send-email', authenticate, authorizeAction('invoices', 'sendEm
  *     summary: Get invoice audit history
  *     security: [{ bearerAuth: [] }]
  */
-router.get('/:id/history', authenticate, invoiceController.getInvoiceHistory);
+router.get('/:id/history', authenticate, canView, invoiceController.getInvoiceHistory);
 
 module.exports = router;

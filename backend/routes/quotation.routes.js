@@ -19,6 +19,17 @@ const { fieldMask } = require('../utils/fieldPermissions');
 // Withhold the columns this role may not read, whatever the endpoint returns.
 router.use(fieldMask('quotations'));
 const { authenticate, authorizeAction } = require('../middleware/auth');
+
+/**
+ * Reading a quotation needs the page too.
+ *
+ * Every write here was guarded and none of the reads were, so any signed-in
+ * account could fetch the whole quotation book — customer, phone, line items,
+ * totals — from an endpoint whose page it had never been given. Field masking
+ * did not cover it either: a role with no job for this page counts as
+ * unrestricted, so it got the full record rather than a trimmed one.
+ */
+const canView = authorizeAction('quotations', 'view');
 const salesController = require('../controllers/salesManagement.controller');
 const bulkPermission = require('../middleware/bulkSalesPermission');
 
@@ -30,7 +41,7 @@ const bulkPermission = require('../middleware/bulkSalesPermission');
  *     summary: Get quotation statistics
  *     security: [{ bearerAuth: [] }]
  */
-router.get('/stats', authenticate, salesController.getQuotationStats);
+router.get('/stats', authenticate, canView, salesController.getQuotationStats);
 router.post('/bulk', authenticate, bulkPermission('quotations'), salesController.bulkSalesDocuments);
 
 /**
@@ -57,7 +68,7 @@ router.post('/bulk', authenticate, bulkPermission('quotations'), salesController
  *         in: query
  *         schema: { type: integer, default: 25 }
  */
-router.get('/', authenticate, salesController.getAllQuotations);
+router.get('/', authenticate, canView, salesController.getAllQuotations);
 
 /**
  * @swagger
@@ -67,7 +78,7 @@ router.get('/', authenticate, salesController.getAllQuotations);
  *     summary: Get quotation by ID
  *     security: [{ bearerAuth: [] }]
  */
-router.get('/:id', authenticate, salesController.getQuotationById);
+router.get('/:id', authenticate, canView, salesController.getQuotationById);
 
 /**
  * @swagger

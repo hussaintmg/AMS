@@ -15,6 +15,17 @@
 const express = require('express');
 const router = express.Router();
 const { authenticate, authorizeAction } = require('../middleware/auth');
+
+/**
+ * The administrative reads on this router — system settings, the ERP summary and
+ * the manager list — need the Settings page.
+ *
+ * Currencies, taxes, companies, branches and the default document templates
+ * stay open on purpose: `useErpDocumentSettings` fetches them on every document
+ * screen, the scanner included, and the company header is printed on documents
+ * a role may legitimately hold without ever being given Settings.
+ */
+const canViewSettings = authorizeAction('settings', 'view');
 const erpSettings = require('../controllers/erpSettings.controller');
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -29,7 +40,7 @@ const erpSettings = require('../controllers/erpSettings.controller');
  *     summary: Get ERP statistics
  *     security: [{ bearerAuth: [] }]
  */
-router.get('/stats', authenticate, erpSettings.getERPStats);
+router.get('/stats', authenticate, canViewSettings, erpSettings.getERPStats);
 
 /**
  * @swagger
@@ -39,7 +50,7 @@ router.get('/stats', authenticate, erpSettings.getERPStats);
  *     summary: Get managers for dropdown
  *     security: [{ bearerAuth: [] }]
  */
-router.get('/managers', authenticate, erpSettings.getManagers);
+router.get('/managers', authenticate, canViewSettings, erpSettings.getManagers);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // COMPANY ROUTES
@@ -219,7 +230,7 @@ router.delete('/branches/:id', authenticate, authorizeAction('settings', 'delete
  *         in: query
  *         schema: { type: string }
  */
-router.get('/settings', authenticate, erpSettings.getAllSettings);
+router.get('/settings', authenticate, canViewSettings, erpSettings.getAllSettings);
 
 /**
  * @swagger
@@ -229,7 +240,7 @@ router.get('/settings', authenticate, erpSettings.getAllSettings);
  *     summary: Get settings categories
  *     security: [{ bearerAuth: [] }]
  */
-router.get('/settings/categories', authenticate, erpSettings.getSettingCategories);
+router.get('/settings/categories', authenticate, canViewSettings, erpSettings.getSettingCategories);
 
 /**
  * @swagger

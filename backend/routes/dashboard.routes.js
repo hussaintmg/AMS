@@ -1,6 +1,15 @@
 const express = require('express');
 const router = express.Router();
-const { authenticate } = require('../middleware/auth');
+const { authenticate, authorizeAction } = require('../middleware/auth');
+
+/**
+ * The dashboard is a page like any other, and these figures are the company's:
+ * monthly revenue, outstanding receivables, top performers, recent sales. They
+ * had no guard at all, so any signed-in account could read them from a page it
+ * had never been given. A role without the Dashboard page is already redirected
+ * away from it in the browser, so nothing legitimate calls these without it.
+ */
+const canView = authorizeAction('dashboard', 'view');
 const {
   Lead, Customer, Vehicle, Part, SalesOrder, Invoice, ServiceAppointment, JobCard,
   Quotation, Booking, Employee, Leave, Expense, Payment, User, ActivityLog, Payroll,
@@ -55,11 +64,11 @@ async function dashboardStats(user) {
   };
 }
 
-router.get('/stats', authenticate, async (req, res, next) => { try { res.json({ success: true, data: await dashboardStats(req.user) }); } catch (e) { next(e); } });
-router.get('/overview', authenticate, async (req, res, next) => { try { res.json({ success: true, data: await dashboardStats(req.user) }); } catch (e) { next(e); } });
-router.get('/monthly-summary', authenticate, async (req, res, next) => { try { const d = await dashboardStats(req.user); res.json({ success: true, data: { monthlySalesCount: d.monthlySalesCount, monthlyRevenue: d.monthlyRevenue } }); } catch (e) { next(e); } });
+router.get('/stats', authenticate, canView, async (req, res, next) => { try { res.json({ success: true, data: await dashboardStats(req.user) }); } catch (e) { next(e); } });
+router.get('/overview', authenticate, canView, async (req, res, next) => { try { res.json({ success: true, data: await dashboardStats(req.user) }); } catch (e) { next(e); } });
+router.get('/monthly-summary', authenticate, canView, async (req, res, next) => { try { const d = await dashboardStats(req.user); res.json({ success: true, data: { monthlySalesCount: d.monthlySalesCount, monthlyRevenue: d.monthlyRevenue } }); } catch (e) { next(e); } });
 
-router.get('/sales-trend', authenticate, async (req, res, next) => {
+router.get('/sales-trend', authenticate, canView, async (req, res, next) => {
   try {
     const months = Math.min(24, Math.max(1, Number(req.query.months) || 12));
     const from = new Date(); from.setMonth(from.getMonth() - months + 1); from.setDate(1); from.setHours(0, 0, 0, 0);
@@ -73,7 +82,7 @@ router.get('/sales-trend', authenticate, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-router.get('/inventory-distribution', authenticate, async (_req, res, next) => {
+router.get('/inventory-distribution', authenticate, canView, async (_req, res, next) => {
   try {
     const [vehicleStatus, vehicleMakes, partsCategories] = await Promise.all([
       Vehicle.aggregate([{ $group: { _id: { $ifNull: ['$status', 'unknown'] }, value: { $sum: 1 } } }, { $sort: { value: -1 } }]),
@@ -85,7 +94,7 @@ router.get('/inventory-distribution', authenticate, async (_req, res, next) => {
   } catch (e) { next(e); }
 });
 
-router.get('/top-performers', authenticate, async (req, res, next) => {
+router.get('/top-performers', authenticate, canView, async (req, res, next) => {
   try {
     const limit = Math.min(20, Math.max(1, Number(req.query.limit) || 5));
     const period = req.query.period || 'month';
@@ -103,7 +112,7 @@ router.get('/top-performers', authenticate, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-router.get('/activities', authenticate, async (req, res, next) => {
+router.get('/activities', authenticate, canView, async (req, res, next) => {
   try {
     const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 10));
     const logs = await ActivityLog.find(scoped(req.user, {})).populate('user', 'firstName lastName').sort({ createdAt: -1 }).limit(limit).lean();
@@ -112,7 +121,7 @@ router.get('/activities', authenticate, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-router.get('/kpis', authenticate, async (req, res, next) => {
+router.get('/kpis', authenticate, canView, async (req, res, next) => {
   try {
     const now = new Date(); const currentStart = startOfMonth(now); const previousStart = new Date(currentStart); previousStart.setMonth(previousStart.getMonth() - 1);
     const [current, previous, currentLeads, previousLeads, converted] = await Promise.all([
@@ -126,7 +135,7 @@ router.get('/kpis', authenticate, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-router.get('/alerts', authenticate, async (_req, res, next) => {
+router.get('/alerts', authenticate, canView, async (_req, res, next) => {
   try {
     const [parts, invoices, orders] = await Promise.all([
       Part.find({ isActive: { $ne: false }, $expr: { $lte: [{ $ifNull: ['$currentStock', '$quantity'] }, { $ifNull: ['$reorderLevel', '$minStock'] }] } }).select('name currentStock quantity reorderLevel minStock').limit(5).lean(),
@@ -142,7 +151,7 @@ router.get('/alerts', authenticate, async (_req, res, next) => {
   } catch (e) { next(e); }
 });
 
-router.get('/recent-leads', authenticate, async (req, res, next) => { try { const data = await Lead.find(scoped(req.user, { isActive: { $ne: false }, deletedAt: null })).sort({ createdAt: -1 }).limit(10).lean(); res.json({ success: true, data: data.map((l) => ({ id: l._id, lead_number: l.leadNo, name: l.customerName, phone: l.phone, status: l.status, created_at: l.createdAt })) }); } catch (e) { next(e); } });
-router.get('/recent-sales', authenticate, async (req, res, next) => { try { const data = await SalesOrder.find(scoped(req.user, {})).populate('customer', 'firstName lastName companyName').sort({ createdAt: -1 }).limit(10).lean(); res.json({ success: true, data: data.map((o) => ({ id: o._id, order_number: o.orderNumber, customer: customerName(o.customer), grand_total: o.totalAmount, status: o.status, order_date: o.orderDate || o.createdAt })) }); } catch (e) { next(e); } });
+router.get('/recent-leads', authenticate, canView, async (req, res, next) => { try { const data = await Lead.find(scoped(req.user, { isActive: { $ne: false }, deletedAt: null })).sort({ createdAt: -1 }).limit(10).lean(); res.json({ success: true, data: data.map((l) => ({ id: l._id, lead_number: l.leadNo, name: l.customerName, phone: l.phone, status: l.status, created_at: l.createdAt })) }); } catch (e) { next(e); } });
+router.get('/recent-sales', authenticate, canView, async (req, res, next) => { try { const data = await SalesOrder.find(scoped(req.user, {})).populate('customer', 'firstName lastName companyName').sort({ createdAt: -1 }).limit(10).lean(); res.json({ success: true, data: data.map((o) => ({ id: o._id, order_number: o.orderNumber, customer: customerName(o.customer), grand_total: o.totalAmount, status: o.status, order_date: o.orderDate || o.createdAt })) }); } catch (e) { next(e); } });
 
 module.exports = router;
