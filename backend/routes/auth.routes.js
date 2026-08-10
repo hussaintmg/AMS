@@ -11,6 +11,29 @@ const forgotPasswordEmailTemplate = require('../constants/forgotPasswordEmailTem
 const emailSender = require('../services/emailSender.service');
 const { getPermissionSettings, resolvePagePermissions } = require('../utils/permissionResolver');
 const { fieldPermissionsForUser } = require('../utils/fieldPermissions');
+const { canonicalizeRows } = require('../utils/pageRegistry');
+
+/**
+ * The role, in the page keys this build is written against.
+ *
+ * A page added by hand through Frontend Management takes its key from the label
+ * it was typed with, so a live install can hold the Parts Scan screen as "Parts
+ * Barcode Scan". Every screen asks `canRoleDo(user, 'part_scan', 'create')`, so
+ * without this the operator is told the role may not create — while Role Jobs
+ * shows Create plainly ticked. Resolved by path; see `utils/pageRegistry`.
+ */
+const rolePayload = (role) => {
+  if (!role) return null;
+  const permissions = role.permissions || [];
+  return {
+    id: role._id?.toString() || role.toString(),
+    name: role.name,
+    displayName: role.displayName,
+    permissions: canonicalizeRows(permissions, permissions),
+    logsPermissions: role.logsPermissions || [],
+    jobs: canonicalizeRows(role.jobs || [], permissions),
+  };
+};
 
 const RESET_WINDOW_MS = 60 * 60 * 1000;
 const isProduction = process.env.NODE_ENV === 'production';
@@ -329,14 +352,7 @@ router.post('/login', async (req, res, next) => {
           firstName: user.firstName,
           lastName: user.lastName,
           fullName: user.fullName,
-          role: user.role ? {
-            id: user.role._id.toString(),
-            name: user.role.name,
-            displayName: user.role.displayName,
-            permissions: user.role.permissions || [],
-            logsPermissions: user.role.logsPermissions || [],
-            jobs: user.role.jobs || []
-          } : null,
+          role: rolePayload(user.role),
           customPermissions: user.customPermissions || [],
           permissions: effectivePagePermissions,
           logPermissionSource: user.logPermissionSource || 'role',
@@ -612,14 +628,7 @@ router.get('/me', authenticate, async (req, res) => {
       fullName: req.user.fullName,
       phone: req.user.phone,
       avatar: getPublicFileUrl(req.user.avatar),
-      role: roleObj ? {
-        id: roleObj._id?.toString() || roleObj.toString(),
-        name: roleObj.name,
-        displayName: roleObj.displayName,
-        permissions: roleObj.permissions || [],
-        logsPermissions: roleObj.logsPermissions || [],
-        jobs: roleObj.jobs || []
-      } : req.user.role_name,
+      role: roleObj ? rolePayload(roleObj) : req.user.role_name,
       customPermissions: req.user.customPermissions || [],
       permissions: req.user.pagePermissions,
       // Only the pages whose columns are restricted appear here; an absent page

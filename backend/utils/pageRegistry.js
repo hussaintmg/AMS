@@ -131,6 +131,36 @@ const keysForPage = (pageKey, permissions = []) => {
 };
 
 /**
+ * The built-in key for whatever this database calls the page.
+ *
+ * Pages added by hand through Frontend Management take their key from the label
+ * they were typed with, so a live install can hold the Parts Scan screen as
+ * "Parts Barcode Scan". Route guards, the capability table and the frontend all
+ * look for `part_scan`. Translating on the way out — see the auth routes — means
+ * the rest of the application only ever sees the key it was written against.
+ *
+ * `permissions` is consulted the same way `keysForPage` does, because a role's
+ * own rows carry the path even where the Page collection has drifted too.
+ * Returns the key unchanged when it names no page this build knows.
+ */
+const canonicalKey = (pageKey, permissions = []) => {
+  if (staticPaths.has(pageKey)) return pageKey;
+  const paths = new Set();
+  (livePaths.get(pageKey) || []).forEach((item) => paths.add(item));
+  (Array.isArray(permissions) ? permissions : []).forEach((permission) => {
+    if (permission?.pageKey === pageKey) {
+      const stored = normalizePath(permission.path);
+      if (stored) paths.add(stored);
+    }
+  });
+  if (!paths.size) return pageKey;
+  const match = PAGES.find((page) => [page.path, ...(page.legacy || [])]
+    .map(normalizePath)
+    .some((item) => paths.has(item)));
+  return match ? match.name : pageKey;
+};
+
+/**
  * The page an incoming *frontend* path belongs to — the longest page path that
  * the request path starts on, so `/parts-sales/barcode-scan?doc=quotation`
  * resolves to Parts Scan and never to a shorter unrelated page.
@@ -150,4 +180,30 @@ const keyForPath = (requestPath) => {
   return best;
 };
 
-module.exports = { prime, pathFor, pathsFor, moduleFor, keysForPage, keyForPath, normalizePath };
+/**
+ * A role's stored rows, restated in the keys this build uses.
+ *
+ * Applied to what the auth routes hand the browser: the frontend decides what a
+ * screen may offer by looking its own page key up in `role.jobs`, and it has no
+ * page table of its own to resolve a database that calls the page something
+ * else. Translating here keeps that table in one place — this one — instead of
+ * shipping a second copy to the client that could drift from it.
+ */
+const canonicalizeRows = (rows, permissions) => {
+  const seen = new Set();
+  return (Array.isArray(rows) ? rows : []).map((row) => {
+    const source = typeof row?.toObject === 'function' ? row.toObject() : row;
+    if (!source?.pageKey) return source;
+    const key = canonicalKey(source.pageKey, permissions);
+    // Two rows can normalise onto one page — a leftover under the old key and
+    // the one in use. The first wins; a later duplicate keeps its own key so it
+    // is still visible rather than silently masking the row in front of it.
+    if (key !== source.pageKey && seen.has(key)) return source;
+    seen.add(key);
+    return { ...source, pageKey: key };
+  });
+};
+
+module.exports = {
+  prime, pathFor, pathsFor, moduleFor, keysForPage, keyForPath, canonicalKey, canonicalizeRows, normalizePath,
+};

@@ -18,6 +18,7 @@ const Log = require('../models/mongo/Log.model');
 const { syncFromUser } = require('../utils/relationshipSync');
 const { pageFieldKeys, catalogForUi } = require('../constants/fieldPermissions');
 const { PAGE_CAPABILITIES, capabilitiesFor, ACTION_LABELS } = require('../constants/pageCapabilities');
+const { keyForPath } = require('../utils/pageRegistry');
 
 const uploadRoot = path.join(__dirname, '..', 'uploads', 'branding');
 const DEFAULT_PAGE_ICON = 'FileText';
@@ -55,9 +56,18 @@ const sanitizeIcon = (icon) => {
   return trimmed;
 };
 
+const slugify = (value) => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+
 const normalizePageInput = (page = {}, index = 0) => {
   const label = page.label || page.name || page.title || page.key || `Page ${index + 1}`;
-  const name = page.name || page.key || label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+  // A page typed in here used to keep whatever was in the name box verbatim, so
+  // adding the parts scanner by hand stored it as "Parts Barcode Scan" — while
+  // every route guard, the capability table and the frontend look for
+  // `part_scan`. The role then had Create ticked on a key nothing reads. A page
+  // sitting on a path this build knows takes that page's key; anything else is
+  // at least slugified, so a key is never a sentence.
+  const requested = slugify(page.name || page.key) || slugify(label);
+  const name = keyForPath(page.path) || requested;
 
   return {
     name,

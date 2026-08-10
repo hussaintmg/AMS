@@ -747,6 +747,18 @@ async function scenarioDriftedPageKey() {
       ],
     });
 
+    // The browser has no page table of its own, so it can only match the key it
+    // is handed. Every screen asks for `part_scan`; if the payload still said
+    // "parts_scan_drift_test" the scanner would offer no documents at all, which
+    // is what the live symptom actually looked like.
+    const me = await call(token, 'GET', '/auth/me');
+    const reported = (me.body?.data?.role?.jobs || []).map((job) => job.pageKey);
+    check('/auth/me reports the job under the key the frontend looks for',
+      reported.includes('part_scan'), `jobs=${reported.join(',')}`);
+    check('…and the page permission with it',
+      (me.body?.data?.role?.permissions || []).some((item) => item.pageKey === 'part_scan'),
+      `perms=${(me.body?.data?.role?.permissions || []).map((item) => item.pageKey).join(',')}`);
+
     const line = { itemType: 'part', partId, quantity: 1, unitPrice: 100 };
     const quote = await call(token, 'POST', '/parts-sales/quotations', { customerId, lineItems: [line], validityDays: 7 });
     check('A job saved under this database\'s own page key still grants the scanner',

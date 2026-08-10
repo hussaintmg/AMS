@@ -30,9 +30,38 @@ async function run() {
   // uses one of these (ERP Settings kept /settings) is never deleted.
   const livePaths = new Set(pages.map((page) => page.path));
   await Page.deleteMany({ path: { $in: LEGACY_PATHS.filter((item) => !livePaths.has(item)) } });
+
+  // Matched on the *path* first, then the name.
+  //
+  // A page added by hand through Frontend Management takes its key from the
+  // label it was typed with, so an install can hold the Parts Scan screen as
+  // "Parts Barcode Scan" on the right path. Upserting by name there does not
+  // find it, and inserting instead collides on the unique path index — the seed
+  // used to fail outright on exactly the installation that most needed it. Path
+  // first both finds the row and renames it back to the key the code uses.
+  const renames = [];
   for (const page of pages) {
-    await Page.findOneAndUpdate({ name: page.name }, { $set: { ...page, updatedBy: admin._id }, $setOnInsert: { createdBy: admin._id } }, { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true });
+    const existing = await Page.findOne({ $or: [{ path: page.path }, { name: page.name }] });
+    if (existing && existing.name !== page.name) renames.push([existing.name, page.name]);
+    const query = existing ? { _id: existing._id } : { name: page.name };
+    await Page.findOneAndUpdate(
+      query,
+      { $set: { ...page, updatedBy: admin._id }, $setOnInsert: { createdBy: admin._id } },
+      { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true },
+    );
   }
+
+  // A renamed page leaves every role pointing at the old key, and a job row
+  // filed under a key no guard reads grants nothing. Carry them across.
+  const renameMap = new Map(renames);
+  const applyRenames = (list = []) => {
+    let changed = false;
+    list.forEach((row) => {
+      const next = renameMap.get(row.pageKey);
+      if (next && next !== row.pageKey) { row.pageKey = next; changed = true; }
+    });
+    return changed;
+  };
   const permissions = pages.map((p) => ({ pageKey: p.name, path: p.path, module: p.module, canView: true, isActive: true }));
   const jobs = pages.map((p) => ({ pageKey: p.name, module: p.module, actions: allActions, dataScope: { mode: 'all', roles: [], users: [] } }));
   role.permissions = permissions;
@@ -64,15 +93,19 @@ async function run() {
 
   let rolesRepathed = 0;
   for (const other of await Role.find({ _id: { $ne: role._id } })) {
-    if (syncPermissionPaths(other.permissions)) {
+    // Renames first: a row still under the old key would not match `pathByKey`.
+    const renamed = applyRenames(other.permissions) | applyRenames(other.jobs);
+    if (syncPermissionPaths(other.permissions) || renamed) {
       other.markModified('permissions');
+      other.markModified('jobs');
       await other.save();
       rolesRepathed += 1;
     }
   }
   let usersRepathed = 0;
   for (const user of await User.find({ 'customPermissions.0': { $exists: true } })) {
-    if (syncPermissionPaths(user.customPermissions)) {
+    const renamed = applyRenames(user.customPermissions);
+    if (syncPermissionPaths(user.customPermissions) || renamed) {
       user.markModified('customPermissions');
       await user.save();
       usersRepathed += 1;
@@ -96,6 +129,11 @@ async function run() {
   await branding.save();
   console.log(`Seeded ${pages.length} pages, ${permissions.length} super-admin permissions, and ${jobs.length} full-access jobs.`);
   console.log(`Re-pointed page paths on ${rolesRepathed} role(s) and ${usersRepathed} user(s) with custom permissions.`);
+  if (renames.length) {
+    console.log(`\nRenamed ${renames.length} page(s) to the keys this build uses, and carried every role's`);
+    console.log('permissions and job rows across with them:');
+    renames.forEach(([from, to]) => console.log(`  "${from}"  ->  ${to}`));
+  }
   await mongoose.disconnect();
 }
 
