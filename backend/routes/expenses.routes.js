@@ -1,7 +1,13 @@
 const express = require('express');
 const router = express.Router();
 const { authenticate, authorizeAction } = require('../middleware/auth');
+const { fieldMask } = require('../utils/fieldPermissions');
 const expenses = require('../controllers/expenses.controller');
+
+// Withhold the columns this role may not read, whatever the endpoint returns.
+// Mounted below the category routes' own paths as well; a category carries none
+// of the catalog's keys, so it passes through untouched.
+router.use(fieldMask('expenses'));
 
 router.get('/categories', authenticate, authorizeAction('expenses', 'view'), expenses.listCategories);
 router.post('/categories', authenticate, authorizeAction('expenses', 'create'), expenses.createCategory);

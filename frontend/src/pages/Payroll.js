@@ -7,6 +7,7 @@ import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import { payrollAPI, salaryAdvanceAPI, employeeAPI } from '../services/api';
 import SearchableSelect from '../components/SearchableSelect';
+import { fieldAccessor } from '../utils/roleJobs';
 import '../styles/userManagement.css';
 import '../styles/salaryAdvances.css';
 
@@ -28,8 +29,11 @@ const PayBadge = ({ line, periodStatus }) => {
 };
 
 const Payroll = () => {
-    const { hasRole } = useAuth();
+    const { user, hasRole } = useAuth();
     const canRun = hasRole(['super_admin', 'admin', 'payroll_clerk', 'accountant']);
+    // Which columns this role may read. The API already strips what it
+    // withholds, so this only stops us drawing an always-blank column.
+    const showField = fieldAccessor(user, 'payroll');
 
     const [tab, setTab] = useState('periods');
 
@@ -491,10 +495,7 @@ const Payroll = () => {
                                 <table className="data-table">
                                     <thead>
                                         <tr>
-                                            <th>Label</th>
-                                            <th>From</th>
-                                            <th>To</th>
-                                            <th>Status</th>
+                                            {showField('period') && <><th>Label</th><th>From</th><th>To</th><th>Status</th></>}
                                             <th>Lines</th>
                                             <th />
                                         </tr>
@@ -502,10 +503,12 @@ const Payroll = () => {
                                     <tbody>
                                         {periods.map((p) => (
                                             <tr key={p.id} style={{ background: selected === p.id ? 'rgba(59, 130, 246, 0.08)' : undefined }}>
-                                                <td>{p.label}</td>
-                                                <td>{p.period_start}</td>
-                                                <td>{p.period_end}</td>
-                                                <td><span className="badge badge-info">{p.status}</span></td>
+                                                {showField('period') && <>
+                                                    <td>{p.label}</td>
+                                                    <td>{p.period_start}</td>
+                                                    <td>{p.period_end}</td>
+                                                    <td><span className="badge badge-info">{p.status}</span></td>
+                                                </>}
                                                 <td>{p.line_count}</td>
                                                 <td>
                                                     <button type="button" className="btn btn-sm btn-secondary" onClick={() => loadLines(p.id)}>Open</button>
@@ -600,53 +603,56 @@ const Payroll = () => {
                             <table className="data-table">
                                 <thead>
                                     <tr>
-                                        <th>Employee</th>
-                                        <th>Gross</th>
-                                        <th>Deductions</th>
-                                        <th>Advance recovered</th>
-                                        <th>Advance balance</th>
-                                        <th>Net</th>
-                                        <th>Paid</th>
-                                        <th>Remaining</th>
-                                        <th>Status</th>
+                                        {showField('employee') && <th>Employee</th>}
+                                        {showField('earnings') && <><th>Gross</th><th>Deductions</th></>}
+                                        {showField('advances') && <><th>Advance recovered</th><th>Advance balance</th></>}
+                                        {showField('net_pay') && <><th>Net</th><th>Paid</th><th>Remaining</th><th>Status</th></>}
                                         {canRun && <th>Action</th>}
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {(linesData.lines || []).map((ln) => (
                                         <tr key={ln.id}>
-                                            <td>
-                                                {ln.employee_name} <small className="text-muted">{ln.employee_code}</small>
-                                                {(ln.payments || []).length > 0 && (
-                                                    <div className="pay-history">
-                                                        {ln.payments.map((p) => (
-                                                            <span key={p.id} className="pay-chip">
-                                                                {money(p.amount)} · {p.paid_on} · {p.method}
-                                                                {canRun && (
-                                                                    <button
-                                                                        type="button"
-                                                                        title="Remove this payment"
-                                                                        onClick={() => removePayment(ln, p)}
-                                                                    >×</button>
-                                                                )}
-                                                            </span>
-                                                        ))}
-                                                    </div>
-                                                )}
-                                            </td>
-                                            <td>{money(ln.gross_amount)}</td>
-                                            <td>{money(ln.deductions)}</td>
-                                            <td>{Number(ln.advance_deduction) > 0 ? money(ln.advance_deduction) : '—'}</td>
-                                            {/* What is still owed once this run is taken off. */}
-                                            <td className={Number(ln.advance_balance) > 0 ? 'adv-owed' : undefined}>
-                                                {Number(ln.advance_balance) > 0 ? money(ln.advance_balance) : '—'}
-                                            </td>
-                                            <td><strong>{money(ln.net_amount)}</strong></td>
-                                            <td className="adv-good">{money(ln.paid_amount)}</td>
-                                            <td className={Number(ln.remaining_amount) > 0 ? 'adv-owed' : undefined}>
-                                                {Number(ln.remaining_amount) > 0 ? money(ln.remaining_amount) : '—'}
-                                            </td>
-                                            <td><PayBadge line={ln} periodStatus={linesData.period.status} /></td>
+                                            {showField('employee') && (
+                                                <td>
+                                                    {ln.employee_name} <small className="text-muted">{ln.employee_code}</small>
+                                                    {showField('payments') && (ln.payments || []).length > 0 && (
+                                                        <div className="pay-history">
+                                                            {ln.payments.map((p) => (
+                                                                <span key={p.id} className="pay-chip">
+                                                                    {money(p.amount)} · {p.paid_on} · {p.method}
+                                                                    {canRun && (
+                                                                        <button
+                                                                            type="button"
+                                                                            title="Remove this payment"
+                                                                            onClick={() => removePayment(ln, p)}
+                                                                        >×</button>
+                                                                    )}
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </td>
+                                            )}
+                                            {showField('earnings') && <>
+                                                <td>{money(ln.gross_amount)}</td>
+                                                <td>{money(ln.deductions)}</td>
+                                            </>}
+                                            {showField('advances') && <>
+                                                <td>{Number(ln.advance_deduction) > 0 ? money(ln.advance_deduction) : '—'}</td>
+                                                {/* What is still owed once this run is taken off. */}
+                                                <td className={Number(ln.advance_balance) > 0 ? 'adv-owed' : undefined}>
+                                                    {Number(ln.advance_balance) > 0 ? money(ln.advance_balance) : '—'}
+                                                </td>
+                                            </>}
+                                            {showField('net_pay') && <>
+                                                <td><strong>{money(ln.net_amount)}</strong></td>
+                                                <td className="adv-good">{money(ln.paid_amount)}</td>
+                                                <td className={Number(ln.remaining_amount) > 0 ? 'adv-owed' : undefined}>
+                                                    {Number(ln.remaining_amount) > 0 ? money(ln.remaining_amount) : '—'}
+                                                </td>
+                                                <td><PayBadge line={ln} periodStatus={linesData.period.status} /></td>
+                                            </>}
                                             {canRun && (
                                                 <td>
                                                     {linesData.period.status === 'posted' && Number(ln.remaining_amount) > 0 && (

@@ -12,6 +12,7 @@ import ExpenseDrawer from "./ExpenseDrawer";
 import CategoryDrawer from "./CategoryDrawer";
 import BulkSelectionBar from "../components/BulkSelectionBar";
 import { Search } from "lucide-react";
+import { fieldAccessor } from "../utils/roleJobs";
 import "../styles/userManagement.css";
 
 const GROUP_LABELS = {
@@ -46,6 +47,9 @@ const Expenses = () => {
   const [loading, setLoading] = useState(true);
   const [errorPopup, setErrorPopup] = useState(null);
   const location = useLocation();
+  // Which columns this role may read. The API already strips what it withholds,
+  // so this only stops us drawing a column that would always be blank.
+  const showField = fieldAccessor(currentUser, "expenses");
 
   const [page, setPage] = useState(1);
   const [limit] = useState(20);
@@ -364,12 +368,12 @@ const Expenses = () => {
                         onChange={toggleAll}
                       />
                     </th>
-                    <th>Expense #</th>
-                    <th>Date</th>
-                    <th>Category</th>
-                    <th>Amount</th>
-                    <th>Vendor</th>
-                    <th>Status</th>
+                    {showField("document") && <th>Expense #</th>}
+                    {showField("document") && <th>Date</th>}
+                    {showField("classification") && <th>Category</th>}
+                    {showField("amount") && <th>Amount</th>}
+                    {showField("vendor") && <th>Vendor</th>}
+                    {showField("document") && <th>Status</th>}
                     <th>Actions</th>
                   </tr>
                 </thead>
@@ -396,32 +400,42 @@ const Expenses = () => {
                             disabled={isPosted}
                           />
                         </td>
-                        <td>{exp.expenseNumber || "-"}</td>
-                        <td>
-                          {exp.expenseDate
-                            ? new Date(exp.expenseDate).toLocaleDateString(
-                                "en-GB",
-                              )
-                            : "-"}
-                        </td>
-                        <td>
-                          <span className="badge badge-info">
-                            {exp.category || "-"}
-                          </span>
-                        </td>
-                        <td>
-                          {exp.amount != null
-                            ? Number(exp.amount).toLocaleString()
-                            : "-"}
-                        </td>
-                        <td>{exp.vendor || "-"}</td>
-                        <td>
-                          <span
-                            className={`badge ${exp.status === "posted" ? "badge-success" : "badge-secondary"}`}
-                          >
-                            {exp.status || "-"}
-                          </span>
-                        </td>
+                        {showField("document") && (
+                          <td>{exp.expenseNumber || "-"}</td>
+                        )}
+                        {showField("document") && (
+                          <td>
+                            {exp.expenseDate
+                              ? new Date(exp.expenseDate).toLocaleDateString(
+                                  "en-GB",
+                                )
+                              : "-"}
+                          </td>
+                        )}
+                        {showField("classification") && (
+                          <td>
+                            <span className="badge badge-info">
+                              {exp.category || "-"}
+                            </span>
+                          </td>
+                        )}
+                        {showField("amount") && (
+                          <td>
+                            {exp.amount != null
+                              ? Number(exp.amount).toLocaleString()
+                              : "-"}
+                          </td>
+                        )}
+                        {showField("vendor") && <td>{exp.vendor || "-"}</td>}
+                        {showField("document") && (
+                          <td>
+                            <span
+                              className={`badge ${exp.status === "posted" ? "badge-success" : "badge-secondary"}`}
+                            >
+                              {exp.status || "-"}
+                            </span>
+                          </td>
+                        )}
                         <td onClick={(e) => e.stopPropagation()}>
                           <div className="action-buttons">
                             {!isPosted && (
@@ -489,45 +503,57 @@ const Expenses = () => {
                       <div className="data-card-top">
                         <div className="data-card-avatar">💸</div>
                         <div className="data-card-info">
-                          <span className="data-card-title">
-                            {exp.expenseNumber || "-"}
-                          </span>
-                          <span className="data-card-subtitle">
-                            {exp.vendor || "-"}
-                          </span>
+                          {showField("document") && (
+                            <span className="data-card-title">
+                              {exp.expenseNumber || "-"}
+                            </span>
+                          )}
+                          {showField("vendor") && (
+                            <span className="data-card-subtitle">
+                              {exp.vendor || "-"}
+                            </span>
+                          )}
                         </div>
-                        <span className={`badge-pill status-${s}`}>
-                          {exp.status || "-"}
-                        </span>
+                        {showField("document") && (
+                          <span className={`badge-pill status-${s}`}>
+                            {exp.status || "-"}
+                          </span>
+                        )}
                       </div>
                       <div className="data-card-body">
-                        <div className="data-card-row">
-                          <span className="row-icon">📅</span>
-                          <span className="row-label">Date</span>
-                          <span className="row-value">
-                            {exp.expenseDate
-                              ? new Date(exp.expenseDate).toLocaleDateString(
-                                  "en-GB",
-                                )
-                              : "-"}
-                          </span>
-                        </div>
-                        <div className="data-card-row">
-                          <span className="row-icon">💰</span>
-                          <span className="row-label">Amount</span>
-                          <span className="row-value">
-                            {exp.amount != null
-                              ? Number(exp.amount).toLocaleString()
-                              : "-"}
-                          </span>
-                        </div>
-                        <div className="data-card-row">
-                          <span className="row-icon">🏷</span>
-                          <span className="row-label">Category</span>
-                          <span className="row-value">
-                            {exp.category || "-"}
-                          </span>
-                        </div>
+                        {showField("document") && (
+                          <div className="data-card-row">
+                            <span className="row-icon">📅</span>
+                            <span className="row-label">Date</span>
+                            <span className="row-value">
+                              {exp.expenseDate
+                                ? new Date(exp.expenseDate).toLocaleDateString(
+                                    "en-GB",
+                                  )
+                                : "-"}
+                            </span>
+                          </div>
+                        )}
+                        {showField("amount") && (
+                          <div className="data-card-row">
+                            <span className="row-icon">💰</span>
+                            <span className="row-label">Amount</span>
+                            <span className="row-value">
+                              {exp.amount != null
+                                ? Number(exp.amount).toLocaleString()
+                                : "-"}
+                            </span>
+                          </div>
+                        )}
+                        {showField("classification") && (
+                          <div className="data-card-row">
+                            <span className="row-icon">🏷</span>
+                            <span className="row-label">Category</span>
+                            <span className="row-value">
+                              {exp.category || "-"}
+                            </span>
+                          </div>
+                        )}
                       </div>
                       <div
                         className="data-card-footer"

@@ -1,7 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const { authenticate, authorizeAction } = require('../middleware/auth');
+const { fieldMask } = require('../utils/fieldPermissions');
 const payroll = require('../controllers/payroll.controller');
+
+// Withhold the columns this role may not read, whatever the endpoint returns.
+// Payslip lines are masked too — they hang off the period under `lines`.
+router.use(fieldMask('payroll'));
 
 router.get('/periods', authenticate, authorizeAction('payroll', 'view'), payroll.listPeriods);
 router.post('/periods', authenticate, authorizeAction('payroll', 'create'), payroll.createPeriod);

@@ -2372,6 +2372,11 @@ function ServerManagement() {
         <div className="sm-role-job-heading">
           <div><strong>{job.label}</strong><span>{job.module}</span></div>
           <div className="sm-role-job-headright">
+            {/* Named on the card too, so an administrator scanning the list can
+                see which granted pages are still look-but-don't-touch. */}
+            {job.allowed && capability.actions.length > 0
+              && !capability.actions.some((key) => job.actions[key] === true)
+              && <span className="sm-role-job-viewonly">View only</span>}
             {job.allowed && capability.dataScope && <span className="sm-own-data">Own data always visible</span>}
             <label className="sm-page-toggle">
               <input
@@ -2467,6 +2472,15 @@ function ServerManagement() {
     // "Allow this page" switch on it does not look like a state that was saved.
     const revealedBySearch = needle && !roleJobShowAll ? visible.filter((job) => !job.allowed).length : 0;
     const allowedCount = roleJobs.filter((job) => job.allowed).length;
+    // Page access alone is read-only: a role can hold every page in the system
+    // and still be refused every Create, because the actions live here and
+    // nowhere else. Roles carried over from before this screen existed look
+    // fully granted on Roles Permissions and have no ticked action at all, which
+    // reads to an administrator as "Create is on but the user is denied". Count
+    // what is actually ticked so the screen can say which it is.
+    const hasAction = (job) => Object.entries(job.actions || {})
+      .some(([key, on]) => key !== 'view' && on === true && capabilityOf(job.pageKey).actions.includes(key));
+    const actionableCount = roleJobs.filter((job) => job.allowed && hasAction(job)).length;
     // Cards keep the sidebar's own grouping, so a page is where the
     // administrator already expects to find it.
     const grouped = visible.reduce((acc, job) => {
@@ -2509,8 +2523,20 @@ function ServerManagement() {
             <input type="checkbox" checked={roleJobShowAll} onChange={() => setRoleJobShowAll((on) => !on)} />
             <span>Show pages this role cannot open</span>
           </label>
-          <span className="sm-role-job-count">{allowedCount} of {roleJobs.length} pages allowed</span>
+          <span className="sm-role-job-count">
+            {allowedCount} of {roleJobs.length} pages allowed · {actionableCount} with actions
+          </span>
         </div>
+      )}
+
+      {/* The state that produces "Create is ticked but the user is denied": the
+          role opens pages but nothing on them was ever ticked here. */}
+      {selectedJobRoleId && !roleJobsLoading && allowedCount > 0 && actionableCount === 0 && (
+        <p className="sm-role-job-warning">
+          This role can open {allowedCount} {allowedCount === 1 ? 'page' : 'pages'} but has no action ticked on any of
+          them, so its users can only look — every Create, Edit and Delete will be refused. Page access on
+          “Roles Permissions” does not grant actions; tick them on the cards below and Save.
+        </p>
       )}
 
       {revealedBySearch > 0 && (

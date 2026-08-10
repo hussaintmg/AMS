@@ -194,6 +194,106 @@ const FIELD_CATALOG = {
       { key: 'salary', group: 'Money', label: 'Salary', keys: ['salary'] },
     ],
   },
+
+  // ── Service ──────────────────────────────────────────────────────────────
+  services: {
+    label: 'Service Job Cards',
+    fields: [
+      { key: 'document', group: 'Document', label: 'Job card number, dates & status', keys: ['job_card_number', 'appointment_id', 'status', 'received_date', 'promised_date', 'created_at', 'updated_at'] },
+      { key: 'customer', group: 'Customer', label: 'Customer name', keys: ['customer_id', 'customer_name'] },
+      { key: 'customer_contact', group: 'Customer', label: 'Customer phone', keys: ['customer_phone'] },
+      { key: 'vehicle', group: 'Vehicle', label: 'Vehicle, registration & odometer', keys: ['vehicle_id', 'customer_vehicle_number', 'customer_vehicle_make', 'customer_vehicle_model', 'customer_vehicle_year', 'odometer_reading', 'fuel_level'] },
+      { key: 'identifiers', group: 'Vehicle', label: 'VIN / chassis number', keys: ['customer_vehicle_vin'] },
+      { key: 'staff', group: 'Ownership', label: 'Service advisor & technician', keys: ['service_advisor_id', 'technician_id'] },
+      // The work itself: labour lines and the parts fitted to the vehicle.
+      { key: 'work', group: 'Work', label: 'Service lines, parts & package', keys: ['services', 'parts', 'service_package_id', 'service_package_name', 'warranty_type_id'] },
+      { key: 'amounts', group: 'Money', label: 'Labour, parts, discount & total', keys: ['labor_total', 'parts_total', 'discount', 'tax_amount', 'grand_total'] },
+      { key: 'invoice', group: 'Money', label: 'Invoice reference', keys: ['invoice_id', 'invoice_number'] },
+      { key: 'notes', group: 'Notes', label: 'Customer & technician remarks', keys: ['customer_remarks', 'technician_remarks'] },
+    ],
+  },
+
+  service_appointments: {
+    label: 'Service Appointments',
+    fields: [
+      { key: 'document', group: 'Document', label: 'Appointment number, date, time & status', keys: ['appointment_number', 'appointment_date', 'appointment_time', 'estimated_duration', 'status', 'created_at', 'updated_at'] },
+      { key: 'customer', group: 'Customer', label: 'Customer name', keys: ['customer_id', 'customer_name'] },
+      { key: 'customer_contact', group: 'Customer', label: 'Customer phone', keys: ['customer_phone'] },
+      { key: 'vehicle', group: 'Vehicle', label: 'Vehicle & registration', keys: ['vehicle_id', 'customer_vehicle_number', 'customer_vehicle_make', 'customer_vehicle_model', 'customer_vehicle_variant', 'customer_vehicle_year'] },
+      { key: 'identifiers', group: 'Vehicle', label: 'VIN / chassis number', keys: ['customer_vehicle_vin'] },
+      { key: 'service_type', group: 'Work', label: 'Service type', keys: ['service_type_id', 'service_type_name'] },
+      { key: 'staff', group: 'Ownership', label: 'Service advisor', keys: ['service_advisor_id'] },
+      { key: 'notes', group: 'Notes', label: 'Concerns & notes', keys: ['customer_concerns', 'notes'] },
+    ],
+  },
+
+  // ── HR & finance ─────────────────────────────────────────────────────────
+  // Pay, advances and what a colleague was away for are the data most often
+  // withheld from the people who still need the rest of these screens.
+  leaves: {
+    label: 'Leave Requests',
+    fields: [
+      { key: 'employee', group: 'Employee', label: 'Employee', keys: ['employee'] },
+      { key: 'leave', group: 'Leave', label: 'Type, dates & days', keys: ['leaveType', 'startDate', 'endDate', 'days'] },
+      { key: 'status', group: 'Leave', label: 'Status & approver', keys: ['status', 'approvedBy'] },
+      { key: 'reason', group: 'Notes', label: 'Reason', keys: ['reason'] },
+    ],
+  },
+
+  expenses: {
+    label: 'Expenses',
+    fields: [
+      { key: 'document', group: 'Document', label: 'Expense number, date & status', keys: ['expenseNumber', 'expenseDate', 'status'] },
+      { key: 'classification', group: 'Classification', label: 'Category & account', keys: ['category', 'account'] },
+      { key: 'amount', group: 'Money', label: 'Amount', keys: ['amount'] },
+      { key: 'vendor', group: 'Supply', label: 'Vendor', keys: ['vendor'] },
+      { key: 'employee', group: 'Employee', label: 'Employee the expense belongs to', keys: ['employee'] },
+      { key: 'notes', group: 'Notes', label: 'Description', keys: ['description'] },
+    ],
+  },
+
+  ledger: {
+    label: 'Ledger',
+    fields: [
+      { key: 'entry', group: 'Document', label: 'Date & account', keys: ['transactionDate', 'account'] },
+      { key: 'reference', group: 'Document', label: 'Source document reference', keys: ['referenceType', 'referenceId'] },
+      { key: 'amounts', group: 'Money', label: 'Debit, credit & running balance', keys: ['debit', 'credit', 'runningBalance'] },
+      { key: 'notes', group: 'Notes', label: 'Description', keys: ['description'] },
+    ],
+  },
+
+  payroll: {
+    label: 'Payroll',
+    fields: [
+      { key: 'period', group: 'Document', label: 'Period label, dates & status', keys: ['label', 'period_start', 'period_end', 'status', 'posted_at', 'created_at'] },
+      { key: 'employee', group: 'Employee', label: 'Employee name & code', keys: ['employee_id', 'employee_name', 'employee_code'] },
+      { key: 'earnings', group: 'Money', label: 'Gross pay & deductions', keys: ['gross_amount', 'deductions'] },
+      { key: 'advances', group: 'Money', label: 'Advance recovery & balance', keys: ['advance_deduction', 'advance_balance'] },
+      { key: 'net_pay', group: 'Money', label: 'Net pay, paid & remaining', keys: ['net_amount', 'paid_amount', 'remaining_amount', 'payment_status', 'net_total', 'paid_total', 'remaining_total', 'unpaid_count'] },
+      { key: 'payments', group: 'Money', label: 'Individual salary payments', keys: ['payments'] },
+      { key: 'notes', group: 'Notes', label: 'Notes', keys: ['notes'] },
+    ],
+  },
+
+  // ── Logistics ────────────────────────────────────────────────────────────
+  // A read-only view over dispatched sales orders. Restricting it here rather
+  // than on Sales Orders lets a transport desk see the route without the money.
+  //
+  // The field keys deliberately match the sales-document ones: a role with no
+  // Dispatch job of its own is masked on Sales Orders instead, and matching keys
+  // are what make that fallback mean the same thing on both screens.
+  dispatch: {
+    label: 'Dispatch Report',
+    fields: [
+      { key: 'document', group: 'Document', label: 'Dispatch, order, booking & invoice numbers', keys: ['dispatch_no', 'order_number', 'booking_no', 'booking_id', 'status', 'created_at', 'updated_at', 'invoice_id', 'invoice_no', 'invoice_number', 'source_invoice_no', 'sap_order_no', 'sap_order_date'] },
+      { key: 'customer', group: 'Customer', label: 'Customer name', keys: ['customer_id', 'customer_name'] },
+      { key: 'products', group: 'Products', label: 'Vehicle', keys: ['vehicle_id', 'vehicle_name'] },
+      { key: 'identifiers', group: 'Products', label: 'Chassis / VIN / engine number', keys: ['chassis_number', 'engine_number'] },
+      { key: 'logistics', group: 'Logistics', label: 'Dispatch date, transport & route', keys: ['dispatch_date', 'transport_company', 'builty_no', 'ship_from', 'ship_to'] },
+      { key: 'amounts', group: 'Money', label: 'Totals, paid & balance', keys: ['total_amount', 'paid_amount', 'balance_amount'] },
+      { key: 'sales_person', group: 'Ownership', label: 'Salesperson & dealer', keys: ['sale_person', 'seller_id', 'seller_name', 'seller_employee_id', 'dealer_name'] },
+    ],
+  },
 };
 
 /** Every restrictable field key on a page, in catalog order. */

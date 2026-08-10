@@ -18,7 +18,16 @@ const router = express.Router();
 const { fieldMask } = require('../utils/fieldPermissions');
 
 // Withhold the columns this role may not read, whatever the endpoint returns.
-router.use(fieldMask('sales_orders'));
+//
+// The Dispatch report reads these same orders through a page of its own, so it
+// is masked on `dispatch` where the role has configured that page and falls back
+// to the sales-order rules where it has not. Its paths are then skipped by the
+// order-wide mask below, so one payload is never stripped by both sets of rules.
+const DISPATCH_PATHS = ['/dispatched', '/dispatch-stats'];
+router.use(DISPATCH_PATHS, fieldMask(['dispatch', 'sales_orders']));
+router.use((req, res, next) => (
+  DISPATCH_PATHS.includes(req.path) ? next() : fieldMask('sales_orders')(req, res, next)
+));
 const { authenticate, authorizeAction } = require('../middleware/auth');
 const salesController = require('../controllers/salesManagement.controller');
 const bulkPermission = require('../middleware/bulkSalesPermission');

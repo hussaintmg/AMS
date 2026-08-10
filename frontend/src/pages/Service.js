@@ -11,6 +11,7 @@ import useModalKeyboard from '../hooks/useModalKeyboard';
 import { useAuth } from '../context/AuthContext';
 import vehicleBrandingService from '../services/vehicleBrandingService';
 import useErpDocumentSettings from '../hooks/useErpDocumentSettings';
+import { fieldAccessor } from '../utils/roleJobs';
 import '../styles/userManagement.css';
 import '../styles/service.css';
 
@@ -76,6 +77,9 @@ function ServicePagination({ pagination, setPagination }) {
 
 function Appointments() {
   const { user } = useAuth();
+  // Which columns this role may read. The API already strips what it withholds,
+  // so this only stops us drawing a column that would always be blank.
+  const showField = fieldAccessor(user, 'service_appointments');
   const [searchParams] = useSearchParams();
   const urlSearch = searchParams.get('search') || '';
 
@@ -363,13 +367,13 @@ function Appointments() {
       <div className="desktop-only">
         <DataTable
           columns={[
-            { header: 'Appt #', accessor: 'appointment_number' },
-            { header: 'Customer', accessor: 'customer_name' },
-            { header: 'Vehicle', render: (r) => <>{r.customer_vehicle_make} {r.customer_vehicle_model}<br /><small>{r.customer_vehicle_number}</small></> },
-            { header: 'Service Type', accessor: 'service_type_name' },
-            { header: 'Date', render: (r) => r.appointment_date ? new Date(r.appointment_date).toLocaleDateString() : '-' },
-            { header: 'Time', accessor: 'appointment_time' },
-            { header: 'Status', render: (r) => (
+            { field: 'document', header: 'Appt #', accessor: 'appointment_number' },
+            { field: 'customer', header: 'Customer', accessor: 'customer_name' },
+            { field: 'vehicle', header: 'Vehicle', render: (r) => <>{r.customer_vehicle_make} {r.customer_vehicle_model}<br /><small>{r.customer_vehicle_number}</small></> },
+            { field: 'service_type', header: 'Service Type', accessor: 'service_type_name' },
+            { field: 'document', header: 'Date', render: (r) => r.appointment_date ? new Date(r.appointment_date).toLocaleDateString() : '-' },
+            { field: 'document', header: 'Time', accessor: 'appointment_time' },
+            { field: 'document', header: 'Status', render: (r) => (
               <select className={`badge badge-${APPT_STATUS_CLASS[r.status] || 'info'}`}
                 value={r.status} onChange={(e) => handleStatusChange(r.id, e.target.value)}
                 disabled={['completed', 'cancelled', 'no_show'].includes(r.status)}
@@ -405,7 +409,9 @@ function Appointments() {
                 )}
               </div>
             )},
-          ]}
+          // A column tied to a field the role may not read is dropped whole,
+          // rather than left as an always-blank cell.
+          ].filter((column) => !column.field || showField(column.field))}
           data={data}
           loading={loading}
           onRowClick={openDrawer}
@@ -419,13 +425,13 @@ function Appointments() {
         : data.length === 0 ? <div style={{ textAlign: 'center', padding: 40, color: '#94a3b8' }}>No appointments found</div>
         : data.map((a) => (
           <div key={a.id} className="user-card">
-            <div className="user-card-field"><span className="field-label">Appt #</span><span><strong>{a.appointment_number}</strong></span></div>
-            <div className="user-card-field"><span className="field-label">Customer</span><span>{a.customer_name}</span></div>
-            <div className="user-card-field"><span className="field-label">Vehicle</span><span>{a.customer_vehicle_make} {a.customer_vehicle_model} - {a.customer_vehicle_number}</span></div>
-            <div className="user-card-field"><span className="field-label">Date</span><span>{a.appointment_date ? new Date(a.appointment_date).toLocaleDateString() : '-'} {a.appointment_time || ''}</span></div>
-            <div className="user-card-field"><span className="field-label">Status</span>
+            {showField('document') && <div className="user-card-field"><span className="field-label">Appt #</span><span><strong>{a.appointment_number}</strong></span></div>}
+            {showField('customer') && <div className="user-card-field"><span className="field-label">Customer</span><span>{a.customer_name}</span></div>}
+            {showField('vehicle') && <div className="user-card-field"><span className="field-label">Vehicle</span><span>{a.customer_vehicle_make} {a.customer_vehicle_model} - {a.customer_vehicle_number}</span></div>}
+            {showField('document') && <div className="user-card-field"><span className="field-label">Date</span><span>{a.appointment_date ? new Date(a.appointment_date).toLocaleDateString() : '-'} {a.appointment_time || ''}</span></div>}
+            {showField('document') && <div className="user-card-field"><span className="field-label">Status</span>
               <span className={`badge badge-${APPT_STATUS_CLASS[a.status] || 'info'}`}>{a.status}</span>
-            </div>
+            </div>}
             <div className="card-actions">
               <button className="btn btn-sm btn-info" onClick={() => openModal('view', a)}>View</button>
               {canEdit && !['completed', 'cancelled', 'no_show'].includes(a.status) && (
@@ -572,6 +578,9 @@ const JC_STATUS_CLASS = { open: 'info', in_progress: 'warning', on_hold: 'second
 
 function JobCards() {
   const { user } = useAuth();
+  // Which columns this role may read. The API already strips what it withholds,
+  // so this only stops us drawing a column that would always be blank.
+  const showField = fieldAccessor(user, 'services');
   const { currency, serviceTax, taxAmount: calculateConfiguredTax } = useErpDocumentSettings();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -901,15 +910,15 @@ function JobCards() {
       <div className="desktop-only">
         <DataTable
           columns={[
-            { header: 'JC #', accessor: 'job_card_number' },
-            { header: 'Customer', accessor: 'customer_name' },
-            { header: 'Vehicle', render: (r) => <>{r.customer_vehicle_make} {r.customer_vehicle_model}<br /><small>{r.customer_vehicle_number}</small></> },
-            { header: 'Received', render: (r) => r.received_date ? new Date(r.received_date).toLocaleDateString() : '-' },
-            { header: 'Labor', render: (r) => `PKR ${Number(r.labor_total || 0).toLocaleString()}` },
-            { header: 'Parts', render: (r) => `PKR ${Number(r.parts_total || 0).toLocaleString()}` },
-            { header: 'Total', render: (r) => <strong>PKR {Number(r.grand_total || 0).toLocaleString()}</strong> },
-            { header: 'Invoice', render: (r) => r.invoice_number ? <button type="button" className="link-button" onClick={() => navigate(`/invoices?search=${encodeURIComponent(r.invoice_number)}`)}>{r.invoice_number}</button> : <span className="text-muted">Pending</span> },
-            { header: 'Status', render: (r) => (
+            { field: 'document', header: 'JC #', accessor: 'job_card_number' },
+            { field: 'customer', header: 'Customer', accessor: 'customer_name' },
+            { field: 'vehicle', header: 'Vehicle', render: (r) => <>{r.customer_vehicle_make} {r.customer_vehicle_model}<br /><small>{r.customer_vehicle_number}</small></> },
+            { field: 'document', header: 'Received', render: (r) => r.received_date ? new Date(r.received_date).toLocaleDateString() : '-' },
+            { field: 'amounts', header: 'Labor', render: (r) => `PKR ${Number(r.labor_total || 0).toLocaleString()}` },
+            { field: 'amounts', header: 'Parts', render: (r) => `PKR ${Number(r.parts_total || 0).toLocaleString()}` },
+            { field: 'amounts', header: 'Total', render: (r) => <strong>PKR {Number(r.grand_total || 0).toLocaleString()}</strong> },
+            { field: 'invoice', header: 'Invoice', render: (r) => r.invoice_number ? <button type="button" className="link-button" onClick={() => navigate(`/invoices?search=${encodeURIComponent(r.invoice_number)}`)}>{r.invoice_number}</button> : <span className="text-muted">Pending</span> },
+            { field: 'document', header: 'Status', render: (r) => (
               <select className={`badge badge-${JC_STATUS_CLASS[r.status] || 'info'}`}
                 value={r.status} onChange={(e) => handleStatusChange(r.id, e.target.value)}
                 disabled={['delivered', 'cancelled'].includes(r.status)}
@@ -945,7 +954,9 @@ function JobCards() {
                 )}
               </div>
             )},
-          ]}
+          // A column tied to a field the role may not read is dropped whole,
+          // rather than left as an always-blank cell.
+          ].filter((column) => !column.field || showField(column.field))}
           data={data}
           loading={loading}
           onRowClick={openJcDrawer}
@@ -959,14 +970,14 @@ function JobCards() {
         : data.length === 0 ? <div style={{ textAlign: 'center', padding: 40, color: '#94a3b8' }}>No job cards found</div>
         : data.map((jc) => (
           <div key={jc.id} className="user-card">
-            <div className="user-card-field"><span className="field-label">JC #</span><span><strong>{jc.job_card_number}</strong></span></div>
-            <div className="user-card-field"><span className="field-label">Customer</span><span>{jc.customer_name}</span></div>
-            <div className="user-card-field"><span className="field-label">Vehicle</span><span>{jc.customer_vehicle_make} {jc.customer_vehicle_model} - {jc.customer_vehicle_number}</span></div>
-            <div className="user-card-field"><span className="field-label">Total</span><span><strong>PKR {Number(jc.grand_total || 0).toLocaleString()}</strong></span></div>
-            <div className="user-card-field"><span className="field-label">Invoice</span><span>{jc.invoice_number ? <button type="button" className="link-button" onClick={() => navigate(`/invoices?search=${encodeURIComponent(jc.invoice_number)}`)}>{jc.invoice_number}</button> : 'Pending'}</span></div>
-            <div className="user-card-field"><span className="field-label">Status</span>
+            {showField('document') && <div className="user-card-field"><span className="field-label">JC #</span><span><strong>{jc.job_card_number}</strong></span></div>}
+            {showField('customer') && <div className="user-card-field"><span className="field-label">Customer</span><span>{jc.customer_name}</span></div>}
+            {showField('vehicle') && <div className="user-card-field"><span className="field-label">Vehicle</span><span>{jc.customer_vehicle_make} {jc.customer_vehicle_model} - {jc.customer_vehicle_number}</span></div>}
+            {showField('amounts') && <div className="user-card-field"><span className="field-label">Total</span><span><strong>PKR {Number(jc.grand_total || 0).toLocaleString()}</strong></span></div>}
+            {showField('invoice') && <div className="user-card-field"><span className="field-label">Invoice</span><span>{jc.invoice_number ? <button type="button" className="link-button" onClick={() => navigate(`/invoices?search=${encodeURIComponent(jc.invoice_number)}`)}>{jc.invoice_number}</button> : 'Pending'}</span></div>}
+            {showField('document') && <div className="user-card-field"><span className="field-label">Status</span>
               <span className={`badge badge-${JC_STATUS_CLASS[jc.status] || 'info'}`}>{jc.status}</span>
-            </div>
+            </div>}
             <div className="card-actions">
               <button className="btn btn-sm btn-info" onClick={() => openModal('view', jc)}>View</button>
               {canEdit && !['completed', 'delivered', 'cancelled'].includes(jc.status) && (

@@ -157,6 +157,52 @@ async function fixtureProducts() {
   return { vehicleId: vehicle?._id?.toString(), partId: part?._id?.toString(), customerId: customer?._id?.toString() };
 }
 
+/**
+ * One appointment and one job card the masking check can be run against.
+ *
+ * Without them both pages SKIP, and a skip proves nothing: a controller that
+ * forgets `.lean()` and leaks every withheld column looks exactly the same as a
+ * page that has no records yet. Upserted on a fixed number so repeated runs
+ * reuse the same two rows rather than filling the service screens.
+ */
+async function fixtureServiceRecords() {
+  const { ServiceAppointment, JobCard, Customer } = require('../models');
+  const customer = await Customer.findOne({ deletedAt: null, isActive: true }).select('_id').lean();
+  if (!customer) return;
+
+  const vehicle = { number: 'PERM-0001', make: 'Harness', model: 'Fixture', year: 2026, vin: 'PERMTESTVIN00001' };
+  await ServiceAppointment.findOneAndUpdate(
+    { appointmentNumber: 'PERMTEST-APPT-1' },
+    {
+      $set: {
+        appointmentNumber: 'PERMTEST-APPT-1',
+        customer: customer._id,
+        customerVehicle: vehicle,
+        appointmentDate: new Date(),
+        appointmentTime: '09:00',
+        status: 'scheduled',
+      },
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true },
+  );
+
+  await JobCard.findOneAndUpdate(
+    { jobCardNumber: 'PERMTEST-JC-1' },
+    {
+      $set: {
+        jobCardNumber: 'PERMTEST-JC-1',
+        customer: customer._id,
+        customerVehicle: vehicle,
+        status: 'open',
+        laborTotal: 1000,
+        partsTotal: 500,
+        grandTotal: 1500,
+      },
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true },
+  );
+}
+
 async function scenarioScanCreatesQuotation() {
   section('Barcode scan → create documents');
   const { vehicleId, partId, customerId } = await fixtureProducts();
@@ -485,7 +531,22 @@ async function scenarioEveryPageIsMasked() {
     invoices: ['/invoices?limit=3', 'amounts', 'total_amount'],
     part_quotations: ['/parts-sales/quotations?limit=3', 'amounts', 'total_amount'],
     part_invoices: ['/parts-sales/invoices?limit=3', 'amounts', 'total_amount'],
+    services: ['/services/job-cards?limit=3', 'amounts', 'grand_total'],
+    service_appointments: ['/services/appointments?limit=3', 'customer', 'customer_name'],
+    leaves: ['/leaves?limit=3', 'leave', 'leaveType'],
+    expenses: ['/expenses?limit=3', 'amount', 'amount'],
+    ledger: ['/ledger?limit=3', 'amounts', 'debit'],
+    // The period wrapper carries the run's own totals; a line carries the pay.
+    payroll: ['/payroll/periods?limit=3', 'net_pay', 'net_total'],
+    dispatch: ['/sales/dispatched?limit=3', 'logistics', 'transport_company'],
   };
+
+  /**
+   * Pages whose list endpoint lives behind a different page's guard, or which
+   * need a second page granted before the endpoint answers at all. Granting the
+   * catalogued page alone would 403 before anything could be masked.
+   */
+  const EXTRA_PAGES = { dispatch: ['sales_orders'] };
 
   /** First record out of whichever envelope the endpoint uses. */
   const firstRecord = (body) => {
@@ -499,6 +560,8 @@ async function scenarioEveryPageIsMasked() {
   const missing = Object.keys(FIELD_CATALOG).filter((page) => !PAGE_ENDPOINTS[page]);
   check('Every catalog page is covered by this masking check', missing.length === 0, `uncovered=${missing.join(',')}`);
 
+  await fixtureServiceRecords();
+
   // The super admin is the unmasked baseline, so each page costs one role write
   // rather than two — this loop already touches every catalogued endpoint.
   const adminPassword = process.env.SUPER_ADMIN_PASSWORD;
@@ -508,8 +571,9 @@ async function scenarioEveryPageIsMasked() {
 
   for (const [page, [url, withheldField, responseKey]] of Object.entries(PAGE_ENDPOINTS)) {
     const allowed = pageFieldKeys(page).filter((key) => key !== withheldField);
+    const extra = EXTRA_PAGES[page] || [];
     const token = await applyRole({
-      pages: SALES_PAGES.includes(page) ? SALES_PAGES : [...SALES_PAGES, page],
+      pages: [...new Set([...SALES_PAGES, page, ...extra])],
       jobs: [{ pageKey: page, actions: {}, dataScope: { mode: 'all' }, fields: { mode: 'selected', allowed } }],
     });
     const record = firstRecord((await call(token, 'GET', url)).body);

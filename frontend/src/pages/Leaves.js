@@ -10,6 +10,7 @@ import LeaveFormModal from './LeaveFormModal';
 import LeaveDrawer from './LeaveDrawer';
 import BulkSelectionBar from '../components/BulkSelectionBar';
 import { Search } from "lucide-react";
+import { fieldAccessor } from '../utils/roleJobs';
 import '../styles/userManagement.css';
 
 const STATUS_BADGE = {
@@ -28,6 +29,9 @@ const Leaves = () => {
   } = useLeaves();
   const [loading, setLoading] = useState(true);
   const [errorPopup, setErrorPopup] = useState(null);
+  // Which columns this role may read. The API already strips what it withholds,
+  // so this only stops us drawing a column that would always be blank.
+  const showField = fieldAccessor(currentUser, 'leaves');
 
   const [page, setPage] = useState(1);
   const [limit] = useState(20);
@@ -215,12 +219,12 @@ const Leaves = () => {
             <thead>
               <tr>
                 <th className="selection-cell"><input type="checkbox" aria-label="Select all leave requests on this page" checked={allSelected} onChange={toggleAll} /></th>
-                <th>Employee</th>
-                <th>Leave Type</th>
-                <th>Start</th>
-                <th>End</th>
-                <th>Days</th>
-                <th>Status</th>
+                {showField('employee') && <th>Employee</th>}
+                {showField('leave') && <th>Leave Type</th>}
+                {showField('leave') && <th>Start</th>}
+                {showField('leave') && <th>End</th>}
+                {showField('leave') && <th>Days</th>}
+                {showField('status') && <th>Status</th>}
                 <th>Actions</th>
               </tr>
             </thead>
@@ -230,16 +234,18 @@ const Leaves = () => {
                 return (
                   <tr key={id} onClick={() => setDrawerLeave(leave)} style={{ cursor: 'pointer' }}>
                     <td className="selection-cell" onClick={e => e.stopPropagation()}><input type="checkbox" aria-label="Select leave request" checked={selectedIds.has(id)} onChange={() => toggleSelected(id)} /></td>
-                    <td>{empName(leave)}</td>
-                    <td><span className="badge badge-info">{leave.leaveType || '-'}</span></td>
-                    <td>{leave.startDate ? new Date(leave.startDate).toLocaleDateString('en-GB') : '-'}</td>
-                    <td>{leave.endDate ? new Date(leave.endDate).toLocaleDateString('en-GB') : '-'}</td>
-                    <td>{leave.days || '-'}</td>
-                    <td>
-                      <span className={`badge ${STATUS_BADGE[leave.status] || 'badge-secondary'}`}>
-                        {leave.status || '-'}
-                      </span>
-                    </td>
+                    {showField('employee') && <td>{empName(leave)}</td>}
+                    {showField('leave') && <td><span className="badge badge-info">{leave.leaveType || '-'}</span></td>}
+                    {showField('leave') && <td>{leave.startDate ? new Date(leave.startDate).toLocaleDateString('en-GB') : '-'}</td>}
+                    {showField('leave') && <td>{leave.endDate ? new Date(leave.endDate).toLocaleDateString('en-GB') : '-'}</td>}
+                    {showField('leave') && <td>{leave.days || '-'}</td>}
+                    {showField('status') && (
+                      <td>
+                        <span className={`badge ${STATUS_BADGE[leave.status] || 'badge-secondary'}`}>
+                          {leave.status || '-'}
+                        </span>
+                      </td>
+                    )}
                     <td onClick={e => e.stopPropagation()}>
                       {leave.status === 'pending' ? (
                         <div className="action-buttons">
@@ -292,29 +298,35 @@ const Leaves = () => {
                       {((leave.employee?.firstName?.[0] || '') + (leave.employee?.lastName?.[0] || '')).trim() || '?'}
                     </div>
                     <div className="data-card-info">
-                      <span className="data-card-title">{empName(leave)}</span>
-                      <span className="data-card-subtitle">{leave.leaveType || '-'}</span>
+                      {showField('employee') && <span className="data-card-title">{empName(leave)}</span>}
+                      {showField('leave') && <span className="data-card-subtitle">{leave.leaveType || '-'}</span>}
                     </div>
-                    <span className={`badge-pill status-${statusKey}`}>{leave.status || '-'}</span>
+                    {showField('status') && <span className={`badge-pill status-${statusKey}`}>{leave.status || '-'}</span>}
                   </div>
                   <div className="data-card-body">
-                    <div className="data-card-row">
-                      <span className="row-icon">📅</span>
-                      <span className="row-label">Dates</span>
-                      <span className="row-value">
-                        {leave.startDate ? new Date(leave.startDate).toLocaleDateString('en-GB') : '-'} → {leave.endDate ? new Date(leave.endDate).toLocaleDateString('en-GB') : '-'}
-                      </span>
-                    </div>
-                    <div className="data-card-row">
-                      <span className="row-icon">📆</span>
-                      <span className="row-label">Days</span>
-                      <span className="row-value">{leave.days || '-'}</span>
-                    </div>
-                    <div className="data-card-row">
-                      <span className="row-icon">💬</span>
-                      <span className="row-label">Reason</span>
-                      <span className="row-value">{leave.reason || '-'}</span>
-                    </div>
+                    {showField('leave') && (
+                      <div className="data-card-row">
+                        <span className="row-icon">📅</span>
+                        <span className="row-label">Dates</span>
+                        <span className="row-value">
+                          {leave.startDate ? new Date(leave.startDate).toLocaleDateString('en-GB') : '-'} → {leave.endDate ? new Date(leave.endDate).toLocaleDateString('en-GB') : '-'}
+                        </span>
+                      </div>
+                    )}
+                    {showField('leave') && (
+                      <div className="data-card-row">
+                        <span className="row-icon">📆</span>
+                        <span className="row-label">Days</span>
+                        <span className="row-value">{leave.days || '-'}</span>
+                      </div>
+                    )}
+                    {showField('reason') && (
+                      <div className="data-card-row">
+                        <span className="row-icon">💬</span>
+                        <span className="row-label">Reason</span>
+                        <span className="row-value">{leave.reason || '-'}</span>
+                      </div>
+                    )}
                   </div>
                   <div className="data-card-footer" onClick={e => e.stopPropagation()}>
                     {leave.status === 'pending' && canApprove && (

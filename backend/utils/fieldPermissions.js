@@ -19,6 +19,9 @@ const COLLECTION_KEYS = [
   'customers', 'leads', 'vehicles', 'employees',
   'quotations', 'bookings', 'orders', 'invoices',
   'quotation', 'booking', 'order', 'invoice', 'customer', 'lead', 'vehicle', 'part', 'employee',
+  // HR, finance and service envelopes.
+  'leaves', 'expenses', 'entries', 'periods', 'lines', 'appointments', 'jobCards', 'job_cards',
+  'leave', 'expense', 'entry', 'period', 'line', 'appointment', 'jobCard', 'job_card',
 ];
 
 /** Product-line arrays inside a single record. */

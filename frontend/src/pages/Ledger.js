@@ -9,6 +9,7 @@ import ErrorPopup from '../components/ErrorPopup';
 import LedgerDrawer from './LedgerDrawer';
 import ServerPagination from '../components/ServerPagination';
 import { exportReportCsv, exportReportXlsx, exportReportPdf } from '../utils/reportsExport';
+import { fieldAccessor } from '../utils/roleJobs';
 import '../styles/userManagement.css';
 import '../styles/ledger.css';
 
@@ -31,6 +32,9 @@ export default function Ledger() {
   const [entryForm, setEntryForm] = useState(emptyEntry);
   const [filters, setFilters] = useState({ search: searchParams.get('search') || '', account: '', referenceType: '', from: '', to: '' });
   const [applied, setApplied] = useState(filters);
+  // Which columns this role may read. The API already strips what it withholds,
+  // so this only stops us drawing a column that would always be blank.
+  const showField = fieldAccessor(user, 'ledger');
 
   const fetchEntries = useCallback(async () => {
     setLoading(true);
@@ -93,8 +97,8 @@ export default function Ledger() {
     <section className="ledger-table-shell">
       <div className="ledger-table-title"><div><BookOpen size={18}/><strong>Transactions</strong></div><span>{pagination.total} entries</span></div>
       {loading ? <div className="ledger-state"><div className="spinner"/>Loading transactions...</div> : entries.length === 0 ? <div className="ledger-state"><BookOpen size={36}/><strong>No ledger entries</strong><span>Adjust the filters or post a journal entry.</span></div> : <>
-        <div className="desktop-only ledger-table-scroll"><table className="data-table ledger-table"><thead><tr><th>Date</th><th>Reference</th><th>Account</th><th>Description</th><th className="amount">Debit</th><th className="amount">Credit</th><th className="amount">Balance</th></tr></thead><tbody>{entries.map((entry) => <tr key={entry._id || entry.id} onClick={() => setDrawerEntry(entry)}><td>{entry.transactionDate ? new Date(entry.transactionDate).toLocaleDateString('en-GB') : '-'}</td><td><span className={`ledger-source ${entry.referenceType || 'manual'}`}>{entry.referenceType || 'manual'}</span><small>{entry.referenceId || '-'}</small></td><td><strong>{entry.account || '-'}</strong></td><td>{entry.description || '-'}</td><td className="amount debit-text">{entry.debit ? money(entry.debit) : '-'}</td><td className="amount credit-text">{entry.credit ? money(entry.credit) : '-'}</td><td className="amount"><strong>{money(entry.runningBalance)}</strong></td></tr>)}</tbody></table></div>
-        <div className="mobile-only ledger-mobile-list">{entries.map((entry) => <article key={entry._id || entry.id} onClick={() => setDrawerEntry(entry)}><header><strong>{entry.account}</strong><span>{entry.transactionDate ? new Date(entry.transactionDate).toLocaleDateString('en-GB') : '-'}</span></header><p>{entry.description}</p><div><span>Debit <b className="debit-text">{money(entry.debit)}</b></span><span>Credit <b className="credit-text">{money(entry.credit)}</b></span><span>Balance <b>{money(entry.runningBalance)}</b></span></div></article>)}</div>
+        <div className="desktop-only ledger-table-scroll"><table className="data-table ledger-table"><thead><tr>{showField('entry') && <th>Date</th>}{showField('reference') && <th>Reference</th>}{showField('entry') && <th>Account</th>}{showField('notes') && <th>Description</th>}{showField('amounts') && <><th className="amount">Debit</th><th className="amount">Credit</th><th className="amount">Balance</th></>}</tr></thead><tbody>{entries.map((entry) => <tr key={entry._id || entry.id} onClick={() => setDrawerEntry(entry)}>{showField('entry') && <td>{entry.transactionDate ? new Date(entry.transactionDate).toLocaleDateString('en-GB') : '-'}</td>}{showField('reference') && <td><span className={`ledger-source ${entry.referenceType || 'manual'}`}>{entry.referenceType || 'manual'}</span><small>{entry.referenceId || '-'}</small></td>}{showField('entry') && <td><strong>{entry.account || '-'}</strong></td>}{showField('notes') && <td>{entry.description || '-'}</td>}{showField('amounts') && <><td className="amount debit-text">{entry.debit ? money(entry.debit) : '-'}</td><td className="amount credit-text">{entry.credit ? money(entry.credit) : '-'}</td><td className="amount"><strong>{money(entry.runningBalance)}</strong></td></>}</tr>)}</tbody></table></div>
+        <div className="mobile-only ledger-mobile-list">{entries.map((entry) => <article key={entry._id || entry.id} onClick={() => setDrawerEntry(entry)}><header>{showField('entry') && <><strong>{entry.account}</strong><span>{entry.transactionDate ? new Date(entry.transactionDate).toLocaleDateString('en-GB') : '-'}</span></>}</header>{showField('notes') && <p>{entry.description}</p>}{showField('amounts') && <div><span>Debit <b className="debit-text">{money(entry.debit)}</b></span><span>Credit <b className="credit-text">{money(entry.credit)}</b></span><span>Balance <b>{money(entry.runningBalance)}</b></span></div>}</article>)}</div>
       </>}
     </section>
     <ServerPagination page={page} totalPages={pagination.pages} total={pagination.total} limit={pagination.limit} onPageChange={setPage} onPageSizeChange={(limit) => { setPage(1); setPagination((prev) => ({ ...prev, limit })); }} loading={loading}/>

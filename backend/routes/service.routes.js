@@ -23,6 +23,12 @@ router.use(authenticate);
 const JOB_CARD_SUB_RESOURCE = { pattern: /^\/[^/]+\/.+/, action: 'edit' };
 router.use('/appointments', authorizeRouter('service_appointments'));
 router.use('/job-cards', authorizeRouter('services', [JOB_CARD_SUB_RESOURCE]));
+
+// Withhold the columns each role may not read. Split the same way the guards
+// are: an appointment is judged on Service Appointments, a job card on Services.
+const { fieldMask } = require('../utils/fieldPermissions');
+router.use('/appointments', fieldMask('service_appointments'));
+router.use('/job-cards', fieldMask('services'));
 router.use('/types', authorizeRouter('services'));
 router.use('/technicians', authorizeRouter('services'));
 router.use('/advisors', authorizeRouter('services'));

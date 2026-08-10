@@ -11,6 +11,8 @@ import ServerPagination from '../components/ServerPagination';
 import SalesFilterBar from '../components/sales/SalesFilterBar';
 import SalesDrawer from '../components/sales/SalesDrawer';
 import ActionButtons from '../components/ActionButtons';
+import { useAuth } from '../context/AuthContext';
+import { fieldAccessor } from '../utils/roleJobs';
 import '../styles/userManagement.css';
 
 function useDebounce(value, delay) {
@@ -24,8 +26,13 @@ function useDebounce(value, delay) {
 
 export default function DispatchReport() {
     const navigate = useNavigate();
+    const { user } = useAuth();
     const [searchParams] = useSearchParams();
     const urlSearch = searchParams.get('search') || '';
+    // Which columns this role may read. The report is masked on its own Dispatch
+    // page where that is configured and on Sales Orders otherwise, so ask in the
+    // same order the API does.
+    const showField = fieldAccessor(user, ['dispatch', 'sales_orders']);
 
     const [data, setData] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -197,36 +204,37 @@ export default function DispatchReport() {
                         <table className="data-table">
                             <thead>
                                 <tr>
-                                    <th>Dispatch #</th>
-                                    <th>Order #</th>
-                                    <th>Booking #</th>
-                                    <th>Customer</th>
-                                    <th>Salesman</th>
-                                    <th>Chassis / VIN</th>
-                                    <th>Dispatch Date</th>
-                                    <th>Transport</th>
-                                    <th>Ship From → To</th>
-                                    <th>Invoice #</th>
-                                    <th>Status</th>
+                                    {showField('document') && <><th>Dispatch #</th><th>Order #</th><th>Booking #</th></>}
+                                    {showField('customer') && <th>Customer</th>}
+                                    {showField('sales_person') && <th>Salesman</th>}
+                                    {showField('identifiers') && <th>Chassis / VIN</th>}
+                                    {showField('logistics') && <><th>Dispatch Date</th><th>Transport</th><th>Ship From → To</th></>}
+                                    {showField('document') && <><th>Invoice #</th><th>Status</th></>}
                                     <th>Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {data.map((d) => (
                                     <tr key={d.id} style={{ cursor: 'pointer' }} onClick={() => setDrawerItem(d)}>
-                                        <td><strong>{d.dispatch_no || '-'}</strong></td>
-                                        <td>{d.order_number}</td>
-                                        <td>{d.booking_no || '-'}</td>
-                                        <td>{d.customer_name}</td>
-                                        <td style={{ fontSize: '0.8rem' }}>{d.sale_person || '-'}</td>
-                                        <td style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{d.chassis_number || d.vehicle_name || '-'}</td>
-                                        <td>{formatDate(d.dispatch_date)}</td>
-                                        <td>{d.transport_company || '-'}</td>
-                                        <td style={{ fontSize: '0.8rem' }}>
-                                            {d.ship_from && d.ship_to ? `${d.ship_from} → ${d.ship_to}` : d.ship_from || d.ship_to || '-'}
-                                        </td>
-                                        <td style={{ fontSize: '0.8rem' }}>{d.invoice_no || '-'}</td>
-                                        <td>{getStatusBadge(d.status)}</td>
+                                        {showField('document') && <>
+                                            <td><strong>{d.dispatch_no || '-'}</strong></td>
+                                            <td>{d.order_number}</td>
+                                            <td>{d.booking_no || '-'}</td>
+                                        </>}
+                                        {showField('customer') && <td>{d.customer_name}</td>}
+                                        {showField('sales_person') && <td style={{ fontSize: '0.8rem' }}>{d.sale_person || '-'}</td>}
+                                        {showField('identifiers') && <td style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{d.chassis_number || d.vehicle_name || '-'}</td>}
+                                        {showField('logistics') && <>
+                                            <td>{formatDate(d.dispatch_date)}</td>
+                                            <td>{d.transport_company || '-'}</td>
+                                            <td style={{ fontSize: '0.8rem' }}>
+                                                {d.ship_from && d.ship_to ? `${d.ship_from} → ${d.ship_to}` : d.ship_from || d.ship_to || '-'}
+                                            </td>
+                                        </>}
+                                        {showField('document') && <>
+                                            <td style={{ fontSize: '0.8rem' }}>{d.invoice_no || '-'}</td>
+                                            <td>{getStatusBadge(d.status)}</td>
+                                        </>}
                                         <td onClick={(e) => e.stopPropagation()}>
                                             <ActionButtons
                                                 showView={true}
@@ -249,19 +257,21 @@ export default function DispatchReport() {
                                     <div className="data-card-top">
                                         <div className="data-card-avatar avatar-green">D</div>
                                         <div className="data-card-info">
-                                            <span className="data-card-title">Dispatch #{d.dispatch_no || 'N/A'}</span>
-                                            <span className="data-card-subtitle">{d.order_number} · {d.customer_name}</span>
+                                            {showField('document') && <span className="data-card-title">Dispatch #{d.dispatch_no || 'N/A'}</span>}
+                                            <span className="data-card-subtitle">{showField('document') && d.order_number}{showField('document') && showField('customer') ? ' · ' : ''}{showField('customer') && d.customer_name}</span>
                                         </div>
-                                        {getStatusBadge(d.status)}
+                                        {showField('document') && getStatusBadge(d.status)}
                                     </div>
                                     <div className="data-card-body">
-                                        <div className="data-card-row"><span className="row-icon">📋</span><span className="row-label">Booking</span><span className="row-value">{d.booking_no || '-'}</span></div>
-                                        <div className="data-card-row"><span className="row-icon">👤</span><span className="row-label">Salesman</span><span className="row-value">{d.sale_person || '-'}</span></div>
-                                        <div className="data-card-row"><span className="row-icon">🚗</span><span className="row-label">Chassis</span><span className="row-value">{d.chassis_number || '-'}</span></div>
-                                        <div className="data-card-row"><span className="row-icon">📅</span><span className="row-label">Date</span><span className="row-value">{formatDate(d.dispatch_date)}</span></div>
-                                        <div className="data-card-row"><span className="row-icon">🚚</span><span className="row-label">Transport</span><span className="row-value">{d.transport_company || '-'}</span></div>
-                                        <div className="data-card-row"><span className="row-icon">📦</span><span className="row-label">Route</span><span className="row-value">{d.ship_from && d.ship_to ? `${d.ship_from} → ${d.ship_to}` : '-'}</span></div>
-                                        <div className="data-card-row"><span className="row-icon">🧾</span><span className="row-label">Invoice</span><span className="row-value">{d.invoice_no || '-'}</span></div>
+                                        {showField('document') && <div className="data-card-row"><span className="row-icon">📋</span><span className="row-label">Booking</span><span className="row-value">{d.booking_no || '-'}</span></div>}
+                                        {showField('sales_person') && <div className="data-card-row"><span className="row-icon">👤</span><span className="row-label">Salesman</span><span className="row-value">{d.sale_person || '-'}</span></div>}
+                                        {showField('identifiers') && <div className="data-card-row"><span className="row-icon">🚗</span><span className="row-label">Chassis</span><span className="row-value">{d.chassis_number || '-'}</span></div>}
+                                        {showField('logistics') && <>
+                                            <div className="data-card-row"><span className="row-icon">📅</span><span className="row-label">Date</span><span className="row-value">{formatDate(d.dispatch_date)}</span></div>
+                                            <div className="data-card-row"><span className="row-icon">🚚</span><span className="row-label">Transport</span><span className="row-value">{d.transport_company || '-'}</span></div>
+                                            <div className="data-card-row"><span className="row-icon">📦</span><span className="row-label">Route</span><span className="row-value">{d.ship_from && d.ship_to ? `${d.ship_from} → ${d.ship_to}` : '-'}</span></div>
+                                        </>}
+                                        {showField('document') && <div className="data-card-row"><span className="row-icon">🧾</span><span className="row-label">Invoice</span><span className="row-value">{d.invoice_no || '-'}</span></div>}
                                     </div>
                                 </div>
                             ))}

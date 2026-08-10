@@ -41,6 +41,10 @@ const CATEGORY = {
     searchPlaceholder: "Search by name or chassis number",
     scanPlaceholder: "Scan a barcode, or type a chassis number",
     scanPage: "vehicle_scan",
+    // The other Role Jobs cards that can grant this screen's documents, named
+    // as they appear there — a denied operator has to be able to repeat them to
+    // their administrator.
+    grantLabels: ["Quotations", "Bookings", "Sales Orders"],
     // Which Role Jobs pages may raise each document. Mirrors the guards on the
     // endpoints these buttons call, so the screen offers exactly what the API
     // will accept instead of failing with "Access denied" after the basket is
@@ -64,6 +68,7 @@ const CATEGORY = {
     // The parts flow is quotation → invoice only; a counter sale invoices
     // immediately. There are no bookings on this side.
     scanPage: "part_scan",
+    grantLabels: ["Parts Quotations", "Parts Invoices"],
     documents: [
       { key: "quotation", label: "Quotation", hint: "An offer. No stock is touched.", pages: ["part_scan", "part_quotations", "quotations"] },
       // A counter sale is a parts invoice, so Parts Invoices → Create raises
@@ -595,11 +600,17 @@ function BarcodeScan({ category = "vehicle" }) {
               ))}
             </div>
             {allowedDocuments.length === 0 ? (
+              // Spelled out step by step because the card an administrator is
+              // sent to is hidden by default until the role holds the page: the
+              // shorter version of this message sent people to Role Jobs to look
+              // for a "Create" tick that was nowhere on screen.
               <p className="scan-hint scan-hint-denied">
-                Your role can open this screen but may not create anything from it.
+                Your role can open this screen but may not create anything from it. An administrator can grant it in
+                Server Management → Role Jobs: pick this role
                 {scanJobMissing
-                  ? ` Ask an administrator to add ${config.label} Scan under Server Management → Role Jobs and tick Create.`
-                  : ` Ask an administrator to tick Create on ${config.label} Scan under Server Management → Role Jobs.`}
+                  ? `, search “scan” (the ${config.label} Scan card is hidden until then, because the role does not hold that page yet), turn on “Allow this page” and tick Create.`
+                  : `, find ${config.label} Scan and tick Create.`}
+                {" "}Ticking Create on {config.grantLabels.join(" or ")} works just as well.
               </p>
             ) : (
               <p className="scan-hint">{activeDoc?.hint}</p>
