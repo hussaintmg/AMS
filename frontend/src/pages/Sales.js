@@ -630,6 +630,19 @@ function Quotations({ category = 'vehicle' }) {
     };
 
     const canApprove = policyAllows(user, 'quotations', 'approve', ['super_admin','admin','sales_manager'].includes(user?.role));
+    /**
+     * Turning the quotation into the next document.
+     *
+     * The button used to be drawn on nothing but the quotation's own status, so
+     * every role that could open the screen was offered it and only found out
+     * from the 403 that came back. It is judged on what the endpoint behind it
+     * actually asks for: a vehicle quotation becomes a booking (`bookings.create`
+     * — the guard is `quotations.edit`, and edit on the source is what the server
+     * checks), a parts quotation becomes an invoice outright.
+     */
+    const canConvert = isParts
+        ? policyAllows(user, 'part_invoices', 'create', policyAllows(user, 'invoices', 'create', canEdit))
+        : policyAllows(user, 'quotations', 'edit', canEdit);
     const [approvingId, setApprovingId] = useState(null);
     const [estimateId, setEstimateId] = useState(null);
 
@@ -936,7 +949,7 @@ function Quotations({ category = 'vehicle' }) {
                                             ...(canEstimate ? [{ icon: <FileText size={18} />, title: 'Estimate PDF (all products)', onClick: () => handleDownloadEstimate(q), className: 'btn-info', disabled: estimateId === q.id, loading: estimateId === q.id }] : []),
                                             ...(canEstimate ? [{ icon: <Mail size={18} />, title: 'Email estimate to customer', onClick: () => handleEmailEstimate(q), className: 'btn-info', disabled: estimateId === q.id, loading: estimateId === q.id }] : []),
                                             ...(canApprove && q.approval_status !== 'approved' && !['converted', 'cancelled'].includes(q.status) ? [{ icon: <CheckCircle size={18} />, title: 'Approve quotation', onClick: () => handleApprove(q, 'approved'), className: 'btn-success', disabled: approvingId === q.id, loading: approvingId === q.id }] : []),
-                                            ...(q.approval_status === 'approved' && q.status !== 'converted' ? [{ icon: <span className="material-icons">shopping_cart</span>, title: isParts ? 'Convert to invoice' : 'Convert to booking', onClick: () => handleConvertClick(q), className: 'btn-success' }] : [])
+                                            ...(canConvert && q.approval_status === 'approved' && q.status !== 'converted' ? [{ icon: <span className="material-icons">shopping_cart</span>, title: isParts ? 'Convert to invoice' : 'Convert to booking', onClick: () => handleConvertClick(q), className: 'btn-success' }] : [])
                                         ]}
                                     />
                                 </td>
@@ -976,7 +989,7 @@ function Quotations({ category = 'vehicle' }) {
                                             ...(canEstimate ? [{ icon: <FileText size={18} />, title: 'Estimate PDF (all products)', onClick: () => handleDownloadEstimate(q), className: 'btn-info', disabled: estimateId === q.id, loading: estimateId === q.id }] : []),
                                             ...(canEstimate ? [{ icon: <Mail size={18} />, title: 'Email estimate to customer', onClick: () => handleEmailEstimate(q), className: 'btn-info', disabled: estimateId === q.id, loading: estimateId === q.id }] : []),
                                             ...(canApprove && q.approval_status !== 'approved' && !['converted', 'cancelled'].includes(q.status) ? [{ icon: <CheckCircle size={18} />, title: 'Approve quotation', onClick: () => handleApprove(q, 'approved'), className: 'btn-success', disabled: approvingId === q.id, loading: approvingId === q.id }] : []),
-                                            ...(q.approval_status === 'approved' && q.status !== 'converted' ? [{ icon: <span className="material-icons">shopping_cart</span>, title: isParts ? 'Convert to invoice' : 'Convert to booking', onClick: () => handleConvertClick(q), className: 'btn-success' }] : [])
+                                            ...(canConvert && q.approval_status === 'approved' && q.status !== 'converted' ? [{ icon: <span className="material-icons">shopping_cart</span>, title: isParts ? 'Convert to invoice' : 'Convert to booking', onClick: () => handleConvertClick(q), className: 'btn-success' }] : [])
                                         ]}
                                     />
                                 </div>
@@ -1846,9 +1859,15 @@ function SalesOrders({ category = 'vehicle' }) {
     // Dispatch and delivery are a vehicle concern only.
     const canEdit = config.can.editOrder && policyAllows(user, 'sales_orders', 'edit', ['super_admin','sales_manager'].includes(user?.role));
     const canDelete = policyAllows(user, 'sales_orders', 'delete', user?.role === 'super_admin');
+    // Delivering an order and raising its invoice are both writes on this page,
+    // so the role's job decides — the hard-coded role names stay only as the
+    // fallback for a role that has never been through Role Jobs.
     const canDeliverOrInvoice = config.can.deliver
-        && ['super_admin', 'admin', 'sales_manager', 'accountant'].includes(user?.role);
-    const canEditInvoice = config.can.editInvoice;
+        && policyAllows(user, 'sales_orders', 'edit', ['super_admin', 'admin', 'sales_manager', 'accountant'].includes(user?.role));
+    // These two used to be the category's capability flag alone, which says
+    // whether the *screen* has the feature, never whether this role may use it.
+    const canEditInvoice = config.can.editInvoice && policyAllows(user, 'invoices', 'edit', canEdit);
+    const canDeleteInvoice = policyAllows(user, 'invoices', 'delete', canDelete);
     const canSendEmail = config.can.email && policyAllows(user, 'sales_orders', 'sendEmail', ['super_admin','admin','sales_manager','sales_executive'].includes(user?.role));
     const canDownloadPdf = config.can.pdf && policyAllows(user, 'sales_orders', 'downloadPdf', true);
     const showField = documentFieldAccessor(user, config.key, 'sales_orders', 'sales_orders');
@@ -2325,7 +2344,7 @@ function SalesOrders({ category = 'vehicle' }) {
                                                     onClick: () => handleEditInvoice(o),
                                                     className: 'btn-outline-secondary'
                                                 }] : []),
-                                                ...(o.invoice_status !== 'paid' && o.invoice_status !== 'void' && o.invoice_status !== 'cancelled' ? [{
+                                                ...(canDeleteInvoice && o.invoice_status !== 'paid' && o.invoice_status !== 'void' && o.invoice_status !== 'cancelled' ? [{
                                                     icon: <Trash2 size={18} className="action-icon" />,
                                                     title: 'Delete Invoice',
                                                     onClick: () => handleDeleteInvoice(o),
@@ -2397,7 +2416,7 @@ function SalesOrders({ category = 'vehicle' }) {
                                                     onClick: () => handleEditInvoice(o),
                                                     className: 'btn-outline-secondary'
                                                 }] : []),
-                                                ...(o.invoice_status !== 'paid' && o.invoice_status !== 'void' && o.invoice_status !== 'cancelled' ? [{
+                                                ...(canDeleteInvoice && o.invoice_status !== 'paid' && o.invoice_status !== 'void' && o.invoice_status !== 'cancelled' ? [{
                                                     icon: <Trash2 size={18} className="action-icon" />,
                                                     title: 'Delete Invoice',
                                                     onClick: () => handleDeleteInvoice(o),

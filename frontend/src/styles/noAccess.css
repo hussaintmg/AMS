@@ -1,0 +1,63 @@
+/* The screen shown when a role may not open a page — see pages/NoAccess.js. */
+.no-access {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  padding: 2rem 1.25rem;
+  text-align: center;
+}
+
+.no-access-icon {
+  color: var(--text-muted);
+  margin-bottom: 0.75rem;
+}
+
+.no-access h1 {
+  margin: 0 0 0.75rem;
+  font-size: 1.5rem;
+}
+
+.no-access-lead {
+  margin: 0 0 0.5rem;
+  font-size: 1.05rem;
+  color: var(--text-secondary, var(--text-muted));
+}
+
+.no-access-lead code {
+  padding: 0.1rem 0.4rem;
+  border-radius: var(--border-radius-md, 6px);
+  background: var(--gray-100, #f3f4f6);
+  font-size: 0.95em;
+}
+
+.no-access-hint {
+  margin: 0 0 1.5rem;
+  max-width: 34rem;
+  color: var(--text-muted);
+  line-height: 1.55;
+}
+
+.no-access-allowed {
+  margin-bottom: 1.75rem;
+}
+
+.no-access-allowed > span {
+  display: block;
+  margin-bottom: 0.6rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.no-access-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: center;
+  max-width: 40rem;
+}
+
+.no-access-logout {
+  min-width: 9rem;
+}

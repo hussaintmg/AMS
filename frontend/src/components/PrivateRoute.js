@@ -48,7 +48,8 @@ const PrivateRoute = ({ allowedRoles = [], pageKey }) => {
     }
 
     if (effectivePageKey && !canViewPage(user, effectivePageKey)) {
-        return <Navigate to={getFirstAllowedPage(effectivePermissions)} replace />;
+        // Named, not bounced — see the note in App.js's ProtectedPage.
+        return <Navigate to="/no-access" replace state={{ deniedPath: location.pathname }} />;
     }
 
     return <Outlet />;

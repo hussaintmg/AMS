@@ -67,7 +67,11 @@ const ProtectedPage = ({ children }) => {
     return <Navigate to="/no-access" replace />;
   }
   if (canAccess(location.pathname)) return children;
-  return <Navigate to={getFirstAllowedPage(effectivePermissions)} replace />;
+  // Say that a permission is missing rather than quietly landing somewhere else.
+  // Bouncing to whatever page happened to be first in the role's list is how a
+  // missing grant came to be reported as a broken link: the operator clicks
+  // Leads, arrives on Parts, and nothing anywhere mentions a permission.
+  return <Navigate to="/no-access" replace state={{ deniedPath: location.pathname }} />;
 };
 
 // Layout component wrapping authenticated pages

@@ -10,7 +10,7 @@ import ConfirmModal from '../components/ConfirmModal';
 import BulkUploadModal from '../components/BulkUploadModal';
 import ServerPagination from '../components/ServerPagination';
 import { useAuth } from '../context/AuthContext';
-import { fieldAccessor } from '../utils/roleJobs';
+import { canRoleDo, getRoleJob, fieldAccessor } from '../utils/roleJobs';
 import '../styles/leadManagement.css';
 import '../styles/filters.css';
 
@@ -29,6 +29,22 @@ function LeadsPage() {
   const { user } = useAuth();
   // Columns the role may not read are stripped by the API; don't draw them.
   const showField = fieldAccessor(user, 'leads');
+  /**
+   * What this role may do here.
+   *
+   * This screen had no permission check of any kind: Add, Edit, Delete and
+   * Convert to Customer were drawn for everyone who could open Leads, and the
+   * server's 403 was the first anyone heard of it. A role that has never been
+   * through Role Jobs keeps the old behaviour, so nothing that works today
+   * stops — see `policyAllows` in Sales.js for the same shape.
+   */
+  const allows = (action, legacy) => (getRoleJob(user, 'leads') ? canRoleDo(user, 'leads', action) : legacy);
+  const canCreate = allows('create', true);
+  const canEdit = allows('edit', true);
+  const canDelete = allows('delete', true);
+  // Converting writes a Customer and stamps the lead; the API guards it as an
+  // edit of the lead.
+  const canConvert = canEdit;
   const [urlParams] = useSearchParams();
   const { leads, meta, stats, pagination, search, filters, loading, handleSearch, handleFilter, clearFilters, goToPage, setPageSize, refreshLeads, deleteLead, loadLeads, convertLead } = useLeads();
   const [showForm, setShowForm] = useState(false);
@@ -256,13 +272,13 @@ function LeadsPage() {
                   <ActionButtons
                     showView
                     onView={() => setDrawerId(lead._id)}
-                    onEdit={() => { setEditLead(lead); setShowForm(true); }}
-                    onDelete={() => setDeleteTarget(lead)}
+                    onEdit={canEdit ? () => { setEditLead(lead); setShowForm(true); } : null}
+                    onDelete={canDelete ? () => setDeleteTarget(lead) : null}
                     showToggle={false}
                     disableDelete={!!lead.convertedToCustomer}
                     deleteDisabledTitle="Cannot delete a converted lead"
                     title={lead.leadNo}
-                    customActions={!lead.convertedToCustomer ? [{
+                    customActions={canConvert && !lead.convertedToCustomer ? [{
                       icon: <ArrowRightLeft size={16} />,
                       title: 'Convert to Customer',
                       className: 'btn-convert',
@@ -313,13 +329,13 @@ function LeadsPage() {
                 <ActionButtons
                   showView
                   onView={() => setDrawerId(lead._id)}
-                  onEdit={() => { setEditLead(lead); setShowForm(true); }}
-                  onDelete={() => setDeleteTarget(lead)}
+                  onEdit={canEdit ? () => { setEditLead(lead); setShowForm(true); } : null}
+                  onDelete={canDelete ? () => setDeleteTarget(lead) : null}
                   showToggle={false}
                   disableDelete={!!lead.convertedToCustomer}
                   deleteDisabledTitle="Cannot delete a converted lead"
                   title={lead.leadNo}
-                  customActions={!lead.convertedToCustomer ? [{
+                  customActions={canConvert && !lead.convertedToCustomer ? [{
                     icon: <ArrowRightLeft size={16} />,
                     title: 'Convert to Customer',
                     className: 'btn-convert',
@@ -434,18 +450,23 @@ function LeadsPage() {
           <p className="subtitle">Manage and track sales leads</p>
         </div>
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
-          <button
-            type="button"
-            className="btn btn-secondary btn-create"
-            onClick={() => setShowBulkUpload(true)}
-            title="Bulk upload leads (CSV / XLSX)"
-          >
-            <Upload size={18} style={{ marginRight: 6 }} />
-            Upload
-          </button>
-          <button className="btn btn-primary btn-create" onClick={() => { setEditLead(null); setShowForm(true); }}>
-            <Plus size={20} /> Add New Lead
-          </button>
+          {/* Bulk upload creates leads, so it is the same permission as Add. */}
+          {canCreate && (
+            <button
+              type="button"
+              className="btn btn-secondary btn-create"
+              onClick={() => setShowBulkUpload(true)}
+              title="Bulk upload leads (CSV / XLSX)"
+            >
+              <Upload size={18} style={{ marginRight: 6 }} />
+              Upload
+            </button>
+          )}
+          {canCreate && (
+            <button className="btn btn-primary btn-create" onClick={() => { setEditLead(null); setShowForm(true); }}>
+              <Plus size={20} /> Add New Lead
+            </button>
+          )}
         </div>
       </div>
 
