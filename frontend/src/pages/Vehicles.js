@@ -13,7 +13,7 @@ import SearchableSelect from "../components/SearchableSelect";
 import VehicleMasterModal from "../components/vehicle/VehicleMasterModal";
 import { useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { fieldAccessor } from "../utils/roleJobs";
+import { fieldAccessor, pageActions } from "../utils/roleJobs";
 import { vehicleAPI, adminAPI, vehicleMasterAPI } from "../services/api";
 import toast from "react-hot-toast";
 import ErrorPopup from "../components/ErrorPopup";
@@ -31,6 +31,10 @@ import "../styles/vehicleInventory.css";
 const Vehicles = () => {
   const { user: currentUser } = useAuth();
   const showField = fieldAccessor(currentUser, 'vehicles');
+  // The screen had no permission check: Add, Upload, the row Edit/Delete and the
+  // bulk Delete Selected were drawn for anyone who could open Vehicles, and the
+  // server's 403 was the first the operator heard of it.
+  const can = pageActions(currentUser, 'vehicles');
 
   // State
   const [vehicles, setVehicles] = useState([]);
@@ -625,11 +629,11 @@ const Vehicles = () => {
             subtitle={row.chassis_number || row.vin || ""}
           />
           <ActionButtons
-            onEdit={() => openModal("edit", row)}
-            onDelete={() => handleDeleteVehicle(row.id, row.vin)}
+            onEdit={can('edit') ? () => openModal("edit", row) : null}
+            onDelete={can('delete') ? () => handleDeleteVehicle(row.id, row.vin) : null}
             title={row.vin}
-            showEdit
-            showDelete={row.status !== "sold" && row.status !== "delivered"}
+            showEdit={can('edit')}
+            showDelete={can('delete') && row.status !== "sold" && row.status !== "delivered"}
           />
         </div>
       ),
@@ -664,7 +668,7 @@ const Vehicles = () => {
             <ScanLine size={18} style={{ marginRight: 6 }} />
             Scan
           </a>
-          <button
+          {can('create') && <button
             type="button"
             className="btn btn-secondary btn-create"
             onClick={() => setShowBulkUpload(true)}
@@ -674,14 +678,14 @@ const Vehicles = () => {
               style={{ width: 18, height: 18, marginRight: 6 }}
             />
             Upload
-          </button>
-          <button
+          </button>}
+          {can('create') && <button
             className="btn btn-primary btn-create"
             onClick={() => openModal("create")}
           >
             <span className="icon">+</span>
             Add Vehicle
-          </button>
+          </button>}
         </div>
       </div>
 
@@ -824,12 +828,12 @@ const Vehicles = () => {
         <div className="selection-bar">
           <span className="selection-count">{selectedIds.size} selected</span>
           <BarcodeBulkPrint kind="vehicle" ids={Array.from(selectedIds)} />
-          <button
+          {can('delete') && <button
             className="btn btn-danger btn-sm"
             onClick={() => setDeleteAllTarget(true)}
           >
             Delete Selected
-          </button>
+          </button>}
           <button
             className="btn btn-secondary btn-sm"
             onClick={() => setSelectedIds(new Set())}

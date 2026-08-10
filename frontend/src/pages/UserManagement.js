@@ -4,6 +4,7 @@ import DepartmentFormModal from '../components/departments/DepartmentFormModal';
 import RoleFormModal from '../components/roles/rolesFormModel';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { pageActions } from '../utils/roleJobs';
 import { useUserManagement } from '../context/UserManagementContext';
 import toast from 'react-hot-toast';
 import ErrorPopup from '../components/ErrorPopup';
@@ -14,6 +15,7 @@ import '../styles/userManagement.css';
 
 const UserManagement = () => {
     const { user: currentUser } = useAuth();
+    const can = pageActions(currentUser, 'user_management');
     const {
         users: ctxUsers, roles, departments, stats,
         loading: ctxLoading, saving,
@@ -230,10 +232,12 @@ const UserManagement = () => {
                     <h1>User Management</h1>
                     <p className="subtitle">Manage system users, roles, and permissions</p>
                 </div>
-                <button className="btn btn-primary btn-create" onClick={() => openModal('create')}>
-                    <span className="icon">+</span>
-                    Add New User
-                </button>
+                {can('create') && (
+                    <button className="btn btn-primary btn-create" onClick={() => openModal('create')}>
+                        <span className="icon">+</span>
+                        Add New User
+                    </button>
+                )}
             </div>
 
             <div className="stats-grid">
@@ -361,9 +365,9 @@ const UserManagement = () => {
                                     </td>
                                     <td>
                                         <ActionButtons
-                                            onEdit={() => openModal('edit', user)}
-                                            onToggle={() => handleToggleStatus(uid)}
-                                            onDelete={() => requestDeleteUser(uid, user.email)}
+                                            onEdit={can('edit') ? () => openModal('edit', user) : null}
+                                            onToggle={can('edit') ? () => handleToggleStatus(uid) : null}
+                                            onDelete={can('delete') ? () => requestDeleteUser(uid, user.email) : null}
                                             status={statusText === 'active'}
                                             title={user.email}
                                             disableToggle={isSuperAdmin}
@@ -441,9 +445,9 @@ const UserManagement = () => {
                                     </div>
                                     <div className="user-card-actions">
                                         <ActionButtons
-                                            onEdit={() => openModal('edit', user)}
-                                            onToggle={() => handleToggleStatus(uid)}
-                                            onDelete={() => requestDeleteUser(uid, user.email)}
+                                            onEdit={can('edit') ? () => openModal('edit', user) : null}
+                                            onToggle={can('edit') ? () => handleToggleStatus(uid) : null}
+                                            onDelete={can('delete') ? () => requestDeleteUser(uid, user.email) : null}
                                             status={statusText === 'active'}
                                             title={user.email}
                                             disableToggle={isSuperAdmin}

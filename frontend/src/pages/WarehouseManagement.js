@@ -2,6 +2,8 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { warehouseAPI, leadMasterAPI, warehouseManagerRolesAPI } from '../services/api';
 import toast from 'react-hot-toast';
 import ActionButtons from '../components/ActionButtons';
+import { useAuth } from '../context/AuthContext';
+import { pageActions } from '../utils/roleJobs';
 import ToggleSwitch from '../components/ToggleSwitch';
 import ConfirmModal from '../components/ConfirmModal';
 import useModalKeyboard from '../hooks/useModalKeyboard';
@@ -11,6 +13,9 @@ import ServerPagination from '../components/ServerPagination';
 const toArray = (value) => Array.isArray(value) ? value : [];
 
 function WarehouseManagement() {
+  const { user } = useAuth();
+  // See the note in SalesMasterData: none of these asked the role.
+  const can = pageActions(user, 'warehouses');
   const [warehouses, setWarehouses] = useState([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
@@ -193,8 +198,8 @@ function WarehouseManagement() {
 
   const renderActions = (item) => (
     <ActionButtons
-      onEdit={() => openModal('edit', item)}
-      onDelete={() => setDeleteTarget(item)}
+      onEdit={can('edit') ? () => openModal('edit', item) : null}
+      onDelete={can('delete') ? () => setDeleteTarget(item) : null}
       extraActions={[{ label: 'View', icon: '👁️', onClick: () => openDrawer(item) }]}
     />
   );
@@ -253,7 +258,7 @@ function WarehouseManagement() {
           {item.capacity && <div className="card-field"><label>Capacity:</label><span>{item.capacity.toLocaleString()} units</span></div>}
           <div className="card-field">{renderStatus(item)}</div>
           <div className="card-actions" onClick={e => e.stopPropagation()}>
-            <ActionButtons onEdit={() => openModal('edit', item)} onDelete={() => setDeleteTarget(item)} />
+            <ActionButtons onEdit={can('edit') ? () => openModal('edit', item) : null} onDelete={can('delete') ? () => setDeleteTarget(item) : null} />
           </div>
         </div>
       ))}
@@ -419,12 +424,12 @@ function WarehouseManagement() {
             </svg>
             <input type="text" placeholder="Search by name, code, city, manager..." value={search} onChange={handleSearch} />
           </div>
-          <button className="add-btn" onClick={() => openModal('create')}>
+          {can('create') && <button className="add-btn" onClick={() => openModal('create')}>
             <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" width="20">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
             </svg>
             Add Warehouse
-          </button>
+          </button>}
         </div>
 
         {loading ? (

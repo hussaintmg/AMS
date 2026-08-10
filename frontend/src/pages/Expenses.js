@@ -12,7 +12,7 @@ import ExpenseDrawer from "./ExpenseDrawer";
 import CategoryDrawer from "./CategoryDrawer";
 import BulkSelectionBar from "../components/BulkSelectionBar";
 import { Search } from "lucide-react";
-import { fieldAccessor } from "../utils/roleJobs";
+import { fieldAccessor, pageActions } from "../utils/roleJobs";
 import "../styles/userManagement.css";
 
 const GROUP_LABELS = {
@@ -23,6 +23,8 @@ const GROUP_LABELS = {
 
 const Expenses = () => {
   const { user: currentUser, hasRole } = useAuth();
+  // New Expense, New Category and every row action were drawn unconditionally.
+  const can = pageActions(currentUser, 'expenses');
   const {
     expenses: ctxExpenses,
     categories,
@@ -104,7 +106,8 @@ const Expenses = () => {
     } else if (result.error) setErrorPopup(result.error);
   };
 
-  const canPost = hasRole(["super_admin", "admin", "accountant"]);
+  // Posting an expense to the ledger is guarded on the server as an edit.
+  const canPost = can('edit') && hasRole(["super_admin", "admin", "accountant"]);
 
   useEffect(() => {
     const h = (location.hash || "").replace(/^#/, "");
@@ -256,7 +259,7 @@ const Expenses = () => {
           >
             Categories
           </button>
-          {tab === "expenses" && (
+          {tab === "expenses" && can('create') && (
             <button
               className="btn btn-primary btn-create"
               onClick={() => openExpModal("create")}
@@ -264,7 +267,7 @@ const Expenses = () => {
               <span className="icon">+</span> New Expense
             </button>
           )}
-          {tab === "categories" && (
+          {tab === "categories" && can('create') && (
             <button
               className="btn btn-primary btn-create"
               onClick={() => openCatModal("create")}
@@ -440,10 +443,10 @@ const Expenses = () => {
                           <div className="action-buttons">
                             {!isPosted && (
                               <ActionButtons
-                                onEdit={() => openExpModal("edit", exp)}
-                                onDelete={() => setConfirmDelete(exp)}
-                                showEdit
-                                showDelete
+                                onEdit={can('edit') ? () => openExpModal("edit", exp) : null}
+                                onDelete={can('delete') ? () => setConfirmDelete(exp) : null}
+                                showEdit={can('edit')}
+                                showDelete={can('delete')}
                               />
                             )}
                             {canPost && !isPosted && exp.status !== "draft" && (
@@ -570,10 +573,10 @@ const Expenses = () => {
                         )}
                         {s !== "posted" && (
                           <ActionButtons
-                            onEdit={() => openExpModal("edit", exp)}
-                            onDelete={() => setConfirmDelete(exp)}
-                            showEdit
-                            showDelete
+                            onEdit={can('edit') ? () => openExpModal("edit", exp) : null}
+                            onDelete={can('delete') ? () => setConfirmDelete(exp) : null}
+                            showEdit={can('edit')}
+                            showDelete={can('delete')}
                           />
                         )}
                       </div>
@@ -702,8 +705,8 @@ const Expenses = () => {
                       </td>
                       <td onClick={(e) => e.stopPropagation()}>
                         <ActionButtons
-                          onEdit={() => openCatModal("edit", cat)}
-                          showEdit
+                          onEdit={can('edit') ? () => openCatModal("edit", cat) : null}
+                          showEdit={can('edit')}
                         />
                       </td>
                     </tr>
@@ -752,8 +755,8 @@ const Expenses = () => {
                       onClick={(e) => e.stopPropagation()}
                     >
                       <ActionButtons
-                        onEdit={() => openCatModal("edit", cat)}
-                        showEdit
+                        onEdit={can('edit') ? () => openCatModal("edit", cat) : null}
+                        showEdit={can('edit')}
                       />
                     </div>
                   </div>

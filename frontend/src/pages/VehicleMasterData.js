@@ -15,6 +15,8 @@ import { vehicleMasterAPI } from '../services/api';
 import toast from 'react-hot-toast';
 import ErrorPopup from '../components/ErrorPopup';
 import ActionButtons from '../components/ActionButtons';
+import { useAuth } from '../context/AuthContext';
+import { pageActions } from '../utils/roleJobs';
 import ConfirmModal from '../components/ConfirmModal';
 import EmailDrawer from '../components/EmailDrawer';
 import '../styles/vehicleMasterData.css';
@@ -22,6 +24,10 @@ import '../styles/emailTemplates.css';
 import '../styles/userManagement.css';
 
 const VehicleMasterData = () => {
+    const { user } = useAuth();
+    // Seven tabs of master data, and not one of the Add / Edit / Delete controls
+    // asked whether this role may write here.
+    const can = pageActions(user, 'vehicle_master');
     // Active tab state
     const [activeTab, setActiveTab] = useState('makes');
     const [loading, setLoading] = useState(true);
@@ -416,11 +422,11 @@ const VehicleMasterData = () => {
                         <td>{renderStatus(make)}</td>
                         <td onClick={(e) => e.stopPropagation()}>
                             <ActionButtons
-                                onEdit={() => openModal('edit', make)}
-                                onDelete={() => setDeleteTarget(make)}
+                                onEdit={can('edit') ? () => openModal('edit', make) : null}
+                                onDelete={can('delete') ? () => setDeleteTarget(make) : null}
                                 title={make.name}
-                                showEdit
-                                showDelete
+                                showEdit={can('edit')}
+                                showDelete={can('delete')}
                             />
                         </td>
                     </tr>
@@ -465,11 +471,11 @@ const VehicleMasterData = () => {
                         <td>{renderStatus(model)}</td>
                         <td onClick={(e) => e.stopPropagation()}>
                             <ActionButtons
-                                onEdit={() => openModal('edit', model)}
-                                onDelete={() => setDeleteTarget(model)}
+                                onEdit={can('edit') ? () => openModal('edit', model) : null}
+                                onDelete={can('delete') ? () => setDeleteTarget(model) : null}
                                 title={model.name}
-                                showEdit
-                                showDelete
+                                showEdit={can('edit')}
+                                showDelete={can('delete')}
                             />
                         </td>
                     </tr>
@@ -504,11 +510,11 @@ const VehicleMasterData = () => {
                         <td>{renderStatus(variant)}</td>
                         <td onClick={(e) => e.stopPropagation()}>
                             <ActionButtons
-                                onEdit={() => openModal('edit', variant)}
-                                onDelete={() => setDeleteTarget(variant)}
+                                onEdit={can('edit') ? () => openModal('edit', variant) : null}
+                                onDelete={can('delete') ? () => setDeleteTarget(variant) : null}
                                 title={variant.name}
-                                showEdit
-                                showDelete
+                                showEdit={can('edit')}
+                                showDelete={can('delete')}
                             />
                         </td>
                     </tr>
@@ -549,11 +555,11 @@ const VehicleMasterData = () => {
                         <td>{renderStatus(color)}</td>
                         <td onClick={(e) => e.stopPropagation()}>
                             <ActionButtons
-                                onEdit={() => openModal('edit', color)}
-                                onDelete={() => setDeleteTarget(color)}
+                                onEdit={can('edit') ? () => openModal('edit', color) : null}
+                                onDelete={can('delete') ? () => setDeleteTarget(color) : null}
                                 title={color.name}
-                                showEdit
-                                showDelete
+                                showEdit={can('edit')}
+                                showDelete={can('delete')}
                             />
                         </td>
                     </tr>
@@ -588,11 +594,11 @@ const VehicleMasterData = () => {
                         <td>{renderStatus(cat)}</td>
                         <td onClick={(e) => e.stopPropagation()}>
                             <ActionButtons
-                                onEdit={() => openModal('edit', cat)}
-                                onDelete={() => setDeleteTarget(cat)}
+                                onEdit={can('edit') ? () => openModal('edit', cat) : null}
+                                onDelete={can('delete') ? () => setDeleteTarget(cat) : null}
                                 title={cat.name}
-                                showEdit
-                                showDelete
+                                showEdit={can('edit')}
+                                showDelete={can('delete')}
                             />
                         </td>
                     </tr>
@@ -642,11 +648,11 @@ const VehicleMasterData = () => {
                         <td>{renderStatus(sup)}</td>
                         <td onClick={(e) => e.stopPropagation()}>
                             <ActionButtons
-                                onEdit={() => openModal('edit', sup)}
-                                onDelete={() => setDeleteTarget(sup)}
+                                onEdit={can('edit') ? () => openModal('edit', sup) : null}
+                                onDelete={can('delete') ? () => setDeleteTarget(sup) : null}
                                 title={sup.name}
-                                showEdit
-                                showDelete
+                                showEdit={can('edit')}
+                                showDelete={can('delete')}
                             />
                         </td>
                     </tr>
@@ -675,11 +681,11 @@ const VehicleMasterData = () => {
                         <td>{renderStatus(cond)}</td>
                         <td onClick={(e) => e.stopPropagation()}>
                             <ActionButtons
-                                onEdit={() => openModal('edit', cond)}
-                                onDelete={() => setDeleteTarget(cond)}
+                                onEdit={can('edit') ? () => openModal('edit', cond) : null}
+                                onDelete={can('delete') ? () => setDeleteTarget(cond) : null}
                                 title={cond.name}
-                                showEdit
-                                showDelete
+                                showEdit={can('edit')}
+                                showDelete={can('delete')}
                             />
                         </td>
                     </tr>
@@ -705,7 +711,7 @@ const VehicleMasterData = () => {
                         <div className="data-card-row"><span className="row-icon">🚙</span><span className="row-label">Vehicles</span><span className="row-value">{make.vehicle_count || 0}</span></div>
                     </div>
                     <div className="data-card-footer" onClick={e => e.stopPropagation()}>
-                        <ActionButtons onEdit={() => openModal('edit', make)} onDelete={() => setDeleteTarget(make)} title={make.name} showEdit showDelete />
+                        <ActionButtons onEdit={can('edit') ? () => openModal('edit', make) : null} onDelete={can('delete') ? () => setDeleteTarget(make) : null} title={make.name} showEdit showDelete />
                     </div>
                 </div>
             ))}
@@ -732,7 +738,7 @@ const VehicleMasterData = () => {
                         <div className="data-card-row"><span className="row-icon">🚙</span><span className="row-label">Vehicles</span><span className="row-value">{model.vehicle_count || 0}</span></div>
                     </div>
                     <div className="data-card-footer" onClick={e => e.stopPropagation()}>
-                        <ActionButtons onEdit={() => openModal('edit', model)} onDelete={() => setDeleteTarget(model)} title={model.name} showEdit showDelete />
+                        <ActionButtons onEdit={can('edit') ? () => openModal('edit', model) : null} onDelete={can('delete') ? () => setDeleteTarget(model) : null} title={model.name} showEdit showDelete />
                     </div>
                 </div>
             ))}
@@ -756,7 +762,7 @@ const VehicleMasterData = () => {
                         <div className="data-card-row"><span className="row-icon">🚙</span><span className="row-label">Vehicles</span><span className="row-value">{variant.vehicle_count || 0}</span></div>
                     </div>
                     <div className="data-card-footer" onClick={e => e.stopPropagation()}>
-                        <ActionButtons onEdit={() => openModal('edit', variant)} onDelete={() => setDeleteTarget(variant)} title={variant.name} showEdit showDelete />
+                        <ActionButtons onEdit={can('edit') ? () => openModal('edit', variant) : null} onDelete={can('delete') ? () => setDeleteTarget(variant) : null} title={variant.name} showEdit showDelete />
                     </div>
                 </div>
             ))}
@@ -781,7 +787,7 @@ const VehicleMasterData = () => {
                         <div className="data-card-row"><span className="row-icon">🚙</span><span className="row-label">Vehicles</span><span className="row-value">{color.vehicle_count || 0}</span></div>
                     </div>
                     <div className="data-card-footer" onClick={e => e.stopPropagation()}>
-                        <ActionButtons onEdit={() => openModal('edit', color)} onDelete={() => setDeleteTarget(color)} title={color.name} showEdit showDelete />
+                        <ActionButtons onEdit={can('edit') ? () => openModal('edit', color) : null} onDelete={can('delete') ? () => setDeleteTarget(color) : null} title={color.name} showEdit showDelete />
                     </div>
                 </div>
             ))}
@@ -806,7 +812,7 @@ const VehicleMasterData = () => {
                         <div className="data-card-row"><span className="row-icon">📂</span><span className="row-label">Sub-Cats</span><span className="row-value">{cat.sub_category_count || 0}</span></div>
                     </div>
                     <div className="data-card-footer" onClick={e => e.stopPropagation()}>
-                        <ActionButtons onEdit={() => openModal('edit', cat)} onDelete={() => setDeleteTarget(cat)} title={cat.name} showEdit showDelete />
+                        <ActionButtons onEdit={can('edit') ? () => openModal('edit', cat) : null} onDelete={can('delete') ? () => setDeleteTarget(cat) : null} title={cat.name} showEdit showDelete />
                     </div>
                 </div>
             ))}
@@ -833,7 +839,7 @@ const VehicleMasterData = () => {
                         <div className="data-card-row"><span className="row-icon">📦</span><span className="row-label">Parts</span><span className="row-value">{sup.parts_count || 0} / POs: {sup.po_count || 0}</span></div>
                     </div>
                     <div className="data-card-footer" onClick={e => e.stopPropagation()}>
-                        <ActionButtons onEdit={() => openModal('edit', sup)} onDelete={() => setDeleteTarget(sup)} title={sup.name} showEdit showDelete />
+                        <ActionButtons onEdit={can('edit') ? () => openModal('edit', sup) : null} onDelete={can('delete') ? () => setDeleteTarget(sup) : null} title={sup.name} showEdit showDelete />
                     </div>
                 </div>
             ))}
@@ -853,7 +859,7 @@ const VehicleMasterData = () => {
                         <span className={`badge-pill ${cond.is_active ? 'status-active' : 'status-inactive'}`}>{cond.is_active ? 'Active' : 'Inactive'}</span>
                     </div>
                     <div className="data-card-footer" onClick={e => e.stopPropagation()}>
-                        <ActionButtons onEdit={() => openModal('edit', cond)} onDelete={() => setDeleteTarget(cond)} title={cond.name} showEdit showDelete />
+                        <ActionButtons onEdit={can('edit') ? () => openModal('edit', cond) : null} onDelete={can('delete') ? () => setDeleteTarget(cond) : null} title={cond.name} showEdit showDelete />
                     </div>
                 </div>
             ))}
@@ -1000,10 +1006,10 @@ const VehicleMasterData = () => {
                     <p className="subtitle">Manage vehicle makes, models, variants, colors, part categories, and suppliers</p>
                 </div>
                 <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                    <button className="btn btn-primary btn-create" onClick={() => openModal('create')}>
+                    {can('create') && <button className="btn btn-primary btn-create" onClick={() => openModal('create')}>
                         <span className="icon">+</span>
                         Add {getTabLabel()}
-                    </button>
+                    </button>}
                 </div>
             </div>
 

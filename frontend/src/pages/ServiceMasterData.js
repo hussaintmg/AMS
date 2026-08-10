@@ -3,6 +3,8 @@ import { ArrowUpDown, ArrowUp, ArrowDown, Upload } from 'lucide-react';
 import { serviceMasterAPI } from '../services/api';
 import toast from 'react-hot-toast';
 import ActionButtons from '../components/ActionButtons';
+import { useAuth } from '../context/AuthContext';
+import { pageActions } from '../utils/roleJobs';
 import ToggleSwitch from '../components/ToggleSwitch';
 import ConfirmModal from '../components/ConfirmModal';
 import EmailDrawer from '../components/EmailDrawer';
@@ -14,6 +16,9 @@ import '../styles/emailTemplates.css';
 const toArray = (value) => Array.isArray(value) ? value : [];
 
 function ServiceMasterData() {
+  const { user } = useAuth();
+  // See the note in SalesMasterData: none of these asked the role.
+  const can = pageActions(user, 'service_master');
     const [activeTab, setActiveTab] = useState('types');
     const [stats, setStats] = useState({ serviceTypes: 0, laborRates: 0, packages: 0, warranties: 0 });
     const [warrantyTypes, setWarrantyTypes] = useState([]);
@@ -349,7 +354,7 @@ function ServiceMasterData() {
     );
 
     const renderActions = (item) => (
-        <ActionButtons onEdit={() => openModal('edit', item)} onDelete={() => setDeleteTarget(item)} />
+        <ActionButtons onEdit={can('edit') ? () => openModal('edit', item) : null} onDelete={can('delete') ? () => setDeleteTarget(item) : null} />
     );
 
     const renderTable = (headers, rows, filterCols = [], sortFields = []) => (
@@ -391,7 +396,7 @@ function ServiceMasterData() {
                 <div key={item._id} className="data-card">
                     {renderCardContent(item)}
                     <div className="card-actions">
-                        <ActionButtons onEdit={() => openModal('edit', item)} onDelete={() => setDeleteTarget(item)} />
+                        <ActionButtons onEdit={can('edit') ? () => openModal('edit', item) : null} onDelete={can('delete') ? () => setDeleteTarget(item) : null} />
                     </div>
                 </div>
             ))}
@@ -766,12 +771,12 @@ function ServiceMasterData() {
                             </svg>
                             <input type="text" placeholder="Search..." value={search} onChange={handleSearch} />
                         </div>
-                        <button className="add-btn" onClick={() => openModal('create')}>
+                        {can('create') && <button className="add-btn" onClick={() => openModal('create')}>
                             <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" width="20">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
                             </svg>
                             Add New
-                        </button>
+                        </button>}
                     </div>
 
                     {loading ? (

@@ -8,6 +8,8 @@ import { leadMasterAPI } from '../services/api';
 import LeadMasterDrawer from '../components/leads/LeadMasterDrawer';
 import LeadMasterModal from '../components/leads/LeadMasterModal';
 import ToggleSwitch from '../components/ToggleSwitch';
+import { useAuth } from '../context/AuthContext';
+import { pageActions } from '../utils/roleJobs';
 import ConfirmModal from '../components/ConfirmModal';
 
 
@@ -108,6 +110,9 @@ const TAB_CONFIG = [
 const PAGE_SIZE = 10;
 
 function LeadMasterData() {
+  const { user } = useAuth();
+  // Add, the row Edit/Delete and the bulk bar were all drawn unconditionally.
+  const can = pageActions(user, 'lead_master');
   const [activeTab, setActiveTab] = useState('sources');
   const [stats, setStats] = useState(null);
   const [items, setItems] = useState([]);
@@ -337,8 +342,8 @@ function LeadMasterData() {
       )},
       { key: 'actions', label: 'Actions', sortable: false, render: (item) => (
         <div className="actions-cell" onClick={(e) => e.stopPropagation()}>
-          <button className="btn-icon edit" title="Edit" onClick={() => setDrawerItem(item)}><Pencil size={16} /></button>
-          <button className="btn-icon delete" title="Delete" onClick={(e) => { e.stopPropagation(); setDeleteItem(item); }}><Trash2 size={16} /></button>
+          {can('edit') && <button className="btn-icon edit" title="Edit" onClick={() => setDrawerItem(item)}><Pencil size={16} /></button>}
+          {can('delete') && <button className="btn-icon delete" title="Delete" onClick={(e) => { e.stopPropagation(); setDeleteItem(item); }}><Trash2 size={16} /></button>}
         </div>
       )},
     ];
@@ -398,8 +403,8 @@ function LeadMasterData() {
                     <div><strong>Leads</strong>{item.lead_count ?? '-'}</div>
                   </div>
                   <div className="lead-master-card-actions actions-cell" onClick={(e) => e.stopPropagation()}>
-                    <button className="btn-icon edit" title="Edit" onClick={() => setDrawerItem(item)}><Pencil size={16} /></button>
-                    <button className="btn-icon delete" title="Delete" onClick={() => setDeleteItem(item)}><Trash2 size={16} /></button>
+                    {can('edit') && <button className="btn-icon edit" title="Edit" onClick={() => setDrawerItem(item)}><Pencil size={16} /></button>}
+                    {can('delete') && <button className="btn-icon delete" title="Delete" onClick={() => setDeleteItem(item)}><Trash2 size={16} /></button>}
                   </div>
                 </div>
               ))}
@@ -439,9 +444,9 @@ function LeadMasterData() {
           <div className="content-header">
             <h2>{TAB_CONFIG.find((t) => t.key === activeTab)?.label}</h2>
             <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
-              <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
+              {can('create') && <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
                 <Plus size={18} /> Add {getLabel(activeTab)}
-              </button>
+              </button>}
             </div>
           </div>
           <div className="lead-master-filter-bar">
@@ -475,7 +480,7 @@ function LeadMasterData() {
           {selectedIds.size > 0 && (
             <div className="selection-bar">
               <span className="selection-count">{selectedIds.size} selected</span>
-              <button className="btn btn-danger btn-sm" onClick={() => setDeleteAllTarget(true)}>Delete Selected</button>
+              {can('delete') && <button className="btn btn-danger btn-sm" onClick={() => setDeleteAllTarget(true)}>Delete Selected</button>}
               <button className="btn btn-secondary btn-sm" onClick={() => setSelectedIds(new Set())}>Deselect All</button>
             </div>
           )}

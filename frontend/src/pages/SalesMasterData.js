@@ -3,6 +3,8 @@ import { ArrowUpDown, ArrowUp, ArrowDown, Upload } from 'lucide-react';
 import { salesMasterAPI } from '../services/api';
 import toast from 'react-hot-toast';
 import ActionButtons from '../components/ActionButtons';
+import { useAuth } from '../context/AuthContext';
+import { pageActions } from '../utils/roleJobs';
 import ToggleSwitch from '../components/ToggleSwitch';
 import ConfirmModal from '../components/ConfirmModal';
 import EmailDrawer from '../components/EmailDrawer';
@@ -73,6 +75,10 @@ const STAT_EMOJIS = {
 };
 
 function SalesMasterData() {
+  const { user } = useAuth();
+  // Add New, and the row Edit/Delete, were drawn for anyone who could open the
+  // page; the server refuses each of them without the job row.
+  const can = pageActions(user, 'sales_master');
   const [activeTab, setActiveTab] = useState('payment-terms');
   const [stats, setStats] = useState({});
   const [loading, setLoading] = useState(false);
@@ -333,7 +339,7 @@ function SalesMasterData() {
   );
 
   const renderActions = (item) => (
-    <ActionButtons onEdit={() => openModal('edit', item)} onDelete={() => setDeleteTarget(item)} />
+    <ActionButtons onEdit={can('edit') ? () => openModal('edit', item) : null} onDelete={can('delete') ? () => setDeleteTarget(item) : null} />
   );
 
   const nameFilterInput = <input type="text" className="form-input filter-input" placeholder="Filter..." value={nameFilter} onChange={(e) => setNameFilter(e.target.value)} onClick={(e) => e.stopPropagation()} />;
@@ -393,7 +399,7 @@ function SalesMasterData() {
         <div key={item._id} className="data-card">
           {renderCardContent(item)}
           <div className="card-actions">
-            <ActionButtons onEdit={() => openModal('edit', item)} onDelete={() => setDeleteTarget(item)} />
+            <ActionButtons onEdit={can('edit') ? () => openModal('edit', item) : null} onDelete={can('delete') ? () => setDeleteTarget(item) : null} />
           </div>
         </div>
       ))}
@@ -803,12 +809,12 @@ function SalesMasterData() {
               </svg>
               <input type="text" placeholder="Search..." value={search} onChange={handleSearch} />
             </div>
-            <button className="add-btn" onClick={() => openModal('create')}>
+            {can('create') && <button className="add-btn" onClick={() => openModal('create')}>
               <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" width="20">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
               </svg>
               Add New
-            </button>
+            </button>}
           </div>
 
           {loading ? (

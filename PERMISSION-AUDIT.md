@@ -210,7 +210,7 @@ never permission to touch a vehicle document.
 
 ---
 
-## F10 · Most screens show every action button to every role — OPEN
+## F10 · Most screens show every action button to every role — FIXED
 
 **Severity: high. This is the one behind "we cannot use it the way a super admin
 does".**
@@ -560,3 +560,33 @@ Found while looking at F20, on the same screen. In `Sales.js`:
 Five call sites. Voiding an invoice and cancelling an order were being offered to
 every role that could open the screen — including, after F18, roles that reach it
 through the parts pages.
+
+---
+
+## F10, closed
+
+Every page in the inventory now asks the role before drawing a write control.
+The pattern is one helper — `pageActions(user, '<page>')` in
+`frontend/src/utils/roleJobs.js` — read once at the top of a screen and used to
+gate the New button, the row Edit/Delete, the bulk bar and the mobile card list.
+
+Done in this pass: Vehicles, Parts Inventory, Employees, Leaves, Expenses,
+Ledger, Payroll, Services, Service Appointments, Vehicle Master, Lead Master,
+Sales Master, Service Master, Warehouses, Payment Methods, User Management, Role
+Management, Department Management, Option Management and ERP Settings — plus
+Leads, Customers and all four Sales sections from the earlier commits.
+
+Where a screen already decided from the role's *name* — Payroll's "may run
+payroll", Service's create/edit, Employees' bulk upload, Expenses' "may post to
+the ledger", Leaves' "may approve" — the job row now decides and the name list
+stays only as the fallback for a role that has never been through Role Jobs. A
+role with no job row keeps exactly the behaviour it has today.
+
+Verified in the browser both ways against a role holding 26 pages:
+
+- **view only everywhere** — not one Add, New, Upload, Edit, Delete, Journal
+  Entry or Create control on any of them;
+- **create/edit/delete everywhere** — all of them back.
+
+`node scripts/audit_action_buttons.js` reports 0 ungated clickable spots, down
+from the ungated screens listed above.

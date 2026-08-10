@@ -102,6 +102,14 @@ function guardFor(lines, index) {
   const nearby = lines.slice(index, index + 8).join('\n');
   const disabled = nearby.match(/disabled=\{([^}]*)\}/);
   if (disabled && GUARD.test(disabled[1])) return { text: `disabled on ${disabled[1].trim().slice(0, 50)}`, guarded: true };
+
+  // The confirm button inside a modal that only a guarded control can open. Its
+  // own guard is the opener's; looking for one here would only ever find the
+  // same condition written twice. Recognised by the Cancel button beside it.
+  const modal = lines.slice(Math.max(0, index - 12), index).join('\n');
+  if (/>\s*Cancel\s*</.test(modal) && /confirm|delete|deleting|saving/i.test(lines[index] + modal)) {
+    return { text: 'confirm inside a modal', guarded: true };
+  }
   return { text: '', guarded: false };
 }
 

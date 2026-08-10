@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useAuth } from "../context/AuthContext";
+import { pageActions } from '../utils/roleJobs';
 import { useUserManagement } from "../context/UserManagementContext";
 import toast from "react-hot-toast";
 import ErrorPopup from "../components/ErrorPopup";
@@ -11,6 +12,7 @@ import "../styles/userManagement.css";
 
 const DepartmentManagement = () => {
   const { user } = useAuth();
+  const can = pageActions(user, 'department_management');
   const {
     users: ctxUsers,
     stats: ctxStats,
@@ -303,13 +305,15 @@ const DepartmentManagement = () => {
           <h1>Departments</h1>
           <p className="subtitle">Manage organizational structure</p>
         </div>
-        <button
-          className="btn btn-primary btn-create"
-          onClick={() => setShowCreateModal(true)}
-        >
-          <span className="icon">+</span>
-          New Department
-        </button>
+        {can('create') && (
+          <button
+            className="btn btn-primary btn-create"
+            onClick={() => setShowCreateModal(true)}
+          >
+            <span className="icon">+</span>
+            New Department
+          </button>
+        )}
       </div>
 
       {/* Stats */}
@@ -419,13 +423,13 @@ const DepartmentManagement = () => {
                     <td>{formatDate(dept.created_at || dept.createdAt)}</td>
                     <td onClick={(e) => e.stopPropagation()}>
                       <ActionButtons
-                        onEdit={() => openDrawer(dept)}
-                        onToggle={() => handleToggleDepartmentStatus(dept)}
-                        onDelete={() => setDeleteConfirm(dept)}
+                        onEdit={can('edit') ? () => openDrawer(dept) : null}
+                        onToggle={can('edit') ? () => handleToggleDepartmentStatus(dept) : null}
+                        onDelete={can('delete') ? () => setDeleteConfirm(dept) : null}
                         status={!!dept.is_active}
-                        showEdit
-                        showToggle
-                        showDelete
+                        showEdit={can('edit')}
+                        showToggle={can('edit')}
+                        showDelete={can('delete')}
                         title={dept.name}
                       />
                     </td>
@@ -496,13 +500,13 @@ const DepartmentManagement = () => {
                   </div>
                   <div className="user-card-actions" onClick={(e) => e.stopPropagation()}>
                     <ActionButtons
-                      onEdit={() => openDrawer(dept)}
-                      onToggle={() => handleToggleDepartmentStatus(dept)}
-                      onDelete={() => setDeleteConfirm(dept)}
+                      onEdit={can('edit') ? () => openDrawer(dept) : null}
+                      onToggle={can('edit') ? () => handleToggleDepartmentStatus(dept) : null}
+                      onDelete={can('delete') ? () => setDeleteConfirm(dept) : null}
                       status={!!dept.is_active}
-                      showEdit
-                      showToggle
-                      showDelete
+                      showEdit={can('edit')}
+                      showToggle={can('edit')}
+                      showDelete={can('delete')}
                       title={dept.name}
                     />
                   </div>

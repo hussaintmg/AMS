@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
+import { pageActions } from '../utils/roleJobs';
 import { useStatusManagement } from "../context/StatusManagementContext";
 import ErrorPopup from "../components/ErrorPopup";
 import ActionButtons from "../components/ActionButtons";
@@ -36,6 +37,7 @@ const StatusManagement = () => {
   } = useStatusManagement();
 
   const { user } = useAuth();
+  const can = pageActions(user, 'status_management');
   const [errorPopup, setErrorPopup] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
@@ -184,12 +186,14 @@ const StatusManagement = () => {
           <h1>Option Collections</h1>
           <p className="subtitle">Manage option collections and their items</p>
         </div>
-        <button
-          className="btn btn-primary"
-          onClick={() => setShowCreateModal(true)}
-        >
-          + Create Option Collection
-        </button>
+        {can('create') && (
+          <button
+            className="btn btn-primary"
+            onClick={() => setShowCreateModal(true)}
+          >
+            + Create Option Collection
+          </button>
+        )}
       </div>
 
       <ErrorPopup error={errorPopup} onClose={() => setErrorPopup(null)} />
@@ -393,7 +397,7 @@ const StatusManagement = () => {
                         showView
                         showEdit={false}
                         onView={() => openDrawer(col._id || col.id)}
-                        onDelete={() => setDeleteConfirm(col)}
+                        onDelete={can('delete') ? () => setDeleteConfirm(col) : null}
                         title={col.name}
                       />
                     </td>
@@ -455,7 +459,7 @@ const StatusManagement = () => {
                     showView
                     showEdit={false}
                     onView={() => openDrawer(col._id || col.id)}
-                    onDelete={() => setDeleteConfirm(col)}
+                    onDelete={can('delete') ? () => setDeleteConfirm(col) : null}
                     title={col.name}
                   />
                 </div>

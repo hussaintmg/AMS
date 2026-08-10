@@ -10,7 +10,7 @@ import LeaveFormModal from './LeaveFormModal';
 import LeaveDrawer from './LeaveDrawer';
 import BulkSelectionBar from '../components/BulkSelectionBar';
 import { Search } from "lucide-react";
-import { fieldAccessor } from '../utils/roleJobs';
+import { fieldAccessor, pageActions } from '../utils/roleJobs';
 import '../styles/userManagement.css';
 
 const STATUS_BADGE = {
@@ -20,6 +20,8 @@ const STATUS_BADGE = {
 
 const Leaves = () => {
   const { user: currentUser, hasRole } = useAuth();
+  // New, Edit and Delete were drawn for anyone who could open Leaves.
+  const can = pageActions(currentUser, 'leaves');
   const {
     leaves: ctxLeaves, employees, stats,
     loading: ctxLoading, saving,
@@ -61,7 +63,7 @@ const Leaves = () => {
     else if (result.error) setErrorPopup(result.error);
   };
 
-  const canApprove = hasRole(['super_admin', 'admin', 'hr_admin']);
+  const canApprove = can('edit') && hasRole(['super_admin', 'admin', 'hr_admin']);
 
   const fetchLeaves = useCallback(async () => {
     try {
@@ -147,9 +149,9 @@ const Leaves = () => {
           <h1>Leaves</h1>
           <p className="subtitle">Manage leave requests, approvals, and balances</p>
         </div>
-        <button className="btn btn-primary btn-create" onClick={() => openModal('create')}>
+        {can('create') && <button className="btn btn-primary btn-create" onClick={() => openModal('create')}>
           <span className="icon">+</span> New Leave Request
-        </button>
+        </button>}
       </div>
 
       <div className="stats-grid">
@@ -256,16 +258,16 @@ const Leaves = () => {
                             </>
                           )}
                           <ActionButtons
-                            onEdit={() => openModal('edit', leave)}
-                            onDelete={() => setConfirmDelete(leave)}
-                            showEdit showDelete
+                            onEdit={can('edit') ? () => openModal('edit', leave) : null}
+                            onDelete={can('delete') ? () => setConfirmDelete(leave) : null}
+                            showEdit={can('edit')} showDelete={can('delete')}
                           />
                         </div>
                       ) : (
                         <ActionButtons
-                          onEdit={() => openModal('edit', leave)}
-                          onDelete={() => setConfirmDelete(leave)}
-                          showEdit showDelete
+                          onEdit={can('edit') ? () => openModal('edit', leave) : null}
+                          onDelete={can('delete') ? () => setConfirmDelete(leave) : null}
+                          showEdit={can('edit')} showDelete={can('delete')}
                         />
                       )}
                     </td>
@@ -336,9 +338,9 @@ const Leaves = () => {
                       </>
                     )}
                     <ActionButtons
-                      onEdit={() => openModal('edit', leave)}
-                      onDelete={() => setConfirmDelete(leave)}
-                      showEdit showDelete
+                      onEdit={can('edit') ? () => openModal('edit', leave) : null}
+                      onDelete={can('delete') ? () => setConfirmDelete(leave) : null}
+                      showEdit={can('edit')} showDelete={can('delete')}
                     />
                   </div>
                 </div>

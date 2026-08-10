@@ -9,6 +9,7 @@ import SalesDrawer from '../components/sales/SalesDrawer';
 import CustomerQuickCreate from '../components/customers/CustomerQuickCreate';
 import useModalKeyboard from '../hooks/useModalKeyboard';
 import { useAuth } from '../context/AuthContext';
+import { pageActions } from '../utils/roleJobs';
 import vehicleBrandingService from '../services/vehicleBrandingService';
 import useErpDocumentSettings from '../hooks/useErpDocumentSettings';
 import { fieldAccessor } from '../utils/roleJobs';
@@ -109,9 +110,12 @@ function Appointments() {
   });
   const [confirmDelete, setConfirmDelete] = useState(null);
 
-  const canCreate = ['super_admin', 'service_manager', 'service_advisor'].includes(user?.role);
-  const canEdit = ['super_admin', 'service_manager'].includes(user?.role);
-  const canDelete = ['super_admin', 'service_manager'].includes(user?.role);
+  // The role's job decides; the names below stay as the fallback for a role
+  // that has never been through Role Jobs.
+  const can = pageActions(user, 'service_appointments');
+  const canCreate = can('create') && ['super_admin', 'service_manager', 'service_advisor'].includes(user?.role);
+  const canEdit = can('edit') && ['super_admin', 'service_manager'].includes(user?.role);
+  const canDelete = can('delete') && ['super_admin', 'service_manager'].includes(user?.role);
 
   const fetchData = useCallback(async () => {
       try {
@@ -624,8 +628,11 @@ function JobCards() {
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [confirmComplete, setConfirmComplete] = useState(null);
 
-  const canCreate = ['super_admin', 'service_manager', 'service_advisor'].includes(user?.role);
-  const canEdit = ['super_admin', 'service_manager'].includes(user?.role);
+  // The role's job decides; the names below stay as the fallback for a role
+  // that has never been through Role Jobs.
+  const can = pageActions(user, 'services');
+  const canCreate = can('create') && ['super_admin', 'service_manager', 'service_advisor'].includes(user?.role);
+  const canEdit = can('edit') && ['super_admin', 'service_manager'].includes(user?.role);
   const canComplete = ['super_admin', 'service_manager', 'technician'].includes(user?.role);
 
   const fetchData = useCallback(async () => {

@@ -8,6 +8,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { pageActions } from '../utils/roleJobs';
 import { adminAPI } from '../services/api';
 import toast from 'react-hot-toast';
 import ErrorPopup from '../components/ErrorPopup';
@@ -19,6 +20,7 @@ const roleId = (r) => r?._id || r?.id;
 
 const RoleManagement = () => {
     const { user } = useAuth();
+    const can = pageActions(user, 'role_management');
 
     const [roles, setRoles] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -198,10 +200,12 @@ const RoleManagement = () => {
                     <h1>Role Management</h1>
                     <p className="subtitle">Define roles and assign permissions</p>
                 </div>
-                <button className="btn btn-primary btn-create" onClick={() => openModal('create')}>
-                    <span className="icon">+</span>
-                    Create Role
-                </button>
+                {can('create') && (
+                    <button className="btn btn-primary btn-create" onClick={() => openModal('create')}>
+                        <span className="icon">+</span>
+                        Create Role
+                    </button>
+                )}
             </div>
 
             {/* Error Popup */}
@@ -245,11 +249,11 @@ const RoleManagement = () => {
 
                             <div className="role-actions">
                                 <ActionButtons
-                                    onEdit={() => openModal('edit', role)}
+                                    onEdit={can('edit') ? () => openModal('edit', role) : null}
                                     // Only show delete if not super_admin (logic handled by showDelete prop effectively or by conditional rendering)
-                                    onDelete={role.name !== 'super_admin' ? () => requestDeleteRole(role) : null}
-                                    showEdit
-                                    showDelete={role.name !== 'super_admin'}
+                                    onDelete={can('delete') && role.name !== 'super_admin' ? () => requestDeleteRole(role) : null}
+                                    showEdit={can('edit')}
+                                    showDelete={can('delete') && role.name !== 'super_admin'}
                                     title={role.name}
                                 // Custom label for "Edit Permissions" can be handled via customActions if strict text is needed, 
                                 // but standardizing to icons is the goal.

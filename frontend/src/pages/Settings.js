@@ -12,6 +12,15 @@ import { useLocation } from 'react-router-dom';
 import SearchableSelect from '../components/SearchableSelect';
 import { erpSettingsAPI, paymentMethodsAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { pageActions } from '../utils/roleJobs';
+
+/**
+ * Every tab here writes the same ERP Settings page and none of them asked
+ * whether the role may — New Company, New Branch, New Currency, New Tax, New
+ * Payment Method and every row's Edit/Delete were drawn for anyone who could
+ * open Settings. One hook so each tab reads the same job row.
+ */
+const useSettingsActions = () => pageActions(useAuth().user, 'settings');
 import toast from 'react-hot-toast';
 import '../styles/userManagement.css';
 
@@ -94,6 +103,7 @@ function StatCard({ title, value, icon, color = 'primary' }) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 function CompanyTab() {
+    const can = useSettingsActions();
     const [companies, setCompanies] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
@@ -175,9 +185,9 @@ function CompanyTab() {
         <div className="card">
             <div className="card-header">
                 <h3>Companies</h3>
-                <button className="btn btn-primary" onClick={() => openModal('create')}>
+                {can('create') && <button className="btn btn-primary" onClick={() => openModal('create')}>
                     + New Company
-                </button>
+                </button>}
             </div>
 
             <div className="desktop-only table-scroll-x">
@@ -206,7 +216,7 @@ function CompanyTab() {
                                     <td>{c.city}</td>
                                     <td><span className="badge badge-info">{c.branch_count || 0}</span></td>
                                     <td>
-                                        <ActionButtons onEdit={() => openModal('edit', c)} onDelete={() => handleDelete(c.id)} />
+                                        <ActionButtons onEdit={can('edit') ? () => openModal('edit', c) : null} onDelete={can('delete') ? () => handleDelete(c.id) : null} />
                                     </td>
                                 </tr>
                             ))
@@ -234,7 +244,7 @@ function CompanyTab() {
                                 <div className="data-card-row"><span className="row-icon">🏢</span><span className="row-label">Branches</span><span className="row-value">{c.branch_count || 0}</span></div>
                             </div>
                             <div className="data-card-footer">
-                                <ActionButtons onEdit={() => openModal('edit', c)} onDelete={() => handleDelete(c.id)} />
+                                <ActionButtons onEdit={can('edit') ? () => openModal('edit', c) : null} onDelete={can('delete') ? () => handleDelete(c.id) : null} />
                             </div>
                         </div>
                     ))}
@@ -327,6 +337,7 @@ function CompanyTab() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 function BranchesTab() {
+    const can = useSettingsActions();
     const [branches, setBranches] = useState([]);
     const [companies, setCompanies] = useState([]);
     const [managers, setManagers] = useState([]);
@@ -431,7 +442,7 @@ function BranchesTab() {
                         <option value="service_center">Service Center</option>
                         <option value="warehouse">Warehouse</option>
                     </SearchableSelect>
-                    <button className="btn btn-primary" onClick={() => openModal('create')}>+ New Branch</button>
+                    {can('create') && <button className="btn btn-primary" onClick={() => openModal('create')}>+ New Branch</button>}
                 </div>
             </div>
 
@@ -464,7 +475,7 @@ function BranchesTab() {
                                     <td>{b.city}</td>
                                     <td>
                                         <ActionButtons
-                                            onEdit={() => openModal('edit', b)}
+                                            onEdit={can('edit') ? () => openModal('edit', b) : null}
                                             onDelete={b.branch_type !== 'head_office' ? () => handleDelete(b.id) : null}
                                         />
                                     </td>
@@ -495,7 +506,7 @@ function BranchesTab() {
                             </div>
                             <div className="data-card-footer">
                                 <ActionButtons
-                                    onEdit={() => openModal('edit', b)}
+                                    onEdit={can('edit') ? () => openModal('edit', b) : null}
                                     onDelete={b.branch_type !== 'head_office' ? () => handleDelete(b.id) : null}
                                 />
                             </div>
@@ -575,6 +586,7 @@ function BranchesTab() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 function CurrenciesTab() {
+    const can = useSettingsActions();
     const [currencies, setCurrencies] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
@@ -644,7 +656,7 @@ function CurrenciesTab() {
         <div className="card">
             <div className="card-header">
                 <h3>Currencies</h3>
-                <button className="btn btn-primary" onClick={() => openModal('create')}>+ New Currency</button>
+                {can('create') && <button className="btn btn-primary" onClick={() => openModal('create')}>+ New Currency</button>}
             </div>
 
             <div className="desktop-only table-scroll-x">
@@ -671,7 +683,7 @@ function CurrenciesTab() {
                                 <td><span className={`badge badge-${c.is_active ? 'success' : 'secondary'}`}>{c.is_active ? 'Active' : 'Inactive'}</span></td>
                                 <td>
                                     <ActionButtons
-                                        onEdit={() => openModal('edit', c)}
+                                        onEdit={can('edit') ? () => openModal('edit', c) : null}
                                         onDelete={!c.is_default ? () => handleDelete(c.id) : null}
                                     />
                                 </td>
@@ -701,7 +713,7 @@ function CurrenciesTab() {
                             </div>
                             <div className="data-card-footer">
                                 <ActionButtons
-                                    onEdit={() => openModal('edit', c)}
+                                    onEdit={can('edit') ? () => openModal('edit', c) : null}
                                     onDelete={!c.is_default ? () => handleDelete(c.id) : null}
                                 />
                             </div>
@@ -754,6 +766,7 @@ function CurrenciesTab() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 function TaxesTab() {
+    const can = useSettingsActions();
     const [taxes, setTaxes] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
@@ -825,7 +838,7 @@ function TaxesTab() {
         <div className="card">
             <div className="card-header">
                 <h3>Tax Configurations</h3>
-                <button className="btn btn-primary" onClick={() => openModal('create')}>+ New Tax</button>
+                {can('create') && <button className="btn btn-primary" onClick={() => openModal('create')}>+ New Tax</button>}
             </div>
 
             <div className="desktop-only table-scroll-x">
@@ -850,7 +863,7 @@ function TaxesTab() {
                                 <td>{parseFloat(t.tax_rate).toFixed(2)}%</td>
                                 <td>{t.is_compound ? 'Yes' : 'No'}</td>
                                 <td><span className={`badge badge-${t.is_active ? 'success' : 'secondary'}`}>{t.is_active ? 'Active' : 'Inactive'}</span></td>
-                                <td><ActionButtons onEdit={() => openModal('edit', t)} onDelete={() => handleDelete(t.id)} /></td>
+                                <td><ActionButtons onEdit={can('edit') ? () => openModal('edit', t) : null} onDelete={can('delete') ? () => handleDelete(t.id) : null} /></td>
                             </tr>
                         ))}
                     </tbody>
@@ -876,7 +889,7 @@ function TaxesTab() {
                                 <div className="data-card-row"><span className="row-icon">🔄</span><span className="row-label">Compound</span><span className="row-value">{t.is_compound ? 'Yes' : 'No'}</span></div>
                             </div>
                             <div className="data-card-footer">
-                                <ActionButtons onEdit={() => openModal('edit', t)} onDelete={() => handleDelete(t.id)} />
+                                <ActionButtons onEdit={can('edit') ? () => openModal('edit', t) : null} onDelete={can('delete') ? () => handleDelete(t.id) : null} />
                             </div>
                         </div>
                     ))}
@@ -944,6 +957,7 @@ function TaxesTab() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 function PaymentMethodsTab() {
+    const can = useSettingsActions();
     const [methods, setMethods] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
@@ -989,16 +1003,16 @@ function PaymentMethodsTab() {
     if (loading) return <div className="spinner" />;
     return (
         <div className="card">
-            <div className="card-header"><h3>Payment Methods</h3><button className="btn btn-primary" onClick={() => openModal('create')}>+ New Payment Method</button></div>
+            <div className="card-header"><h3>Payment Methods</h3>{can('create') && <button className="btn btn-primary" onClick={() => openModal('create')}>+ New Payment Method</button>}</div>
             <div className="desktop-only table-scroll-x">
                 <table className="data-table"><thead><tr><th>Name</th><th>Code</th><th>Type</th><th>Description</th><th>Usage</th><th>Status</th><th>Actions</th></tr></thead>
                     <tbody>{methods.length === 0 ? <tr><td colSpan="7" style={{ textAlign: 'center' }}>No payment methods found</td></tr> : methods.map((m) => (
-                        <tr key={m.id}><td><strong>{m.name}</strong></td><td>{m.code || '-'}</td><td><span className="badge badge-info">{m.type}</span></td><td>{m.description || '-'}</td><td>{m.usage_count || 0}</td><td><span className={`badge badge-${m.is_active ? 'success' : 'secondary'}`}>{m.is_active ? 'Active' : 'Inactive'}</span></td><td><ActionButtons onEdit={() => openModal('edit', m)} showDelete={false} showToggle status={m.is_active} onToggle={() => toggle(m.id)} /></td></tr>
+                        <tr key={m.id}><td><strong>{m.name}</strong></td><td>{m.code || '-'}</td><td><span className="badge badge-info">{m.type}</span></td><td>{m.description || '-'}</td><td>{m.usage_count || 0}</td><td><span className={`badge badge-${m.is_active ? 'success' : 'secondary'}`}>{m.is_active ? 'Active' : 'Inactive'}</span></td><td><ActionButtons onEdit={can('edit') ? () => openModal('edit', m) : null} showDelete={false} showToggle status={m.is_active} onToggle={can('edit') ? () => toggle(m.id) : null} /></td></tr>
                     ))}</tbody>
                 </table>
             </div>
             <div className="mobile-only"><div className="mobile-cards-container">{methods.map((m) => (
-                <div key={m.id} className="data-card"><div className="data-card-top"><div className="data-card-avatar avatar-blue">₨</div><div className="data-card-info"><span className="data-card-title">{m.name}</span><span className="data-card-subtitle">{m.code || m.type}</span></div><span className={`badge-pill ${m.is_active ? 'status-active' : 'status-inactive'}`}>{m.is_active ? 'Active' : 'Inactive'}</span></div><div className="data-card-body"><div className="data-card-row"><span className="row-label">Type</span><span className="row-value">{m.type}</span></div><div className="data-card-row"><span className="row-label">Usage</span><span className="row-value">{m.usage_count || 0}</span></div></div><div className="data-card-footer"><ActionButtons onEdit={() => openModal('edit', m)} onDelete={() => toggle(m.id)} /></div></div>
+                <div key={m.id} className="data-card"><div className="data-card-top"><div className="data-card-avatar avatar-blue">₨</div><div className="data-card-info"><span className="data-card-title">{m.name}</span><span className="data-card-subtitle">{m.code || m.type}</span></div><span className={`badge-pill ${m.is_active ? 'status-active' : 'status-inactive'}`}>{m.is_active ? 'Active' : 'Inactive'}</span></div><div className="data-card-body"><div className="data-card-row"><span className="row-label">Type</span><span className="row-value">{m.type}</span></div><div className="data-card-row"><span className="row-label">Usage</span><span className="row-value">{m.usage_count || 0}</span></div></div><div className="data-card-footer"><ActionButtons onEdit={can('edit') ? () => openModal('edit', m) : null} onDelete={can('delete') ? () => toggle(m.id) : null} /></div></div>
             ))}</div></div>
             {showModal && <Modal title={`${modalMode === 'create' ? 'Create' : 'Edit'} Payment Method`} onClose={() => setShowModal(false)}>
                 <form onSubmit={handleSubmit}><div className="form-group"><label>Name *</label><input className="form-control" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required /></div><div className="form-row"><div className="form-group"><label>Code</label><input className="form-control" value={formData.code} onChange={(e) => setFormData({ ...formData, code: e.target.value.toUpperCase() })} /></div><div className="form-group"><label>Type *</label><SearchableSelect className="form-control" value={formData.type} onChange={(e) => setFormData({ ...formData, type: e.target.value })}><option value="cash">Cash</option><option value="bank">Bank Transfer</option><option value="card">Card</option><option value="cheque">Cheque</option><option value="online">Online Payment</option></SearchableSelect></div></div><div className="form-group"><label>Description</label><textarea className="form-control" rows="2" value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} /></div><div className="form-group"><label>Sort Order</label><input type="number" className="form-control" value={formData.sortOrder} onChange={(e) => setFormData({ ...formData, sortOrder: e.target.value })} /></div><div className="form-actions" style={{ marginTop: 20, display: 'flex', justifyContent: 'flex-end', gap: 10 }}><button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)}>Cancel</button><button className="btn btn-primary" type="submit">{modalMode === 'create' ? 'Create' : 'Update'}</button></div></form>

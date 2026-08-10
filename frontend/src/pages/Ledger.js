@@ -9,7 +9,7 @@ import ErrorPopup from '../components/ErrorPopup';
 import LedgerDrawer from './LedgerDrawer';
 import ServerPagination from '../components/ServerPagination';
 import { exportReportCsv, exportReportXlsx, exportReportPdf } from '../utils/reportsExport';
-import { fieldAccessor } from '../utils/roleJobs';
+import { fieldAccessor, pageActions } from '../utils/roleJobs';
 import '../styles/userManagement.css';
 import '../styles/ledger.css';
 
@@ -18,6 +18,9 @@ const money = (value) => `PKR ${Number(value || 0).toLocaleString()}`;
 
 export default function Ledger() {
   const { user } = useAuth();
+  // The ledger is an append-only journal: posting an entry is the only write it
+  // has, and the Journal Entry button never asked whether this role may.
+  const can = pageActions(user, 'ledger');
   const { entries, loadEntries, loadStats, setEntries } = useLedger();
   const [searchParams] = useSearchParams();
   const [loading, setLoading] = useState(true);
@@ -76,7 +79,7 @@ export default function Ledger() {
   const doExport = (type) => { const args = { rows: exportRows, reportName: 'General Ledger', meta: exportMeta }; if (type === 'csv') exportReportCsv(args); else if (type === 'xlsx') exportReportXlsx(args); else exportReportPdf(args); toast.success(`${type.toUpperCase()} downloaded`); };
 
   return <div className="ledger-page">
-    <header className="ledger-header"><div><h1>General Ledger</h1><p>Review account movements and post manual journal entries.</p></div><div className="ledger-header-actions"><div className="ledger-export-menu"><button className="btn btn-secondary"><Download size={17}/> Export</button><div><button onClick={() => doExport('csv')}>CSV</button><button onClick={() => doExport('xlsx')}>XLSX</button><button onClick={() => doExport('pdf')}>PDF</button></div></div><button className="btn btn-primary" onClick={() => setShowEntryModal(true)}><Plus size={17}/> Journal Entry</button></div></header>
+    <header className="ledger-header"><div><h1>General Ledger</h1><p>Review account movements and post manual journal entries.</p></div><div className="ledger-header-actions"><div className="ledger-export-menu"><button className="btn btn-secondary"><Download size={17}/> Export</button><div><button onClick={() => doExport('csv')}>CSV</button><button onClick={() => doExport('xlsx')}>XLSX</button><button onClick={() => doExport('pdf')}>PDF</button></div></div>{can('create') && <button className="btn btn-primary" onClick={() => setShowEntryModal(true)}><Plus size={17}/> Journal Entry</button>}</div></header>
 
     <form className="ledger-filters" onSubmit={applyFilters}>
       <div className="ledger-search"><Search size={17}/><input value={filters.search} onChange={(e) => setFilters({...filters, search:e.target.value})} placeholder="Search reference, account or description"/></div>

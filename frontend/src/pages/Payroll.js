@@ -7,7 +7,7 @@ import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import { payrollAPI, salaryAdvanceAPI, employeeAPI } from '../services/api';
 import SearchableSelect from '../components/SearchableSelect';
-import { fieldAccessor } from '../utils/roleJobs';
+import { fieldAccessor, pageActions } from '../utils/roleJobs';
 import '../styles/userManagement.css';
 import '../styles/salaryAdvances.css';
 
@@ -30,7 +30,11 @@ const PayBadge = ({ line, periodStatus }) => {
 
 const Payroll = () => {
     const { user, hasRole } = useAuth();
-    const canRun = hasRole(['super_admin', 'admin', 'payroll_clerk', 'accountant']);
+    // Running payroll was decided by the role's *name* alone. The job row is
+    // what the server checks, so it decides here too; the names stay as the
+    // fallback for a role that has never been through Role Jobs.
+    const can = pageActions(user, 'payroll');
+    const canRun = can('create') && hasRole(['super_admin', 'admin', 'payroll_clerk', 'accountant']);
     // Which columns this role may read. The API already strips what it
     // withholds, so this only stops us drawing an always-blank column.
     const showField = fieldAccessor(user, 'payroll');

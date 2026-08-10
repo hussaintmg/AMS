@@ -3,6 +3,8 @@ import { paymentMethodsAPI } from '../services/api';
 import toast from 'react-hot-toast';
 import { Search, Plus, Package } from 'lucide-react';
 import ConfirmModal from '../components/ConfirmModal';
+import { useAuth } from '../context/AuthContext';
+import { pageActions } from '../utils/roleJobs';
 import useModalKeyboard from '../hooks/useModalKeyboard';
 import '../styles/userManagement.css';
 
@@ -23,6 +25,10 @@ const TYPE_COLORS = {
 };
 
 function PaymentMethods() {
+  const { user } = useAuth();
+  // New Payment Method, and each row's Edit / Delete, were drawn for anyone who
+  // could open the page.
+  const can = pageActions(user, 'payment_methods');
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -143,10 +149,12 @@ function PaymentMethods() {
           <h1>Payment Methods</h1>
           <p className="text-muted">Manage cash, bank, card, cheque, and online payment channels</p>
         </div>
-        <button className="btn btn-primary" onClick={() => openModal('create')}>
-          <Plus size={18} style={{ verticalAlign: 'middle', marginRight: 6 }} />
-          New Payment Method
-        </button>
+        {can('create') && (
+          <button className="btn btn-primary" onClick={() => openModal('create')}>
+            <Plus size={18} style={{ verticalAlign: 'middle', marginRight: 6 }} />
+            New Payment Method
+          </button>
+        )}
       </div>
 
       {/* Filters */}
@@ -228,10 +236,12 @@ function PaymentMethods() {
                       </td>
                       <td>
                         <div className="action-buttons">
-                          <button className="btn-action btn-edit" onClick={() => openModal('edit', pm)} title="Edit">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
-                          </button>
-                          {(pm.usage_count || 0) === 0 && (
+                          {can('edit') && (
+                            <button className="btn-action btn-edit" onClick={() => openModal('edit', pm)} title="Edit">
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
+                            </button>
+                          )}
+                          {can('delete') && (pm.usage_count || 0) === 0 && (
                             <button className="btn-action btn-delete" onClick={() => openDeleteConfirm(pm)} title="Delete">
                               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
                             </button>
@@ -286,8 +296,8 @@ function PaymentMethods() {
                     </button>
                   </div>
                   <div className="card-actions" style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid #e2e8f0', display: 'flex', gap: 8 }}>
-                    <button className="btn btn-sm btn-warning" onClick={() => openModal('edit', pm)}>Edit</button>
-                    {(pm.usage_count || 0) === 0 && (
+                    {can('edit') && <button className="btn btn-sm btn-warning" onClick={() => openModal('edit', pm)}>Edit</button>}
+                    {can('delete') && (pm.usage_count || 0) === 0 && (
                       <button className="btn btn-sm btn-danger" onClick={() => openDeleteConfirm(pm)}>Delete</button>
                     )}
                   </div>

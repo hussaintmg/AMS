@@ -12,6 +12,25 @@ export const canRoleDo = (user, pageKey, action = 'view') => {
   return action === 'view' ? job.actions?.view !== false : job.actions?.[action] === true;
 };
 
+/**
+ * What this role may do on one page, ready to gate buttons with.
+ *
+ *   const can = pageActions(user, 'employees');
+ *   {can('create') && <button>Add Employee</button>}
+ *
+ * A role that has never been through Role Jobs has no job row at all, and page
+ * access on its own is read-only by design. Screens were written before that
+ * existed, so `legacy` decides what such a role sees — `true` keeps today's
+ * behaviour rather than emptying the toolbar of every role nobody has configured
+ * yet. Once a job row exists it is the only thing consulted.
+ *
+ * The server enforces the same rule regardless; this is so the operator is not
+ * offered a button whose only outcome is a 403.
+ */
+export const pageActions = (user, pageKey, legacy = true) => (action) => (
+  getRoleJob(user, pageKey) ? canRoleDo(user, pageKey, action) : legacy
+);
+
 export const roleDataScope = (user, pageKey) => {
   const job = getRoleJob(user, pageKey);
   return job?.superAdmin ? { mode: 'all', ownIncluded: true } : { mode: job?.dataScope?.mode || 'own', roles: job?.dataScope?.roles || [], users: job?.dataScope?.users || [], ownIncluded: true };
