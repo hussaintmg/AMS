@@ -1,8 +1,28 @@
 const { User } = require('../models');
+const { keysForPage } = require('./pageRegistry');
 
+/**
+ * The role's settings for one page.
+ *
+ * Matched on the key first, because that is what it is on a stock install. When
+ * that misses, the page is resolved again by *path* — see `pageRegistry`. The
+ * key a route guard was written with, the `name` on the Page document behind the
+ * Role Jobs card, and the `pageKey` a saved job carries are three separate
+ * strings, and an installation seeded at a different time can hold the same
+ * screen under a different one. Ticking Create then changed a row no guard ever
+ * read, which is indistinguishable from the permission engine being broken.
+ */
 const getJob = (user, pageKey) => {
   if (user?.isSuperAdmin || user?.role_name === 'super_admin' || user?.role?.name === 'super_admin') return { superAdmin: true };
-  return (user?.role?.jobs || []).find((item) => item.pageKey === pageKey || item.module === pageKey) || null;
+  const jobs = user?.role?.jobs || [];
+  const direct = jobs.find((item) => item.pageKey === pageKey || item.module === pageKey);
+  if (direct) return direct;
+
+  const keys = keysForPage(pageKey, user?.role?.permissions);
+  // Only `pageKey` resolved — nothing else names this screen, so there is no
+  // second chance to take and the miss above stands.
+  if (keys.size <= 1) return null;
+  return jobs.find((item) => keys.has(item.pageKey)) || null;
 };
 
 const canDo = (user, pageKey, action = 'view') => {

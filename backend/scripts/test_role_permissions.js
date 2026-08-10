@@ -709,6 +709,63 @@ async function scenarioGrantPageFromRoleJobs() {
     (await call(after, 'POST', '/parts-sales/quotations', { customerId, lineItems: [{ itemType: 'part', partId, quantity: 1, unitPrice: 100 }] })).status === 403);
 }
 
+/**
+ * The page key this database uses is not the one the route guard was written
+ * with — and the grant still has to work.
+ *
+ * Three strings have to agree for a permission check to pass: the literal in
+ * `authorizeAction`, the `name` on the Page document the Role Jobs card is built
+ * from, and the `pageKey` the saved job carries. The last two come from the
+ * database, so an installation seeded at a different time or migrated from an
+ * older key holds the same screen under a different name. The administrator
+ * ticks Create on the card in front of them and the operator is still refused,
+ * with nothing on either side saying why — which is what "I set Parts Scan and
+ * it does not work" looks like from the outside.
+ *
+ * The path is the part that does not drift, so it is what joins them. This
+ * renames the page for real and checks the scanner's documents still go through.
+ */
+async function scenarioDriftedPageKey() {
+  section('A page filed under a different key');
+  const { Page } = require('../models');
+  const DRIFT_KEY = 'parts_scan_drift_test';
+  const PATH = '/parts-sales/barcode-scan';
+
+  const original = await Page.findOne({ path: PATH }).lean();
+  if (!original) { console.log('  SKIP  the parts scan page is not in this database'); return; }
+  const { customerId, partId } = await fixtureProducts();
+  if (!customerId || !partId) { console.log('  SKIP  no customer or part to sell'); return; }
+
+  try {
+    await Page.updateOne({ _id: original._id }, { $set: { name: DRIFT_KEY } });
+    // Exactly what Role Jobs saves once the page carries the other name.
+    const token = await applyRole({
+      pages: [DRIFT_KEY, 'customers'],
+      jobs: [
+        { pageKey: DRIFT_KEY, actions: { create: true }, dataScope: { mode: 'all' } },
+        { pageKey: 'customers', actions: {} },
+      ],
+    });
+
+    const line = { itemType: 'part', partId, quantity: 1, unitPrice: 100 };
+    const quote = await call(token, 'POST', '/parts-sales/quotations', { customerId, lineItems: [line], validityDays: 7 });
+    check('A job saved under this database\'s own page key still grants the scanner',
+      quote.status === 201 || quote.status === 200, `HTTP ${quote.status} ${quote.body?.message || ''}`);
+
+    const sale = await call(token, 'POST', '/parts-sales/orders', { customerId, lineItems: [line], paidAmount: 100 });
+    check('…and the counter sale it raises as well',
+      sale.status === 201 || sale.status === 200, `HTTP ${sale.status} ${sale.body?.message || ''}`);
+
+    // The rescue must not become a way in: the path only ever maps a key to the
+    // page it really is, never to a different one.
+    const vehicleQuote = await call(token, 'POST', '/quotations', { customerId, lineItems: [line] });
+    check('It is still not permission to raise a *vehicle* quotation', vehicleQuote.status === 403,
+      `HTTP ${vehicleQuote.status}`);
+  } finally {
+    await Page.updateOne({ _id: original._id }, { $set: { name: original.name } });
+  }
+}
+
 async function scenarioSuperAdminUntouched() {
   section('Super admin is never restricted');
   const email = String(process.env.SUPER_ADMIN_EMAIL || '').toLowerCase();
@@ -770,6 +827,7 @@ async function run() {
   await scenarioCatalogEndpoint();
   await scenarioCapabilityTable();
   await scenarioGrantPageFromRoleJobs();
+  await scenarioDriftedPageKey();
   await scenarioSuperAdminUntouched();
 
   console.log(`\n${pass} passed, ${fail} failed`);

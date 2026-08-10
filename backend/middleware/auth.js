@@ -4,6 +4,8 @@ const { AppError } = require('./errorHandler');
 const { getPermissionSettings, resolvePagePermissions, canAccessTarget, routeTarget } = require('../utils/permissionResolver');
 const { resolveEffectiveLogPermission } = require('../utils/logPermissionResolver');
 const { canDo, getJob } = require('../utils/roleJobs');
+const { pathFor, moduleFor } = require('../utils/pageRegistry');
+const logger = require('../utils/logger');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'ams_super_secret_key';
 
@@ -213,17 +215,41 @@ const authorizeAction = (pageKey, action = 'view') => {
     if (!req.user) return next(new AppError('Authentication required', 401));
     if (req.user.isSuperAdmin) return next();
 
-    const reachable = candidates.filter((key) => canAccessTarget(req.user, { pageKey: key, path: key, module: key }));
+    // The page's real path goes into the target, not the key repeated three
+    // times: a role granted before the screen moved carries the old path, and
+    // that is the only thing left tying its grant to this page.
+    const target = (key) => ({ pageKey: key, path: pathFor(key) || key, module: moduleFor(key) || key });
+    const reachable = candidates.filter((key) => canAccessTarget(req.user, target(key)));
     if (!reachable.length) {
+      logDenial(req, candidates, action, 'page not granted');
       return next(new AppError(`Access denied: no access to ${candidates[0]}`, 403));
     }
 
     if (!reachable.some((key) => canDo(req.user, key, action))) {
+      logDenial(req, reachable, action, `no job row grants "${action}"`);
       return next(new AppError(`Permission denied: cannot ${action} ${candidates[0]}`, 403));
     }
 
     next();
   };
+};
+
+/**
+ * Say enough about a refusal to settle it without a debugger.
+ *
+ * "Permission denied: cannot create part_scan" on its own cannot distinguish a
+ * role that was never given the action from one whose job row is filed under a
+ * key this guard does not use — and those need opposite fixes. Printing the
+ * page's path, the request it came in on and the keys the role actually holds
+ * makes the difference visible in the log line itself.
+ */
+const logDenial = (req, keys, action, reason) => {
+  const jobs = (req.user?.role?.jobs || []).map((job) => job.pageKey);
+  logger.warn(
+    `[permission] ${req.user?.email || req.user?.id} (role ${req.user?.role_name}) denied ${action} — ${reason}. ` +
+    `wanted=${keys.join('|')} paths=${keys.map((key) => pathFor(key) || '?').join('|')} ` +
+    `request=${req.method} ${String(req.originalUrl || '').split('?')[0]} roleJobs=${jobs.join(',') || 'none'}`,
+  );
 };
 
 const METHOD_ACTIONS = { GET: 'view', HEAD: 'view', POST: 'create', PUT: 'edit', PATCH: 'edit', DELETE: 'delete' };

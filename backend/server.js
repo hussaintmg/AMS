@@ -309,6 +309,15 @@ const startServer = async () => {
     const emailQueue = require('./services/emailQueue.service');
     emailQueue.startQueue();
 
+    // Read the Page collection into the permission resolver, so a page that has
+    // been renamed or moved in this database is still matched by its path. The
+    // built-in table already answers for a stock install, so a failure here only
+    // costs the customisations — it must never stop the server coming up.
+    const pageRegistry = require('./utils/pageRegistry');
+    pageRegistry.prime()
+      .then((count) => logger.info(`Page registry primed with ${count} page(s)`))
+      .catch((error) => logger.warn(`Page registry not primed: ${error.message}`));
+
     // A full Dealer Pro batch (three workbooks, ~4,000 rows) commits for several
     // minutes on one connection. Node's 300 s default requestTimeout would abort
     // the upload mid-import and the browser would show a failure for work the

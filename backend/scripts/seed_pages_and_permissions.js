@@ -6,47 +6,12 @@ const path = require('path');
 const mongoose = require('mongoose');
 require('dotenv').config({ path: path.resolve(__dirname, '..', '..', '.env'), override: true });
 
-const pages = [
-  ['dashboard','Dashboard','/dashboard','dashboard','LayoutDashboard','Main',true],
-  ['master_data','Master Data','/masterdata','master-data','Database','Master Data'],
-  ['leads','Leads','/leads','crm','Users','CRM'], ['customers','Customers','/customers','crm','Contact','CRM'],
-  ['vehicles','Vehicles','/vehicles','inventory','Car','Inventory'], ['vehicle_master','Vehicle Master Data','/vehicle-master','vehicle-master','CarFront','Master Data'],
-  ['parts','Parts Inventory','/parts','parts','Cog','Inventory'], ['warehouses','Warehouse Management','/warehouses','warehouses','Warehouse','Master Data'],
-  // Vehicle sales. The page keys are unchanged so existing role permissions keep
-  // working; only the paths moved. They sit on their own /vehicle-sales prefix
-  // rather than under /vehicles, because access is matched by path prefix and
-  // nesting them would hand the sales screens to anyone who can see stock.
-  ['sales_orders','Vehicle Sales Orders','/vehicle-sales/orders','sales','ShoppingCart','Vehicle Sales'],
-  ['quotations','Vehicle Quotations','/vehicle-sales/quotations','sales','FileText','Vehicle Sales'],
-  ['invoices','Vehicle Invoices','/vehicle-sales/invoices','sales','ReceiptText','Vehicle Sales'],
-  ['bookings','Vehicle Bookings','/vehicle-sales/booking','sales','CalendarCheck','Vehicle Sales'],
-  ['vehicle_scan','Vehicle Scan','/vehicle-sales/barcode-scan','sales','ScanLine','Vehicle Sales'],
-  // Parts sales — separate collections, separate screens, same permission model.
-  // The parts flow is quotation → invoice only: no bookings, no sales orders.
-  ['part_quotations','Parts Quotations','/parts-sales/quotations','sales','FileText','Parts Sales'],
-  ['part_invoices','Parts Invoices','/parts-sales/invoices','sales','ReceiptText','Parts Sales'],
-  ['part_scan','Parts Scan','/parts-sales/barcode-scan','sales','ScanLine','Parts Sales'],
-  ['services','Services','/service','service','Wrench','Service'], ['service_appointments','Service Appointments','/service/appointments','service','CalendarDays','Service'],
-  ['service_master','Service Master Data','/service-master','service-master','Settings','Master Data'], ['reports','Reports','/reports','reports','BarChart3','Reports'],
-  ['employees','Employees','/hr/employees','hr','UserRound','HR & Finance'], ['leaves','Leaves','/hr/leaves','leaves','CalendarDays','HR & Finance'],
-  ['expenses','Expenses','/hr/expenses','expenses','WalletCards','HR & Finance'],   ['ledger','Ledger','/hr/ledger','ledger','BookOpen','HR & Finance'],
-  ['payroll','Payroll','/hr/payroll','payroll','Coins','HR & Finance'],
-  ['payment_methods','Payment Methods','/payment-methods','payment-methods','CreditCard','ERP Settings'], ['settings','ERP Settings','/settings','settings','SlidersHorizontal','ERP Settings'],
-  ['user_management','User Management','/admin/users','users','UsersRound','Master Data'],
-  ['department_management','Department Management','/admin/departments','departments','Building2','Master Data'],   ['role_management','Role Management','/admin/roles','roles','Shield','Master Data'],
-  ['status_management','Option Management','/admin/statuses','statuses','ListChecks','Master Data'],
-  ['lead_master','Lead Master Data','/lead-master','lead-master','ListTree','Master Data'], ['sales_master','Sales Master Data','/sales-master','sales-master','PanelTop','Master Data'],
-  ['profile','Profile','/profile','profile','UserCircle','Account'], ['notification_settings','Notification Settings','/notification-settings','notifications','Bell','Account'],
-  ['search','Search','/search','search','Search','Account'],
-  ['data_import','Data Import','/data-import','uploader','UploadCloud','Uploader'],
-  ['dispatch','Dispatch Report','/dispatch','dispatch','Truck','Sales'],
-  ['server_management','Server Management','/server-management','server-management','ServerCog','System',true], ['logs','Logs','/logs','logs','FileText','System'], ['email_templates','Email Templates','/email','email','Mail','Communication'],
-  ['pdf_management','PDF Management','/pdf-management','pdf','FileDown','Communication']
-].map((p, index) => ({
-  name: p[0], label: p[1], path: p[2], module: p[3], icon: p[4], group: p[5],
-  isCore: p[6] === true, isActive: true, sortOrder: index,
-  description: `${p[1]} module`
-}));
+// The table itself lives in constants/pages.js, so permission checks can resolve
+// a page key to its path at request time — see the note there.
+const { seedPages, LEGACY_PATHS } = require('../constants/pages');
+
+const pages = seedPages();
+
 
 const allActions = { view: true, create: true, edit: true, delete: true, sendEmail: true, downloadPdf: true, export: true };
 
@@ -61,17 +26,10 @@ async function run() {
   if (!role) throw new Error('super_admin role not found; run create_super_admin.js first');
 
   // Old paths that no longer exist. The frontend still redirects them, but they
-  // must not linger in the sidebar or in role permissions.
-  const legacyPaths = [
-    '/master-data', '/sales', '/sales/orders', '/sales/quotations', '/sales/invoices', '/sales/bookings', '/settings',
-    '/orders', '/quotations', '/invoices', '/booking', '/barcode-scan',
-    // The first split put these under the inventory paths; they now have their own.
-    '/vehicles/orders', '/vehicles/quotations', '/vehicles/invoices', '/vehicles/booking', '/vehicles/barcode-scan',
-    '/parts/orders', '/parts/quotations', '/parts/invoices', '/parts/booking', '/parts/barcode-scan',
-    // The parts flow lost its booking and sales-order stages: quotation → invoice.
-    '/parts-sales/booking', '/parts-sales/orders',
-  ];
-  await Page.deleteMany({ path: { $in: legacyPaths } });
+  // must not linger in the sidebar or in role permissions. A page that still
+  // uses one of these (ERP Settings kept /settings) is never deleted.
+  const livePaths = new Set(pages.map((page) => page.path));
+  await Page.deleteMany({ path: { $in: LEGACY_PATHS.filter((item) => !livePaths.has(item)) } });
   for (const page of pages) {
     await Page.findOneAndUpdate({ name: page.name }, { $set: { ...page, updatedBy: admin._id }, $setOnInsert: { createdBy: admin._id } }, { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true });
   }

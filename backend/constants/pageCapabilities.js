@@ -122,10 +122,28 @@ const PAGE_CAPABILITIES = {
 };
 
 /**
- * A page not in the table is new or bespoke; offering every action is the safe
- * fallback, because hiding a checkbox would silently strip a permission the
- * administrator meant to grant.
+ * What one page may be permitted to do.
+ *
+ * The key is looked up directly first, then through the page's *path* — an
+ * installation whose Page document carries a different name would otherwise
+ * fall through to "offer everything" and let an administrator tick Approve on a
+ * scanner, which is the opposite of what this table is for. See
+ * `utils/pageRegistry`.
+ *
+ * A page that genuinely is not in the table is new or bespoke; offering every
+ * action is the safe fallback there, because hiding a checkbox would silently
+ * strip a permission the administrator meant to grant.
  */
-const capabilitiesFor = (pageKey) => PAGE_CAPABILITIES[pageKey] || { actions: ALL_ACTIONS, dataScope: true };
+const capabilitiesFor = (pageKey) => {
+  const direct = PAGE_CAPABILITIES[pageKey];
+  if (direct) return direct;
+  // Required lazily: the registry reads constants/pages, and this file is
+  // itself pulled in by the permission plumbing at load time.
+  const { keysForPage } = require('../utils/pageRegistry');
+  for (const key of keysForPage(pageKey)) {
+    if (PAGE_CAPABILITIES[key]) return PAGE_CAPABILITIES[key];
+  }
+  return { actions: ALL_ACTIONS, dataScope: true };
+};
 
 module.exports = { PAGE_CAPABILITIES, ALL_ACTIONS, ACTION_LABELS, capabilitiesFor };

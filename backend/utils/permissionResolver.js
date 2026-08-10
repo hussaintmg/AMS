@@ -1,4 +1,5 @@
 const { SystemSetting } = require('../models');
+const { pathsFor, normalizePath } = require('./pageRegistry');
 
 const SETTINGS_DEFAULTS = {
   logPermissionMode: 'role',
@@ -59,14 +60,34 @@ const resolvePagePermissions = (user) => {
   return perms.filter((p) => p && p.isActive !== false);
 };
 
+/**
+ * Whether one stored permission row grants the target page.
+ *
+ * Names are compared first. When they miss, the row's stored *path* is compared
+ * against every path the target page has ever lived at: a role granted before a
+ * screen moved still carries the old path, and a Page document seeded under a
+ * different key still sits on the same one. Matching on the path is what makes
+ * "the page is granted but the API says no access" impossible — see
+ * `utils/pageRegistry`.
+ */
 const permissionAllowsView = (permission, target) => {
   if (!permission || (permission.canView !== true && permission.actions?.view !== true)) return false;
   const candidates = [target.pageKey, target.key, target.name, target.path, target.module].filter(Boolean);
-  return candidates.some((candidate) => (
+  const byName = candidates.some((candidate) => (
     permission.pageKey === candidate ||
     permission.path === candidate ||
     permission.module === candidate
   ));
+  if (byName) return true;
+
+  const stored = normalizePath(permission.path);
+  if (!stored) return false;
+  const targetKey = target.pageKey || target.key || target.name;
+  const paths = new Set([
+    ...(targetKey ? pathsFor(targetKey) : []),
+    ...(target.path ? [normalizePath(target.path)] : []),
+  ]);
+  return paths.has(stored);
 };
 
 const canAccessTarget = (user, target) => {
