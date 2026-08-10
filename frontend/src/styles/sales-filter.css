@@ -1,10 +1,32 @@
+/*
+ * One wrapping row of controls: search, refresh, then each filter.
+ *
+ * The two wrapper divs are flattened out of the box tree below, so every control
+ * is a direct flex item of this bar and wraps on its own basis.
+ */
 .sales-filter-bar {
     display: flex !important;
+    /*
+     * The shared `.filter-bar` switches to `flex-direction: column` under 768px.
+     * This bar does its own wrapping instead, so it has to stay a row at every
+     * width — and it is the only `.filter-bar` whose children are flattened, so
+     * going column stacked all six controls in a single narrow file and
+     * `align-items: flex-end` pinned them to the right edge, leaving the rest of
+     * the bar empty. It showed up only between 701px and 768px, the gap between
+     * that breakpoint and this file's own.
+     */
+    flex-direction: row !important;
     flex-wrap: wrap;
     align-items: flex-end;
     gap: 1rem;
 }
 
+/*
+ * The markup nests the search box and the filters in two wrappers with their own
+ * layouts. `contents` drops both boxes so their children join this bar's single
+ * row — one wrap rule for the lot, instead of a flex row that wraps separately
+ * from a grid that wraps.
+ */
 .sales-filter-bar .sales-filter-toolbar,
 .sales-filter-bar .sales-filter-options {
     display: contents !important;
@@ -64,7 +86,14 @@
     flex: 1 0 100%;
 }
 
-@media (max-width: 700px) {
+/*
+ * One control per row, once two no longer fit.
+ *
+ * Not tied to the shared bar's 768px any more: this bar keeps its own direction
+ * (see above), so it is free to go on wrapping two filters to a row on a tablet
+ * instead of stacking six full-width controls into a very tall bar.
+ */
+@media (max-width: 640px) {
     .sales-filter-bar { gap: .75rem; }
     .sales-filter-bar .search-input-wrapper,
     .sales-filter-bar .sales-filter-options .form-group {

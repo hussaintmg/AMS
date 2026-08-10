@@ -515,3 +515,48 @@ and path is a page grant, not a module grant.
 
 Verified locally on the mirrored role: the sidebar now lists its six granted
 pages and nothing else.
+
+---
+
+## F20 · The sales filter bar collapsed into a right-hand column — FIXED
+
+**Severity: medium (cosmetic, but the page was unusable at that width).**
+
+Between 701px and 768px the Parts/Vehicle sales filter bar stacked all six of its
+controls into a narrow column pinned to the right edge, leaving most of the bar
+blank and pushing the list far down the page.
+
+Two stylesheets disagreeing about one element:
+
+- `filters.css` turns every `.filter-bar` into `flex-direction: column` under
+  **768px**.
+- `sales-filter.css` flattens this bar's two wrapper divs with
+  `display: contents` so their children become direct flex items — and had its
+  own responsive rules at **700px**.
+
+So in the 68px gap the bar was a column while its children were still sized for a
+wrapping row, and `align-items: flex-end` pushed the lot to the right. It is the
+only `.filter-bar` whose children are flattened, which is why nothing else looked
+wrong.
+
+Fixed by making the sales bar own its direction (`flex-direction: row !important`
+— it wraps by flex-basis, it never wants a column) and moving its stacking
+breakpoint to 640px, so a tablet still gets two filters per row instead of six
+full-width ones. Verified at 748px: bar height 1158px → 277px, controls
+left-aligned, three tidy rows.
+
+---
+
+## F21 · Order and invoice rows never checked anything — FIXED
+
+Found while looking at F20, on the same screen. In `Sales.js`:
+
+| Site | Was | Now |
+| --- | --- | --- |
+| Sales order row + card: Edit, Cancel | no check at all | `canEdit` / `canDelete` |
+| Invoice row + card: Edit, Void | no check at all | `canEdit` / `canDelete` |
+| Quotation mobile card: Delete | gated on `canEdit` | `canDelete` |
+
+Five call sites. Voiding an invoice and cancelling an order were being offered to
+every role that could open the screen — including, after F18, roles that reach it
+through the parts pages.

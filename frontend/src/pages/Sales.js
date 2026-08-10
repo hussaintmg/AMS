@@ -1009,7 +1009,7 @@ function Quotations({ category = 'vehicle' }) {
                                         showView={true}
                                         onView={() => openModal('view', q)}
                                         onEdit={canEdit && q.status === 'draft' ? () => openModal('edit', q) : null}
-                                        onDelete={canEdit && q.status === 'draft' ? () => handleDeleteClick(q.id) : null}
+                                        onDelete={canDelete && q.status === 'draft' ? () => handleDeleteClick(q.id) : null}
                                         customActions={[
                                             ...(canDownloadPdf ? [{ icon: <Download size={18} />, title: 'Download PDF', onClick: () => downloadSalesPdf('quotation', q.id, q.quotation_number), className: 'btn-info' }] : []),
                                             ...(canSendEmail ? [{ icon: <Send size={18} className="action-icon" />, title: 'Send quotation email', onClick: () => handleSendEmail(q), className: 'btn-info', disabled: sendingEmail === q.id, loading: sendingEmail === q.id }] : []),
@@ -2343,8 +2343,8 @@ function SalesOrders({ category = 'vehicle' }) {
                                         showEdit={canEdit && o.status !== 'delivered' && o.status !== 'cancelled' && !o.invoice_number}
                                         showDelete={canDelete && o.status !== 'delivered' && o.status !== 'cancelled' && !o.invoice_number}
                                         onView={() => openModal('view', o)}
-                                        onEdit={() => openModal('edit', o)}
-                                        onDelete={() => handleCancelClick(o)}
+                                        onEdit={canEdit ? () => openModal('edit', o) : null}
+                                        onDelete={canDelete ? () => handleCancelClick(o) : null}
                                         customActions={[
                                             ...(canDownloadPdf ? [{ icon: <Download size={18}/>, title: 'Download PDF', onClick: () => downloadSalesPdf('order', o.id, o.order_number), className: 'btn-info' }] : []),
                                             ...(canSendEmail ? [{ icon: <Send size={18} className="action-icon" />, title: 'Send sales order email', onClick: () => handleSendEmail(o), className: 'btn-info', disabled: sendingEmail === o.id, loading: sendingEmail === o.id }] : []),
@@ -2415,8 +2415,8 @@ function SalesOrders({ category = 'vehicle' }) {
                                         showEdit={canEdit && o.status !== 'delivered' && o.status !== 'cancelled' && !o.invoice_number}
                                         showDelete={canDelete && o.status !== 'delivered' && o.status !== 'cancelled' && !o.invoice_number}
                                         onView={() => openModal('view', o)}
-                                        onEdit={() => openModal('edit', o)}
-                                        onDelete={() => handleCancelClick(o)}
+                                        onEdit={canEdit ? () => openModal('edit', o) : null}
+                                        onDelete={canDelete ? () => handleCancelClick(o) : null}
                                         customActions={[
                                             ...(canDownloadPdf ? [{ icon: <Download size={18}/>, title: 'Download PDF', onClick: () => downloadSalesPdf('order', o.id, o.order_number), className: 'btn-info' }] : []),
                                             ...(canSendEmail ? [{ icon: <Send size={18} className="action-icon" />, title: 'Send sales order email', onClick: () => handleSendEmail(o), className: 'btn-info', disabled: sendingEmail === o.id, loading: sendingEmail === o.id }] : []),
@@ -3368,8 +3368,8 @@ function Invoices({ category = 'vehicle' }) {
                                         showEdit={canEdit && inv.status === 'draft'}
                                         showDelete={canDelete && inv.status !== 'paid' && inv.status !== 'cancelled'}
                                         onView={() => openModal('view', inv)}
-                                        onEdit={() => openModal('edit', inv)}
-                                        onDelete={() => handleVoidClick(inv)}
+                                        onEdit={canEdit ? () => openModal('edit', inv) : null}
+                                        onDelete={canDelete ? () => handleVoidClick(inv) : null}
                                         customActions={[
                                             ...(canDownloadPdf ? [{ icon: <Download size={18}/>, title: 'Download PDF', onClick: () => downloadSalesPdf('invoice', inv.id, inv.invoice_number), className: 'btn-info' }] : []),
                                             ...(canSend && inv.status !== 'cancelled' ? [{
@@ -3428,8 +3428,8 @@ function Invoices({ category = 'vehicle' }) {
                                         showEdit={canEdit && inv.status === 'draft'}
                                         showDelete={canDelete && inv.status !== 'paid' && inv.status !== 'cancelled'}
                                         onView={() => openModal('view', inv)}
-                                        onEdit={() => openModal('edit', inv)}
-                                        onDelete={() => handleVoidClick(inv)}
+                                        onEdit={canEdit ? () => openModal('edit', inv) : null}
+                                        onDelete={canDelete ? () => handleVoidClick(inv) : null}
                                         customActions={[
                                             ...(canDownloadPdf ? [{ icon: <Download size={18}/>, title: 'Download PDF', onClick: () => downloadSalesPdf('invoice', inv.id, inv.invoice_number), className: 'btn-info' }] : []),
                                             ...(canSend && inv.status !== 'cancelled' ? [{
