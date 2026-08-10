@@ -38,11 +38,21 @@ router.use('/orders', fieldMask(['sales_orders']));
  * Quotations is not permission to raise a vehicle quotation.
  */
 const SCAN = { page: 'part_scan', actions: ['create'] };
+/**
+ * A counter sale posts an order *and* its invoice, and rolls the order back if
+ * the invoice cannot be raised (see createOrderInternal) — so on this side the
+ * invoice is the sale and Parts Invoices → Create is the permission for it.
+ * Without this, the only ways to raise one were Parts Scan or *Vehicle* Sales
+ * Orders, so a parts-counter role given Parts Invoices with Create ticked was
+ * still told it "may not create anything" by the scanner. Create only: the
+ * order rows behind a parts invoice are not separately editable or deletable.
+ */
+const COUNTER_SALE = { page: 'part_invoices', actions: ['create'] };
 const PARTS_PAGES = {
     quotations: ['part_quotations', 'quotations', SCAN],
     invoices: ['part_invoices', 'invoices', SCAN],
     bookings: ['bookings', SCAN],
-    sales_orders: ['sales_orders', SCAN],
+    sales_orders: ['sales_orders', SCAN, COUNTER_SALE],
 };
 
 const can = (page, action) => authorizeAction(PARTS_PAGES[page] || page, action);

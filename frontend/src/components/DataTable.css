@@ -15,12 +15,15 @@
   width: 100%;
   max-width: 100%;
   overflow-x: auto !important;
-  overflow-y: hidden;
+  overflow-y: visible;
   -webkit-overflow-scrolling: touch;
+  border-bottom: 1px solid #e2e8f0;
 }
 .data-table-wrapper > .table-container.desktop-only > .data-table {
-  width: max-content;
+  width: 100%;
   min-width: 100%;
+  table-layout: auto;
+  border-collapse: collapse;
 }
 
 @media (max-width: 1024px) {

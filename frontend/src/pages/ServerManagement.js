@@ -2455,11 +2455,17 @@ function ServerManagement() {
 
   const renderRoleJobs = () => {
     const needle = roleJobSearch.trim().toLowerCase();
-    const visible = roleJobs.filter((job) => {
-      if (!roleJobShowAll && !job.allowed) return false;
-      if (!needle) return true;
-      return `${job.label} ${job.pageKey} ${job.group}`.toLowerCase().includes(needle);
-    });
+    const matchesSearch = (job) => `${job.label} ${job.pageKey} ${job.group}`.toLowerCase().includes(needle);
+    // Searching for a page names it, so it has to be found whether or not the
+    // role can open it yet. Filtering the search by "allowed" hid exactly the
+    // page an administrator comes here to grant: an operator told to have
+    // "Create" ticked on Parts Scan searched for it and was told no page
+    // matched, because the role had never been given the page in the first
+    // place. Without a search the toggle still decides how long the list is.
+    const visible = roleJobs.filter((job) => (needle ? matchesSearch(job) : roleJobShowAll || job.allowed));
+    // Say so when the search is what put an unheld page on screen, so the
+    // "Allow this page" switch on it does not look like a state that was saved.
+    const revealedBySearch = needle && !roleJobShowAll ? visible.filter((job) => !job.allowed).length : 0;
     const allowedCount = roleJobs.filter((job) => job.allowed).length;
     // Cards keep the sidebar's own grouping, so a page is where the
     // administrator already expects to find it.
@@ -2505,6 +2511,13 @@ function ServerManagement() {
           </label>
           <span className="sm-role-job-count">{allowedCount} of {roleJobs.length} pages allowed</span>
         </div>
+      )}
+
+      {revealedBySearch > 0 && (
+        <p className="sm-role-job-revealed">
+          {revealedBySearch === 1 ? '1 matching page is' : `${revealedBySearch} matching pages are`} not granted to this role yet —
+          turn on “Allow this page” to configure {revealedBySearch === 1 ? 'it' : 'them'}.
+        </p>
       )}
 
       {roleJobsLoading

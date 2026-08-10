@@ -626,11 +626,9 @@ img {
   border-bottom: 1px solid var(--gray-200);
 }
 
-/* No `width: 1%` squeeze trick here: a percentage width on cells poisons the
-   table's intrinsic (max-content) size — the browser resolves the content
-   against the 1% and infers a table 100× wider than the content, which is
-   exactly the "every column is enormous" bug. Auto layout with nowrap already
-   sizes columns to their content. */
+/* Auto-sizing columns: each column gets equal space first, then adjusts
+   to fit content. This ensures tables always fill their container without
+   excess empty space on the right. */
 .data-table td {
   padding: 0.5rem 0.75rem;
   border-bottom: 1px solid var(--gray-100);
@@ -638,13 +636,11 @@ img {
   line-height: 1.25;
   height: 38px;
   white-space: nowrap;
-  /* Nowrap needs a ceiling: one runaway value (a 5,000-character name in a
-     test record did exactly this) would otherwise stretch its whole column to
-     tens of thousands of pixels. Long values truncate with an ellipsis and
-     the row stays readable. */
-  max-width: 360px;
+  /* Prevent runaway text while allowing reasonable widths */
+  max-width: 500px;
   overflow: hidden;
   text-overflow: ellipsis;
+  word-break: break-word;
 }
 
 .data-table th {
@@ -740,11 +736,18 @@ img {
 @media (max-width: 768px) { .table-settings-trigger { right: 14px; bottom: 14px; } }
 
 /* Canonical compact table density. The specificity intentionally wins over
-   older page-level table rules so every shared table keeps the same height. */
+   older page-level table rules so every shared table keeps the same height.
+   All columns distribute width equally, then adjust to fit content. */
+.main-content table.data-table.data-table--shared {
+  width: 100%;
+  table-layout: auto;
+}
 .main-content table.data-table.data-table--shared > thead > tr > th {
   padding: 0.4rem 0.65rem !important;
   height: 32px;
   line-height: 1.15;
+  flex: 1;
+  min-width: 60px;
 }
 .main-content table.data-table.data-table--shared > tbody > tr > td {
   padding: 0.25rem 0.65rem !important;
@@ -752,9 +755,12 @@ img {
   min-height: 34px;
   line-height: 1.15;
   vertical-align: middle;
+  flex: 1;
+  min-width: 60px;
 }
 .main-content table.data-table.data-table--shared > tbody > tr {
   height: 34px;
+  display: table-row;
 }
 
 /* Actions use the available horizontal space. Five or six actions switch to

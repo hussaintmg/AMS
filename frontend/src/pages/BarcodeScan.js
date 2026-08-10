@@ -66,7 +66,10 @@ const CATEGORY = {
     scanPage: "part_scan",
     documents: [
       { key: "quotation", label: "Quotation", hint: "An offer. No stock is touched.", pages: ["part_scan", "part_quotations", "quotations"] },
-      { key: "order", label: "Invoice (Counter Sale)", hint: "Invoices immediately — this is what takes stock off the shelf.", pages: ["part_scan", "sales_orders"] },
+      // A counter sale is a parts invoice, so Parts Invoices → Create raises
+      // one. It used to list only the scanner and the *vehicle* orders page,
+      // which left the obvious grant — Parts Invoices — doing nothing here.
+      { key: "order", label: "Invoice (Counter Sale)", hint: "Invoices immediately — this is what takes stock off the shelf.", pages: ["part_scan", "part_invoices", "sales_orders"] },
     ],
   },
 };

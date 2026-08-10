@@ -60,10 +60,11 @@ async function connect() {
 }
 
 async function cleanup() {
-  const { Role, User } = require('../models');
+  const { Role, User, Part } = require('../models');
   await User.deleteMany({ email: USER_EMAIL });
   const role = await Role.findOne({ name: ROLE_NAME });
   if (role) await Role.deleteOne({ _id: role._id });
+  await Part.deleteOne({ partCode: FIXTURE_PART_CODE });
   console.log('Fixtures removed.');
 }
 
@@ -117,13 +118,41 @@ async function applyRole(spec) {
 const SALES_PAGES = ['dashboard', 'customers', 'quotations', 'bookings', 'sales_orders', 'invoices', 'vehicle_scan', 'part_quotations', 'part_invoices', 'part_scan', 'parts', 'vehicles'];
 const fullActions = { create: true, edit: true, delete: true, sendEmail: true, downloadPdf: true, export: true, approve: true };
 
-/** A saleable vehicle and a stocked part, so the create calls are realistic. */
+/** The part this harness sells, so no real stock figure is spent on testing. */
+const FIXTURE_PART_CODE = 'PERMTEST-PART';
+
+/**
+ * A saleable vehicle and a stocked part, so the create calls are realistic.
+ *
+ * The part is the harness's own and its stock is topped up on every run: the
+ * suite raises several counter sales, each of which takes a unit off the shelf,
+ * so borrowing a real part meant the run drained it and every later run failed
+ * with "Insufficient stock" on a permission check that was working fine.
+ */
 async function fixtureProducts() {
   const { Vehicle, Part, Customer } = require('../models');
   const vehicle = await Vehicle.findOne({ status: { $in: ['available', 'in_stock', 'Available'] } }).select('_id').lean()
     || await Vehicle.findOne().select('_id').lean();
-  const part = await Part.findOne({ currentStock: { $gt: 0 }, isActive: true }).select('_id').lean()
-    || await Part.findOne().select('_id').lean();
+
+  const template = await Part.findOne({ isActive: true }).lean();
+  const part = await Part.findOneAndUpdate(
+    { partCode: FIXTURE_PART_CODE },
+    {
+      $set: {
+        partCode: FIXTURE_PART_CODE,
+        name: 'Permission Harness Part',
+        currentStock: 500,
+        sellingPrice: 100,
+        costPrice: 50,
+        isActive: true,
+        ...(template?.category ? { category: template.category } : {}),
+        ...(template?.unit ? { unit: template.unit } : {}),
+        ...(template?.sourceType ? { sourceType: template.sourceType } : {}),
+      },
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true },
+  );
+
   const customer = await Customer.findOne({ deletedAt: null, isActive: true }).select('_id').lean();
   return { vehicleId: vehicle?._id?.toString(), partId: part?._id?.toString(), customerId: customer?._id?.toString() };
 }
@@ -208,6 +237,45 @@ async function scenarioScanCreatesQuotation() {
   // …nor a bulk spreadsheet import of the same documents.
   check('Scan page create does not imply bulk import',
     (await call(token, 'POST', '/bulk-import/sales-orders', {})).status === 403);
+
+  // ── The parts counter without the scan page ─────────────────────────────
+  // A counter sale posts an order and its invoice, so Parts Invoices → Create
+  // is what an administrator ticks for it. That used to buy nothing: the order
+  // endpoint took only Parts Scan or *Vehicle* Sales Orders, so a parts-counter
+  // role was told by the scanner that it "may not create anything from it"
+  // while Role Jobs showed Create plainly ticked.
+  token = await applyRole({
+    pages: ['part_scan', 'part_quotations', 'part_invoices', 'customers'],
+    jobs: [
+      // The scan page is held for *opening* the screen only — no create on it.
+      { pageKey: 'part_scan', actions: {} },
+      { pageKey: 'part_quotations', actions: { create: true } },
+      { pageKey: 'part_invoices', actions: { create: true } },
+      { pageKey: 'customers', actions: {} },
+    ],
+  });
+  const counterQuote = await call(token, 'POST', '/parts-sales/quotations', { customerId, validityDays: 7, lineItems: partLine });
+  check('Parts Quotations create raises a parts quotation', counterQuote.status === 201 || counterQuote.status === 200,
+    `HTTP ${counterQuote.status} ${counterQuote.body?.message || ''}`);
+
+  const counterSale = await call(token, 'POST', '/parts-sales/orders', {
+    customerId, lineItems: partLine, paidAmount: 100, paymentMode: 'cash',
+  });
+  check('Parts Invoices create raises a counter sale without the scan page',
+    counterSale.status === 201 || counterSale.status === 200,
+    `HTTP ${counterSale.status} ${counterSale.body?.message || ''}`);
+
+  // It buys the sale, not the paperwork around it: the order rows behind a
+  // parts invoice stay out of reach.
+  const madeOrderId = counterSale.body?.data?.id;
+  if (madeOrderId) {
+    check('Parts Invoices create does not imply deleting the order',
+      (await call(token, 'DELETE', `/parts-sales/orders/${madeOrderId}`)).status === 403);
+    check('Parts Invoices create does not imply editing the order',
+      (await call(token, 'PUT', `/parts-sales/orders/${madeOrderId}/status`, { status: 'cancelled' })).status === 403);
+  }
+  check('Parts Invoices create is no permission on vehicle sales orders',
+    (await call(token, 'POST', '/sales/direct', { customerId, lineItems: vehicleLine, paidAmount: 100 })).status === 403);
 
   // And the negative: no scan page, no quotation page → still denied.
   token = await applyRole({ pages: ['customers'], jobs: [{ pageKey: 'customers', actions: {} }] });
@@ -390,6 +458,78 @@ async function scenarioFieldPermissions() {
   check('Customer catalog covers name / phone / email',
     ['name', 'phone', 'email'].every((key) => customerFields.includes(key)),
     `catalog=${customerFields.join(',')}`);
+
+  await scenarioEveryPageIsMasked();
+}
+
+/**
+ * Every catalogued page, over its real list endpoint.
+ *
+ * Masking deletes keys from the payload, and `delete doc.email` on a Mongoose
+ * document is a silent no-op — so a controller that sends documents rather than
+ * `.lean()` objects served every withheld column while the table above it hid
+ * the column faithfully. Employees was doing exactly that. One page at a time
+ * is the only way to catch the next controller that forgets `.lean()`.
+ */
+async function scenarioEveryPageIsMasked() {
+  // page → [list endpoint, field key to withhold, response key it must remove]
+  const PAGE_ENDPOINTS = {
+    customers: ['/customers?limit=3', 'phone', 'phone'],
+    leads: ['/leads?limit=3', 'phone', 'phone'],
+    parts: ['/parts?limit=3', 'selling_price', 'selling_price'],
+    vehicles: ['/vehicles?limit=3', 'selling_price', 'selling_price'],
+    employees: ['/employees?limit=3', 'contact', 'email'],
+    quotations: ['/quotations?limit=3', 'amounts', 'total_amount'],
+    bookings: ['/bookings?limit=3', 'customer', 'customer_name'],
+    sales_orders: ['/sales?limit=3', 'customer', 'customer_name'],
+    invoices: ['/invoices?limit=3', 'amounts', 'total_amount'],
+    part_quotations: ['/parts-sales/quotations?limit=3', 'amounts', 'total_amount'],
+    part_invoices: ['/parts-sales/invoices?limit=3', 'amounts', 'total_amount'],
+  };
+
+  /** First record out of whichever envelope the endpoint uses. */
+  const firstRecord = (body) => {
+    const data = body?.data;
+    if (Array.isArray(data)) return data[0];
+    if (!data || typeof data !== 'object') return null;
+    const list = Object.values(data).find((value) => Array.isArray(value) && value.length);
+    return list ? list[0] : null;
+  };
+
+  const missing = Object.keys(FIELD_CATALOG).filter((page) => !PAGE_ENDPOINTS[page]);
+  check('Every catalog page is covered by this masking check', missing.length === 0, `uncovered=${missing.join(',')}`);
+
+  // The super admin is the unmasked baseline, so each page costs one role write
+  // rather than two — this loop already touches every catalogued endpoint.
+  const adminPassword = process.env.SUPER_ADMIN_PASSWORD;
+  const adminToken = adminPassword
+    ? await login(String(process.env.SUPER_ADMIN_EMAIL || '').toLowerCase(), adminPassword)
+    : null;
+
+  for (const [page, [url, withheldField, responseKey]] of Object.entries(PAGE_ENDPOINTS)) {
+    const allowed = pageFieldKeys(page).filter((key) => key !== withheldField);
+    const token = await applyRole({
+      pages: SALES_PAGES.includes(page) ? SALES_PAGES : [...SALES_PAGES, page],
+      jobs: [{ pageKey: page, actions: {}, dataScope: { mode: 'all' }, fields: { mode: 'selected', allowed } }],
+    });
+    const record = firstRecord((await call(token, 'GET', url)).body);
+    if (!record) {
+      console.log(`  SKIP  ${page}: no record returned from ${url}`);
+      continue;
+    }
+    check(`${page}: withheld "${withheldField}" is absent from the API payload`,
+      !(responseKey in record),
+      `${responseKey} present; keys=${Object.keys(record).slice(0, 12).join(',')}`);
+
+    // The key has to be one the endpoint really sends, or the check above would
+    // pass on a page that masks nothing at all.
+    if (adminToken) {
+      const baseline = firstRecord((await call(adminToken, 'GET', url)).body);
+      check(`${page}: "${responseKey}" is served when nothing is withheld`,
+        Boolean(baseline) && responseKey in baseline,
+        `keys=${Object.keys(baseline || {}).slice(0, 12).join(',')}`);
+    }
+  }
 }
 
 async function scenarioCatalogEndpoint() {

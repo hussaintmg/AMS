@@ -57,20 +57,43 @@ const withheldKeys = (user, pageKey) => {
 
 const isRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 
+/**
+ * A Mongoose document, as opposed to a plain object or a Date.
+ *
+ * `toObject` is the tell: Dates have `toJSON` but not `toObject`, so testing for
+ * both keeps a date value from being flattened into a string on its way past.
+ */
+const isMongooseDoc = (value) => typeof value?.toObject === 'function' && typeof value?.toJSON === 'function';
+
+/**
+ * Withheld keys are removed from a *plain* copy, because `delete doc.email` on
+ * a Mongoose document is a silent no-op — the value lives in the document's
+ * internal state and comes back the moment Express serialises it. Controllers
+ * that end in `.lean()` were masked correctly; the ones that send documents
+ * (Employees is one) leaked every withheld column into the payload while the
+ * table above them dutifully hid it.
+ *
+ * Returns the record to store back in its parent, which is a new object
+ * whenever a document had to be converted.
+ */
 const maskRecord = (record, withheld) => {
   if (!isRecord(record)) return record;
-  withheld.keys.forEach((key) => { delete record[key]; });
+  const target = isMongooseDoc(record) ? record.toJSON() : record;
+  withheld.keys.forEach((key) => { delete target[key]; });
   if (withheld.lineKeys.size) {
     LINE_KEYS.forEach((listKey) => {
-      const lines = record[listKey];
+      const lines = target[listKey];
       if (!Array.isArray(lines)) return;
-      lines.forEach((line) => {
+      lines.forEach((line, index) => {
         if (!isRecord(line)) return;
-        withheld.lineKeys.forEach((key) => { delete line[key]; });
+        // Sub-documents need the same treatment as their parent.
+        const lineTarget = isMongooseDoc(line) ? line.toJSON() : line;
+        withheld.lineKeys.forEach((key) => { delete lineTarget[key]; });
+        lines[index] = lineTarget;
       });
     });
   }
-  return record;
+  return target;
 };
 
 /**
@@ -81,17 +104,19 @@ const maskRecord = (record, withheld) => {
  */
 const maskPayload = (payload, withheld) => {
   if (Array.isArray(payload)) {
-    payload.forEach((item) => maskRecord(item, withheld));
+    // Written back by index: masking a document yields a new plain object, so
+    // mutating in place alone would leave the original in the array.
+    payload.forEach((item, index) => { payload[index] = maskRecord(item, withheld); });
     return payload;
   }
   if (!isRecord(payload)) return payload;
-  maskRecord(payload, withheld);
+  const masked = maskRecord(payload, withheld);
   COLLECTION_KEYS.forEach((key) => {
-    const value = payload[key];
-    if (Array.isArray(value)) value.forEach((item) => maskRecord(item, withheld));
-    else if (isRecord(value)) maskRecord(value, withheld);
+    const value = masked[key];
+    if (Array.isArray(value)) value.forEach((item, index) => { value[index] = maskRecord(item, withheld); });
+    else if (isRecord(value)) masked[key] = maskRecord(value, withheld);
   });
-  return payload;
+  return masked;
 };
 
 /** Mask an already-built object (for controllers that need it inline). */
@@ -110,11 +135,14 @@ const fieldMask = (pageKey) => (req, res, next) => {
   const send = res.json.bind(res);
   res.json = (body) => {
     const withheld = withheldKeys(req.user, pageKey);
-    if (withheld) {
-      if (body && typeof body === 'object' && 'data' in body) maskPayload(body.data, withheld);
-      else maskPayload(body, withheld);
+    if (!withheld) return send(body);
+    // Assigned back, not just mutated: masking a Mongoose document returns a
+    // new plain object, and dropping it would send the unmasked original.
+    if (body && typeof body === 'object' && 'data' in body) {
+      body.data = maskPayload(body.data, withheld);
+      return send(body);
     }
-    return send(body);
+    return send(maskPayload(body, withheld));
   };
   next();
 };
