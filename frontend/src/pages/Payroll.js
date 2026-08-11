@@ -57,6 +57,18 @@ const Payroll = () => {
     const [savingAdvance, setSavingAdvance] = useState(false);
     const [advanceForm, setAdvanceForm] = useState({ employee_id: '', amount: '', issued_on: '', reason: '' });
 
+    /**
+     * Editing one line of a draft period.
+     *
+     * The endpoint has always existed and nothing ever called it, so a generated
+     * line could not be touched at all: this month's salary was whatever the
+     * employee record said, and the advance deduction could not be adjusted for
+     * the month where somebody wants to take less of it than is owed.
+     */
+    const [editLine, setEditLine] = useState(null);
+    const [editForm, setEditForm] = useState({ gross_amount: '', deductions: '', advance_deduction: '', notes: '' });
+    const [savingLine, setSavingLine] = useState(false);
+
     // ── paying salaries out ──
     const [payLine, setPayLine] = useState(null);
     const [paying, setPaying] = useState(false);
@@ -177,6 +189,37 @@ const Payroll = () => {
         }
     }, []);
 
+    /** Open the line editor on whatever the line currently says. */
+    const openEdit = (line) => {
+        setEditLine(line);
+        setEditForm({
+            gross_amount: String(line.gross_amount ?? ''),
+            deductions: String(line.deductions ?? 0),
+            advance_deduction: String(line.advance_deduction ?? 0),
+            notes: line.notes || '',
+        });
+    };
+
+    const submitLine = async (e) => {
+        e.preventDefault();
+        if (savingLine || !editLine) return;
+        setSavingLine(true);
+        try {
+            await payrollAPI.updateLine(editLine.id, {
+                gross_amount: Number(editForm.gross_amount),
+                deductions: Number(editForm.deductions || 0),
+                advance_deduction: Number(editForm.advance_deduction || 0),
+                notes: editForm.notes,
+            });
+            toast.success('Line updated');
+            setEditLine(null);
+            loadLines(selected);
+            loadPeriods();
+        } catch (err) { /* the interceptor surfaces the message */ } finally {
+            setSavingLine(false);
+        }
+    };
+
     /** Open the pay dialog pre-filled with whatever is still owed. */
     const openPay = (line) => {
         setPayLine(line);
@@ -244,24 +287,6 @@ const Payroll = () => {
         } catch (err) { /* the interceptor surfaces the message */ } finally {
             setSavingAdvance(false);
         }
-    };
-
-    const repayAdvance = async (advance) => {
-        const entered = window.prompt(
-            `How much is ${advance.employee_name} paying back? Outstanding: ${money(advance.balance)}`,
-            String(advance.balance),
-        );
-        if (entered == null) return;
-        const amount = Number(entered);
-        if (!Number.isFinite(amount) || amount <= 0) {
-            toast.error('Enter an amount greater than zero');
-            return;
-        }
-        try {
-            await salaryAdvanceAPI.repay(advance.id, amount);
-            toast.success('Repayment recorded');
-            loadAdvances();
-        } catch (err) { /* */ }
     };
 
     const cancelAdvance = async (advance) => {
@@ -373,7 +398,7 @@ const Payroll = () => {
                                             <th>Month</th>
                                             <th>Gross</th>
                                             <th>Deductions</th>
-                                            <th>Advance recovered</th>
+                                            <th>Advance deducted</th>
                                             <th>Net</th>
                                             <th>Paid</th>
                                             <th>Remaining</th>
@@ -429,11 +454,11 @@ const Payroll = () => {
                                 <strong>{money(advanceSummary.total_issued)}</strong>
                             </div>
                             <div className="adv-stat">
-                                <span>Recovered</span>
+                                <span>Deducted from salaries</span>
                                 <strong className="adv-good">{money(advanceSummary.total_recovered)}</strong>
                             </div>
                             <div className="adv-stat adv-stat-main">
-                                <span>Balance outstanding</span>
+                                <span>Still to deduct</span>
                                 <strong className="adv-owed">{money(advanceSummary.total_outstanding)}</strong>
                             </div>
                         </div>
@@ -445,9 +470,9 @@ const Payroll = () => {
                                 <thead>
                                     <tr>
                                         <th>Employee</th>
-                                        <th>Advance</th>
-                                        <th>Recovered</th>
-                                        <th>Balance</th>
+                                        <th>Advance given</th>
+                                        <th>Deducted so far</th>
+                                        <th>Still to deduct</th>
                                         <th>Issued</th>
                                         <th>Reason</th>
                                         <th>Status</th>
@@ -474,7 +499,9 @@ const Payroll = () => {
                                                 <td className="adv-actions">
                                                     {a.status === 'outstanding' && (
                                                         <>
-                                                            <button type="button" className="btn btn-sm btn-secondary" onClick={() => repayAdvance(a)}>Repay</button>
+                                                            {/* An advance comes off the next payroll on its own; the
+                                                                only thing left to decide is whether it should have
+                                                                been given at all. */}
                                                             {a.recovered === 0 && (
                                                                 <button type="button" className="btn btn-sm btn-secondary" onClick={() => cancelAdvance(a)}>Cancel</button>
                                                             )}
@@ -609,7 +636,7 @@ const Payroll = () => {
                                     <tr>
                                         {showField('employee') && <th>Employee</th>}
                                         {showField('earnings') && <><th>Gross</th><th>Deductions</th></>}
-                                        {showField('advances') && <><th>Advance recovered</th><th>Advance balance</th></>}
+                                        {showField('advances') && <><th>Advance deducted</th><th>Still to deduct</th></>}
                                         {showField('net_pay') && <><th>Net</th><th>Given</th><th>Remaining</th><th>Status</th></>}
                                         {canRun && <th>Action</th>}
                                     </tr>
@@ -643,7 +670,9 @@ const Payroll = () => {
                                                 <td>{money(ln.deductions)}</td>
                                             </>}
                                             {showField('advances') && <>
-                                                <td>{Number(ln.advance_deduction) > 0 ? money(ln.advance_deduction) : '—'}</td>
+                                                <td>
+                                                    {Number(ln.advance_deduction) > 0 ? money(ln.advance_deduction) : '—'}
+                                                </td>
                                                 {/* What is still owed once this run is taken off. */}
                                                 <td className={Number(ln.advance_balance) > 0 ? 'adv-owed' : undefined}>
                                                     {Number(ln.advance_balance) > 0 ? money(ln.advance_balance) : '—'}
@@ -664,6 +693,13 @@ const Payroll = () => {
                                             </>}
                                             {canRun && (
                                                 <td>
+                                                    {/* A draft is still a proposal: this is where the month's
+                                                        salary is corrected and an advance deduction is chosen. */}
+                                                    {linesData.period.status === 'draft' && (
+                                                        <button type="button" className="btn btn-sm btn-secondary" onClick={() => openEdit(ln)}>
+                                                            Edit
+                                                        </button>
+                                                    )}
                                                     {linesData.period.status === 'posted' && Number(ln.remaining_amount) > 0 && (
                                                         <button type="button" className="btn btn-sm btn-primary" onClick={() => openPay(ln)}>
                                                             Pay
@@ -740,6 +776,9 @@ const Payroll = () => {
                                     </div>
                                     <div className="data-card-footer">
                                         <PayBadge line={ln} periodStatus={linesData.period.status} />
+                                        {canRun && linesData.period.status === 'draft' && (
+                                            <button type="button" className="btn btn-sm btn-secondary" onClick={() => openEdit(ln)}>Edit</button>
+                                        )}
                                         {canRun && linesData.period.status === 'posted' && Number(ln.remaining_amount) > 0 && (
                                             <button type="button" className="btn btn-sm btn-primary" onClick={() => openPay(ln)}>Pay</button>
                                         )}
@@ -751,6 +790,99 @@ const Payroll = () => {
                 </div>
             )}
             </>
+            )}
+
+            {editLine && (
+                <div className="modal-overlay" onClick={() => setEditLine(null)}>
+                    <div
+                        className="modal-content modal-md"
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="hr-line-modal-title"
+                        onClick={(ev) => ev.stopPropagation()}
+                    >
+                        <div className="modal-header">
+                            <h2 id="hr-line-modal-title">{editLine.employee_name}</h2>
+                            <button type="button" className="modal-close" onClick={() => setEditLine(null)} aria-label="Close">×</button>
+                        </div>
+                        <form onSubmit={submitLine}>
+                            <div className="modal-body">
+                                <div className="form-group">
+                                    <label className="form-label">This month's salary</label>
+                                    <input
+                                        type="number" min="0" step="0.01" className="form-input" required
+                                        value={editForm.gross_amount}
+                                        onChange={(ev) => setEditForm({ ...editForm, gross_amount: ev.target.value })}
+                                    />
+                                    <small className="text-muted">Starts from the employee record; change it for this month only.</small>
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Other deductions</label>
+                                    <input
+                                        type="number" min="0" step="0.01" className="form-input"
+                                        value={editForm.deductions}
+                                        onChange={(ev) => setEditForm({ ...editForm, deductions: ev.target.value })}
+                                    />
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Advance to deduct this month</label>
+                                    <input
+                                        type="number" min="0" step="0.01" max={editLine.advance_outstanding || 0}
+                                        className="form-input"
+                                        value={editForm.advance_deduction}
+                                        onChange={(ev) => setEditForm({ ...editForm, advance_deduction: ev.target.value })}
+                                    />
+                                    {/* Nothing comes off unless a figure is typed here — the point of
+                                        the whole screen. */}
+                                    {Number(editLine.advance_outstanding) > 0 ? (
+                                        <small className="text-muted">
+                                            {money(editLine.advance_outstanding)} of advance still to come off. Lower it to
+                                            take less this month — the rest carries to the next one.
+                                            {' '}
+                                            <button
+                                                type="button" className="btn-link"
+                                                onClick={() => setEditForm({ ...editForm, advance_deduction: '0' })}
+                                            >Take none this month</button>
+                                        </small>
+                                    ) : (
+                                        <small className="text-muted">No advance outstanding for this employee.</small>
+                                    )}
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Note</label>
+                                    <input
+                                        type="text" className="form-input"
+                                        value={editForm.notes}
+                                        onChange={(ev) => setEditForm({ ...editForm, notes: ev.target.value })}
+                                    />
+                                </div>
+                                <div className="adv-summary">
+                                    <div className="adv-stat adv-stat-main">
+                                        <span>Net to pay</span>
+                                        <strong>
+                                            {money(Math.max(0,
+                                                Number(editForm.gross_amount || 0)
+                                                - Number(editForm.deductions || 0)
+                                                - Number(editForm.advance_deduction || 0)))}
+                                        </strong>
+                                    </div>
+                                    <div className="adv-stat">
+                                        <span>Advance left after this</span>
+                                        <strong className="adv-owed">
+                                            {money(Math.max(0, Number(editLine.advance_outstanding || 0) - Number(editForm.advance_deduction || 0)))}
+                                        </strong>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="modal-footer">
+                                <button type="button" className="btn btn-secondary" onClick={() => setEditLine(null)}>Cancel</button>
+                                <button type="submit" className="btn btn-primary" disabled={savingLine}>
+                                    {savingLine ? 'Saving…' : 'Save line'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
             )}
 
             {payLine && (

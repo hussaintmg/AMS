@@ -92,6 +92,12 @@ const mapLine = (line) => {
         advance_deduction: line.advanceDeduction || 0,
         // What the employee still owes after this run is taken off.
         advance_balance: line.advanceBalance || 0,
+        /**
+         * Everything the employee owes against advances right now, whatever this
+         * line decides to take. It is what the deduction box may be raised to,
+         * and what the row shows before anyone has decided anything.
+         */
+        advance_outstanding: round2((line.advanceDeduction || 0) + (line.advanceBalance || 0)),
         net_amount: line.netAmount || 0,
         paid_amount: round2(line.paidAmount),
         /**
@@ -234,8 +240,16 @@ const generateLines = async (req, res, next) => {
             const notes = raw < 0 ? 'Employee salary was negative on record; treated as 0 — please correct the employee.' : '';
             if (raw < 0) flagged.push(String(emp._id));
 
-            // Hold back what the employee owes, but never more than this
-            // month's pay — the rest simply stays outstanding.
+            /**
+             * An advance is salary already handed over, so this month's line
+             * simply carries it: pay 40,000, gave 20,000 up front, 20,000 left
+             * to pay. `settleLine` never lets it push the payslip below zero —
+             * anything that will not fit this month stays owed and comes off the
+             * next one.
+             *
+             * The line is still editable while the period is a draft, for the
+             * month where somebody wants to take less.
+             */
             const owed = round2(owedByEmployee.get(String(emp._id)) || 0);
             const line = settleLine({
                 employee: emp._id,
@@ -257,7 +271,7 @@ const generateLines = async (req, res, next) => {
         const populated = await findPeriodOr404(period._id, true);
 
         const notices = [`${added} line(s) generated`];
-        if (advanceTotal > 0) notices.push(`${advanceTotal} recovered against salary advances`);
+        if (advanceTotal > 0) notices.push(`${advanceTotal} of salary advances already given, deducted from this month`);
         if (flagged.length) notices.push(`${flagged.length} employee(s) had a negative salary and were set to 0`);
 
         res.json({
@@ -266,7 +280,7 @@ const generateLines = async (req, res, next) => {
             data: {
                 count: populated.lines.length,
                 added,
-                advanceRecovered: advanceTotal,
+                advanceDeducted: advanceTotal,
                 flaggedEmployees: flagged,
                 lines: populated.lines.map(mapLine),
             },
