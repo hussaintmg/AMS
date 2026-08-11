@@ -176,3 +176,23 @@
   border-color: var(--primary-600, #2563eb);
   color: #fff;
 }
+
+/*
+ * The "incl. 20,000 advance" note under the Given figure.
+ *
+ * It sat inline beside the number, which roughly doubled that column's natural
+ * width and helped push a ten-column table past the edge of its card. Under the
+ * figure it costs nothing horizontally.
+ */
+.adv-note {
+  display: block;
+  font-size: 0.72rem;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+/* Money columns should never wrap mid-figure in a scrolling table. */
+.table-scroll-x .data-table td,
+.table-scroll-x .data-table th {
+  white-space: nowrap;
+}

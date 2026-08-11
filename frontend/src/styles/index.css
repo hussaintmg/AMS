@@ -1246,7 +1246,19 @@ img {
   .table-responsive {
     margin: 0;
     padding: 0;
+    /* A scroll container clips absolutely-positioned children, so tables with
+       menus hanging out of a cell need this back on a wide screen. */
     overflow-x: visible;
+  }
+
+  /*
+   * …but a table wider than its card then spills out of it instead of scrolling.
+   * Wide tables with nothing to escape the box say so, and go on scrolling at
+   * every width. Payroll's line table is ten columns and overflowed its card by
+   * some 470px on a 1147px screen.
+   */
+  .table-responsive.table-scroll-x {
+    overflow-x: auto;
   }
 }
 

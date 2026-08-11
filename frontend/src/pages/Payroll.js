@@ -630,7 +630,7 @@ const Payroll = () => {
                         </div>
                     )}
                     <div className="desktop-only">
-                        <div className="table-responsive">
+                        <div className="table-responsive table-scroll-x">
                             <table className="data-table">
                                 <thead>
                                     <tr>
@@ -683,7 +683,7 @@ const Payroll = () => {
                                                 <td className="adv-good">
                                                     {money(ln.already_given)}
                                                     {Number(ln.advance_deduction) > 0 && (
-                                                        <small className="text-muted"> incl. {money(ln.advance_deduction)} advance</small>
+                                                        <small className="text-muted adv-note">incl. {money(ln.advance_deduction)} advance</small>
                                                     )}
                                                 </td>
                                                 <td className={Number(ln.remaining_amount) > 0 ? 'adv-owed' : undefined}>
