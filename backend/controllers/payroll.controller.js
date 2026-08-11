@@ -130,6 +130,34 @@ const settleLine = (line) => {
     return line;
 };
 
+/**
+ * Mapped lines, with each employee's advance position read fresh.
+ *
+ * `advanceBalance` is written when the line is generated, so it is a snapshot of
+ * a moment — and an advance issued *after* the lines were generated is not in
+ * it. The row then said nothing was owed and the editor refused to take a figure
+ * at all, while the employee plainly owed the money. Recovery only happens at
+ * posting, so until then the advance is still fully outstanding and the truth is
+ * one query away.
+ *
+ * A posted period keeps what it stored: the advance really was recovered then,
+ * and the payslip should go on saying so.
+ */
+async function withAdvancePosition(lines, periodStatus) {
+    const mapped = lines.map(mapLine);
+    if (periodStatus === 'posted') return mapped;
+
+    const owed = await outstandingByEmployee(mapped.map((line) => line.employee_id).filter(Boolean));
+    return mapped.map((line) => {
+        const outstanding = round2(owed.get(String(line.employee_id)) || 0);
+        return {
+            ...line,
+            advance_outstanding: outstanding,
+            advance_balance: round2(Math.max(0, outstanding - line.advance_deduction)),
+        };
+    });
+}
+
 /** Load a period or 404, optionally with employee details on each line. */
 async function findPeriodOr404(id, populateEmployees = false) {
     if (!toObjectId(id)) throw new AppError('Period not found', 404);
@@ -193,7 +221,10 @@ const getPeriodLines = async (req, res, next) => {
 
         res.json({
             success: true,
-            data: { period: mapPeriod(period.toObject()), lines: lines.map(mapLine) },
+            data: {
+                period: mapPeriod(period.toObject()),
+                lines: await withAdvancePosition(lines, period.status),
+            },
         });
     } catch (e) {
         next(e);
@@ -282,7 +313,7 @@ const generateLines = async (req, res, next) => {
                 added,
                 advanceDeducted: advanceTotal,
                 flaggedEmployees: flagged,
-                lines: populated.lines.map(mapLine),
+                lines: await withAdvancePosition(populated.lines, populated.status),
             },
         });
     } catch (e) {
@@ -465,7 +496,8 @@ const updateLine = async (req, res, next) => {
         await period.save();
 
         const populated = await findPeriodOr404(period._id, true);
-        res.json({ success: true, data: mapLine(populated.lines.id(lineId)) });
+        const [decorated] = await withAdvancePosition([populated.lines.id(lineId)], period.status);
+        res.json({ success: true, data: decorated });
     } catch (e) {
         next(e);
     }
@@ -606,7 +638,7 @@ const payPeriod = async (req, res, next) => {
         res.json({
             success: true,
             message: `${count} salar${count === 1 ? 'y' : 'ies'} paid, ${total} in total`,
-            data: { period: mapPeriod(populated.toObject()), lines: populated.lines.map(mapLine) },
+            data: { period: mapPeriod(populated.toObject()), lines: await withAdvancePosition(populated.lines, populated.status) },
         });
     } catch (e) { next(e); }
 };

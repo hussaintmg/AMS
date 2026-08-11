@@ -836,13 +836,18 @@ const Payroll = () => {
                                         the whole screen. */}
                                     {Number(editLine.advance_outstanding) > 0 ? (
                                         <small className="text-muted">
-                                            {money(editLine.advance_outstanding)} of advance still to come off. Lower it to
-                                            take less this month — the rest carries to the next one.
+                                            {money(editLine.advance_outstanding)} of advance still to come off. Take less
+                                            this month and the rest carries to the next one.
                                             {' '}
                                             <button
                                                 type="button" className="btn-link"
+                                                onClick={() => setEditForm({ ...editForm, advance_deduction: String(editLine.advance_outstanding) })}
+                                            >Deduct all {money(editLine.advance_outstanding)}</button>
+                                            {' · '}
+                                            <button
+                                                type="button" className="btn-link"
                                                 onClick={() => setEditForm({ ...editForm, advance_deduction: '0' })}
-                                            >Take none this month</button>
+                                            >Take none</button>
                                         </small>
                                     ) : (
                                         <small className="text-muted">No advance outstanding for this employee.</small>
