@@ -123,3 +123,56 @@
   opacity: 1;
   color: var(--error-500);
 }
+
+/*
+ * The two shortcuts under "Advance to deduct this month".
+ *
+ * They were inline links inside the hint sentence, and with no `.btn-link` rule
+ * in scope the browser drew them as bare grey buttons mid-paragraph. They are
+ * their own row now: the answer is a choice, so it looks like one, and the chip
+ * matching the current figure is marked so the box and the buttons never
+ * disagree about what is selected.
+ */
+.adv-quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.55rem;
+}
+
+.adv-quick-btn {
+  padding: 0.32rem 0.7rem;
+  border: 1px solid var(--gray-300, #cbd5e1);
+  border-radius: 999px;
+  background: var(--bg-card, #fff);
+  color: var(--gray-700, #334155);
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.3;
+  cursor: pointer;
+  transition: background-color .12s ease, border-color .12s ease, color .12s ease;
+}
+
+.adv-quick-btn:hover {
+  border-color: var(--primary-400, #60a5fa);
+  color: var(--primary-700, #1d4ed8);
+  background: var(--primary-50, #eff6ff);
+}
+
+.adv-quick-btn:focus-visible {
+  outline: 2px solid var(--primary-500, #3b82f6);
+  outline-offset: 1px;
+}
+
+/* Whichever one the amount currently matches. */
+.adv-quick-btn.is-on {
+  border-color: var(--primary-500, #3b82f6);
+  background: var(--primary-500, #3b82f6);
+  color: #fff;
+}
+
+.adv-quick-btn.is-on:hover {
+  background: var(--primary-600, #2563eb);
+  border-color: var(--primary-600, #2563eb);
+  color: #fff;
+}

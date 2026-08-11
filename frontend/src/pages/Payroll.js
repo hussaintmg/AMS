@@ -835,20 +835,31 @@ const Payroll = () => {
                                     {/* Nothing comes off unless a figure is typed here — the point of
                                         the whole screen. */}
                                     {Number(editLine.advance_outstanding) > 0 ? (
-                                        <small className="text-muted">
-                                            {money(editLine.advance_outstanding)} of advance still to come off. Take less
-                                            this month and the rest carries to the next one.
-                                            {' '}
-                                            <button
-                                                type="button" className="btn-link"
-                                                onClick={() => setEditForm({ ...editForm, advance_deduction: String(editLine.advance_outstanding) })}
-                                            >Deduct all {money(editLine.advance_outstanding)}</button>
-                                            {' · '}
-                                            <button
-                                                type="button" className="btn-link"
-                                                onClick={() => setEditForm({ ...editForm, advance_deduction: '0' })}
-                                            >Take none</button>
-                                        </small>
+                                        <>
+                                            <small className="text-muted">
+                                                {money(editLine.advance_outstanding)} of advance still to come off. Take less
+                                                this month and the rest carries to the next one.
+                                            </small>
+                                            {/* Two shortcuts for the two answers people actually give. They
+                                                were inline links inside the hint, which the browser drew as
+                                                bare grey buttons mid-sentence. */}
+                                            <div className="adv-quick">
+                                                <button
+                                                    type="button"
+                                                    className={`adv-quick-btn ${Number(editForm.advance_deduction) === Number(editLine.advance_outstanding) ? 'is-on' : ''}`}
+                                                    onClick={() => setEditForm({ ...editForm, advance_deduction: String(editLine.advance_outstanding) })}
+                                                >
+                                                    Deduct all {money(editLine.advance_outstanding)}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    className={`adv-quick-btn ${Number(editForm.advance_deduction) === 0 ? 'is-on' : ''}`}
+                                                    onClick={() => setEditForm({ ...editForm, advance_deduction: '0' })}
+                                                >
+                                                    Take none
+                                                </button>
+                                            </div>
+                                        </>
                                     ) : (
                                         <small className="text-muted">No advance outstanding for this employee.</small>
                                     )}
