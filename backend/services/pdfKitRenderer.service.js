@@ -135,8 +135,16 @@ function renderDocumentPdf(type, data) {
     doc.font('Helvetica-Bold').fontSize(16).fillColor(INK)
       .text(company.name || '', left, doc.y, { width, align: 'center' });
     doc.font('Helvetica').fontSize(9).fillColor(MUTED);
-    [company.phone && `Tel: ${company.phone}`, company.address && `Address: ${company.address}`, company.ntn && `NTN Number: ${company.ntn}`]
-      .filter(Boolean).forEach((line) => doc.text(line, left, doc.y, { width, align: 'center' }));
+    // The company's own email belongs on the letterhead — it is how the customer
+    // replies to the document. It is configured in ERP Settings and has always
+    // been in the data bag, but neither renderer drew it, so every document went
+    // out with no email address on it anywhere.
+    [
+      company.phone && `Tel: ${company.phone}`,
+      company.email && `Email: ${company.email}`,
+      company.address && `Address: ${company.address}`,
+      company.ntn && `NTN Number: ${company.ntn}`,
+    ].filter(Boolean).forEach((line) => doc.text(line, left, doc.y, { width, align: 'center' }));
 
     doc.font('Helvetica').fontSize(9).fillColor(INK)
       .text(headerMeta(type, data).join('\n'), left + width - 180, 40, { width: 180, align: 'right' });

@@ -5,6 +5,7 @@ const { renderDocumentPdf } = require('../services/pdfKitRenderer.service');
 const { TYPES, findDocument, buildDataBag, variableCatalog, companyName, companyInfo } = require('../services/pdfData.service');
 const { resolveTokens } = require('../services/pdfFormat.cjs');
 const { buildSalesDocumentHtml } = require('../services/salesDocumentHtml.service');
+const { resolveCustomerEmail } = require('../utils/customerEmail.util');
 
 // Set PDF_DEBUG=1 to log resolved variables for each generated document while
 // testing. Left off by default so normal runs stay quiet.
@@ -133,7 +134,11 @@ async function loadRecord(type, id) {
   if (!found) throw Object.assign(new Error(`${config.label} not found`), { statusCode: 404 });
   const record = found.record;
   const company = await companyInfo();
-  const data = buildDataBag(type, record, { companyName: company.name, company });
+  // A customer who gave their email on a lead and was later matched to an
+  // imported record has it on the lead, not on their customer record. Look it up
+  // before the document is built so the address they did give actually prints.
+  const customerEmail = record.walkIn ? '' : await resolveCustomerEmail(record.customer);
+  const data = buildDataBag(type, record, { companyName: company.name, company, customerEmail });
   if (PDF_DEBUG) {
     const flat = {};
     variableCatalog(type).forEach(({ key }) => { flat[key] = resolveTokens(`{{${key}}}`, data); });

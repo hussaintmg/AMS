@@ -28,4 +28,38 @@ const realCustomerEmail = (value) => {
   return email;
 };
 
-module.exports = { GENERATED_EMAIL_DOMAIN, isGeneratedEmail, realCustomerEmail };
+/**
+ * The best real email this system holds for a customer.
+ *
+ * A customer converted from a lead often gave their address on the lead and
+ * never again — and if they were also seen by the import first, their customer
+ * record carries only the invented placeholder, so the address they did give
+ * never reaches a document. This looks past the placeholder to the lead the
+ * customer was converted from.
+ *
+ * Returns '' when there is genuinely nothing on file, which is the honest
+ * answer: a document should say nothing rather than invent an address.
+ *
+ * @param {object} customer  a populated Customer document (lean or hydrated)
+ * @returns {Promise<string>}
+ */
+async function resolveCustomerEmail(customer) {
+  const own = realCustomerEmail(customer?.email);
+  if (own) return own;
+
+  const leadId = customer?.leadRef;
+  if (!leadId) return '';
+  try {
+    // Required lazily: this util is loaded by services that must not drag the
+    // whole model graph in with them.
+    const Lead = require('../models/Lead.model');
+    const lead = await Lead.findById(leadId).select('email').lean();
+    return realCustomerEmail(lead?.email);
+  } catch {
+    return '';
+  }
+}
+
+module.exports = {
+  GENERATED_EMAIL_DOMAIN, isGeneratedEmail, realCustomerEmail, resolveCustomerEmail,
+};

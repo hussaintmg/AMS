@@ -220,7 +220,15 @@ function buildDataBag(type, record, extras = {}) {
       // document that belongs to nobody. Better an empty Email field than a
       // convincing wrong one — and a walk-in has no email at all, since the
       // shared walk-in record's would not be theirs.
-      email: record.walkIn ? '' : realCustomerEmail(customer.email),
+      //
+      // `extras.customerEmail` is the caller's already-resolved answer, which
+      // can see further than this function can: it may have recovered the
+      // address from the lead the customer was converted from.
+      email: record.walkIn
+        ? ''
+        : (extras.customerEmail !== undefined
+          ? realCustomerEmail(extras.customerEmail)
+          : realCustomerEmail(customer.email)),
       fullName: (record.walkIn && record.walkInName)
         || join(customer.firstName, customer.lastName) || customer.companyName || '',
       name: (record.walkIn && record.walkInName)

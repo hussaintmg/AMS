@@ -116,8 +116,13 @@ function buildSalesDocumentHtml(type, data) {
   const d = data.document || {};
   const company = data.company || {};
 
+  // Keep this list in step with services/pdfKitRenderer.service.js — the two
+  // renderers must produce the same letterhead. The company email is how a
+  // customer replies to the document; it was configured and available all along
+  // but neither renderer drew it.
   const companyLines = [
     company.phone && `Tel: ${company.phone}`,
+    company.email && `Email: ${company.email}`,
     company.address && `Address: ${company.address}`,
     company.ntn && `NTN Number: ${company.ntn}`,
   ].filter(Boolean).map((line) => `<div class="ams-sd__companyline">${esc(line)}</div>`).join('');
