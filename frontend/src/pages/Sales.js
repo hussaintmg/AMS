@@ -23,27 +23,8 @@ import ServerPagination from '../components/ServerPagination';
 
 import SalesFilterBar from '../components/sales/SalesFilterBar';
 import SalesDrawer from '../components/sales/SalesDrawer';
-import CorporatePrintHeader, { SalesDocumentMeta } from '../components/sales/CorporatePrintHeader';
-import {
-    CorpDocTitleBar,
-    CorpDocSection,
-    CorpDocKvTable,
-    CorpDocFinancialTable,
-    CorpDocNotes,
-    formatPKR,
-    customerLabelById,
-    saleTypeQuotationLabel,
-    resolveQuotationLineItem,
-    resolveBookingVehicleLine,
-    resolveOrderItemLine,
-    priorityLabel
-} from '../components/sales/CorporateDocumentView';
-import { printSalesModal } from '../utils/printSalesModal';
-import { renderSalesTemplate } from '../utils/documentTemplateRender';
-import { useSalesHtmlTemplate } from '../hooks/useSalesHtmlTemplate';
-import { useSalesDocumentPrintHtml } from '../hooks/useSalesDocumentPrintHtml';
+import { formatPKR } from '../components/sales/CorporateDocumentView';
 import useErpDocumentSettings from '../hooks/useErpDocumentSettings';
-import RenderedHtmlDocumentTemplate from '../components/sales/RenderedHtmlDocumentTemplate';
 import ProductCell from '../components/sales/ProductCell';
 import '../styles/sales-print.css';
 import '../styles/userManagement.css';
@@ -255,31 +236,6 @@ function useSalesStatusOptions(collectionKey, fallback) {
     return options;
 }
 
-/** Print open sales document modal via isolated iframe (reliable in Chrome). */
-function runSalesPrint() {
-    printSalesModal();
-}
-
-/**
- * What the View modal shows while the document and its template load.
- *
- * It used to be a bare `<div className="spinner" />` — a 40px ring sitting in
- * the top-left corner of an otherwise empty white modal, with nothing saying
- * what was happening. On the invoice modal it was worse: a `minHeight: 200px`
- * on the ring itself stretched the circle into a 40×200 oval.
- *
- * The placeholder holds roughly the height of a page of document so the modal
- * does not jump when the real content arrives, and says what it is waiting for.
- */
-function DocumentPreviewLoading() {
-    return (
-        <div className="doc-preview-loading" role="status" aria-live="polite">
-            <div className="spinner" />
-            <p>Preparing the document…</p>
-        </div>
-    );
-}
-
 async function downloadSalesPdf(documentType, id, filename) {
     try {
         const response = await pdfManagementAPI.download(documentType, id);
@@ -399,19 +355,6 @@ function Quotations({ category = 'vehicle' }) {
     const [selectedItem, setSelectedItem] = useState(null);
     const [selectedIds,setSelectedIds]=useState([]);
     const [sendingEmail, setSendingEmail] = useState(null);
-    // What the printed / downloaded quotation looks like. The ERP-Settings HTML
-    // template below is only reached if the server document cannot be built.
-    const { documentHtml, documentLoading } = useSalesDocumentPrintHtml(
-        'quotation',
-        selectedItem?.id,
-        showModal && modalMode === 'view'
-    );
-    const { templateHtml, templateLoading } = useSalesHtmlTemplate(
-        'quotation',
-        companyInfo?.id,
-        showModal && modalMode === 'view'
-    );
-    const viewLoading = documentLoading || templateLoading;
 
     // Dropdowns
     const [customers, setCustomers] = useState([]);
@@ -1000,8 +943,6 @@ function Quotations({ category = 'vehicle' }) {
                                 <td>{getStatusBadge(q.status)}</td>
                                 <td onClick={e=>e.stopPropagation()}>
                                     <ActionButtons
-                                        showView={true}
-                                        onView={() => openModal('view', q)}
                                         onEdit={canEdit && q.status === 'draft' ? () => openModal('edit', q) : null}
                                         onDelete={canDelete && q.status === 'draft' ? () => handleDeleteClick(q.id) : null}
                                         customActions={[
@@ -1040,8 +981,6 @@ function Quotations({ category = 'vehicle' }) {
                                 </div>
                                 <div className="data-card-footer">
                                     <ActionButtons
-                                        showView={true}
-                                        onView={() => openModal('view', q)}
                                         onEdit={canEdit && q.status === 'draft' ? () => openModal('edit', q) : null}
                                         onDelete={canDelete && q.status === 'draft' ? () => handleDeleteClick(q.id) : null}
                                         customActions={[
@@ -1072,67 +1011,11 @@ function Quotations({ category = 'vehicle' }) {
 
             {showModal && (
                 <Modal
-                    title={modalMode === 'view' ? `Quotation ${selectedItem?.quotation_number || ''}` : `${modalMode === 'create' ? 'Create' : 'Edit'} Quotation`}
+                    title={`${modalMode === 'create' ? 'Create' : 'Edit'} Quotation`}
                     onClose={closeModal}
                     size="large"
-                    overlayClassName={modalMode === 'view' ? 'sales-print-modal' : undefined}
                 >
-                    {modalMode === 'view' ? (
-                        <>
-                            {viewLoading ? (
-                                <DocumentPreviewLoading />
-                            ) : documentHtml ? (
-                                <RenderedHtmlDocumentTemplate htmlString={documentHtml} />
-                            ) : templateHtml ? (
-                                <RenderedHtmlDocumentTemplate
-                                    htmlString={renderSalesTemplate('quotation', templateHtml, {
-                                        companyInfo, selectedItem, formData, customers, vehicles, vehicleVariants, parts
-                                    })}
-                                />
-                            ) : (
-                                <div className="corp-doc">
-                                    <CorporatePrintHeader company={companyInfo} />
-                                    <CorpDocTitleBar documentTitle="Quotation" reference={selectedItem?.quotation_number} />
-                                    <SalesDocumentMeta
-                                        rows={[
-                                            { label: 'Issue date', value: selectedItem?.created_at ? new Date(selectedItem.created_at).toLocaleString() : '—' },
-                                            { label: 'Status', value: selectedItem?.status ? String(selectedItem.status).toUpperCase() : '—' },
-                                            { label: 'Printed', value: new Date().toLocaleString() }
-                                        ]}
-                                    />
-                                    <CorpDocSection title="Client & product">
-                                        <CorpDocKvTable
-                                            rows={[
-                                                { label: 'Customer', value: selectedItem?.customer_name || customerLabelById(formData.customerId, customers) },
-                                                { label: 'Sale category', value: saleTypeQuotationLabel(formData.saleType) },
-                                                { label: 'Description', value: resolveQuotationLineItem(formData, selectedItem, { vehicles, vehicleVariants, parts }) }
-                                            ]}
-                                        />
-                                    </CorpDocSection>
-                                    <CorpDocSection title="Commercial terms">
-                                        <CorpDocKvTable
-                                            rows={[
-                                                { label: 'Base price', value: formatPKR(formData.vehiclePrice) },
-                                                { label: 'Discount', value: formatPKR(formData.discountAmount) },
-                                                { label: 'Tax / levies', value: formatPKR(formData.taxAmount) },
-                                                { label: 'Additional charges', value: formatPKR(formData.additionalCharges) },
-                                                { label: 'Validity', value: formData.validityDays ? `${formData.validityDays} days` : '—' }
-                                            ]}
-                                        />
-                                    </CorpDocSection>
-                                    <CorpDocNotes text={formData.notes} />
-                                    {formData.termsAndConditions?.trim() ? (
-                                        <CorpDocNotes title="Terms & conditions" text={formData.termsAndConditions} />
-                                    ) : null}
-                                </div>
-                            )}
-                            <div className="modal-actions">
-                                <button type="button" className="btn btn-secondary" onClick={closeModal}>Close</button>
-                                <button type="button" className="btn btn-primary" onClick={runSalesPrint} disabled={viewLoading}>Print</button>
-                            </div>
-                        </>
-                    ) : (
-                        <form onSubmit={handleSubmit}>
+                    <form onSubmit={handleSubmit}>
                             <div className="form-group">
                                 <CustomerField
                                     formData={formData}
@@ -1191,8 +1074,7 @@ function Quotations({ category = 'vehicle' }) {
                                 <button type="button" className="btn btn-secondary" onClick={closeModal}>Cancel</button>
                                 <button type="submit" className="btn btn-primary">{modalMode === 'create' ? 'Create' : 'Update'}</button>
                             </div>
-                        </form>
-                    )}
+                    </form>
                 </Modal>
             )}
 
@@ -1241,17 +1123,6 @@ function Bookings({ category = 'vehicle' }) {
     const [selectedItem, setSelectedItem] = useState(null);
     const [selectedIds,setSelectedIds]=useState([]);
     const [sendingEmail, setSendingEmail] = useState(null);
-    const { documentHtml, documentLoading } = useSalesDocumentPrintHtml(
-        'booking',
-        selectedItem?.id,
-        showModal && modalMode === 'view'
-    );
-    const { templateHtml, templateLoading } = useSalesHtmlTemplate(
-        'booking',
-        companyInfo?.id,
-        showModal && modalMode === 'view'
-    );
-    const viewLoading = documentLoading || templateLoading;
     const [customers, setCustomers] = useState([]);
     const [vehicles, setVehicles] = useState([]);
     const [parts, setParts] = useState([]);
@@ -1670,8 +1541,6 @@ function Bookings({ category = 'vehicle' }) {
                                 <td>{getStatusBadge(b.status)}</td>
                                 <td onClick={e=>e.stopPropagation()}>
                                     <ActionButtons
-                                        showView={true}
-                                        onView={() => openModal('view', b)}
                                         onEdit={canAction && !['cancelled', 'completed'].includes(b.status) ? () => openModal('edit', b) : null}
                                         customActions={[
                                             ...(canAction && !['cancelled', 'completed', 'converted'].includes(b.status) ? [{ icon: <Truck size={18}/>, title: 'Convert to Sales Order', onClick: () => handleConvertClick(b), className: 'btn-success', disabled: convertingId === b.id, loading: convertingId === b.id }] : []),
@@ -1706,8 +1575,6 @@ function Bookings({ category = 'vehicle' }) {
                                 </div>
                                 <div className="data-card-footer">
                                     <ActionButtons
-                                        showView={true}
-                                        onView={() => openModal('view', b)}
                                         onEdit={canAction && !['cancelled', 'completed'].includes(b.status) ? () => openModal('edit', b) : null}
                                         customActions={[
                                             ...(canDownloadPdf ? [{ icon: <Download size={18}/>, title: 'Download PDF', onClick: () => downloadSalesPdf('booking', b.id, b.booking_number), className: 'btn-info' }] : []),
@@ -1735,61 +1602,11 @@ function Bookings({ category = 'vehicle' }) {
             {
                 showModal && (
                     <Modal
-                        title={modalMode === 'view' ? `Booking ${selectedItem?.booking_number || ''}` : `${modalMode === 'create' ? 'Create' : 'Edit'} Booking`}
+                        title={`${modalMode === 'create' ? 'Create' : 'Edit'} Booking`}
                         onClose={closeModal}
                         size="large"
-                        overlayClassName={modalMode === 'view' ? 'sales-print-modal' : undefined}
                     >
-                        {modalMode === 'view' ? (
-                            <>
-                                {viewLoading ? (
-                                    <DocumentPreviewLoading />
-                                ) : documentHtml ? (
-                                    <RenderedHtmlDocumentTemplate htmlString={documentHtml} />
-                                ) : templateHtml ? (
-                                    <RenderedHtmlDocumentTemplate
-                                        htmlString={renderSalesTemplate('booking', templateHtml, {
-                                            companyInfo, selectedItem, formData, customers, vehicles
-                                        })}
-                                    />
-                                ) : (
-                                    <div className="corp-doc">
-                                        <CorporatePrintHeader company={companyInfo} />
-                                        <CorpDocTitleBar documentTitle="Vehicle booking" reference={selectedItem?.booking_number} />
-                                        <SalesDocumentMeta
-                                            rows={[
-                                                { label: 'Created', value: selectedItem?.created_at ? new Date(selectedItem.created_at).toLocaleString() : '—' },
-                                                { label: 'Status', value: selectedItem?.status ? String(selectedItem.status).toUpperCase() : '—' },
-                                                { label: 'Printed', value: new Date().toLocaleString() }
-                                            ]}
-                                        />
-                                        <CorpDocSection title="Reservation details">
-                                            <CorpDocKvTable
-                                                rows={[
-                                                    { label: 'Customer', value: selectedItem?.customer_name || customerLabelById(formData.customerId, customers) },
-                                                    { label: 'Vehicle', value: resolveBookingVehicleLine(formData, selectedItem, vehicles) },
-                                                    { label: 'Booking deposit', value: formatPKR(formData.bookingAmount) },
-                                                    { label: 'Order value (est.)', value: formatPKR(formData.totalAmount) },
-                                                    {
-                                                        label: 'Expected delivery',
-                                                        value: formData.expectedDeliveryDate
-                                                            ? new Date(`${formData.expectedDeliveryDate}T12:00:00`).toLocaleDateString(undefined, { dateStyle: 'long' })
-                                                            : '—'
-                                                    },
-                                                    { label: 'Priority', value: priorityLabel(formData.priority) }
-                                                ]}
-                                            />
-                                        </CorpDocSection>
-                                        <CorpDocNotes text={formData.notes} />
-                                    </div>
-                                )}
-                                <div className="modal-actions">
-                                    <button type="button" className="btn btn-secondary" onClick={closeModal}>Close</button>
-                                    <button type="button" className="btn btn-primary" onClick={runSalesPrint} disabled={viewLoading}>Print</button>
-                                </div>
-                            </>
-                        ) : (
-                            <form onSubmit={handleSubmit}>
+                        <form onSubmit={handleSubmit}>
                                 <div className="form-group">
                                     <CustomerField
                                         formData={formData}
@@ -1858,7 +1675,6 @@ function Bookings({ category = 'vehicle' }) {
                                     <button type="submit" className="btn btn-primary">{modalMode === 'create' ? 'Create' : 'Update'}</button>
                                 </div>
                             </form>
-                        )}
                     </Modal>
                 )
             }
@@ -1912,17 +1728,6 @@ function SalesOrders({ category = 'vehicle' }) {
     const [selectedItem, setSelectedItem] = useState(null);
     const [selectedIds,setSelectedIds]=useState([]);
     const [sendingEmail, setSendingEmail] = useState(null);
-    const { documentHtml, documentLoading } = useSalesDocumentPrintHtml(
-        'order',
-        selectedItem?.id,
-        showModal && modalMode === 'view'
-    );
-    const { templateHtml, templateLoading } = useSalesHtmlTemplate(
-        'order',
-        companyInfo?.id,
-        showModal && modalMode === 'view'
-    );
-    const viewLoading = documentLoading || templateLoading;
     const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', onConfirm: null });
     const [showBulkUpload, setShowBulkUpload] = useState(false);
 
@@ -2419,10 +2224,8 @@ function SalesOrders({ category = 'vehicle' }) {
                                 <td>{getStatusBadge(o.status)}</td>
                                 <td onClick={e=>e.stopPropagation()}>
                                     <ActionButtons
-                                        showView={true}
                                         showEdit={canEdit && o.status !== 'delivered' && o.status !== 'cancelled' && !o.invoice_number}
                                         showDelete={canDelete && o.status !== 'delivered' && o.status !== 'cancelled' && !o.invoice_number}
-                                        onView={() => openModal('view', o)}
                                         onEdit={canEdit ? () => openModal('edit', o) : null}
                                         onDelete={canDelete ? () => handleCancelClick(o) : null}
                                         customActions={[
@@ -2491,10 +2294,8 @@ function SalesOrders({ category = 'vehicle' }) {
                                 </div>
                                 <div className="data-card-footer">
                                     <ActionButtons
-                                        showView={true}
                                         showEdit={canEdit && o.status !== 'delivered' && o.status !== 'cancelled' && !o.invoice_number}
                                         showDelete={canDelete && o.status !== 'delivered' && o.status !== 'cancelled' && !o.invoice_number}
-                                        onView={() => openModal('view', o)}
                                         onEdit={canEdit ? () => openModal('edit', o) : null}
                                         onDelete={canDelete ? () => handleCancelClick(o) : null}
                                         customActions={[
@@ -2564,101 +2365,10 @@ function SalesOrders({ category = 'vehicle' }) {
 
             {showModal && (
                 <Modal
-                    title={modalMode === 'view' ? `Sales order ${selectedItem?.order_number || ''}` : modalMode === 'create' ? 'Create Direct Sales Order' : 'Edit Sales Order'}
+                    title={modalMode === 'create' ? 'Create Direct Sales Order' : 'Edit Sales Order'}
                     onClose={closeModal}
                     size="large"
-                    overlayClassName={modalMode === 'view' ? 'sales-print-modal' : undefined}
                 >
-                    {modalMode === 'view' ? (
-                        <>
-                            {viewLoading ? (
-                                <DocumentPreviewLoading />
-                            ) : documentHtml ? (
-                                <RenderedHtmlDocumentTemplate htmlString={documentHtml} />
-                            ) : templateHtml ? (
-                                <RenderedHtmlDocumentTemplate
-                                    htmlString={renderSalesTemplate('order', templateHtml, {
-                                        companyInfo, selectedItem, formData, customers, vehicles, parts
-                                    })}
-                                />
-                            ) : (
-                                <div className="corp-doc">
-                                    <CorporatePrintHeader company={companyInfo} />
-                                    <CorpDocTitleBar documentTitle="Sales order" reference={selectedItem?.order_number} />
-                                    <SalesDocumentMeta
-                                        rows={[
-                                            { label: 'Order date', value: selectedItem?.created_at ? new Date(selectedItem.created_at).toLocaleString() : '—' },
-                                            { label: 'Status', value: selectedItem?.status ? String(selectedItem.status).toUpperCase() : '—' },
-                                            { label: 'Invoice', value: selectedItem?.invoice_number || '—' },
-                                            { label: 'Printed', value: new Date().toLocaleString() }
-                                        ]}
-                                    />
-                                    <CorpDocSection title="Parties & line item">
-                                        <CorpDocKvTable
-                                            rows={[
-                                                { label: 'Sale type', value: formData.saleType === 'parts' ? 'Parts & accessories' : 'Vehicle sale' },
-                                                { label: 'Customer', value: selectedItem?.customer_name || customerLabelById(formData.customerId, customers) },
-                                                { label: 'Description', value: resolveOrderItemLine(formData, selectedItem, vehicles, parts) },
-                                                {
-                                                    label: 'Expected delivery',
-                                                    value: formData.expectedDeliveryDate
-                                                        ? new Date(`${formData.expectedDeliveryDate}T12:00:00`).toLocaleDateString(undefined, { dateStyle: 'long' })
-                                                        : '—'
-                                                },
-                                                { label: 'Payment mode', value: formData.paymentMode || '—' }
-                                            ]}
-                                        />
-                                    </CorpDocSection>
-                                    {(formData.paymentMode && formData.paymentMode.toLowerCase().includes('finance')) && (
-                                        <CorpDocSection title="Financing">
-                                            <CorpDocKvTable
-                                                rows={[
-                                                    { label: 'Finance company', value: formData.financeCompany || '—' },
-                                                    { label: 'Finance amount', value: formatPKR(formData.financeAmount) }
-                                                ]}
-                                            />
-                                        </CorpDocSection>
-                                    )}
-                                    {(formData.paymentMode && formData.paymentMode.toLowerCase().includes('exchange')) && (
-                                        <CorpDocSection title="Trade-in">
-                                            <CorpDocKvTable
-                                                rows={[
-                                                    { label: 'Vehicle', value: formData.exchangeVehicleDetails || '—' },
-                                                    { label: 'Allowance', value: formatPKR(formData.exchangeValue) }
-                                                ]}
-                                            />
-                                        </CorpDocSection>
-                                    )}
-                                    <CorpDocSection title="Pricing & charges">
-                                        <CorpDocFinancialTable
-                                            rows={[
-                                                { label: formData.saleType === 'vehicle' ? 'Vehicle price' : 'Line total', value: formatPKR(formData.vehiclePrice) },
-                                                { label: 'Accessories', value: formatPKR(formData.accessoriesTotal) },
-                                                { label: 'Discount', value: formatPKR(formData.discountAmount) },
-                                                { label: 'Tax / levies', value: formatPKR(formData.taxAmount) },
-                                                { label: 'Registration', value: formatPKR(formData.registrationCharges) },
-                                                { label: 'Insurance', value: formatPKR(formData.insuranceCharges) },
-                                                { label: 'Other charges', value: formatPKR(formData.otherCharges) },
-                                                ...(parseFloat(formData.exchangeValue) > 0
-                                                    ? [{ label: 'Trade-in (deducted)', value: `− ${formatPKR(formData.exchangeValue)}` }]
-                                                    : []),
-                                                { label: 'Collected to date', value: formatPKR(formData.paidAmount) }
-                                            ]}
-                                            totalLabel="Grand total"
-                                            totalValue={formatPKR(calculateGrandTotal())}
-                                            balanceLabel="Balance due"
-                                            balanceValue={formatPKR(calculateGrandTotal() - (parseFloat(formData.paidAmount) || 0))}
-                                        />
-                                    </CorpDocSection>
-                                    <CorpDocNotes text={formData.notes} />
-                                </div>
-                            )}
-                            <div className="modal-actions" style={{ marginTop: '1rem' }}>
-                                <button type="button" className="btn btn-secondary" onClick={closeModal}>Close</button>
-                                <button type="button" className="btn btn-primary" onClick={runSalesPrint} disabled={viewLoading}>Print</button>
-                            </div>
-                        </>
-                    ) : (
                         <form onSubmit={handleSubmit}>
                             <div className="form-group">
                                 <CustomerField
@@ -2807,7 +2517,6 @@ function SalesOrders({ category = 'vehicle' }) {
                                 <button type="submit" className="btn btn-primary">{modalMode === 'create' ? 'Create Order' : 'Update Order'}</button>
                             </div>
                         </form>
-                    )}
                 </Modal>
             )}
 
@@ -2882,25 +2591,13 @@ function Invoices({ category = 'vehicle' }) {
     const [data, setData] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
-    const [modalMode, setModalMode] = useState('view');
+    const [modalMode, setModalMode] = useState('create');
     const [selectedItem, setSelectedItem] = useState(null);
     const [selectedIds,setSelectedIds]=useState([]);
     const [sendingEmail, setSendingEmail] = useState(null);
     const [recordingPayment, setRecordingPayment] = useState(false);
-    const [invoiceDetails, setInvoiceDetails] = useState(null);
     const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', onConfirm: null });
     const [companyInfo, setCompanyInfo] = useState(null);
-    const { documentHtml, documentLoading } = useSalesDocumentPrintHtml(
-        'invoice',
-        invoiceDetails?.id,
-        showModal && modalMode === 'view'
-    );
-    const { templateHtml, templateLoading } = useSalesHtmlTemplate(
-        'invoice',
-        companyInfo?.id,
-        showModal && modalMode === 'view'
-    );
-    const viewLoading = documentLoading || templateLoading;
 
     // Filters & Pagination
     const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 0 });
@@ -3086,15 +2783,7 @@ function Invoices({ category = 'vehicle' }) {
         setModalMode(mode);
         setSelectedItem(item);
 
-        if (mode === 'view' && item) {
-            try {
-                const res = await docApi.getById(item.id);
-                setInvoiceDetails(res.data?.data);
-            } catch (error) {
-                console.error('Error fetching invoice details:', error);
-                toast.error('Failed to load invoice details');
-            }
-        } else if (mode === 'create') {
+        if (mode === 'create') {
             setPartLines([]);
             setFormData({
                 invoiceType: isParts ? 'parts' : 'sales',
@@ -3119,7 +2808,6 @@ function Invoices({ category = 'vehicle' }) {
     const closeModal = () => {
         setShowModal(false);
         setSelectedItem(null);
-        setInvoiceDetails(null);
     };
 
     const handleChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -3345,14 +3033,10 @@ function Invoices({ category = 'vehicle' }) {
             setShowPaymentModal(false);
             setPaymentData({ amount: '', paymentMethodId: '', referenceNumber: '', notes: '' });
             fetchData();
-            // Re-open the invoice with fresh details so the new payment (method +
-            // reference) shows immediately in the payment history table.
-            try {
-                const res = await docApi.getById(invoiceId);
-                setInvoiceDetails(res.data?.data);
-                setModalMode('view');
-                setShowModal(true);
-            } catch { /* list already refreshed */ }
+            // The payment history used to be shown by re-opening the invoice's
+            // read-only modal; that screen is gone, so the refreshed row and the
+            // detail drawer are where the new payment shows up.
+            if (drawerInvoice?.id === invoiceId) loadDrawer(invoiceId);
         } catch (error) {
             toast.error(error.response?.data?.message || 'Failed to record payment');
         } finally {
@@ -3451,10 +3135,8 @@ function Invoices({ category = 'vehicle' }) {
                                 <td>{getStatusBadge(inv.status)}</td>
                                 <td onClick={e=>e.stopPropagation()}>
                                     <ActionButtons
-                                        showView={true}
                                         showEdit={canEdit && inv.status === 'draft'}
                                         showDelete={canDelete && inv.status !== 'paid' && inv.status !== 'cancelled'}
-                                        onView={() => openModal('view', inv)}
                                         onEdit={canEdit ? () => openModal('edit', inv) : null}
                                         onDelete={canDelete ? () => handleVoidClick(inv) : null}
                                         customActions={[
@@ -3511,10 +3193,8 @@ function Invoices({ category = 'vehicle' }) {
                                 </div>
                                 <div className="data-card-footer">
                                     <ActionButtons
-                                        showView={true}
                                         showEdit={canEdit && inv.status === 'draft'}
                                         showDelete={canDelete && inv.status !== 'paid' && inv.status !== 'cancelled'}
-                                        onView={() => openModal('view', inv)}
                                         onEdit={canEdit ? () => openModal('edit', inv) : null}
                                         onDelete={canDelete ? () => handleVoidClick(inv) : null}
                                         customActions={[
@@ -3602,185 +3282,6 @@ function Invoices({ category = 'vehicle' }) {
             />
 
             {/* View Invoice Modal */}
-            {showModal && modalMode === 'view' && invoiceDetails && (
-                <Modal title={`Invoice ${invoiceDetails.invoice_number}`} onClose={closeModal} size="large" overlayClassName="sales-print-modal">
-                    <>
-                    {viewLoading ? (
-                        <DocumentPreviewLoading />
-                    ) : documentHtml ? (
-                        <RenderedHtmlDocumentTemplate htmlString={documentHtml} />
-                    ) : templateHtml ? (
-                        <RenderedHtmlDocumentTemplate
-                            htmlString={renderSalesTemplate('invoice', templateHtml, { companyInfo, invoiceDetails })}
-                        />
-                    ) : (
-                    <div style={{ padding: '1.5rem', fontFamily: 'Inter, sans-serif' }}>
-                        {/* Professional Header */}
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2rem', borderBottom: '2px solid #f3f4f6', paddingBottom: '1.5rem' }}>
-                            <div>
-                                <h2 style={{ margin: '0 0 0.5rem 0', color: '#111827' }}>{invoiceDetails.company_name || 'Company Name'}</h2> {/* Snapshot Name */}
-                                <p style={{ color: '#6b7280', margin: '0.2rem 0' }}>{invoiceDetails.company_address}</p>
-                                <p style={{ color: '#6b7280', margin: '0.2rem 0' }}>{invoiceDetails.company_phone} | {invoiceDetails.company_email}</p>
-                                <p style={{ color: '#6b7280', margin: '0.2rem 0' }}>NTN: {invoiceDetails.company_ntn}</p>
-                            </div>
-                            <div style={{ textAlign: 'right' }}>
-                                <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#374151', marginBottom: '0.5rem' }}>INVOICE</div>
-                                <div style={{ color: '#6b7280' }}># {invoiceDetails.invoice_number}</div>
-                                <div style={{ marginTop: '0.5rem' }}>{getStatusBadge(invoiceDetails.status)}</div>
-                            </div>
-                        </div>
-
-                        {/* Bill To & Details */}
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2rem' }}>
-                            <div style={{ flex: 1 }}>
-                                <h6 style={{ color: '#9ca3af', textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: '0.05em', marginBottom: '0.5rem' }}>Bill To</h6>
-                                <h5 style={{ margin: '0 0 0.25rem 0', color: '#111827' }}>{invoiceDetails.customer_name}</h5>
-                                <p style={{ color: '#4b5563', margin: '0' }}>{invoiceDetails.customer_address}</p>
-                                <p style={{ color: '#4b5563', margin: '0' }}>{invoiceDetails.customer_phone}</p>
-                                <p style={{ color: '#4b5563', margin: '0' }}>{invoiceDetails.customer_email}</p>
-                            </div>
-                            <div style={{ flex: 1, textAlign: 'right' }}>
-                                <div style={{ marginBottom: '0.5rem' }}>
-                                    <span style={{ color: '#6b7280', marginRight: '1rem' }}>Invoice Date:</span>
-                                    <span style={{ fontWeight: '500', color: '#111827' }}>{new Date(invoiceDetails.invoice_date).toLocaleDateString()}</span>
-                                </div>
-                                <div style={{ marginBottom: '0.5rem' }}>
-                                    <span style={{ color: '#6b7280', marginRight: '1rem' }}>Due Date:</span>
-                                    <span style={{ fontWeight: '500', color: '#111827' }}>{new Date(invoiceDetails.due_date).toLocaleDateString()}</span>
-                                </div>
-                                {invoiceDetails.order_number && (
-                                    <div style={{ marginBottom: '0.5rem' }}>
-                                        <span style={{ color: '#6b7280', marginRight: '1rem' }}>Reference:</span>
-                                        <span style={{ fontWeight: '500', color: '#111827' }}>{invoiceDetails.order_number}</span>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-
-                        {/* Items Table - Professional Look */}
-                        {invoiceDetails.items && invoiceDetails.items.length > 0 && (
-                            <div style={{ marginBottom: '2rem', borderRadius: '8px', border: '1px solid #e5e7eb', overflow: 'hidden' }}>
-                                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                                    <thead style={{ background: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>
-                                        <tr>
-                                            <th style={{ padding: '0.75rem 1rem', textAlign: 'left', fontSize: '0.75rem', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase' }}>Description</th>
-                                            <th style={{ padding: '0.75rem 1rem', textAlign: 'right', fontSize: '0.75rem', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase' }}>Qty</th>
-                                            <th style={{ padding: '0.75rem 1rem', textAlign: 'right', fontSize: '0.75rem', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase' }}>Price</th>
-                                            <th style={{ padding: '0.75rem 1rem', textAlign: 'right', fontSize: '0.75rem', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase' }}>Tax</th>
-                                            <th style={{ padding: '0.75rem 1rem', textAlign: 'right', fontSize: '0.75rem', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase' }}>Amount</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody style={{ background: 'white' }}>
-                                        {invoiceDetails.items.map((item, i) => (
-                                            <tr key={i} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                                                <td style={{ padding: '0.75rem 1rem', color: '#111827' }}>{item.description}</td>
-                                                <td style={{ padding: '0.75rem 1rem', textAlign: 'right', color: '#4b5563' }}>{item.quantity}</td>
-                                                <td style={{ padding: '0.75rem 1rem', textAlign: 'right', color: '#4b5563' }}>PKR {Number(item.unit_price).toLocaleString()}</td>
-                                                <td style={{ padding: '0.75rem 1rem', textAlign: 'right', color: '#4b5563' }}>PKR {Number(item.tax_amount || 0).toLocaleString()}</td>
-                                                <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontWeight: '500', color: '#111827' }}>PKR {Number(item.total).toLocaleString()}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        )}
-
-                        {/* Totals Section */}
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '2rem' }}>
-                            <div style={{ width: '300px' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', paddingBottom: '0.5rem', borderBottom: '1px solid #f3f4f6' }}>
-                                    <span style={{ color: '#6b7280' }}>Subtotal</span>
-                                    <span style={{ color: '#111827', fontWeight: '500' }}>PKR {Number(invoiceDetails.subtotal || 0).toLocaleString()}</span>
-                                </div>
-                                {invoiceDetails.discount_amount > 0 && (
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', paddingBottom: '0.5rem', borderBottom: '1px solid #f3f4f6' }}>
-                                        <span style={{ color: '#6b7280' }}>Discount</span>
-                                        <span style={{ color: '#16a34a', fontWeight: '500' }}>- PKR {Number(invoiceDetails.discount_amount).toLocaleString()}</span>
-                                    </div>
-                                )}
-                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', paddingBottom: '0.5rem', borderBottom: '1px solid #f3f4f6' }}>
-                                    <span style={{ color: '#6b7280' }}>Tax</span>
-                                    <span style={{ color: '#111827', fontWeight: '500' }}>PKR {Number(invoiceDetails.tax_amount || 0).toLocaleString()}</span>
-                                </div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem', fontSize: '1.25rem' }}>
-                                    <span style={{ fontWeight: '600', color: '#111827' }}>Total</span>
-                                    <span style={{ fontWeight: '700', color: '#2563eb' }}>PKR {Number(invoiceDetails.total_amount).toLocaleString()}</span>
-                                </div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1rem', background: '#f9fafb', padding: '0.75rem', borderRadius: '6px' }}>
-                                    <span style={{ color: '#6b7280' }}>Amount Due</span>
-                                    <span style={{ fontWeight: '700', color: invoiceDetails.balance_amount > 0 ? '#dc2626' : '#16a34a' }}>
-                                        PKR {Number(invoiceDetails.balance_amount || 0).toLocaleString()}
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Payment History and Notes Split */}
-                        <div style={{ display: 'flex', gap: '2rem', marginTop: '2rem', borderTop: '2px solid #f3f4f6', paddingTop: '2rem' }}>
-                            <div style={{ flex: 1 }}>
-                                {invoiceDetails.notes && (
-                                    <>
-                                        <h6 style={{ fontSize: '0.85rem', fontWeight: '600', color: '#374151', marginBottom: '0.5rem' }}>Notes</h6>
-                                        <p style={{ color: '#6b7280', fontSize: '0.9rem', whiteSpace: 'pre-wrap', lineHeight: '1.5' }}>{invoiceDetails.notes}</p>
-                                    </>
-                                )}
-                                {invoiceDetails.terms_and_conditions && (
-                                    <div style={{ marginTop: '1.5rem' }}>
-                                        <h6 style={{ fontSize: '0.85rem', fontWeight: '600', color: '#374151', marginBottom: '0.5rem' }}>Terms & Conditions</h6>
-                                        <p style={{ color: '#6b7280', fontSize: '0.8rem', whiteSpace: 'pre-wrap' }}>{invoiceDetails.terms_and_conditions}</p>
-                                    </div>
-                                )}
-                            </div>
-
-                            {invoiceDetails.payments && invoiceDetails.payments.length > 0 && (
-                                <div style={{ flex: 1 }}>
-                                    <h6 style={{ fontSize: '0.85rem', fontWeight: '600', color: '#374151', marginBottom: '1rem' }}>Payment History</h6>
-                                    <div style={{ border: '1px solid #e5e7eb', borderRadius: '6px', overflow: 'hidden' }}>
-                                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
-                                            <thead>
-                                                <tr style={{ background: '#f9fafb', color: '#6b7280', textAlign: 'left' }}>
-                                                    <th style={{ padding: '0.5rem 0.75rem', fontWeight: '600' }}>Date</th>
-                                                    <th style={{ padding: '0.5rem 0.75rem', fontWeight: '600' }}>Method</th>
-                                                    <th style={{ padding: '0.5rem 0.75rem', fontWeight: '600' }}>Reference</th>
-                                                    <th style={{ padding: '0.5rem 0.75rem', fontWeight: '600', textAlign: 'right' }}>Amount</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {invoiceDetails.payments.map((payment, i) => (
-                                                    <tr key={payment.id || i} style={{ borderTop: '1px solid #f3f4f6', background: '#fff' }}>
-                                                        <td style={{ padding: '0.5rem 0.75rem', color: '#4b5563' }}>{payment.payment_date ? new Date(payment.payment_date).toLocaleDateString('en-GB') : '—'}</td>
-                                                        <td style={{ padding: '0.5rem 0.75rem', color: '#111827', fontWeight: '500', textTransform: 'capitalize' }}>{payment.payment_method_name || '—'}</td>
-                                                        <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280' }}>{payment.reference_number || '—'}</td>
-                                                        <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right', fontWeight: '600', color: '#16a34a' }}>PKR {Number(payment.amount || 0).toLocaleString()}</td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-
-                    </div>
-                    )}
-                    <div className="modal-actions" style={{ marginTop: '2rem' }}>
-                        <button className="btn btn-secondary" onClick={closeModal}>Close</button>
-                        {canSend && invoiceDetails.status === 'draft' && (
-                            <button className="btn btn-info" onClick={() => { closeModal(); handleSendClick(invoiceDetails); }} disabled={sendingEmail === invoiceDetails.id}>
-                                {sendingEmail === invoiceDetails.id ? <><span className="spinner-mini"></span> Sending...</> : 'Send Invoice'}
-                            </button>
-                        )}
-                        {canRecordPayment && invoiceDetails.status !== 'paid' && invoiceDetails.status !== 'cancelled' && invoiceDetails.balance_amount > 0 && (
-                            <button className="btn btn-success" onClick={() => { closeModal(); openPaymentModal(invoiceDetails); }}>
-                                Record Payment
-                            </button>
-                        )}
-                        <button className="btn btn-primary" onClick={runSalesPrint} disabled={viewLoading}>Print</button>
-                    </div>
-                    </>
-                </Modal>
-            )}
-
             {/* Create Manual Invoice Modal - BIG POPUP */}
             {showModal && modalMode === 'create' && (
                 <Modal title="Create Professional Invoice" onClose={closeModal} size="large">
@@ -4072,10 +3573,6 @@ function Invoices({ category = 'vehicle' }) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 const Modal = ({ title, children, onClose, size = 'medium', overlayClassName }) => {
-    const printRootId = overlayClassName && String(overlayClassName).includes('sales-print-modal')
-        ? 'ams-active-sales-print'
-        : undefined;
-
     // Rule 4 — every modal closes on ESC. Skip when a nested modal
     // (e.g. customer quick create) is stacked on top of this one.
     useEffect(() => {
@@ -4090,7 +3587,6 @@ const Modal = ({ title, children, onClose, size = 'medium', overlayClassName }) 
 
     return (
         <div
-            id={printRootId}
             className={`modal-overlay${overlayClassName ? ` ${overlayClassName}` : ''}`}
             onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
         >

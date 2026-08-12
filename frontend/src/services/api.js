@@ -238,8 +238,9 @@ export const pdfManagementAPI = {
     bulkVariables: (data) => api.post('/pdf-management/variables/bulk', data),
     deleteVariable: (id) => api.delete(`/pdf-management/variables/${id}`),
     getResolvedHtml: (documentType, id) => api.get(`/pdf-management/resolved-html/${documentType}/${id}`),
-    // The document as it will print / download — same layout as the PDF.
-    getPrintHtml: (documentType, id) => api.get(`/pdf-management/print-html/${documentType}/${id}`),
+    // `print-html` still exists on the server for the same document as HTML, but
+    // nothing calls it now that the sales screens' read-only View is gone —
+    // Download PDF is how a document leaves the system.
     download: (documentType, id) => api.get(`/pdf-management/download/${documentType}/${id}`, { responseType: 'blob' }),
     downloadBulk: (documentType, ids) => api.post(`/pdf-management/download/${documentType}/bulk`, { ids }, { responseType: 'blob' }),
 };
