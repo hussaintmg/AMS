@@ -517,6 +517,39 @@
   box-shadow: 0 0 0 3px var(--primary-50);
 }
 
+/* The totals card is a flex column with its own gap, so its captions must not
+   add a second one underneath themselves. */
+.scan-totals > label {
+  margin-bottom: -2px;
+}
+
+.scan-notes {
+  width: 100%;
+  padding: 9px 13px;
+  font-size: var(--font-size-sm);
+  font-family: inherit;
+  line-height: 1.45;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  resize: vertical;
+}
+
+/* Fills the tendered box with the exact total — the common case at a counter
+   now that a sale must be settled in full to be invoiced. */
+.scan-exact {
+  width: 100%;
+  justify-content: center;
+  font-size: var(--font-size-sm);
+}
+
+.scan-notes:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px var(--primary-50);
+}
+
 /* Change is the headline number once an over-tender happens. */
 .scan-change,
 .scan-balance {

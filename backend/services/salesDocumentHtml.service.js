@@ -85,6 +85,25 @@ const CSS = `
   .ams-sd__section-title { page-break-after: avoid; }
   .ams-sd__grid--compact th, .ams-sd__grid--compact td { font-size: 8pt; padding: 3pt 2pt; overflow-wrap: anywhere; }
   .ams-sd__grid--compact th { white-space: normal; }
+  /*
+   * Keep the closing blocks whole.
+   *
+   * With enough product lines the summary lands right on a page boundary and
+   * the printer splits it — the reader gets a document whose totals are sawn in
+   * half across two sheets, which is exactly the part they were looking for.
+   * These blocks are short, so moving a straddling one to the next page costs
+   * nothing and always beats cutting it.
+   */
+  .ams-sd__boxes, .ams-sd__foot, .ams-sd__summary,
+  .ams-sd__boxes > tbody > tr, .ams-sd__foot > tbody > tr,
+  .ams-sd__boxes > tbody > tr > td, .ams-sd__foot > tbody > tr > td,
+  .ams-sd__summary tr {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+  /* The summary must never be separated from the words-in-figures block above
+     it either, or page two opens on a lone totals box. */
+  .ams-sd__boxes { page-break-after: avoid; break-after: avoid; }
 }
 `;
 

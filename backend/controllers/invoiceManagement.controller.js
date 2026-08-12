@@ -25,6 +25,9 @@ const { revertInvoiceStock } = require('../services/stockLedger.service');
 const { resolveDocumentCustomer } = require('../utils/walkInCustomer');
 const { sendTemplateEmail } = require('../services/emailSender.service');
 const { allowedOwnerIds } = require('../utils/roleJobs');
+const { resolvePaymentMethod } = require('../utils/paymentMethod.util');
+const { assertFullPayment } = require('../utils/fullPayment.util');
+const { realCustomerEmail } = require('../utils/customerEmail.util');
 
 const sanitizeId = (id) => {
     if (id === '' || id === undefined || id === null) return null;
@@ -213,7 +216,10 @@ const getInvoiceById = async (req, res, next) => {
                 ...mapInvoiceRow(invoice),
                 customer_address: [customer.address, customer.city].filter(Boolean).join(', '),
                 customer_phone: customer.phone || '',
-                customer_email: customer.email || '',
+                // Blank rather than the import's invented address, so the detail
+                // view and the printed document agree on what contact details
+                // this customer actually has.
+                customer_email: realCustomerEmail(customer.email),
                 items: (invoice.items || []).map((item) => ({
                     id: item._id,
                     description: item.description,
@@ -278,6 +284,15 @@ const createInvoice = async (req, res, next) => {
         const discount = num(discountAmount);
         const totalAmount = round2(subtotal - discount + taxAmount);
 
+        // An invoice is only ever raised once it has been paid in full, so the
+        // money arrives with the request instead of being recorded against a
+        // balance afterwards. Over-tender is change, exactly as at the counter.
+        const paymentMethod = await resolvePaymentMethod(req.body.paymentMethodId, { required: true });
+        const tendered = round2(num(req.body.paidAmount));
+        if (tendered < 0) throw new AppError('Paid amount cannot be negative', 400);
+        assertFullPayment(totalAmount, tendered);
+        const changeDue = round2(Math.max(0, tendered - totalAmount));
+
         const invoiceNumber = await nextDocNumber(Invoice, 'invoiceNumber', 'INV');
         const now = new Date();
 
@@ -288,18 +303,38 @@ const createInvoice = async (req, res, next) => {
             jobCard: sanitizeId(jobCardId),
             customer: customer._id,
             walkIn, walkInName, walkInPhone,
-            status: 'draft',
+            status: 'paid',
             invoiceDate: now,
             dueDate: new Date(now.getTime() + Math.max(0, num(dueDays, 30)) * 24 * 60 * 60 * 1000),
             subtotal,
             taxAmount,
             discountAmount: discount,
             totalAmount,
-            paidAmount: 0,
-            balanceAmount: totalAmount,
+            paidAmount: totalAmount,
+            balanceAmount: 0,
+            amountTendered: changeDue > 0 ? tendered : 0,
+            changeDue,
+            paymentMethod: paymentMethod.id,
+            paymentMode: paymentMethod.name,
             items: invoiceItems,
             notes,
             termsAndConditions,
+            createdBy: req.user.id,
+        });
+
+        // The payment itself, so the invoice's money is traceable to a method
+        // and shows up in the payments list like any other.
+        const paymentNumber = await nextDocNumber(Payment, 'paymentNumber', 'PAY');
+        await Payment.create({
+            paymentNumber,
+            invoice: invoice._id,
+            customer: customer._id,
+            methodRef: paymentMethod.id,
+            method: { name: paymentMethod.name, code: paymentMethod.code, type: paymentMethod.type },
+            amount: totalAmount,
+            paymentDate: now,
+            notes: `Payment in full with invoice ${invoiceNumber}`,
+            status: 'completed',
             createdBy: req.user.id,
         });
 
@@ -312,14 +347,20 @@ const createInvoice = async (req, res, next) => {
             description: `Invoice ${invoiceNumber} (${invoiceType || 'sales'}) created`,
             userId: req.user.id,
             spentDelta: sanitizeId(salesOrderId) ? 0 : totalAmount,
-            outstandingDelta: totalAmount,
+            paidDelta: totalAmount,
+            outstandingDelta: 0,
         });
 
         logger.info(`Invoice ${invoiceNumber} created by user ${req.user.id}`);
         res.status(201).json({
             success: true,
-            data: { id: invoice._id, invoice_number: invoiceNumber, invoiceNumber },
-            message: 'Invoice created successfully',
+            data: {
+                id: invoice._id, invoice_number: invoiceNumber, invoiceNumber,
+                totalAmount, amountTendered: tendered, changeDue,
+            },
+            message: changeDue > 0
+                ? `Invoice created. Return change of PKR ${changeDue.toLocaleString('en-PK')}`
+                : 'Invoice created successfully',
         });
     } catch (error) {
         logger.error('Error creating invoice:', error);
@@ -393,46 +434,79 @@ const updateInvoice = async (req, res, next) => {
     }
 };
 
+/**
+ * Void an invoice: return its stock, reverse its money, and free the order
+ * behind it to be invoiced again.
+ *
+ * Every invoice is now raised paid in full, so the old rule — "paid invoices
+ * cannot be cancelled" — would mean no invoice could ever be voided at all.
+ * What that rule was really protecting is money quietly disappearing, so
+ * cancelling one that carries a payment now reverses the payment too: its
+ * Payment records are marked cancelled and the customer's paid total winds
+ * back. The caller is told what there is to refund.
+ *
+ * @returns {Promise<number>} the amount that has to be handed back
+ */
+async function cancelInvoiceRecord(invoice, userId) {
+    if (invoice.status === 'cancelled') throw new AppError('Invoice already cancelled', 400);
+
+    const outstandingDelta = -num(invoice.balanceAmount);
+    const refunded = round2(num(invoice.paidAmount));
+    if (refunded > 0) {
+        await Payment.updateMany(
+            { invoice: invoice._id, status: { $ne: 'cancelled' } },
+            { $set: { status: 'cancelled', updatedBy: userId } },
+        );
+    }
+
+    // The invoice is what took the stock, so cancelling it is what returns
+    // parts to the shelf and un-sells the vehicles.
+    await revertInvoiceStock(invoice);
+    invoice.stockApplied = false;
+    invoice.status = 'cancelled';
+    invoice.cancelledAt = new Date();
+    invoice.updatedBy = userId;
+    await invoice.save();
+
+    // Allow the linked order to be re-invoiced
+    if (invoice.salesOrder) {
+        await SalesOrder.findOneAndUpdate(
+            { _id: invoice.salesOrder, status: 'invoiced' },
+            { status: 'confirmed', updatedBy: userId },
+        );
+    }
+
+    await recordCustomerActivity({
+        customerId: invoice.customer,
+        docType: 'invoice',
+        docId: invoice._id,
+        number: invoice.invoiceNumber,
+        amount: invoice.totalAmount,
+        description: refunded > 0
+            ? `Invoice ${invoice.invoiceNumber} cancelled — PKR ${refunded.toLocaleString('en-PK')} refunded`
+            : `Invoice ${invoice.invoiceNumber} cancelled`,
+        userId,
+        countDocument: false,
+        spentDelta: invoice.salesOrder ? 0 : -num(invoice.totalAmount),
+        paidDelta: -refunded,
+        outstandingDelta,
+    });
+
+    logger.info(`Invoice ${invoice.invoiceNumber} cancelled by user ${userId}`);
+    return refunded;
+}
+
 const deleteInvoice = async (req, res, next) => {
     try {
         const invoice = await Invoice.findById(sanitizeId(req.params.id));
         if (!invoice) throw new AppError('Invoice not found', 404);
-        if (invoice.status === 'paid') throw new AppError('Paid invoices cannot be cancelled', 400);
-        if (invoice.status === 'cancelled') throw new AppError('Invoice already cancelled', 400);
-
-        const outstandingDelta = -num(invoice.balanceAmount);
-        // The invoice is what took the stock, so cancelling it is what returns
-        // parts to the shelf and un-sells the vehicles.
-        await revertInvoiceStock(invoice);
-        invoice.stockApplied = false;
-        invoice.status = 'cancelled';
-        invoice.cancelledAt = new Date();
-        invoice.updatedBy = req.user.id;
-        await invoice.save();
-
-        // Allow the linked order to be re-invoiced
-        if (invoice.salesOrder) {
-            await SalesOrder.findOneAndUpdate(
-                { _id: invoice.salesOrder, status: 'invoiced' },
-                { status: 'confirmed', updatedBy: req.user.id },
-            );
-        }
-
-        await recordCustomerActivity({
-            customerId: invoice.customer,
-            docType: 'invoice',
-            docId: invoice._id,
-            number: invoice.invoiceNumber,
-            amount: invoice.totalAmount,
-            description: `Invoice ${invoice.invoiceNumber} cancelled`,
-            userId: req.user.id,
-            countDocument: false,
-            spentDelta: invoice.salesOrder ? 0 : -num(invoice.totalAmount),
-            outstandingDelta,
+        const refunded = await cancelInvoiceRecord(invoice, req.user.id);
+        res.json({
+            success: true,
+            message: refunded > 0
+                ? `Invoice cancelled — PKR ${refunded.toLocaleString('en-PK')} to refund`
+                : 'Invoice cancelled successfully',
         });
-
-        logger.info(`Invoice ${invoice.invoiceNumber} cancelled by user ${req.user.id}`);
-        res.json({ success: true, message: 'Invoice cancelled successfully' });
     } catch (error) {
         next(error);
     }
@@ -511,13 +585,24 @@ const sendInvoiceEmail = async (req, res, next) => {
             .populate('customer', 'firstName lastName companyName email phone customerCode')
             .lean();
         if (!invoice) throw new AppError('Invoice not found', 404);
-        if (!invoice.customer?.email) throw new AppError('The selected customer does not have an email address', 400);
+        if (invoice.walkIn) {
+            throw new AppError('This is a walk-in sale — there is no customer email address to send to', 400);
+        }
+        // Imported customers carry an invented address so their record stays
+        // unique; nothing is delivered there, so it counts as no address at all.
+        const recipient = realCustomerEmail(invoice.customer?.email);
+        if (!recipient) {
+            throw new AppError(
+                'The selected customer does not have an email address — add one on their record first',
+                400,
+            );
+        }
 
         const result = await sendTemplateEmail({
             usageKey: 'invoice_customer',
-            to: invoice.customer.email,
+            to: recipient,
             sentBy: req.user.id,
-            context: { customer: invoice.customer, invoice: {
+            context: { customer: { ...invoice.customer, email: recipient }, invoice: {
                 number: invoice.invoiceNumber,
                 date: invoice.invoiceDate || invoice.createdAt,
                 dueDate: invoice.dueDate,
@@ -528,13 +613,19 @@ const sendInvoiceEmail = async (req, res, next) => {
         });
         if (result.status !== 'sent') throw new AppError(result.errorMessage || 'Email could not be sent', 502);
 
-        res.json({ success: true, message: `Invoice ${invoice.invoiceNumber} emailed to ${invoice.customer.email}` });
+        res.json({ success: true, message: `Invoice ${invoice.invoiceNumber} emailed to ${recipient}` });
     } catch (error) {
         next(error);
     }
 };
 
-const bulkInvoices = async(req,res,next)=>{try{const {ids=[],operation}=req.body;if(!Array.isArray(ids)||!ids.length)throw new AppError('Select at least one invoice',400);if(ids.length>100)throw new AppError('A maximum of 100 invoices is allowed',400);const results=[];for(const id of ids){try{if(operation==='email'){const invoice=await Invoice.findById(sanitizeId(id)).populate('customer','firstName lastName companyName email phone customerCode').lean();if(!invoice?.customer?.email)throw new Error('Customer email is missing');const result=await sendTemplateEmail({usageKey:'invoice_customer',to:invoice.customer.email,sentBy:req.user.id,context:{customer:invoice.customer,invoice:{number:invoice.invoiceNumber,date:invoice.invoiceDate||invoice.createdAt,dueDate:invoice.dueDate,amount:invoice.totalAmount,dueAmount:invoice.balanceAmount,status:invoice.status}}});if(result.status!=='sent')throw new Error(result.errorMessage||'Email failed');results.push({id,success:true,recipient:invoice.customer.email});}else if(operation==='delete'){const invoice=await Invoice.findById(sanitizeId(id));if(!invoice)throw new Error('Invoice not found');if(invoice.status==='paid'||invoice.status==='cancelled')throw new Error(`Invoice is ${invoice.status}`);invoice.status='cancelled';invoice.cancelledAt=new Date();invoice.updatedBy=req.user.id;await invoice.save();if(invoice.salesOrder)await SalesOrder.findOneAndUpdate({_id:invoice.salesOrder,status:'invoiced'},{status:'confirmed',updatedBy:req.user.id});results.push({id,success:true});}else throw new Error('Invalid bulk operation');}catch(error){results.push({id,success:false,error:error.message})}}const succeeded=results.filter(x=>x.success).length;res.json({success:succeeded>0,message:`${succeeded} of ${ids.length} invoices processed`,data:{succeeded,failed:ids.length-succeeded,results}})}catch(e){next(e)}};
+const bulkInvoices = async(req,res,next)=>{try{const {ids=[],operation}=req.body;if(!Array.isArray(ids)||!ids.length)throw new AppError('Select at least one invoice',400);if(ids.length>100)throw new AppError('A maximum of 100 invoices is allowed',400);const results=[];for(const id of ids){try{if(operation==='email'){const invoice=await Invoice.findById(sanitizeId(id)).populate('customer','firstName lastName companyName email phone customerCode').lean();
+// Same rule as the single-invoice send: an import-generated address is not a
+// real one, and a walk-in has nobody to send to.
+const recipient=invoice&&!invoice.walkIn?realCustomerEmail(invoice.customer?.email):'';if(!recipient)throw new Error('Customer email is missing');const result=await sendTemplateEmail({usageKey:'invoice_customer',to:recipient,sentBy:req.user.id,context:{customer:{...invoice.customer,email:recipient},invoice:{number:invoice.invoiceNumber,date:invoice.invoiceDate||invoice.createdAt,dueDate:invoice.dueDate,amount:invoice.totalAmount,dueAmount:invoice.balanceAmount,status:invoice.status}}});if(result.status!=='sent')throw new Error(result.errorMessage||'Email failed');results.push({id,success:true,recipient});}else if(operation==='delete'){const invoice=await Invoice.findById(sanitizeId(id));if(!invoice)throw new Error('Invoice not found');
+// Same path as voiding one invoice, so a bulk void also returns the stock
+// and reverses the payment instead of only flipping the status.
+const refunded=await cancelInvoiceRecord(invoice,req.user.id);results.push({id,success:true,refunded});}else throw new Error('Invalid bulk operation');}catch(error){results.push({id,success:false,error:error.message})}}const succeeded=results.filter(x=>x.success).length;res.json({success:succeeded>0,message:`${succeeded} of ${ids.length} invoices processed`,data:{succeeded,failed:ids.length-succeeded,results}})}catch(e){next(e)}};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ITEMS

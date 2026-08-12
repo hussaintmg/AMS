@@ -235,6 +235,12 @@ exports.scan = async (req, res, next) => {
 };
 
 /**
+ * The four parts a vehicle's name is assembled from. They are embedded on the
+ * vehicle rather than referenced, so searching them is just a dotted path.
+ */
+const VEHICLE_NAME_PATHS = ['make.name', 'model.name', 'variant.name', 'color.name'];
+
+/**
  * GET /api/barcode/search?q=&kind=&limit=&includeUnavailable=
  * Free-text product lookup for the counter screen: stock that has no barcode
  * printed yet — or that the operator simply cannot scan — is still one click
@@ -266,13 +272,20 @@ exports.search = async (req, res, next) => {
     }
 
     if (kind !== 'part') {
+      // The box says "search by name or chassis number", so it has to match the
+      // name too — it used to look at codes only, and typing what the operator
+      // could actually read off the vehicle returned nothing.
       const vehicles = await Vehicle.find(
         like
-          ? { $or: [{ chassisNumber: like }, { vin: like }, { vehicleCode: like }, { engineNumber: like }, { barcode: like }] }
+          ? {
+            $or: [
+              { chassisNumber: like }, { vin: like }, { vehicleCode: like },
+              { engineNumber: like }, { barcode: like },
+              ...VEHICLE_NAME_PATHS.map((path) => ({ [path]: like })),
+            ],
+          }
           : {},
       )
-        .populate('make', 'name').populate('model', 'name')
-        .populate('variant', 'name').populate('color', 'name')
         .sort({ createdAt: -1 })
         // Status is stored in several spellings (canonicalStatus folds them), so
         // it is filtered in code rather than in the query. Over-fetching keeps a

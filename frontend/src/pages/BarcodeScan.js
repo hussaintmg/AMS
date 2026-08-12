@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import { Camera, Keyboard, PackageSearch, ScanLine, Search, Trash2, UserRound, X } from "lucide-react";
-import { barcodeAPI, salesAPI, partsSalesAPI, customerAPI } from "../services/api";
+import { barcodeAPI, salesAPI, partsSalesAPI, customerAPI, paymentMethodsAPI } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import { canRoleDo, getRoleJob } from "../utils/roleJobs";
 import useErpDocumentSettings from "../hooks/useErpDocumentSettings";
@@ -139,6 +139,13 @@ function BarcodeScan({ category = "vehicle" }) {
   const [walkInName, setWalkInName] = useState("");
   const [walkInPhone, setWalkInPhone] = useState("");
   const [amountReceived, setAmountReceived] = useState("");
+  // How the money came in, and anything the operator needs to say about the
+  // sale. Both ride on the document — a receipt that does not say how it was
+  // paid is no use at the end of the day, and there was nowhere to write
+  // "customer collecting Monday".
+  const [paymentMethods, setPaymentMethods] = useState([]);
+  const [paymentMethodId, setPaymentMethodId] = useState("");
+  const [notes, setNotes] = useState("");
   const [lastResult, setLastResult] = useState(null);
 
   const [query, setQuery] = useState("");
@@ -152,6 +159,17 @@ function BarcodeScan({ category = "vehicle" }) {
       try {
         const res = await customerAPI.getAllForDropdown();
         setCustomers(res?.data?.data || []);
+      } catch { /* the picker simply stays empty */ }
+    })();
+    (async () => {
+      try {
+        const res = await paymentMethodsAPI.getAll({ status: "active" });
+        const methods = res?.data?.data || [];
+        setPaymentMethods(methods);
+        // Cash is what a counter takes most of the time, so preselect it and
+        // let the operator change it rather than making them pick every sale.
+        const cash = methods.find((method) => /cash/i.test(method.name || ""));
+        setPaymentMethodId(String((cash || methods[0])?.id || ""));
       } catch { /* the picker simply stays empty */ }
     })();
     scanRef.current?.focus();
@@ -327,7 +345,7 @@ function BarcodeScan({ category = "vehicle" }) {
   const setPrice = (key, unitPrice) =>
     setBasket((current) => current.map((row) => (row.key === key ? { ...row, unitPrice } : row)));
   const removeRow = (key) => setBasket((current) => current.filter((row) => row.key !== key));
-  const clearAll = () => { setBasket([]); setAmountReceived(""); setLastResult(null); };
+  const clearAll = () => { setBasket([]); setAmountReceived(""); setNotes(""); setLastResult(null); };
 
   const lineItems = () =>
     basket.map((row) => ({
@@ -351,12 +369,25 @@ function BarcodeScan({ category = "vehicle" }) {
       toast.error(`Only ${overStock.available} ${overStock.name} in stock`);
       return;
     }
+    // A quotation takes no money, so it is the one document that needs no
+    // payment method.
+    if (docType !== "quotation" && paymentMethods.length && !paymentMethodId) {
+      toast.error("Choose how the customer is paying");
+      return;
+    }
+    // A counter sale is invoiced on the spot, and an invoice never carries a
+    // balance — so the whole amount has to be on the counter.
+    if (docType === "order" && balanceDue > 0) {
+      toast.error(`${money(balanceDue)} still to pay — an invoice cannot be created for part of the amount`);
+      return;
+    }
     setSaving(true);
     try {
       const api = config.api;
+      const note = notes.trim() || undefined;
       if (docType === "quotation") {
         const res = await api.createQuotation({
-          ...buyer(), lineItems: lineItems(), validityDays: 7,
+          ...buyer(), lineItems: lineItems(), validityDays: 7, notes: note,
         });
         setLastResult({ kind: "Quotation", doc: "quotation", number: res?.data?.data?.quotationNumber, id: res?.data?.data?.id });
         toast.success("Quotation created");
@@ -364,13 +395,17 @@ function BarcodeScan({ category = "vehicle" }) {
         const res = await api.createBooking({
           ...buyer(), lineItems: lineItems(),
           bookingAmount: received || total, totalAmount: total,
+          paymentMethodId: paymentMethodId || undefined, notes: note,
         });
         setLastResult({ kind: "Booking", doc: "booking", number: res?.data?.data?.bookingNumber, id: res?.data?.data?.id });
         toast.success("Booking created");
       } else {
         const res = await api.createDirectOrder({
           ...buyer(), lineItems: lineItems(),
-          paidAmount: received, paymentMode: "cash",
+          paidAmount: received,
+          paymentMethodId: paymentMethodId || undefined,
+          paymentMode: selectedPaymentName || "cash",
+          notes: note,
         });
         const data = res?.data?.data || {};
         setLastResult({
@@ -389,6 +424,7 @@ function BarcodeScan({ category = "vehicle" }) {
       }
       setBasket([]);
       setAmountReceived("");
+      setNotes("");
       scanRef.current?.focus();
     } catch (error) {
       toast.error(error?.response?.data?.message || "Could not create the document");
@@ -397,6 +433,9 @@ function BarcodeScan({ category = "vehicle" }) {
     }
   };
 
+  const selectedPaymentName = paymentMethods.find(
+    (method) => String(method.id) === String(paymentMethodId),
+  )?.name || "";
   const activeDoc = allowedDocuments.find((entry) => entry.key === docType) || config.documents.find((entry) => entry.key === docType);
   const canCreateActiveDoc = allowedDocuments.some((entry) => entry.key === docType);
   const activeMode = MODES.find((entry) => entry.key === mode);
@@ -643,6 +682,10 @@ function BarcodeScan({ category = "vehicle" }) {
                 />
               </div>
             ) : (
+              // The customer number leads the label so the counter can find a
+              // regular by the number on their card, and so typing that number
+              // into the dropdown's search box narrows the list — the search
+              // matches on this text.
               <SearchableSelect
                 id="scan-customer"
                 name="customerId"
@@ -650,13 +693,16 @@ function BarcodeScan({ category = "vehicle" }) {
                 onChange={(event) => setCustomerId(event.target.value)}
               >
                 <option value="">Select customer</option>
-                {customers.map((customer) => (
-                  <option key={customer.id || customer._id} value={customer.id || customer._id}>
-                    {customer.companyName || customer.name ||
-                      [customer.firstName, customer.lastName].filter(Boolean).join(" ")}
-                    {customer.phone ? ` — ${customer.phone}` : ""}
-                  </option>
-                ))}
+                {customers.map((customer) => {
+                  const code = customer.customer_number || customer.customerCode || "";
+                  const name = customer.companyName || customer.name ||
+                    [customer.firstName, customer.lastName].filter(Boolean).join(" ");
+                  return (
+                    <option key={customer.id || customer._id} value={customer.id || customer._id}>
+                      {[code, name, customer.phone].filter(Boolean).join(" — ")}
+                    </option>
+                  );
+                })}
               </SearchableSelect>
             )}
           </div>
@@ -669,6 +715,19 @@ function BarcodeScan({ category = "vehicle" }) {
 
             {docType !== "quotation" && (
               <>
+                <label htmlFor="scan-payment">Payment method</label>
+                <SearchableSelect
+                  id="scan-payment"
+                  name="paymentMethodId"
+                  value={paymentMethodId}
+                  onChange={(event) => setPaymentMethodId(event.target.value)}
+                >
+                  <option value="">Select payment method</option>
+                  {paymentMethods.map((method) => (
+                    <option key={method.id} value={method.id}>{method.name}</option>
+                  ))}
+                </SearchableSelect>
+
                 <label htmlFor="scan-received">Amount received</label>
                 <input
                   id="scan-received"
@@ -687,18 +746,43 @@ function BarcodeScan({ category = "vehicle" }) {
                   </div>
                 ) : balanceDue > 0 && received > 0 ? (
                   <div className="scan-balance">
-                    <span>Balance due</span>
+                    <span>{docType === "order" ? "Still to pay" : "Balance due"}</span>
                     <strong>{money(balanceDue)}</strong>
                   </div>
                 ) : null}
+                {docType === "order" && total > 0 && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary scan-exact"
+                    onClick={() => setAmountReceived(String(total))}
+                  >
+                    Paid in full ({money(total)})
+                  </button>
+                )}
               </>
             )}
+
+            <label htmlFor="scan-notes">Notes</label>
+            <textarea
+              id="scan-notes"
+              className="scan-notes"
+              rows="2"
+              value={notes}
+              onChange={(event) => setNotes(event.target.value)}
+              placeholder="Anything to record against this document"
+            />
 
             <button
               type="button"
               className="btn btn-primary scan-submit"
               onClick={submit}
-              disabled={saving || !basket.length || (!walkIn && !customerId) || !canCreateActiveDoc}
+              disabled={
+                saving || !basket.length || (!walkIn && !customerId) || !canCreateActiveDoc
+                || (docType === "order" && balanceDue > 0)
+              }
+              title={docType === "order" && balanceDue > 0
+                ? "An invoice cannot be created until the whole amount is paid"
+                : undefined}
             >
               {saving ? "Creating…" : `Create ${activeDoc?.label}`}
             </button>

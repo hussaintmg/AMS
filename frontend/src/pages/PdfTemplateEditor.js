@@ -160,6 +160,28 @@ function parseInlineStyle(styleStr) {
 const hasBlockHelpers = (html) => /\{\{\s*#(each|if|unless)\s+/.test(String(html || ''));
 
 /**
+ * True when this markup came out of compileDesignToHtml — a `.pdf-page` wrapper
+ * whose children all carry the `data-el` marker it writes.
+ *
+ * Only that markup survives the round trip through Designer unchanged. Anything
+ * else — hand-written HTML, a seeded document layout, flowing tables — is
+ * approximated when converted, so the editor warns before doing it.
+ */
+function isDesignerAuthored(html) {
+  const source = String(html || '').trim();
+  if (!source) return true; // nothing to lose
+  try {
+    const doc = new DOMParser().parseFromString(source, 'text/html');
+    const page = doc.querySelector('.pdf-page');
+    if (!page) return false;
+    const children = Array.from(page.children);
+    return children.length > 0 && children.every((node) => node.hasAttribute('data-el'));
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Inverse of compileDesignToHtml: parse raw HTML back into page elements so the
  * designer reflects edits made in the HTML view. Keeps the existing page config.
  * Falls back to tag/content heuristics when `data-el` markers are absent.
@@ -413,25 +435,34 @@ export default function PdfTemplateEditor() {
     window.addEventListener('mouseup', up);
   };
 
-  // Keep the designer (designData) and the HTML/CSS in sync so both views show
-  // the same template and a single save persists one coherent template.
-  const syncedTemplate = () => {
-    if (isHtml) {
-      // Editing HTML → rebuild the current page's design from the HTML.
-      const nextPages = template.designData.pages.map((p, i) => i === pageIndex ? htmlToDesign(template.html, p) : p);
-      return { ...template, designData: { ...template.designData, pages: nextPages } };
-    }
-    // Editing in the designer → compile the current page to HTML/CSS.
-    const c = compileDesignToHtml(page);
-    return { ...template, html: c.html, css: c.css };
-  };
-
+  /**
+   * Save exactly what is on screen.
+   *
+   * This used to compile one representation into the other on every save, in
+   * whichever direction the current mode implied — and that is what wrecked
+   * templates. Saving an HTML template rebuilt its designData from the markup;
+   * saving in Designer overwrote the real HTML with Designer's flattened
+   * approximation of it. So a template written in HTML could be destroyed just
+   * by opening Designer to look at it and pressing Save, and the damage was
+   * permanent because the original markup had already been overwritten.
+   *
+   * The mode a template is in is the mode it renders from (the server reads
+   * `html` for an HTML template and `designData` for a designer one), so each
+   * representation is now left alone unless the user explicitly converts it
+   * with the mode toggle below.
+   */
   const save = async () => {
     setSaving(true);
     try {
-      const payload = syncedTemplate();
-      await pdfManagementAPI.updateTemplate(id, { name: payload.name, status: payload.status, description: payload.description, designData: payload.designData, mode: payload.mode || 'designer', html: payload.html || '', css: payload.css || '' });
-      setTemplate(payload);
+      await pdfManagementAPI.updateTemplate(id, {
+        name: template.name,
+        status: template.status,
+        description: template.description,
+        designData: template.designData,
+        mode: template.mode || 'designer',
+        html: template.html || '',
+        css: template.css || '',
+      });
       toast.success('Template saved');
     }
     catch { toast.error('Save failed'); }
@@ -442,45 +473,67 @@ export default function PdfTemplateEditor() {
     const current = template.mode || 'designer';
     if (newMode === current) return;
     setSelectedId(null);
-    if (newMode === 'html') {
-      // Designer → HTML. A block-helper template (product loop / conditional
-      // section) was never actually representable on the Designer canvas —
-      // what's sitting there is only a static, position-only approximation.
-      // Compiling THAT back to HTML would permanently throw away the real
-      // {{#each}}/{{#if}} markup, so the exact HTML/CSS captured on the way
-      // in is restored instead, undoing anything Designer did to it.
-      if (preDesignerRef.current) {
-        const restore = preDesignerRef.current;
-        preDesignerRef.current = null;
-        setTemplate(t => ({ ...t, mode: 'html', html: restore.html, css: restore.css }));
-        toast('Restored the original HTML — Designer can only show a static snapshot of product-loop templates, so nothing there is kept.', { icon: 'ℹ️', duration: 5000 });
-        return;
-      }
-      const c = compileDesignToHtml(page);
-      setTemplate(t => ({ ...t, mode: 'html', html: c.html, css: c.css }));
-    } else {
-      // HTML → Designer: parse the HTML back into the current page. A
-      // template built on {{#each}}/{{#if}} — a table that repeats per
-      // product, a block that only sometimes prints — has no equivalent in
-      // Designer's fixed canvas of absolute-positioned elements; converting
-      // it can only ever approximate the real layout with static placeholder
-      // boxes. Ask first rather than silently reshuffling it, and remember
-      // the pristine source so switching back can restore it exactly.
-      if (hasBlockHelpers(template.html)) {
-        if (!window.confirm(
-          'This template repeats rows per product or shows sections conditionally ' +
-          '(#each / #if). Designer view can only show one fixed snapshot of it — ' +
-          'the product loop and conditional blocks will collapse to a single static ' +
-          'copy, and the real per-product table will only be correct in HTML mode.\n\n' +
-          'Switch to Designer anyway?'
-        )) return;
-        preDesignerRef.current = { html: template.html, css: template.css };
-      }
+
+    if (newMode === 'designer') {
+      // HTML → Designer is a lossy conversion for anything not authored in
+      // Designer in the first place. Designer is a fixed canvas of
+      // absolutely-positioned boxes: it has no way to express a table that
+      // repeats per product, a block that only sometimes prints, or ordinary
+      // flowing markup, so all of that collapses into stacked static boxes.
+      const lossy = hasBlockHelpers(template.html) || !isDesignerAuthored(template.html);
+      if (lossy && !window.confirm(
+        'Designer can only show a flat, static snapshot of this template.\n\n'
+        + (hasBlockHelpers(template.html)
+          ? 'It repeats rows per product or shows sections conditionally (#each / #if), and those blocks will collapse to a single static copy.\n\n'
+          : 'Its layout is written as flowing HTML, which Designer will break into separate positioned boxes.\n\n')
+        + 'Your HTML is kept safe either way — switching back to HTML restores it, '
+        + 'and saving from Designer no longer overwrites it.\n\nOpen Designer anyway?'
+      )) return;
+
       setTemplate(t => {
         const nextPages = t.designData.pages.map((p, i) => i === pageIndex ? htmlToDesign(t.html, p) : p);
+        // Remember the exact source, and the design it produced, so switching
+        // back can tell "the user only looked" from "the user edited".
+        preDesignerRef.current = {
+          html: t.html,
+          css: t.css,
+          designSignature: JSON.stringify(nextPages),
+        };
         return { ...t, mode: 'designer', designData: { ...t.designData, pages: nextPages } };
       });
+      return;
     }
+
+    // Designer → HTML.
+    const snapshot = preDesignerRef.current;
+    if (snapshot) {
+      const untouched = JSON.stringify(template.designData.pages) === snapshot.designSignature;
+      // Nothing was moved on the canvas, so there is nothing to carry back —
+      // hand the original markup straight back, byte for byte.
+      if (untouched) {
+        preDesignerRef.current = null;
+        setTemplate(t => ({ ...t, mode: 'html', html: snapshot.html, css: snapshot.css }));
+        return;
+      }
+      // The canvas was edited. Compiling it replaces the real markup with
+      // Designer's flat version, which for a product-loop template throws the
+      // loop away — so this is the user's call, not ours.
+      if (!window.confirm(
+        'You have moved things around in Designer.\n\n'
+        + 'Keeping those changes means rewriting the HTML as Designer\'s flat, '
+        + 'positioned version of it'
+        + (hasBlockHelpers(snapshot.html) ? ', which discards the per-product loop this template is built on' : '')
+        + '.\n\nOK — keep the Designer changes and rewrite the HTML.\n'
+        + 'Cancel — discard them and restore the original HTML.'
+      )) {
+        preDesignerRef.current = null;
+        setTemplate(t => ({ ...t, mode: 'html', html: snapshot.html, css: snapshot.css }));
+        return;
+      }
+    }
+    preDesignerRef.current = null;
+    const c = compileDesignToHtml(page);
+    setTemplate(t => ({ ...t, mode: 'html', html: c.html, css: c.css }));
   };
 
   const addPage = () => { setTemplate(t => ({ ...t, designData: { ...t.designData, pages: [...t.designData.pages, newPage()] } })); setPageIndex(pages.length); setSelectedId(null); };

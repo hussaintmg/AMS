@@ -80,7 +80,10 @@ const IFRAME_BASE_CSS = `
     position: static !important;
     inset: auto !important;
     display: block !important;
-    padding: 12pt 14pt !important;
+    /* No padding here: @page already sets the paper margin (sales-print.css).
+       Adding a second one indented the document on every side and squeezed the
+       product table narrower than the page it was printing on. */
+    padding: 0 !important;
     background: #fff !important;
     overflow: visible !important;
   }

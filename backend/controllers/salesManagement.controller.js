@@ -39,6 +39,8 @@ const {
 const { reserveBookingVehicles, releaseBookingVehicles, revertInvoiceStock } = require('../services/stockLedger.service');
 const { resolveDocumentCustomer } = require('../utils/walkInCustomer');
 const { resolvePaymentMethod } = require('../utils/paymentMethod.util');
+const { assertFullPayment } = require('../utils/fullPayment.util');
+const { realCustomerEmail } = require('../utils/customerEmail.util');
 
 /**
  * These documents are the vehicle side of the business. Parts have their own
@@ -308,7 +310,9 @@ const sendQuotationEstimateEmail = async (req, res, next) => {
     try {
         const quotationId = sanitizeId(req.params.id);
         const { buffer, fileName, quotation } = await buildEstimatePdf(quotationId);
-        const recipient = String(req.body?.to || quotation.customer?.email || '').trim();
+        // A typed-in address wins; the customer's own only counts when it is a
+        // real one, not the placeholder the import invents (customerEmail.util).
+        const recipient = String(req.body?.to || '').trim() || realCustomerEmail(quotation.customer?.email);
         if (!recipient) throw new AppError('This customer has no email address; add one first', 400);
 
         const context = buildEstimateEmailContext(quotation, { companyName: await companyName() });
@@ -1290,6 +1294,10 @@ async function createOrderInternal({
     if (changeDue > 0) totals.paidAmount = totals.totalAmount;
     totals.balanceAmount = round2(totals.totalAmount - totals.paidAmount);
 
+    // Confirming this order raises its invoice immediately, so the money has to
+    // be here now — an invoice never leaves with a balance on it.
+    assertFullPayment(totals.totalAmount, amountTendered, { document: 'invoice' });
+
     const description = legacy.itemDescription;
 
     const orderNumber = await nextDocNumber(SalesOrder, 'orderNumber', 'SO');
@@ -1712,6 +1720,9 @@ const generateInvoiceFromOrder = async (req, res, next) => {
         const order = await SalesOrder.findById(req.params.id);
         if (!order) throw new AppError('Order not found', 404);
         if (order.status === 'cancelled') throw new AppError('Cancelled orders cannot be invoiced', 400);
+        // An order still owing money cannot be turned into an invoice; settle it
+        // against the order first.
+        assertFullPayment(order.totalAmount, order.paidAmount, { document: 'invoice' });
 
         const { invoice, created } = await createInvoiceForOrder(order, { dueDays, userId: req.user.id });
         if (created) {

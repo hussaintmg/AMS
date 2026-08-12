@@ -32,6 +32,8 @@ const { resolveLineItems, summarizeLineItems, linesToRequested, round2 } = requi
 const { applyInvoiceStock, revertInvoiceStock, assertPartsAvailable } = require('../services/partStock.service');
 const { resolveDocumentCustomer } = require('../utils/walkInCustomer');
 const { resolvePaymentMethod } = require('../utils/paymentMethod.util');
+const { assertFullPayment } = require('../utils/fullPayment.util');
+const { realCustomerEmail } = require('../utils/customerEmail.util');
 const { allowedOwnerIds, canDo } = require('../utils/roleJobs');
 const { sendCustomerDocumentEmail } = require('../services/documentEmail.service');
 const { buildEstimatePdf, buildEstimateEmailContext, defaultEstimateEmailHtml } = require('../services/estimate.service');
@@ -482,6 +484,8 @@ const convertQuotationToInvoice = async (req, res, next) => {
         if (tendered < 0) throw new AppError('Paid amount cannot be negative', 400);
         const changeDue = round2(Math.max(0, tendered - totals.totalAmount));
         const paidAmount = changeDue > 0 ? totals.totalAmount : tendered;
+        // The quotation was where the price could move; the invoice takes it in full.
+        assertFullPayment(totals.totalAmount, tendered, { document: 'invoice' });
 
         const invoiceNumber = await nextDocNumber(PartInvoice, 'invoiceNumber', 'PINV');
         const now = new Date();
@@ -922,6 +926,9 @@ async function createOrderInternal({ body, userId, user, bookingId = null, quota
     // "paid" would post a negative balance and corrupt receivables.
     const changeDue = round2(Math.max(0, tendered - totals.totalAmount));
     const paidAmount = changeDue > 0 ? totals.totalAmount : tendered;
+    // This order invoices itself on the next few lines, and an invoice is never
+    // raised against a balance.
+    assertFullPayment(totals.totalAmount, tendered, { document: 'invoice' });
 
     const orderNumber = await nextDocNumber(PartSalesOrder, 'orderNumber', 'PSO');
     const now = new Date();
@@ -1199,6 +1206,7 @@ const createInvoice = async (req, res, next) => {
         const tendered = round2(num(req.body.paidAmount));
         const changeDue = round2(Math.max(0, tendered - totals.totalAmount));
         const paidAmount = changeDue > 0 ? totals.totalAmount : tendered;
+        assertFullPayment(totals.totalAmount, tendered, { document: 'invoice' });
 
         const invoiceNumber = await nextDocNumber(PartInvoice, 'invoiceNumber', 'PINV');
         const now = new Date();
@@ -1318,6 +1326,9 @@ const deleteInvoice = async (req, res, next) => {
             description: `Parts invoice ${invoice.invoiceNumber} cancelled — stock returned`,
             userId: req.user.id,
             countDocument: false,
+            // These invoices are always raised paid in full, so cancelling one
+            // has to give the customer their money back on their record too.
+            paidDelta: -round2(num(invoice.paidAmount)),
             outstandingDelta: -num(invoice.balanceAmount),
         });
 
@@ -1470,7 +1481,10 @@ const sendQuotationEstimateEmail = async (req, res, next) => {
     try {
         const quotationId = sanitizeId(req.params.id);
         const { buffer, fileName, quotation } = await buildEstimatePdf(quotationId);
-        const recipient = String(req.body?.to || quotation.customer?.email || '').trim();
+        // An explicit "to" is whatever the sender typed; falling back to the
+        // customer's own address only counts if it is a real one, not the
+        // placeholder the import gives customers who arrived without an email.
+        const recipient = String(req.body?.to || '').trim() || realCustomerEmail(quotation.customer?.email);
         if (!recipient) throw new AppError('This customer has no email address; add one first', 400);
 
         const context = buildEstimateEmailContext(quotation, { companyName: await companyName() });

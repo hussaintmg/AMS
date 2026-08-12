@@ -7,7 +7,7 @@
  * Date: 2026-01-09
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import SearchableSelect from '../components/SearchableSelect';
 import { Routes, Route, useNavigate, useSearchParams } from 'react-router-dom';
 import { salesAPI, invoiceAPI, partsSalesAPI, partsInvoiceAPI, customerAPI, vehicleAPI, partsAPI, serviceMasterAPI, paymentMethodsAPI, erpSettingsAPI, reportsAPI, adminAPI, pdfManagementAPI } from '../services/api';
@@ -129,6 +129,18 @@ const CATEGORY = {
 };
 
 const categoryConfig = (category) => CATEGORY[category] || CATEGORY.vehicle;
+
+/**
+ * Every spelling of "this vehicle can still be sold", matching the canonical
+ * statuses the server accepts on a sales order (backend
+ * utils/vehicleLifecycle.js folds these to `available` / `booked`). Imported
+ * stock and hand-entered stock do not agree on the wording, so any screen
+ * filtering on a shorter list silently hides real inventory.
+ */
+const SELLABLE_VEHICLE_STATUSES = [
+    'available', 'at_yard', 'in_stock', 'in_transit', 'ready', 'ready_for_dispatch',
+    'booked', 'reserved', 'allocated',
+];
 
 /**
  * Only this side's product lines. Documents created before the vehicle/parts
@@ -605,6 +617,8 @@ function Quotations({ category = 'vehicle' }) {
         (sum, line) => sum + (Number(line.unitPrice) || 0) * (Number(line.quantity) || 1),
         0,
     );
+    const quotationTotal = Math.max(0, lineSubtotal - Number(formData.discountAmount || 0))
+        + Number(formData.taxAmount || 0) + Number(formData.additionalCharges || 0);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -1161,6 +1175,18 @@ function Quotations({ category = 'vehicle' }) {
                                 <label>Notes</label>
                                 <textarea name="notes" value={formData.notes} onChange={handleChange} rows="2" />
                             </div>
+
+                            {/* What the customer is actually being quoted, so the
+                                figure is on screen before the quotation is saved. */}
+                            <div style={{ background: '#f8f9fa', padding: '1rem', borderRadius: '8px', marginTop: '1rem' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.2em' }}>
+                                    <strong>Total:</strong>
+                                    <strong style={{ color: '#2563eb' }}>
+                                        {currency.code} {quotationTotal.toLocaleString()}
+                                    </strong>
+                                </div>
+                            </div>
+
                             <div className="modal-actions">
                                 <button type="button" className="btn btn-secondary" onClick={closeModal}>Cancel</button>
                                 <button type="submit" className="btn btn-primary">{modalMode === 'create' ? 'Create' : 'Update'}</button>
@@ -1406,6 +1432,15 @@ function Bookings({ category = 'vehicle' }) {
         setFormData(prev => ({ ...prev, [name]: value }));
     };
 
+    // What the booked products actually come to. The Total Amount field shows
+    // this rather than waiting to be typed into, so the figure on screen is the
+    // one the booking is saved with.
+    const bookingLineTotal = bookingLines.reduce(
+        (sum, line) => sum + (Number(line.unitPrice) || 0) * (Number(line.quantity) || 1)
+            - (Number(line.discountAmount) || 0) + (Number(line.taxAmount) || 0),
+        0,
+    );
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         try {
@@ -1418,12 +1453,10 @@ function Bookings({ category = 'vehicle' }) {
                 toast.error('Every product line needs a product selected');
                 return;
             }
-            const lineTotal = bookingLines.reduce(
-                (sum, line) => sum + (Number(line.unitPrice) || 0) * (Number(line.quantity) || 1)
-                    - (Number(line.discountAmount) || 0) + (Number(line.taxAmount) || 0),
-                0,
-            );
-            const baseAmount = Number(formData.totalAmount || 0) || lineTotal;
+            // The products decide the total. A stale figure left in the field
+            // used to win over them, which is how a booking for real vehicles
+            // could still be saved for zero.
+            const baseAmount = bookingLineTotal || Number(formData.totalAmount || 0);
             const payload = {
                 ...formData,
                 totalAmount: baseAmount,
@@ -1772,7 +1805,7 @@ function Bookings({ category = 'vehicle' }) {
                                     onChange={setBookingLines}
                                     vehicles={vehicles.filter((vehicle) => (
                                         bookingLines.some((line) => String(line.vehicleId) === String(vehicle.id))
-                                        || ['available', 'at_yard', 'in_stock', 'ready'].includes(String(vehicle.status || '').toLowerCase())
+                                        || SELLABLE_VEHICLE_STATUSES.includes(String(vehicle.status || '').trim().toLowerCase())
                                     ))}
                                     parts={parts}
                                     currencyCode={currency.code}
@@ -1786,7 +1819,16 @@ function Bookings({ category = 'vehicle' }) {
                                     </div>
                                     <div className="form-group">
                                         <label>Total Amount ({currency.code})</label>
-                                        <input type="number" name="totalAmount" value={formData.totalAmount} onChange={handleChange} />
+                                        {/* Follows the products above once there are any; only a
+                                            booking with no lines yet is typed in by hand. */}
+                                        <input
+                                            type="number"
+                                            name="totalAmount"
+                                            value={bookingLines.length ? bookingLineTotal : formData.totalAmount}
+                                            onChange={handleChange}
+                                            readOnly={bookingLines.length > 0}
+                                            title={bookingLines.length ? 'Sum of every product line' : undefined}
+                                        />
                                     </div>
                                 </div>
                                 <div className="form-group">
@@ -2008,9 +2050,14 @@ function SalesOrders({ category = 'vehicle' }) {
             ]);
             setCustomers(results[0].status === 'fulfilled' ? results[0].value || [] : []);
 
-            // Only show sale-eligible vehicles in the direct order dropdown
+            // Only show sale-eligible vehicles in the direct order dropdown.
+            // "Available" is spelled several ways across imported and
+            // hand-entered stock (see backend utils/vehicleLifecycle.js); this
+            // list used to name only two of them, so vehicles the server would
+            // happily sell never appeared here and the form could not be filled
+            // in at all.
             const vehicleData = results[1].status === 'fulfilled' ? results[1].value?.data?.data?.vehicles || [] : [];
-            setVehicles(vehicleData.filter(v => ['at_yard', 'in_transit'].includes(v.status)));
+            setVehicles(vehicleData.filter(v => SELLABLE_VEHICLE_STATUSES.includes(String(v.status || '').trim().toLowerCase())));
 
             setParts(results[2].status === 'fulfilled' ? results[2].value?.data?.data?.parts || [] : []);
             setPaymentMethods(results[3].status === 'fulfilled' ? results[3].value?.data?.data || [] : []);
@@ -2112,6 +2159,9 @@ function SalesOrders({ category = 'vehicle' }) {
         + Number(formData.taxAmount || 0)
         - Number(formData.discountAmount || 0) - Number(formData.exchangeValue || 0);
     const orderChangeDue = Math.max(0, Number(formData.paidAmount || 0) - orderGrandTotal);
+    // Confirming a direct order raises its invoice on the spot, so it can only
+    // be confirmed once the money is all here.
+    const orderShortfall = Math.max(0, orderGrandTotal - Number(formData.paidAmount || 0));
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -2123,6 +2173,13 @@ function SalesOrders({ category = 'vehicle' }) {
             const missing = orderLines.find((line) => (line.itemType === 'part' ? !line.partId : !line.vehicleId));
             if (missing) {
                 toast.error('Every product line needs a product selected');
+                return;
+            }
+            if (modalMode === 'create' && orderShortfall > 0) {
+                toast.error(
+                    `This order invoices immediately, so it must be paid in full — ${currency.code} `
+                    + `${orderShortfall.toLocaleString()} is still outstanding.`,
+                );
                 return;
             }
             const payload = {
@@ -2265,7 +2322,10 @@ function SalesOrders({ category = 'vehicle' }) {
     };
 
     const calculateGrandTotal = () => {
-        const price = parseFloat(formData.vehiclePrice) || 0;
+        // On a new order the products are the price — `vehiclePrice` is only
+        // filled in when an existing order is opened for editing, so reading it
+        // here showed a grand total of zero under a basket full of vehicles.
+        const price = orderLines.length ? orderSubtotal : (parseFloat(formData.vehiclePrice) || 0);
         const accessories = parseFloat(formData.accessoriesTotal) || 0;
         const discount = parseFloat(formData.discountAmount) || 0;
         const tax = parseFloat(formData.taxAmount) || 0;
@@ -2692,13 +2752,26 @@ function SalesOrders({ category = 'vehicle' }) {
                             )}
                             <div className="form-row">
                                 <div className="form-group">
-                                    <label>Amount Received</label>
+                                    <label>Amount Received *</label>
                                     <input type="number" name="paidAmount" value={formData.paidAmount} onChange={handleChange} min="0" placeholder="What the customer handed over" />
-                                    {orderChangeDue > 0 && (
-                                        <small style={{ color: '#b45309', fontWeight: 600 }}>
+                                    <button
+                                        type="button"
+                                        className="btn btn-secondary btn-sm"
+                                        style={{ marginTop: '0.4rem' }}
+                                        onClick={() => setFormData(prev => ({ ...prev, paidAmount: String(orderGrandTotal) }))}
+                                    >
+                                        Paid in full ({currency.code} {orderGrandTotal.toLocaleString()})
+                                    </button>
+                                    {orderShortfall > 0 ? (
+                                        <small style={{ color: '#dc2626', fontWeight: 600, display: 'block', marginTop: '0.4rem' }}>
+                                            {currency.code} {orderShortfall.toLocaleString()} still outstanding — confirming this
+                                            order raises its invoice, and an invoice cannot carry a balance.
+                                        </small>
+                                    ) : orderChangeDue > 0 ? (
+                                        <small style={{ color: '#b45309', fontWeight: 600, display: 'block', marginTop: '0.4rem' }}>
                                             Change to return: {currency.code} {orderChangeDue.toLocaleString()}
                                         </small>
-                                    )}
+                                    ) : null}
                                 </div>
                                 <div className="form-group">
                                     <label>Expected Delivery Date</label>
@@ -2717,8 +2790,8 @@ function SalesOrders({ category = 'vehicle' }) {
                                 </div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem' }}>
                                     <span>Balance Due:</span>
-                                    <span style={{ color: '#dc2626' }}>
-                                        PKR {Math.max(0, calculateGrandTotal() - (parseFloat(formData.paidAmount) || 0)).toLocaleString()}
+                                    <span style={{ color: orderShortfall > 0 ? '#dc2626' : '#16a34a' }}>
+                                        PKR {orderShortfall.toLocaleString()}
                                     </span>
                                 </div>
                                 {orderChangeDue > 0 && (
@@ -2844,16 +2917,15 @@ function Invoices({ category = 'vehicle' }) {
     const [updatingPaymentMethod, setUpdatingPaymentMethod] = useState(false);
     const [paymentData, setPaymentData] = useState({ amount: '', paymentMethodId: '', referenceNumber: '', notes: '' });
     const [paymentMethods, setPaymentMethods] = useState([]);
-    const [invoiceStatuses, setInvoiceStatuses] = useState([]);
     const [serviceTypes, setServiceTypes] = useState([]);
 
     // Create/Edit Invoice Form
     const [customers, setCustomers] = useState([]);
     const [formData, setFormData] = useState({
         invoiceType: 'sales', customerId: '', walkIn: false, walkInName: '', walkInPhone: '', dueDays: '30', notes: '', termsAndConditions: '',
-        status: 'draft',
+        status: 'paid',
         paymentMethodId: '',
-        initialPaidAmount: '',
+        paidAmount: '',
         items: [{ description: '', quantity: 1, unitPrice: '', taxAmount: '0' }]
     });
 
@@ -2965,37 +3037,25 @@ function Invoices({ category = 'vehicle' }) {
                 fetchAllCustomersForDropdown(),
                 docApi.getPaymentMethods(),
                 erpSettingsAPI.getCompanies({ limit: 1 }),
-                adminAPI.getStatusesByTable('invoices'),
                 serviceMasterAPI.getTypes({ is_active: true, limit: 200 }),
                 isParts ? partsAPI.getAll({ limit: 500 }) : Promise.resolve(null)
             ]);
-            const partsResult = results[5];
+            const partsResult = results[4];
             if (partsResult?.status === 'fulfilled' && partsResult.value) {
                 setPartOptions(partsResult.value.data?.data?.parts || partsResult.value.data?.data || []);
             }
             setCustomers(results[0].status === 'fulfilled' ? results[0].value || [] : []);
             setPaymentMethods(results[1].status === 'fulfilled' ? results[1].value?.data?.data || [] : []);
-            setServiceTypes(results[4].status === 'fulfilled' ? results[4].value?.data?.data || [] : []);
+            setServiceTypes(results[3].status === 'fulfilled' ? results[3].value?.data?.data || [] : []);
 
             // Set company info for invoices
             if (results[2].status === 'fulfilled' && results[2].value?.data?.data?.length > 0) {
                 setCompanyInfo(results[2].value.data.data[0]);
             }
-            // Set invoice statuses (supports both legacy and nested response shapes)
-            if (results[3].status === 'fulfilled') {
-                const statusPayload = results[3].value?.data?.data;
-                const statuses = Array.isArray(statusPayload)
-                    ? statusPayload
-                    : (Array.isArray(statusPayload?.statuses) ? statusPayload.statuses : []);
-                setInvoiceStatuses(statuses.map((status) => ({
-                    ...status,
-                    is_active: status.is_active ?? status.isActive ?? true,
-                    name: status.name || status.status_code || status.value,
-                    display_name: status.display_name || status.status_name || status.label,
-                })));
-            } else {
-                setInvoiceStatuses([]);
-            }
+            // The configured invoice statuses used to be fetched here to fill a
+            // status picker on the create form. That form no longer has one — an
+            // invoice is raised paid in full or not at all — and the list's own
+            // filter gets its statuses from useSalesStatusOptions.
         } catch (error) {
             console.error('Error fetching dropdowns:', error);
         }
@@ -3039,9 +3099,9 @@ function Invoices({ category = 'vehicle' }) {
             setFormData({
                 invoiceType: isParts ? 'parts' : 'sales',
                 customerId: '', walkIn: false, walkInName: '', walkInPhone: '', dueDays: '30', notes: '', termsAndConditions: '',
-                status: 'draft',
+                status: 'paid',
                 paymentMethodId: '',
-                initialPaidAmount: '',
+                paidAmount: '',
                 items: [{ description: '', quantity: 1, unitPrice: '', taxAmount: '0' }]
             });
         } else if (mode === 'edit' && item) {
@@ -3081,21 +3141,60 @@ function Invoices({ category = 'vehicle' }) {
         }
     };
 
-    const calculateSubtotal = () => {
-        return formData.items.reduce((sum, item) => {
-            return sum + ((parseFloat(item.quantity) || 0) * (parseFloat(item.unitPrice) || 0));
-        }, 0);
-    };
+    /**
+     * The rows this invoice is actually made of, priced exactly as they will be
+     * sent.
+     *
+     * Two things used to go wrong here. The summary read only
+     * `formData.items` — the free-text rows a vehicle or service invoice uses —
+     * so a parts invoice, whose lines live in `partLines`, showed a subtotal,
+     * tax and total of zero however many parts were on it. And the configured
+     * sales tax was applied on the way out but never shown, so the total on
+     * screen was not the total the invoice came to.
+     *
+     * Everything below — what is displayed, what "paid in full" fills in, and
+     * what is submitted — now comes from this one list.
+     */
+    const preparedItems = useMemo(() => {
+        const configuredTax = formData.invoiceType === 'service' ? serviceTax : salesTax;
+        const source = (isParts && modalMode === 'create')
+            ? partLines.map((line) => ({
+                partId: line.partId,
+                quantity: Number(line.quantity) || 1,
+                unitPrice: Number(line.unitPrice) || 0,
+                discountAmount: Number(line.discountAmount) || 0,
+                taxAmount: Number(line.taxAmount) || 0,
+                description: line.description || undefined,
+            }))
+            : formData.items;
+        return source.map((item) => {
+            if (Number(item.taxAmount) > 0 || !configuredTax) return item;
+            const base = (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0);
+            return { ...item, taxAmount: calculateConfiguredTax(base, configuredTax) };
+        });
+    }, [isParts, modalMode, partLines, formData.items, formData.invoiceType, salesTax, serviceTax, calculateConfiguredTax]);
 
-    const calculateTotalTax = () => {
-        return formData.items.reduce((sum, item) => sum + (parseFloat(item.taxAmount) || 0), 0);
-    };
+    const calculateSubtotal = () => preparedItems.reduce(
+        (sum, item) => sum + ((parseFloat(item.quantity) || 0) * (parseFloat(item.unitPrice) || 0)), 0,
+    );
+    const calculateTotalDiscount = () => preparedItems.reduce(
+        (sum, item) => sum + (parseFloat(item.discountAmount) || 0), 0,
+    );
+    const calculateTotalTax = () => preparedItems.reduce(
+        (sum, item) => sum + (parseFloat(item.taxAmount) || 0), 0,
+    );
+
+    // Matches what the server stores: gross, less line discounts, plus line tax.
+    const calculateInvoiceTotal = () => calculateSubtotal() - calculateTotalDiscount() + calculateTotalTax();
+    // Over-tender is change; anything short of the total means no invoice.
+    const invoiceTendered = Number(formData.paidAmount) || 0;
+    const invoiceShortfall = Math.max(0, calculateInvoiceTotal() - invoiceTendered);
+    const invoiceChangeDue = Math.max(0, invoiceTendered - calculateInvoiceTotal());
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         try {
             if (modalMode === 'create') {
-                const configuredTax = formData.invoiceType === 'service' ? serviceTax : salesTax;
                 // A parts invoice is built from real part lines; every other
                 // invoice is still free-text rows.
                 if (isParts && !partLines.length) {
@@ -3106,46 +3205,31 @@ function Invoices({ category = 'vehicle' }) {
                     toast.error('Every line needs a part selected');
                     return;
                 }
-                const sourceItems = isParts
-                    ? partLines.map((line) => ({
-                        partId: line.partId,
-                        quantity: Number(line.quantity) || 1,
-                        unitPrice: Number(line.unitPrice) || 0,
-                        discountAmount: Number(line.discountAmount) || 0,
-                        taxAmount: Number(line.taxAmount) || 0,
-                        description: line.description || undefined,
-                    }))
-                    : formData.items;
-                const preparedItems = sourceItems.map(item => {
-                    if (Number(item.taxAmount) > 0 || !configuredTax) return item;
-                    const base = (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0);
-                    return { ...item, taxAmount: calculateConfiguredTax(base, configuredTax) };
-                });
-                const preparedSubtotal = preparedItems.reduce((sum, item) => sum + ((Number(item.quantity) || 0) * (Number(item.unitPrice) || 0)), 0);
-                const preparedTax = preparedItems.reduce((sum, item) => sum + (Number(item.taxAmount) || 0), 0);
-                const invoiceTotal = preparedSubtotal + preparedTax;
-                const hasInitialPaymentInput = formData.initialPaidAmount !== '' && formData.initialPaidAmount !== null && formData.initialPaidAmount !== undefined;
-                const parsedInitialPaidAmount = hasInitialPaymentInput ? Number(formData.initialPaidAmount) : 0;
-                if (hasInitialPaymentInput && Number.isNaN(parsedInitialPaidAmount)) {
-                    toast.error('Initial payment must be a valid number');
+                // The very figures the summary showed, so what was agreed on
+                // screen is what the invoice is checked and created against.
+                const preparedSubtotal = calculateSubtotal();
+                const preparedTax = calculateTotalTax();
+                const invoiceTotal = calculateInvoiceTotal();
+
+                // An invoice is raised only against money already collected —
+                // there is no such thing here as an invoice with a balance. The
+                // price is negotiated on the quotation; by this point it is paid.
+                if (!formData.paymentMethodId) {
+                    toast.error('Select how the customer is paying');
                     return;
                 }
-                const amountToRecord = formData.status === 'paid' && parsedInitialPaidAmount <= 0
-                    ? invoiceTotal
-                    : parsedInitialPaidAmount;
-
-                if ((amountToRecord > 0 || formData.status === 'paid') && !formData.paymentMethodId) {
-                    toast.error('Please select payment mode');
+                const tendered = formData.paidAmount === '' || formData.paidAmount == null
+                    ? 0
+                    : Number(formData.paidAmount);
+                if (Number.isNaN(tendered) || tendered < 0) {
+                    toast.error('Amount received must be a valid, positive number');
                     return;
                 }
-
-                if (amountToRecord < 0) {
-                    toast.error('Initial payment cannot be negative');
-                    return;
-                }
-
-                if (amountToRecord > invoiceTotal) {
-                    toast.error('Initial payment cannot exceed invoice total');
+                if (tendered + 0.009 < invoiceTotal) {
+                    toast.error(
+                        `An invoice can only be created once it is paid in full — ${currency.code} `
+                        + `${(invoiceTotal - tendered).toLocaleString()} is still outstanding.`,
+                    );
                     return;
                 }
 
@@ -3155,28 +3239,18 @@ function Invoices({ category = 'vehicle' }) {
                     subtotal: preparedSubtotal,
                     // Line tax already sits on each part line; sending it at the
                     // document level too would tax the sale twice.
-                    taxAmount: isParts ? 0 : preparedTax
+                    taxAmount: isParts ? 0 : preparedTax,
+                    // The server records the payment as part of creating the
+                    // invoice, so there is no window where an unpaid one exists.
+                    paidAmount: tendered,
+                    paymentMethodId: formData.paymentMethodId,
                 };
-                delete submitData.paymentMethodId;
-                delete submitData.initialPaidAmount;
                 const res = await docApi.create(submitData);
 
-                if (amountToRecord > 0) {
-                    await docApi.recordPayment(res.data.data.id, {
-                        amount: amountToRecord,
-                        paymentMethodId: formData.paymentMethodId,
-                        referenceNumber: '',
-                        notes: 'Initial payment recorded during invoice creation'
-                    });
-                }
-
-                // Avoid conflicting status writes when payment SP already sets partial/paid.
-                const statusHandledByPayment = amountToRecord > 0 && ['partial', 'paid'].includes(formData.status);
-                if (formData.status !== 'draft' && !statusHandledByPayment) {
-                    await docApi.updateStatus(res.data.data.id, formData.status);
-                }
-
-                toast.success('Invoice created successfully');
+                const change = Number(res?.data?.data?.changeDue) || 0;
+                toast.success(change > 0
+                    ? `Invoice created — return change of ${currency.code} ${change.toLocaleString()}`
+                    : 'Invoice created successfully');
             } else if (modalMode === 'edit') {
                 await docApi.update(selectedItem.id, formData);
                 toast.success('Invoice updated successfully');
@@ -3299,13 +3373,6 @@ function Invoices({ category = 'vehicle' }) {
         { label: 'Overdue', value: 'overdue' },
         { label: 'Cancelled', value: 'cancelled' }
     ]);
-    const createFormStatusOptions = invoiceStatuses
-        .filter(status => status.is_active === 1 || status.is_active === true)
-        .map(status => ({
-            value: status.name || status.status_code,
-            label: status.display_name || status.status_name || status.name || status.status_code
-        }))
-        .filter(option => option.value && option.label);
 
     if (loading) return <div className="spinner"></div>;
 
@@ -3830,21 +3897,11 @@ function Invoices({ category = 'vehicle' }) {
                                         <input type="number" name="dueDays" value={formData.dueDays} onChange={handleChange} min="0" max="365" />
                                     </div>
 
+                                    {/* No status picker here: an invoice is only ever
+                                        raised once it has been paid in full, so it is
+                                        born paid. */}
                                     <div className="form-group">
-                                        <label>Status</label>
-                                        <SearchableSelect
-                                            name="status"
-                                            value={formData.status}
-                                            onChange={handleChange}
-                                            options={createFormStatusOptions.length > 0 ? createFormStatusOptions : statusOptions}
-                                            labelField="label"
-                                            valueField="value"
-                                            placeholder="Select..."
-                                            style={{ borderColor: formData.status !== 'draft' ? '#16a34a' : '' }}
-                                        />
-                                    </div>
-                                    <div className="form-group">
-                                        <label>Payment Mode</label>
+                                        <label>Payment Mode *</label>
                                         <SearchableSelect
                                             name="paymentMethodId"
                                             value={formData.paymentMethodId}
@@ -3856,16 +3913,34 @@ function Invoices({ category = 'vehicle' }) {
                                         />
                                     </div>
                                     <div className="form-group">
-                                        <label>Initial Payment</label>
+                                        <label>Amount Received *</label>
                                         <input
                                             type="number"
-                                            name="initialPaidAmount"
-                                            value={formData.initialPaidAmount}
+                                            name="paidAmount"
+                                            value={formData.paidAmount}
                                             onChange={handleChange}
                                             min="0"
                                             step="0.01"
                                             placeholder="0.00"
                                         />
+                                        <button
+                                            type="button"
+                                            className="btn btn-secondary btn-sm"
+                                            style={{ marginTop: '0.4rem', width: '100%' }}
+                                            onClick={() => setFormData(prev => ({ ...prev, paidAmount: String(calculateInvoiceTotal()) }))}
+                                        >
+                                            Paid in full ({currency.symbol} {calculateInvoiceTotal().toLocaleString()})
+                                        </button>
+                                        {invoiceShortfall > 0 ? (
+                                            <small style={{ color: '#dc2626', fontWeight: 600, display: 'block', marginTop: '0.4rem' }}>
+                                                {currency.code} {invoiceShortfall.toLocaleString()} still outstanding — an invoice
+                                                cannot be created for part of the amount.
+                                            </small>
+                                        ) : invoiceChangeDue > 0 ? (
+                                            <small style={{ color: '#b45309', fontWeight: 600, display: 'block', marginTop: '0.4rem' }}>
+                                                Change to return: {currency.code} {invoiceChangeDue.toLocaleString()}
+                                            </small>
+                                        ) : null}
                                     </div>
 
                                     <div style={{ borderTop: '2px solid #e5e7eb', marginTop: '1.5rem', paddingTop: '1.5rem' }}>
@@ -3873,19 +3948,31 @@ function Invoices({ category = 'vehicle' }) {
                                             <span style={{ color: '#6b7280' }}>Subtotal</span>
                                             <strong>{calculateSubtotal().toLocaleString()}</strong>
                                         </div>
+                                        {calculateTotalDiscount() > 0 && (
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                                                <span style={{ color: '#6b7280' }}>Discount</span>
+                                                <strong>- {calculateTotalDiscount().toLocaleString()}</strong>
+                                            </div>
+                                        )}
                                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
                                             <span style={{ color: '#6b7280' }}>Tax</span>
                                             <strong>{calculateTotalTax().toLocaleString()}</strong>
                                         </div>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.25rem', marginTop: '1rem', color: '#2563eb' }}>
                                             <strong>Total</strong>
-                                            <strong>{currency.symbol} {(calculateSubtotal() + calculateTotalTax()).toLocaleString()}</strong>
+                                            <strong>{currency.symbol} {calculateInvoiceTotal().toLocaleString()}</strong>
                                         </div>
                                     </div>
 
                                     <div className="modal-actions" style={{ flexDirection: 'column', gap: '0.75rem', marginTop: '2rem' }}>
-                                        <button type="submit" className="btn btn-primary" style={{ width: '100%', padding: '0.75rem', fontSize: '1rem' }}>
-                                            {formData.status === 'draft' ? 'Save as Draft' : 'Create & Send'}
+                                        <button
+                                            type="submit"
+                                            className="btn btn-primary"
+                                            style={{ width: '100%', padding: '0.75rem', fontSize: '1rem' }}
+                                            disabled={invoiceShortfall > 0 || !formData.paymentMethodId}
+                                            title={invoiceShortfall > 0 ? 'The invoice must be paid in full before it can be created' : undefined}
+                                        >
+                                            Create Invoice
                                         </button>
                                         <button type="button" className="btn btn-secondary" onClick={closeModal} style={{ width: '100%' }}>Cancel</button>
                                     </div>

@@ -14,6 +14,7 @@
 const mongoose = require('mongoose');
 const { AppError } = require('../middleware/errorHandler');
 const { sendTemplateEmail } = require('./emailSender.service');
+const { realCustomerEmail } = require('../utils/customerEmail.util');
 
 const sanitizeId = (id) => (mongoose.Types.ObjectId.isValid(id) ? id : null);
 
@@ -34,16 +35,28 @@ async function sendCustomerDocumentEmail({ Model, id, usageKey, documentKey, bui
   if (document.walkIn) {
     throw new AppError('This is a walk-in sale — there is no customer email address to send to', 400);
   }
-  if (!document.customer?.email) throw new AppError('The selected customer does not have an email address', 400);
+  // An imported customer without a source email carries an invented one. Sending
+  // there reports success for a message that goes nowhere, so it is treated as
+  // the missing address it really is.
+  const recipient = realCustomerEmail(document.customer?.email);
+  if (!recipient) {
+    throw new AppError(
+      'The selected customer does not have an email address — add one on their record first',
+      400,
+    );
+  }
 
   const result = await sendTemplateEmail({
     usageKey,
-    to: document.customer.email,
+    to: recipient,
     sentBy: userId,
-    context: { customer: document.customer, [documentKey]: buildDocument(document) },
+    context: {
+      customer: { ...document.customer, email: recipient },
+      [documentKey]: buildDocument(document),
+    },
   });
   if (result.status !== 'sent') throw new AppError(result.errorMessage || 'Email could not be sent', 502);
-  return { document, recipient: document.customer.email };
+  return { document, recipient };
 }
 
 module.exports = { sendCustomerDocumentEmail };
