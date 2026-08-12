@@ -216,10 +216,9 @@ const getInvoiceById = async (req, res, next) => {
                 ...mapInvoiceRow(invoice),
                 customer_address: [customer.address, customer.city].filter(Boolean).join(', '),
                 customer_phone: customer.phone || '',
-                // Blank rather than the import's invented address, so the detail
-                // view and the printed document agree on what contact details
-                // this customer actually has.
-                customer_email: realCustomerEmail(customer.email),
+                // What the record holds, so the screen and the printed document
+                // show the customer the same address.
+                customer_email: customer.email || '',
                 items: (invoice.items || []).map((item) => ({
                     id: item._id,
                     description: item.description,

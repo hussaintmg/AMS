@@ -29,35 +29,40 @@ const realCustomerEmail = (value) => {
 };
 
 /**
- * The best real email this system holds for a customer.
+ * The email to print on a customer's document.
  *
- * A customer converted from a lead often gave their address on the lead and
- * never again — and if they were also seen by the import first, their customer
- * record carries only the invented placeholder, so the address they did give
- * never reaches a document. This looks past the placeholder to the lead the
- * customer was converted from.
+ * A printed document shows the address the customer's record holds — that is
+ * what the dealer has on file for them and what they expect to see on their
+ * quotation. The only cleverness is preferring a *better* address when one
+ * exists: a customer converted from a lead often gave their address there and
+ * never again, and if the import had already created their record they carry
+ * only its generated placeholder. In that case the lead's address is the real
+ * one and wins.
  *
- * Returns '' when there is genuinely nothing on file, which is the honest
- * answer: a document should say nothing rather than invent an address.
+ * Note this is deliberately more generous than `realCustomerEmail`, which is
+ * about whether an address can be *written to*. Printing and sending are
+ * different questions: a document shows what is on file, while sending has to
+ * refuse an address that goes nowhere.
  *
  * @param {object} customer  a populated Customer document (lean or hydrated)
- * @returns {Promise<string>}
+ * @returns {Promise<string>} the address to print, '' if the record has none
  */
 async function resolveCustomerEmail(customer) {
-  const own = realCustomerEmail(customer?.email);
-  if (own) return own;
+  const stored = String(customer?.email || '').trim();
+  if (realCustomerEmail(stored)) return stored;
 
   const leadId = customer?.leadRef;
-  if (!leadId) return '';
-  try {
-    // Required lazily: this util is loaded by services that must not drag the
-    // whole model graph in with them.
-    const Lead = require('../models/Lead.model');
-    const lead = await Lead.findById(leadId).select('email').lean();
-    return realCustomerEmail(lead?.email);
-  } catch {
-    return '';
+  if (leadId) {
+    try {
+      // Required lazily: this util is loaded by services that must not drag the
+      // whole model graph in with them.
+      const Lead = require('../models/Lead.model');
+      const lead = await Lead.findById(leadId).select('email').lean();
+      const fromLead = realCustomerEmail(lead?.email);
+      if (fromLead) return fromLead;
+    } catch { /* fall through to whatever the customer record holds */ }
   }
+  return stored;
 }
 
 module.exports = {

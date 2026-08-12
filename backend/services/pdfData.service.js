@@ -10,7 +10,6 @@ const {
   BrandingSetting,
 } = require('../models');
 const mongoose = require('mongoose');
-const { realCustomerEmail } = require('../utils/customerEmail.util');
 
 /**
  * Vehicles and parts deliberately share one document type each.
@@ -215,20 +214,17 @@ function buildDataBag(type, record, extras = {}) {
     customer: {
       ...customer,
       ...(record.walkIn ? { phone: record.walkInPhone || customer.phone || '' } : {}),
-      // A customer imported without an email carries an invented one so the
-      // record stays unique; printing that on an invoice puts an address on the
-      // document that belongs to nobody. Better an empty Email field than a
-      // convincing wrong one — and a walk-in has no email at all, since the
-      // shared walk-in record's would not be theirs.
+      // The customer's email as their record holds it.
       //
       // `extras.customerEmail` is the caller's already-resolved answer, which
-      // can see further than this function can: it may have recovered the
-      // address from the lead the customer was converted from.
-      email: record.walkIn
-        ? ''
-        : (extras.customerEmail !== undefined
-          ? realCustomerEmail(extras.customerEmail)
-          : realCustomerEmail(customer.email)),
+      // can see further than this function can — it may have recovered a real
+      // address from the lead the customer was converted from when their own
+      // record only carries the one the import invented. Absent that, the
+      // record's own value prints.
+      //
+      // A walk-in is the one exception: that sale is booked against the shared
+      // walk-in record, whose email would belong to nobody in particular.
+      email: record.walkIn ? '' : (extras.customerEmail || customer.email || ''),
       fullName: (record.walkIn && record.walkInName)
         || join(customer.firstName, customer.lastName) || customer.companyName || '',
       name: (record.walkIn && record.walkInName)

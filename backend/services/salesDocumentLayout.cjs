@@ -112,14 +112,10 @@ function billedToGrid(type, data) {
   const customer = data.customer || {};
   const meta = metaRows(type, data);
   const metaCell = (i) => (meta[i]?.label ? `${meta[i].label} : ${meta[i].value || ''}` : '');
-  // A customer with no email on file gets no Email caption either. Printing a
-  // bare "Email :" with nothing after it reads as a document that failed to
-  // fill itself in, when the truth is simply that this customer never gave one.
-  const emailCell = clean(customer.email) ? `Email : ${clean(customer.email)}` : '';
   return [
     ['Billed To :', `Prepared By : ${clean(data.generator?.fullName)}`, metaCell(0)],
     [`Customer : ${customer.fullName || ''}`, `Contact # : ${customer.phone || ''}`, metaCell(1)],
-    [`Address : ${[customer.address, customer.city].filter(Boolean).join(' ')}`, emailCell, metaCell(2)],
+    [`Address : ${[customer.address, customer.city].filter(Boolean).join(' ')}`, `Email : ${customer.email || ''}`, metaCell(2)],
     [`Company : ${customer.companyName || ''}`, `Customer # : ${customer.customerCode || ''}`, ''],
   ];
 }
