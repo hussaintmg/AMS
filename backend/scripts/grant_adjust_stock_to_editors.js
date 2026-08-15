@@ -1,10 +1,14 @@
 /**
- * One-time migration for the "Increase / decrease stock" grant.
+ * Migration for the split stock-adjustment grants.
  *
- * POST /parts/:id/adjust used to ride on the parts *edit* permission; it now
- * has its own action (`adjustStock`). Any role whose parts job row already
- * grants edit keeps the ability it had by getting the new action ticked —
- * an administrator can untick it afterwards, which is the point of the split.
+ * POST /parts/:id/adjust used to ride on the parts *edit* permission, then
+ * briefly on a combined `adjustStock` action. It now takes two separate grants
+ * — `stockIncrease` and `stockDecrease` — so a goods-in role can be allowed to
+ * add stock without being allowed to remove it, and vice versa.
+ *
+ * Any role whose parts job row grants edit (or carries the old combined
+ * adjustStock) gets both new grants, keeping the ability it already had; an
+ * administrator then unticks whichever direction a role should lose.
  *
  * Idempotent: rerunning finds nothing left to change.
  *
@@ -28,15 +32,15 @@ const { keysForPage } = require('../utils/pageRegistry');
     let touched = false;
     for (const job of role.jobs) {
       if (!partsKeys.has(job.pageKey)) continue;
-      if (job.actions?.edit === true && job.actions?.adjustStock !== true) {
-        job.actions.adjustStock = true;
-        touched = true;
-      }
+      const hadAbility = job.actions?.edit === true || job.actions?.adjustStock === true;
+      if (!hadAbility) continue;
+      if (job.actions.stockIncrease !== true) { job.actions.stockIncrease = true; touched = true; }
+      if (job.actions.stockDecrease !== true) { job.actions.stockDecrease = true; touched = true; }
     }
     if (touched) {
       await role.save();
       changed += 1;
-      console.log(`  ${role.name}: parts edit → adjustStock granted`);
+      console.log(`  ${role.name}: parts edit/adjustStock → stockIncrease + stockDecrease granted`);
     }
   }
   console.log(`${changed} role(s) updated.`);

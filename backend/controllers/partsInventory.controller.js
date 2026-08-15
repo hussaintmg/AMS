@@ -5,6 +5,7 @@ const { PartCategory, Supplier } = require('../models/VehicleMaster.model');
 const { AppError } = require('../middleware/errorHandler');
 const logger = require('../utils/logger');
 const { nextBarcode } = require('../utils/barcode');
+const { canDo } = require('../utils/roleJobs');
 const { logStockMovements } = require('../services/partMovementLog.service');
 
 const DEFAULT_SOURCE_TYPES = [
@@ -503,6 +504,13 @@ const adjustStock = async (req, res, next) => {
             }
         } else if (adjustmentType === 'set') {
             newStock = qty;
+            // The route could not know which way a "set" moves; now that the
+            // current level is in hand, it needs the grant for that direction.
+            const need = newStock > part.currentStock ? 'stockIncrease'
+                : newStock < part.currentStock ? 'stockDecrease' : null;
+            if (need && !canDo(req.user, 'parts', need)) {
+                throw new AppError(`Permission denied: cannot ${need === 'stockIncrease' ? 'increase' : 'decrease'} stock`, 403);
+            }
         } else {
             throw new AppError('Invalid adjustment type. Use: increase, decrease, or set', 400);
         }

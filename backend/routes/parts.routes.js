@@ -24,7 +24,13 @@ const canView = authorizeAction('parts', 'view');
 const canCreate = authorizeAction('parts', 'create');
 const canEdit = authorizeAction('parts', 'edit');
 const canDelete = authorizeAction('parts', 'delete');
-const canAdjustStock = authorizeAction('parts', 'adjustStock');
+
+// Raising and lowering are separate grants, so the direction in the request
+// decides which one an adjust call needs. Each direction gets its own route
+// below — that keeps a real, statically-auditable guard on each — and
+// `whenType` passes a request on to the next route until the direction fits.
+const whenType = (...types) => (req, res, next) =>
+    (types.includes(String(req.body?.adjustmentType || '').toLowerCase()) ? next() : next('route'));
 
 // Reference data routes (must come before /:id routes)
 router.get('/stats', authenticate, canView, partsController.getPartStats);
@@ -45,8 +51,13 @@ router.post('/', authenticate, canCreate, partsController.createPart);
 router.put('/:id', authenticate, canEdit, partsController.updatePart);
 router.delete('/:id', authenticate, canDelete, partsController.deletePart);
 
-// Raising or lowering a holding is its own grant (Role Jobs → "Increase /
-// decrease stock"), separate from editing the part record.
-router.post('/:id/adjust', authenticate, canAdjustStock, partsController.adjustStock);
+// Raising or lowering a holding is its own pair of grants (Role Jobs →
+// "Increase stock" / "Decrease stock"), separate from editing the part record.
+router.post('/:id/adjust', authenticate, whenType('increase'), authorizeAction('parts', 'stockIncrease'), partsController.adjustStock);
+router.post('/:id/adjust', authenticate, whenType('decrease'), authorizeAction('parts', 'stockDecrease'), partsController.adjustStock);
+// "set" can move the level either way, so which grant it needs is only known
+// once the current stock is read — the controller enforces the direction; this
+// route just proves page access.
+router.post('/:id/adjust', authenticate, canView, partsController.adjustStock);
 
 module.exports = router;

@@ -33,7 +33,12 @@ const roleJobSchema = new mongoose.Schema({
     export: { type: Boolean, default: false },
     // Sign-off actions: approving a quotation is what lets it become a booking.
     approve: { type: Boolean, default: false },
-    // Parts only: may raise or lower a stock level (the adjust dialog).
+    // Parts only: raising and lowering a stock level are granted separately —
+    // a goods-in role may only add, a goods-out role may only remove.
+    stockIncrease: { type: Boolean, default: false },
+    stockDecrease: { type: Boolean, default: false },
+    // Legacy combined grant, replaced by the split pair above. Stays on the
+    // schema so documents written before the split still load.
     adjustStock: { type: Boolean, default: false },
   },
   dataScope: {

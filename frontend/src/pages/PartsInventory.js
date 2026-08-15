@@ -57,9 +57,11 @@ const PartsInventory = () => {
   const canCreatePart = allows('create');
   const canEditPart = allows('edit');
   const canDeletePart = allows('delete');
-  // Its own grant, apart from edit: whether this role may raise or lower a
-  // stock level at all (Role Jobs → "Increase / decrease stock").
-  const canAdjustStock = allows('adjustStock');
+  // Separate grants, apart from edit: goods-in may only add stock, goods-out
+  // may only remove it (Role Jobs → "Increase stock" / "Decrease stock").
+  const canIncreaseStock = allows('stockIncrease');
+  const canDecreaseStock = allows('stockDecrease');
+  const canAdjustStock = canIncreaseStock || canDecreaseStock;
 
   // State
   const [parts, setParts] = useState([]);
@@ -314,11 +316,12 @@ const PartsInventory = () => {
     setSelectedPart(null);
   };
 
-  // Open stock adjustment modal
+  // Open stock adjustment modal — the default direction is one this role is
+  // actually allowed to take.
   const openStockModal = (part) => {
     setSelectedPart(part);
     setStockForm({
-      adjustmentType: "increase",
+      adjustmentType: canIncreaseStock ? "increase" : "decrease",
       quantity: "",
       reason: "",
     });
@@ -1378,15 +1381,17 @@ const PartsInventory = () => {
                       help="Increase adds stock, Decrease subtracts stock, Set overwrites stock to an exact value."
                     />
                   </label>
+                  {/* Only the directions this role holds; "Set" can move the
+                      level either way, so it needs both grants. */}
                   <SearchableSelect
                     name="adjustmentType"
                     value={stockForm.adjustmentType}
                     onChange={handleStockFormChange}
                     required
                   >
-                    <option value="increase">Increase (+)</option>
-                    <option value="decrease">Decrease (-)</option>
-                    <option value="set">Set to Exact Value</option>
+                    {canIncreaseStock && <option value="increase">Increase (+)</option>}
+                    {canDecreaseStock && <option value="decrease">Decrease (-)</option>}
+                    {canIncreaseStock && canDecreaseStock && <option value="set">Set to Exact Value</option>}
                   </SearchableSelect>
                 </div>
 
