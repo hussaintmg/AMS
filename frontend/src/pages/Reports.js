@@ -56,6 +56,8 @@ const TAB_CARDS = {
     { key: 'totalParts', label: 'Total Parts', default: '—' },
     { key: 'lowStockItems', label: 'Low Stock Items', default: '—' },
     { key: 'stockValue', label: 'Parts Stock Value', default: '—', prefix: 'PKR ' },
+    { key: 'stockIn', label: 'Stock In (Period)', default: '—' },
+    { key: 'stockOut', label: 'Stock Out (Period)', default: '—' },
   ],
   service: [
     { key: 'totalJobCards', label: 'Total Job Cards', default: '—' },
@@ -225,7 +227,12 @@ const TAB_FETCHERS = {
     };
   },
   partsInventory: async (params) => {
+    // The client reads this report day by day: each row is a date, with the
+    // products whose stock rose or fell that day. The movement detail and the
+    // current stock list sit underneath for drill-down.
     const { data, errors } = await loadAll([
+      { key: 'daily', label: 'Daily Stock Activity', load: () => reportAPI.getPartsStockDaily(params) },
+      { key: 'movements', label: 'Stock Movement Details', load: () => reportAPI.getPartsStockMovements(params) },
       { key: 'parts', label: 'Parts Stock', load: () => reportAPI.getInventoryHealth(params) },
     ]);
     return {
@@ -233,9 +240,13 @@ const TAB_FETCHERS = {
         totalParts: data.parts.length,
         lowStockItems: data.parts.filter((row) => row.status === 'low').length,
         stockValue: sum(data.parts, 'stockValue'),
+        stockIn: sum(data.daily, 'stock_in'),
+        stockOut: sum(data.daily, 'stock_out'),
       },
       sections: [
-        { key: 'parts', title: 'Parts Stock', rows: data.parts },
+        { key: 'daily', title: 'Daily Stock Activity (Day-wise)', rows: data.daily },
+        { key: 'movements', title: 'Stock Movement Details', rows: data.movements },
+        { key: 'parts', title: 'Current Parts Stock', rows: data.parts },
       ],
       errors,
     };

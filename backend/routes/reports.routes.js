@@ -12,6 +12,8 @@ router.get('/sales-performance', authenticate, authorizeAction('reports', 'view'
 router.get('/sales-by-model', authenticate, authorizeAction('reports', 'view'), reportsController.getSalesByModel);
 router.get('/inventory-health', authenticate, authorizeAction('reports', 'view'), reportsController.getInventoryHealth);
 router.get('/inventory-stock-movement', authenticate, authorizeAction('reports', 'view'), reportsController.getInventoryStockMovement);
+router.get('/parts-stock-daily', authenticate, authorizeAction('reports', 'view'), reportsController.getPartsStockDaily);
+router.get('/parts-stock-movements', authenticate, authorizeAction('reports', 'view'), reportsController.getPartsStockMovements);
 router.get('/inventory-stock-snapshot', authenticate, authorizeAction('reports', 'view'), reportsController.getInventoryStockSnapshot);
 router.get('/pending-deliveries', authenticate, authorizeAction('reports', 'view'), reportsController.getPendingDeliveries);
 router.get('/customer-receivables', authenticate, authorizeAction('reports', 'view'), reportsController.getCustomerReceivables);

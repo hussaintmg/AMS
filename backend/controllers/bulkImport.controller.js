@@ -37,6 +37,7 @@ const Department = require('../models/Department.model');
 const Vehicle = require('../models/Vehicle.model');
 const Warehouse = require('../models/Warehouse.model');
 const Part = require('../models/Part.model');
+const { logStockMovements } = require('../services/partMovementLog.service');
 const { VehicleMake, VehicleModel, VehicleVariant, VehicleColor, PartCategory, Supplier, VehicleCondition } = require('../models/VehicleMaster.model');
 const SalesOrder = require('../models/SalesOrder.model');
 const Employee = require('../models/Employee.model');
@@ -1324,8 +1325,20 @@ exports.importParts = async (req, res, next) => {
       const existingId = existingByPartCode.get(pnKey);
       if (existingId) {
         try {
-          await Part.findByIdAndUpdate(existingId, partData, { runValidators: true });
+          const before = await Part.findByIdAndUpdate(existingId, partData, { runValidators: true }).lean();
           updated += 1;
+          // An import that changes the holding is a stock movement like any
+          // other — the day-wise report must account for it.
+          if (before && partData.currentStock !== undefined) {
+            const delta = Number(partData.currentStock) - Number(before.currentStock || 0);
+            if (delta !== 0) {
+              await logStockMovements([{
+                part: existingId, partCode: partData.partCode || before.partCode || '', partName: partData.name || before.name || '',
+                direction: delta > 0 ? 'in' : 'out', quantity: Math.abs(delta), stockAfter: Number(partData.currentStock),
+                source: 'import_update', reference: 'Bulk import (stock updated)', createdBy: userId || null,
+              }]);
+            }
+          }
         } catch (e) {
           errors.push({ row: rowNum, message: e.message || 'Update failed' });
         }
@@ -1341,6 +1354,11 @@ exports.importParts = async (req, res, next) => {
           });
           existingByPartCode.set(pnKey, part._id);
           created += 1;
+          await logStockMovements([{
+            part: part._id, partCode: part.partCode || part.sku || '', partName: part.name || '',
+            direction: 'in', quantity: Number(part.currentStock) || 0, stockAfter: Number(part.currentStock) || 0,
+            source: 'import', reference: 'Bulk import (new part)', createdBy: userId || null,
+          }]);
         } catch (e) {
           errors.push({ row: rowNum, message: e.message || 'Create failed' });
         }

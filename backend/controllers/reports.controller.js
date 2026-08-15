@@ -1,5 +1,5 @@
 const {
-  Lead, Customer, Vehicle, Part, SalesOrder, Invoice,
+  Lead, Customer, Vehicle, Part, PartStockMovement, SalesOrder, Invoice,
   ServiceAppointment, JobCard, Expense, Payment, Employee, Leave, Department,
 } = require('../models');
 
@@ -106,6 +106,77 @@ const getInventoryStockMovement = async (_req, res, next) => {
   try {
     const parts = await Part.find({ isActive: { $ne: false } }).select('partCode sku name currentStock quantity updatedAt').sort({ updatedAt: -1 }).limit(5000).lean();
     send(res, rows(parts, (part) => ({ id: part._id, reference: part.partCode || part.sku, name: part.name, stock: asNumber(part.currentStock ?? part.quantity), date: part.updatedAt })));
+  } catch (error) { next(error); }
+};
+
+// Day key in local server time — the business day the warehouse actually saw,
+// not the UTC date the timestamp happens to fall on.
+const localDayKey = (date) => {
+  const d = new Date(date);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+const MOVEMENT_SOURCE_LABEL = {
+  initial: 'Opening stock', adjustment: 'Manual adjustment', sale: 'Sale (invoice)',
+  sale_reverted: 'Invoice cancelled', import: 'Bulk import', import_update: 'Bulk import update',
+};
+
+const findMovements = (query) => PartStockMovement
+  .find(dateRange(query, 'movementDate'))
+  .sort({ movementDate: -1 })
+  .limit(20000)
+  .lean();
+
+// One row per calendar day: how much stock came in, went out, and which
+// products moved — the shape the client asked Reports → Parts Inventory to take.
+const getPartsStockDaily = async (req, res, next) => {
+  try {
+    const movements = await findMovements(req.query);
+    const days = new Map();
+    for (const move of movements) {
+      const key = localDayKey(move.movementDate);
+      if (!days.has(key)) days.set(key, { parts: new Map(), stockIn: 0, stockOut: 0 });
+      const day = days.get(key);
+      const signed = move.direction === 'in' ? move.quantity : -move.quantity;
+      if (move.direction === 'in') day.stockIn += move.quantity; else day.stockOut += move.quantity;
+      const partKey = String(move.part);
+      const label = move.partName || move.partCode || 'Unknown part';
+      if (!day.parts.has(partKey)) day.parts.set(partKey, { label, net: 0 });
+      day.parts.get(partKey).net += signed;
+    }
+    const data = [...days.entries()]
+      .sort(([a], [b]) => (a < b ? 1 : -1))
+      .map(([date, day]) => ({
+        date,
+        products_changed: day.parts.size,
+        stock_in: day.stockIn,
+        stock_out: day.stockOut,
+        net_change: day.stockIn - day.stockOut,
+        // A busy day can touch dozens of parts; the first few tell the story
+        // and the movement-details table below carries the rest.
+        details: (() => {
+          const labels = [...day.parts.values()].map(({ label, net }) => `${label} (${net > 0 ? '+' : ''}${net})`);
+          return labels.length > 8 ? `${labels.slice(0, 8).join(', ')} … +${labels.length - 8} more` : labels.join(', ');
+        })(),
+      }));
+    send(res, data);
+  } catch (error) { next(error); }
+};
+
+// The individual movements behind the daily rows, for drill-down under the
+// day-wise table.
+const getPartsStockMovements = async (req, res, next) => {
+  try {
+    const movements = await findMovements(req.query);
+    send(res, rows(movements, (move) => ({
+      id: move._id, date: move.movementDate,
+      part: move.partName || '', part_code: move.partCode || '',
+      type: move.direction === 'in' ? 'Stock In' : 'Stock Out',
+      qty: move.direction === 'in' ? move.quantity : -move.quantity,
+      stock_after: move.stockAfter ?? '',
+      source: MOVEMENT_SOURCE_LABEL[move.source] || move.source,
+      reference: move.reference || '',
+    })));
   } catch (error) { next(error); }
 };
 
@@ -412,6 +483,7 @@ const getEmployeeReport = async (req, res, next) => {
 module.exports = {
   createReport, updateReport, deleteReport, getReportById, getReports, executeReport,
   getSalesPerformance, getSalesByModel, getInventoryHealth, getInventoryStockMovement,
+  getPartsStockDaily, getPartsStockMovements,
   getInventoryStockSnapshot, getPendingDeliveries, getCustomerReceivables, getReceivablesAging,
   getCustomerPurchases, getLeadStatistics, getServiceAnalytics, getServiceKpiDetail, getLowStockParts, buildCustomerPurchaseRows,
   getServiceAppointments, getVehicleStock, getExpenseReport, getPaymentReport, getEmployeeReport,

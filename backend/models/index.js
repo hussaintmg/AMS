@@ -4,6 +4,7 @@ const Customer = require('./Customer.model');
 const Lead = require('./Lead.model');
 const Vehicle = require('./Vehicle.model');
 const Part = require('./Part.model');
+const PartStockMovement = require('./PartStockMovement.model');
 const PartSourceType = require('./PartSourceType.model');
 const Warehouse = require('./Warehouse.model');
 const Quotation = require('./Quotation.model');
@@ -67,6 +68,7 @@ module.exports = {
   Lead,
   Vehicle,
   Part,
+  PartStockMovement,
   PartSourceType,
   Warehouse,
   Quotation,

@@ -5,6 +5,7 @@ const { PartCategory, Supplier } = require('../models/VehicleMaster.model');
 const { AppError } = require('../middleware/errorHandler');
 const logger = require('../utils/logger');
 const { nextBarcode } = require('../utils/barcode');
+const { logStockMovements } = require('../services/partMovementLog.service');
 
 const DEFAULT_SOURCE_TYPES = [
   { value: 'manufacturer', name: 'Manufacturer (OEM)', sortOrder: 1, isSystem: true },
@@ -358,6 +359,14 @@ const createPart = async (req, res, next) => {
 
         await part.save();
 
+        // Opening balance shows up in the day-wise stock report as the day the
+        // part entered inventory.
+        await logStockMovements([{
+            part: part._id, partCode: part.partCode || part.sku || '', partName: part.name || '',
+            direction: 'in', quantity: Number(currentStock) || 0, stockAfter: part.currentStock,
+            source: 'initial', reference: 'Opening stock', createdBy: req.user?.id || null,
+        }]);
+
         logger.info(`Part created: ${partCode} by ${req.user?.email || 'system'}`);
 
         res.status(201).json({
@@ -498,10 +507,23 @@ const adjustStock = async (req, res, next) => {
             throw new AppError('Invalid adjustment type. Use: increase, decrease, or set', 400);
         }
 
+        const previousStock = part.currentStock;
         part.currentStock = newStock;
         part.quantity = newStock;
         part.updatedBy = req.user?.id || null;
         await part.save();
+
+        // "set" is logged as the delta it produced, so the day-wise report sums
+        // the same numbers the shelf actually saw.
+        const delta = newStock - previousStock;
+        if (delta !== 0) {
+            await logStockMovements([{
+                part: part._id, partCode: part.partCode || part.sku || '', partName: part.name || '',
+                direction: delta > 0 ? 'in' : 'out', quantity: Math.abs(delta), stockAfter: newStock,
+                source: 'adjustment', reference: reason || `Manual ${adjustmentType}`,
+                createdBy: req.user?.id || null,
+            }]);
+        }
 
         const message = `Stock ${adjustmentType}d by ${qty}. New stock: ${newStock}${reason ? ` Reason: ${reason}` : ''}`;
         logger.info(`Stock adjusted for part ID ${id}: ${message}`);

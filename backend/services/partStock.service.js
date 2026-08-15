@@ -16,6 +16,7 @@
  */
 const Part = require('../models/Part.model');
 const { AppError } = require('../middleware/errorHandler');
+const { logStockMovements } = require('./partMovementLog.service');
 const logger = require('../utils/logger');
 
 const num = (value, fallback = 0) => {
@@ -75,6 +76,7 @@ async function applyInvoiceStock(invoice, { session = null } = {}) {
 
   const demand = partDemand(lines);
   const taken = [];
+  const movements = [];
   for (const [partId, quantity] of demand.entries()) {
     // Guarded update: the filter re-checks the level, so two invoices racing for
     // the last unit cannot both succeed.
@@ -92,7 +94,15 @@ async function applyInvoiceStock(invoice, { session = null } = {}) {
       throw new AppError('Stock changed while the invoice was being created. Try again.', 409);
     }
     taken.push({ id: partId, qty: quantity });
+    movements.push({
+      part: partId, partCode: updated.partCode || updated.sku || '', partName: updated.name || '',
+      direction: 'out', quantity, stockAfter: num(updated.currentStock),
+      source: 'sale', reference: invoice.invoiceNumber || '', sourceId: invoice._id,
+      createdBy: invoice.createdBy || null,
+    });
   }
+  // Logged only once every line has landed, so a rolled-back attempt leaves no trail.
+  await logStockMovements(movements);
 
   return { applied: true, parts: taken.length };
 }
@@ -101,11 +111,22 @@ async function applyInvoiceStock(invoice, { session = null } = {}) {
 async function revertInvoiceStock(invoice, { session = null } = {}) {
   if (!invoice?._id || !invoice.stockApplied) return { reverted: false };
   const demand = partDemand(invoice.lineItems || []);
+  const movements = [];
   for (const [partId, quantity] of demand.entries()) {
-    let query = Part.updateOne({ _id: partId }, { $inc: { currentStock: quantity, quantity } });
+    let query = Part.findOneAndUpdate(
+      { _id: partId },
+      { $inc: { currentStock: quantity, quantity } },
+      { returnDocument: 'after' },
+    );
     if (session) query = query.session(session);
-    await query;
+    const updated = await query.lean();
+    movements.push({
+      part: partId, partCode: updated?.partCode || updated?.sku || '', partName: updated?.name || '',
+      direction: 'in', quantity, stockAfter: updated ? num(updated.currentStock) : null,
+      source: 'sale_reverted', reference: invoice.invoiceNumber || '', sourceId: invoice._id,
+    });
   }
+  await logStockMovements(movements);
   logger.info(`Parts stock returned for cancelled invoice ${invoice.invoiceNumber || invoice._id}`);
   return { reverted: true, parts: demand.size };
 }
