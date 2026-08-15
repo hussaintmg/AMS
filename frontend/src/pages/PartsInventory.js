@@ -57,6 +57,9 @@ const PartsInventory = () => {
   const canCreatePart = allows('create');
   const canEditPart = allows('edit');
   const canDeletePart = allows('delete');
+  // Its own grant, apart from edit: whether this role may raise or lower a
+  // stock level at all (Role Jobs → "Increase / decrease stock").
+  const canAdjustStock = allows('adjustStock');
 
   // State
   const [parts, setParts] = useState([]);
@@ -665,13 +668,15 @@ const PartsInventory = () => {
       style: { width: "120px" },
       render: (row) => (
         <div className="action-group" onClick={(e) => e.stopPropagation()}>
-          <button
-            className="btn-icon btn-adjust"
-            onClick={() => openStockModal(row)}
-            title="Adjust Stock"
-          >
-            <Package size={16} />
-          </button>
+          {canAdjustStock && (
+            <button
+              className="btn-icon btn-adjust"
+              onClick={() => openStockModal(row)}
+              title="Adjust Stock"
+            >
+              <Package size={16} />
+            </button>
+          )}
           <BarcodeButton
             kind="part"
             id={row.id}

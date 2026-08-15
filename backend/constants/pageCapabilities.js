@@ -25,7 +25,7 @@
  * it, so offering the checkbox only promised a restriction that was never
  * applied. The field stays on the Role model so old documents still load.
  */
-const ALL_ACTIONS = ['create', 'edit', 'delete', 'approve', 'sendEmail', 'downloadPdf'];
+const ALL_ACTIONS = ['create', 'edit', 'delete', 'approve', 'sendEmail', 'downloadPdf', 'adjustStock'];
 
 const ACTION_LABELS = {
   create: 'Create',
@@ -34,6 +34,9 @@ const ACTION_LABELS = {
   approve: 'Approve',
   sendEmail: 'Send email',
   downloadPdf: 'Download PDF',
+  // Raising or lowering a holding is not the same as editing the part record:
+  // the client wants to hand out "may correct the shelf" separately.
+  adjustStock: 'Increase / decrease stock',
 };
 
 /**
@@ -63,7 +66,7 @@ const PAGE_CAPABILITIES = {
   leads: { actions: ['create', 'edit', 'delete'], dataScope: true },
   customers: { actions: ['create', 'edit', 'delete'], dataScope: true },
   vehicles: { actions: ['create', 'edit', 'delete'], dataScope: true },
-  parts: { actions: ['create', 'edit', 'delete'], dataScope: true },
+  parts: { actions: ['create', 'edit', 'delete', 'adjustStock'], dataScope: true },
   // A read-only view over sales orders that already carry dispatch evidence.
   dispatch: { actions: [], dataScope: true },
 

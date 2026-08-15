@@ -1052,6 +1052,7 @@ exports.saveRoleJobs = async (req, res, next) => {
           downloadPdf: granted('downloadPdf'),
           export: granted('export'),
           approve: granted('approve'),
+          adjustStock: granted('adjustStock'),
         },
         dataScope: {
           mode,

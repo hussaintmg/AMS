@@ -24,6 +24,7 @@ const canView = authorizeAction('parts', 'view');
 const canCreate = authorizeAction('parts', 'create');
 const canEdit = authorizeAction('parts', 'edit');
 const canDelete = authorizeAction('parts', 'delete');
+const canAdjustStock = authorizeAction('parts', 'adjustStock');
 
 // Reference data routes (must come before /:id routes)
 router.get('/stats', authenticate, canView, partsController.getPartStats);
@@ -44,7 +45,8 @@ router.post('/', authenticate, canCreate, partsController.createPart);
 router.put('/:id', authenticate, canEdit, partsController.updatePart);
 router.delete('/:id', authenticate, canDelete, partsController.deletePart);
 
-// Stock adjustment counts as editing the part record.
-router.post('/:id/adjust', authenticate, canEdit, partsController.adjustStock);
+// Raising or lowering a holding is its own grant (Role Jobs → "Increase /
+// decrease stock"), separate from editing the part record.
+router.post('/:id/adjust', authenticate, canAdjustStock, partsController.adjustStock);
 
 module.exports = router;

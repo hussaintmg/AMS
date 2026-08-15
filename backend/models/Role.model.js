@@ -33,6 +33,8 @@ const roleJobSchema = new mongoose.Schema({
     export: { type: Boolean, default: false },
     // Sign-off actions: approving a quotation is what lets it become a booking.
     approve: { type: Boolean, default: false },
+    // Parts only: may raise or lower a stock level (the adjust dialog).
+    adjustStock: { type: Boolean, default: false },
   },
   dataScope: {
     mode: { type: String, enum: ['own', 'selected_roles', 'selected_users', 'all'], default: 'own' },
