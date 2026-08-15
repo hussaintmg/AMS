@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { fieldAccessor, canRoleDo, getRoleJob } from "../utils/roleJobs";
+import { fieldAccessor, canRoleDo, getRoleJob, pageActions } from "../utils/roleJobs";
 import { partsAPI, vehicleMasterAPI } from "../services/api";
 import toast from "react-hot-toast";
 import { Package, Search, Plus, Upload, Pencil, Trash2, ScanLine } from "lucide-react";
@@ -64,6 +64,16 @@ const PartsInventory = () => {
    * value"). Each grant is exactly one option in the Adjust Stock dialog, and
    * a role holding none of them is not offered the dialog at all.
    */
+  /**
+   * The "+ Create …" links beside the pickers were drawn for anyone who could
+   * open this form, but the records behind them belong to other pages and are
+   * guarded there: categories and suppliers are Vehicle Master Data, source
+   * types are Parts. A role without those rights was being offered a button
+   * whose only outcome was a 403.
+   */
+  const canCreateVehicleMaster = pageActions(currentUser, 'vehicle_master')('create');
+  const canCreateSourceType = canCreatePart;
+
   const canIncreaseStock = allows('stockIncrease');
   const canDecreaseStock = allows('stockDecrease');
   const canSetStock = allows('stockSet');
@@ -1057,16 +1067,18 @@ const PartsInventory = () => {
                           label="Source Type *"
                           help="Where the part comes from. Manufacturer = OEM, 3rd Party = aftermarket. Add your own types with + Create Source Type."
                         />
-                        <button
-                          type="button"
-                          className="label-add-link"
-                          onClick={() => {
-                            setEditingSourceType(null);
-                            setShowSourceTypeModal(true);
-                          }}
-                        >
-                          + Create Source Type
-                        </button>
+                        {canCreateSourceType && (
+                          <button
+                            type="button"
+                            className="label-add-link"
+                            onClick={() => {
+                              setEditingSourceType(null);
+                              setShowSourceTypeModal(true);
+                            }}
+                          >
+                            + Create Source Type
+                          </button>
+                        )}
                       </label>
                       <SearchableSelect
                         name="sourceType"
@@ -1087,13 +1099,15 @@ const PartsInventory = () => {
                           label="Category"
                           help="Optional grouping for reporting and filtering (e.g., Engine, Electrical)."
                         />
-                        <button
-                          type="button"
-                          className="label-add-link"
-                          onClick={() => setShowCategoryModal(true)}
-                        >
-                          + Create Category
-                        </button>
+                        {canCreateVehicleMaster && (
+                          <button
+                            type="button"
+                            className="label-add-link"
+                            onClick={() => setShowCategoryModal(true)}
+                          >
+                            + Create Category
+                          </button>
+                        )}
                       </label>
                       <SearchableSelect
                         name="categoryId"
@@ -1129,13 +1143,15 @@ const PartsInventory = () => {
                           label="Supplier"
                           help="Supplier you purchase this part from (optional)."
                         />
-                        <button
-                          type="button"
-                          className="label-add-link"
-                          onClick={() => setShowSupplierModal(true)}
-                        >
-                          + Create Supplier
-                        </button>
+                        {canCreateVehicleMaster && (
+                          <button
+                            type="button"
+                            className="label-add-link"
+                            onClick={() => setShowSupplierModal(true)}
+                          >
+                            + Create Supplier
+                          </button>
+                        )}
                       </label>
                       <SearchableSelect
                         name="supplierId"

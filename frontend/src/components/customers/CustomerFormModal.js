@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import { X } from 'lucide-react';
 import { useCustomers } from '../../context/CustomersContext';
+import { useAuth } from '../../context/AuthContext';
+import { pageActions } from '../../utils/roleJobs';
 import SearchableSelect from '../SearchableSelect';
 import LeadMasterModal from '../leads/LeadMasterModal';
 import LeadStatusItemModal from '../leads/LeadStatusItemModal';
@@ -18,6 +20,7 @@ const TABS = [
 
 export default function CustomerFormModal({ customer, onClose, onSaved }) {
   const { createCustomer, updateCustomer, meta, loadMeta } = useCustomers();
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('basic');
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
@@ -96,10 +99,14 @@ export default function CustomerFormModal({ customer, onClose, onSaved }) {
 
   useModalKeyboard(true, onClose, handleSubmit, saving);
 
-  const renderLabel = (text, field, quickType) => (
+  // These pickers are filled from Lead Master Data, so the shortcut belongs to
+  // a role that may create there — not to anyone who can open a customer form.
+  const renderLabel = (text, field, quickType, page = 'lead_master') => (
     <label className="form-label-add">
       <span>{text}</span>
-      <button type="button" className="label-add-link" onClick={() => setQuickCreate(quickType || field)}>+ Create {text}</button>
+      {pageActions(user, page)('create') && (
+        <button type="button" className="label-add-link" onClick={() => setQuickCreate(quickType || field)}>+ Create {text}</button>
+      )}
     </label>
   );
 
@@ -155,7 +162,7 @@ export default function CustomerFormModal({ customer, onClose, onSaved }) {
               />
             </div>
             <div className="form-group">
-              {renderLabel('Status', 'status')}
+              {renderLabel('Status', 'status', undefined, 'status_management')}
               <SearchableSelect
                 options={(meta.statuses || []).map((s) => ({ _id: s.value || s._id, name: s.label || s.value }))}
                 value={form.status}

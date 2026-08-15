@@ -10,6 +10,7 @@ import CustomerQuickCreate from '../components/customers/CustomerQuickCreate';
 import useModalKeyboard from '../hooks/useModalKeyboard';
 import { useAuth } from '../context/AuthContext';
 import { pageActions } from '../utils/roleJobs';
+import MasterQuickCreate from '../components/MasterQuickCreate';
 import vehicleBrandingService from '../services/vehicleBrandingService';
 import useErpDocumentSettings from '../hooks/useErpDocumentSettings';
 import { fieldAccessor } from '../utils/roleJobs';
@@ -502,7 +503,15 @@ function Appointments() {
                 </div>
                 <div className="form-row">
                   <div className="form-group">
-                    <label>Service Type</label>
+                    <label className="form-label-add">
+                      Service Type
+                      {modalMode !== 'view' && (
+                        <MasterQuickCreate type="service_type" onCreated={async (created) => {
+                          await fetchDropdowns();
+                          if (created?.id) setFormData((p) => ({ ...p, serviceTypeId: created.id }));
+                        }} />
+                      )}
+                    </label>
                     <SearchableSelect name="serviceTypeId" value={formData.serviceTypeId} onChange={handleChange}
                       options={stOptions} placeholder="Select Service Type" disabled={modalMode === 'view'} />
                   </div>
@@ -1065,12 +1074,30 @@ function JobCards() {
                       <textarea name="technicianRemarks" className="form-control" value={formData.technicianRemarks} onChange={handleChange} rows="2" disabled={modalMode === 'view'} />
                     </div>
                     {/* Warranty Type */}
-                    <div className="form-group"><label>Warranty Type</label>
+                    <div className="form-group">
+                      <label className="form-label-add">
+                        Warranty Type
+                        {modalMode !== 'view' && (
+                          <MasterQuickCreate type="warranty_type" onCreated={async (created) => {
+                            await fetchDropdowns();
+                            if (created?.id) setFormData((p) => ({ ...p, warrantyTypeId: created.id }));
+                          }} />
+                        )}
+                      </label>
                       <SearchableSelect name="warrantyTypeId" value={formData.warrantyTypeId || ''}
                         onChange={handleChange} options={wtOptions} placeholder="Select warranty (optional)"
                         disabled={modalMode === 'view'} />
                     </div>
-                    <div className="form-group"><label>Service Package</label>
+                    <div className="form-group">
+                      <label className="form-label-add">
+                        Service Package
+                        {modalMode !== 'view' && (
+                          <MasterQuickCreate type="service_package" onCreated={async (created) => {
+                            await fetchDropdowns();
+                            if (created?.id) setFormData((p) => ({ ...p, servicePackageId: created.id }));
+                          }} />
+                        )}
+                      </label>
                       <SearchableSelect name="servicePackageId" value={formData.servicePackageId || ''}
                         onChange={handleChange} options={packageOptions} placeholder="Select package (optional)"
                         disabled={modalMode === 'view'} />
@@ -1180,7 +1207,13 @@ function JobCards() {
             </div>
             <div className="modal-body">
               <div className="form-group">
-                <label>Service Type</label>
+                <label className="form-label-add">
+                  Service Type
+                  <MasterQuickCreate type="service_type" onCreated={async (created) => {
+                    await fetchDropdowns();
+                    if (created?.id) setServiceForm((p) => ({ ...p, serviceTypeId: created.id, description: p.description || created.name || '' }));
+                  }} />
+                </label>
                 <SearchableSelect value={serviceForm.serviceTypeId} onChange={(e) => {
                   const st = serviceTypes.find((t) => String(t._id || t.id) === String(e.target.value));
                   const lr = laborRates.length === 1 ? laborRates[0] : null;
@@ -1193,7 +1226,13 @@ function JobCards() {
                 }} options={stOptions} placeholder="Select Type" />
               </div>
               <div className="form-group">
-                <label>Labor Rate</label>
+                <label className="form-label-add">
+                  Labor Rate
+                  <MasterQuickCreate type="labor_rate" onCreated={async (created) => {
+                    await fetchDropdowns();
+                    if (created?.id) setServiceForm((p) => ({ ...p, laborRateId: created.id, rate: created.rate ?? p.rate }));
+                  }} />
+                </label>
                 <SearchableSelect value={serviceForm.laborRateId || ''} onChange={(e) => {
                   const lr = laborRates.find((l) => String(l._id || l.id) === String(e.target.value));
                   setServiceForm({ ...serviceForm, laborRateId: e.target.value, rate: lr?.rate || serviceForm.rate });

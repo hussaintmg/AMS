@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import { X } from 'lucide-react';
 import { useLeads } from '../../context/LeadsContext';
+import { useAuth } from '../../context/AuthContext';
+import { pageActions } from '../../utils/roleJobs';
+import MasterQuickCreate from '../MasterQuickCreate';
 import SearchableSelect from '../SearchableSelect';
 import LeadMasterModal from './LeadMasterModal';
 import LeadStatusItemModal from './LeadStatusItemModal';
@@ -33,6 +36,7 @@ const TABS = [
 
 export default function LeadFormModal({ lead, onClose, onSaved }) {
   const { createLead, updateLead, meta, loadMeta } = useLeads();
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('basic');
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
@@ -167,10 +171,16 @@ export default function LeadFormModal({ lead, onClose, onSaved }) {
 
   const assignOptions = getAssignedOptions();
 
-  const renderLabel = (text, field, onCreate) => (
+  /**
+   * `page` is the Role Jobs page that owns the record the create button would
+   * raise — Lead Master Data for sources/types/priorities/cities, Status
+   * Management for a status item. The button is offered only to a role that
+   * may create there, so it can no longer hand out a guaranteed 403.
+   */
+  const renderLabel = (text, field, onCreate, page = 'lead_master') => (
     <label className="form-label-add">
       <span>{text}</span>
-      {onCreate && (
+      {onCreate && pageActions(user, page)('create') && (
         <button type="button" className="label-add-link" onClick={onCreate}>+ Create {text}</button>
       )}
     </label>
@@ -294,7 +304,7 @@ export default function LeadFormModal({ lead, onClose, onSaved }) {
                     return;
                   }
                   setShowStatusItemModal(true);
-                })}
+                }, 'status_management')}
                 <select className="form-input" value={form.status} onChange={(e) => set('status', e.target.value)}>
                   <option value="">Select status</option>
                   {meta.statuses.map((s) => (
@@ -363,7 +373,13 @@ export default function LeadFormModal({ lead, onClose, onSaved }) {
               )}
             </div>
             <div className="form-group">
-              <label>Department</label>
+              <label className="form-label-add">
+                <span>Department</span>
+                <MasterQuickCreate type="department" onCreated={async (dept) => {
+                  await loadMeta();
+                  if (dept?.id) set('department', dept.id);
+                }} />
+              </label>
               <SearchableSelect
                 options={meta.departments}
                 value={form.department}

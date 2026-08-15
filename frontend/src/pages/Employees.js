@@ -538,6 +538,7 @@ const Employees = () => {
         onClose={closeModal}
         onSubmit={modalMode === "create" ? handleCreate : handleUpdate}
         loading={saving}
+        onDepartmentCreated={loadReferenceData}
       />
 
       <EmployeeDrawer

@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { CustomersProvider } from '../../context/CustomersContext';
+import { useAuth } from '../../context/AuthContext';
+import { pageActions } from '../../utils/roleJobs';
 import CustomerFormModal from './CustomerFormModal';
 
 /**
@@ -10,7 +12,12 @@ import CustomerFormModal from './CustomerFormModal';
  * the new record without a page reload.
  */
 export default function CustomerQuickCreate({ label = '+ Customer', onCreated }) {
+  const { user } = useAuth();
   const [open, setOpen] = useState(false);
+
+  // Raising a customer from a service or sales form is still creating a
+  // customer, so it asks the Customers page's Create right.
+  if (!pageActions(user, 'customers')('create')) return null;
 
   return (
     <>

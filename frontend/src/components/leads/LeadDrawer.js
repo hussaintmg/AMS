@@ -3,6 +3,8 @@ import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 import { X, Pencil, Trash2, User, CalendarDays, DollarSign, Phone, Mail, MapPin, Tag, Flag, MessageSquare, ArrowRightLeft } from 'lucide-react';
 import { useLeads } from '../../context/LeadsContext';
+import { useAuth } from '../../context/AuthContext';
+import { pageActions } from '../../utils/roleJobs';
 import SearchableSelect from '../SearchableSelect';
 import ConfirmModal from '../ConfirmModal';
 import LeadQuickCreateModal from './LeadQuickCreateModal';
@@ -24,6 +26,7 @@ function DetailRow({ icon: Icon, label, value }) {
 export default function LeadDrawer({ leadId, onClose, onUpdated }) {
   const navigate = useNavigate();
   const { getLeadById, updateLead, deleteLead, changeStatus, assignLead, addNote, convertLead, markLeadLost, meta, refreshLeads, loadMeta } = useLeads();
+  const { user } = useAuth();
   const [lead, setLead] = useState(null);
   const [loading, setLoading] = useState(true);
   const [editMode, setEditMode] = useState(false);
@@ -180,12 +183,16 @@ export default function LeadDrawer({ leadId, onClose, onUpdated }) {
    * SearchableSelect, which does not accept one — so they rendered with no
    * caption at all and a bare icon button floating beside the select.
    */
-  const renderFieldLabel = (text, type, field) => (
+  // Only a role that may create on the owning master-data page is offered the
+  // shortcut; otherwise the button's only outcome is a 403.
+  const renderFieldLabel = (text, type, field, page = 'lead_master') => (
     <label className="form-label-add">
       <span>{text}</span>
-      <button type="button" className="label-add-link" title={`Create ${text}`} onClick={() => setQuickCreate({ show: true, type, field })}>
-        + {text}
-      </button>
+      {pageActions(user, page)('create') && (
+        <button type="button" className="label-add-link" title={`Create ${text}`} onClick={() => setQuickCreate({ show: true, type, field })}>
+          + {text}
+        </button>
+      )}
     </label>
   );
 

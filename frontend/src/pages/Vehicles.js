@@ -14,6 +14,7 @@ import VehicleMasterModal from "../components/vehicle/VehicleMasterModal";
 import { useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { fieldAccessor, pageActions } from "../utils/roleJobs";
+import MasterQuickCreate from "../components/MasterQuickCreate";
 import { vehicleAPI, adminAPI, vehicleMasterAPI } from "../services/api";
 import toast from "react-hot-toast";
 import ErrorPopup from "../components/ErrorPopup";
@@ -35,6 +36,10 @@ const Vehicles = () => {
   // bulk Delete Selected were drawn for anyone who could open Vehicles, and the
   // server's 403 was the first the operator heard of it.
   const can = pageActions(currentUser, 'vehicles');
+  // Makes, models, variants, colours and conditions are Vehicle Master Data
+  // records; the quick-create links here post to that page's endpoints, so
+  // they are offered only to a role that may create them there.
+  const canCreateVehicleMaster = pageActions(currentUser, 'vehicle_master')('create');
 
   // State
   const [vehicles, setVehicles] = useState([]);
@@ -971,12 +976,14 @@ const Vehicles = () => {
                     <div className="form-group">
                       <label className="form-label-add">
                         Brand *
-                        <a
-                          className="label-add-link"
-                          onClick={() => openQuickCreate("make")}
-                        >
-                          + Brand
-                        </a>
+                        {canCreateVehicleMaster && (
+                          <a
+                            className="label-add-link"
+                            onClick={() => openQuickCreate("make")}
+                          >
+                            + Brand
+                          </a>
+                        )}
                       </label>
                       <SearchableSelect
                         name="makeId"
@@ -995,12 +1002,14 @@ const Vehicles = () => {
                     <div className="form-group">
                       <label className="form-label-add">
                         Model *
-                        <a
-                          className="label-add-link"
-                          onClick={() => openQuickCreate("model")}
-                        >
-                          + Model
-                        </a>
+                        {canCreateVehicleMaster && (
+                          <a
+                            className="label-add-link"
+                            onClick={() => openQuickCreate("model")}
+                          >
+                            + Model
+                          </a>
+                        )}
                       </label>
                       <SearchableSelect
                         name="modelId"
@@ -1022,12 +1031,14 @@ const Vehicles = () => {
                     <div className="form-group">
                       <label className="form-label-add">
                         Variant *
-                        <a
-                          className="label-add-link"
-                          onClick={() => openQuickCreate("variant")}
-                        >
-                          + Variant
-                        </a>
+                        {canCreateVehicleMaster && (
+                          <a
+                            className="label-add-link"
+                            onClick={() => openQuickCreate("variant")}
+                          >
+                            + Variant
+                          </a>
+                        )}
                       </label>
                       <SearchableSelect
                         name="variantId"
@@ -1047,12 +1058,14 @@ const Vehicles = () => {
                     <div className="form-group">
                       <label className="form-label-add">
                         Color *
-                        <a
-                          className="label-add-link"
-                          onClick={() => openQuickCreate("color")}
-                        >
-                          + Color
-                        </a>
+                        {canCreateVehicleMaster && (
+                          <a
+                            className="label-add-link"
+                            onClick={() => openQuickCreate("color")}
+                          >
+                            + Color
+                          </a>
+                        )}
                       </label>
                       <SearchableSelect
                         name="colorId"
@@ -1086,6 +1099,7 @@ const Vehicles = () => {
                     <div className="form-group">
                       <label className="form-label-add">
                         Condition
+                        {canCreateVehicleMaster && (
                         <a
                           className="label-add-link"
                           onClick={() => openQuickCreate("condition")}
@@ -1093,6 +1107,7 @@ const Vehicles = () => {
                         >
                           + Condition
                         </a>
+                        )}
                       </label>
                       <SearchableSelect
                         name="conditionType"
@@ -1150,7 +1165,13 @@ const Vehicles = () => {
                   </div>
                   <div className="form-row">
                     <div className="form-group">
-                      <label>Warehouse</label>
+                      <label className="form-label-add">
+                        Warehouse
+                        <MasterQuickCreate type="warehouse" onCreated={async (created) => {
+                          await fetchReferenceData();
+                          if (created?.id) setFormData((p) => ({ ...p, warehouseId: created.id }));
+                        }} />
+                      </label>
                       <SearchableSelect
                         name="warehouseId"
                         value={formData.warehouseId}
