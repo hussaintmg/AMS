@@ -839,6 +839,7 @@ export const employeeAPI = {
 export const payrollAPI = {
     listPeriods: () => api.get('/payroll/periods'),
     createPeriod: (data) => api.post('/payroll/periods', data),
+    deletePeriod: (id) => api.delete(`/payroll/periods/${id}`),
     getPeriodLines: (id) => api.get(`/payroll/periods/${id}/lines`),
     generateLines: (id) => api.post(`/payroll/periods/${id}/generate`),
     lockPeriod: (id) => api.post(`/payroll/periods/${id}/lock`),

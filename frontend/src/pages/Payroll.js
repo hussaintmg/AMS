@@ -7,6 +7,7 @@ import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import { payrollAPI, salaryAdvanceAPI, employeeAPI } from '../services/api';
 import SearchableSelect from '../components/SearchableSelect';
+import ConfirmModal from '../components/ConfirmModal';
 import { fieldAccessor, pageActions } from '../utils/roleJobs';
 import '../styles/userManagement.css';
 import '../styles/salaryAdvances.css';
@@ -33,8 +34,16 @@ const Payroll = () => {
     // Running payroll was decided by the role's *name* alone. The job row is
     // what the server checks, so it decides here too; the names stay as the
     // fallback for a role that has never been through Role Jobs.
-    const can = pageActions(user, 'payroll');
-    const canRun = can('create') && hasRole(['super_admin', 'admin', 'payroll_clerk', 'accountant']);
+    //
+    // One flag per action, because the server guards them separately: an
+    // account granted only Edit in Role Jobs must still see the Edit and Pay
+    // buttons — and nothing else.
+    const legacyRun = hasRole(['super_admin', 'admin', 'payroll_clerk', 'accountant']);
+    const can = pageActions(user, 'payroll', legacyRun);
+    const canCreate = can('create');
+    const canEdit = can('edit');
+    const canDelete = can('delete');
+    const canRun = canCreate || canEdit || canDelete;
     // Which columns this role may read. The API already strips what it
     // withholds, so this only stops us drawing an always-blank column.
     const showField = fieldAccessor(user, 'payroll');
@@ -46,7 +55,9 @@ const Payroll = () => {
     const [selected, setSelected] = useState(null);
     const [linesData, setLinesData] = useState(null);
     const [showNew, setShowNew] = useState(false);
-    const [newForm, setNewForm] = useState({ label: '', period_start: '', period_end: '' });
+    // A period is one whole calendar month — the picker is the only input, and
+    // the first/last day and the label all follow from it on the server.
+    const [newForm, setNewForm] = useState({ month: '' });
 
     // ── salary advances ──
     const [advances, setAdvances] = useState([]);
@@ -79,6 +90,23 @@ const Payroll = () => {
     const [history, setHistory] = useState(null);
     const [historyLoading, setHistoryLoading] = useState(false);
 
+    /**
+     * One in-app confirmation box for every destructive or irreversible action
+     * on this page — { title, message, confirmText, type, action }. The browser
+     * confirm() it replaces could not be styled and read like a system error.
+     */
+    const [confirmBox, setConfirmBox] = useState(null);
+    const runConfirmed = async () => {
+        if (!confirmBox) return;
+        try {
+            await confirmBox.action();
+        } catch (err) {
+            /* the interceptor surfaces the message */
+        } finally {
+            setConfirmBox(null);
+        }
+    };
+
     const loadPeriods = useCallback(async () => {
         try {
             setLoading(true);
@@ -109,11 +137,25 @@ const Payroll = () => {
         e.preventDefault();
         try {
             await payrollAPI.createPeriod(newForm);
-            toast.success('Period created');
+            toast.success('Period created for the whole month');
             setShowNew(false);
-            setNewForm({ label: '', period_start: '', period_end: '' });
+            setNewForm({ month: '' });
             loadPeriods();
-        } catch (err) { /* */ }
+        } catch (err) { /* the interceptor surfaces "overlaps" for a duplicate month */ }
+    };
+
+    const removePeriod = (p) => {
+        setConfirmBox({
+            title: 'Delete period',
+            message: `Delete the period "${p.label}"? Its ${p.line_count} line(s) go with it.`,
+            confirmText: 'Delete period',
+            action: async () => {
+                await payrollAPI.deletePeriod(p.id);
+                toast.success('Period deleted');
+                if (selected === p.id) { setSelected(null); setLinesData(null); }
+                loadPeriods();
+            },
+        });
     };
 
     const runGenerate = async () => {
@@ -136,18 +178,23 @@ const Payroll = () => {
         } catch (err) { /* */ }
     };
 
-    const runPost = async () => {
+    const runPost = () => {
         if (!selected) return;
-        if (!window.confirm('Post this payroll to the ledger? This cannot be undone.')) return;
-        try {
-            const res = await payrollAPI.postPeriod(selected);
-            toast.success(res?.data?.message || 'Payroll posted to ledger');
-            loadLines(selected);
-            loadPeriods();
-            // Posting is what actually recovers the advances, so their balances
-            // have just moved.
-            loadAdvances();
-        } catch (err) { /* */ }
+        setConfirmBox({
+            title: 'Post to ledger',
+            message: 'Post this payroll to the ledger? This cannot be undone.',
+            confirmText: 'Post payroll',
+            type: 'primary',
+            action: async () => {
+                const res = await payrollAPI.postPeriod(selected);
+                toast.success(res?.data?.message || 'Payroll posted to ledger');
+                loadLines(selected);
+                loadPeriods();
+                // Posting is what actually recovers the advances, so their
+                // balances have just moved.
+                loadAdvances();
+            },
+        });
     };
 
     const loadAdvances = useCallback(async () => {
@@ -246,28 +293,37 @@ const Payroll = () => {
         }
     };
 
-    const payEveryone = async () => {
+    const payEveryone = () => {
         if (!selected) return;
         const owed = (linesData?.lines || []).reduce((sum, l) => sum + Number(l.remaining_amount || 0), 0);
-        if (!window.confirm(`Pay every unpaid salary in this period? That is ${money(owed)} in total.`)) return;
-        try {
-            const res = await payrollAPI.payPeriod(selected, {});
-            toast.success(res?.data?.message || 'Salaries paid');
-            loadLines(selected);
-            loadPeriods();
-            if (historyId) loadHistory(historyId);
-        } catch (err) { /* */ }
+        setConfirmBox({
+            title: 'Pay everyone',
+            message: `Pay every unpaid salary in this period? That is ${money(owed)} in total.`,
+            confirmText: `Pay ${money(owed)}`,
+            type: 'primary',
+            action: async () => {
+                const res = await payrollAPI.payPeriod(selected, {});
+                toast.success(res?.data?.message || 'Salaries paid');
+                loadLines(selected);
+                loadPeriods();
+                if (historyId) loadHistory(historyId);
+            },
+        });
     };
 
-    const removePayment = async (line, payment) => {
-        if (!window.confirm(`Remove the payment of ${money(payment.amount)} made on ${payment.paid_on}?`)) return;
-        try {
-            await payrollAPI.deletePayment(line.id, payment.id);
-            toast.success('Payment removed');
-            loadLines(selected);
-            loadPeriods();
-            if (historyId) loadHistory(historyId);
-        } catch (err) { /* */ }
+    const removePayment = (line, payment) => {
+        setConfirmBox({
+            title: 'Remove payment',
+            message: `Remove the payment of ${money(payment.amount)} made on ${payment.paid_on}? The ledger entry is reversed with it.`,
+            confirmText: 'Remove payment',
+            action: async () => {
+                await payrollAPI.deletePayment(line.id, payment.id);
+                toast.success('Payment removed');
+                loadLines(selected);
+                loadPeriods();
+                if (historyId) loadHistory(historyId);
+            },
+        });
     };
 
     const issueAdvance = async (e) => {
@@ -289,13 +345,17 @@ const Payroll = () => {
         }
     };
 
-    const cancelAdvance = async (advance) => {
-        if (!window.confirm(`Cancel the ${money(advance.amount)} advance for ${advance.employee_name}?`)) return;
-        try {
-            await salaryAdvanceAPI.cancel(advance.id);
-            toast.success('Advance cancelled');
-            loadAdvances();
-        } catch (err) { /* */ }
+    const cancelAdvance = (advance) => {
+        setConfirmBox({
+            title: 'Cancel advance',
+            message: `Cancel the ${money(advance.amount)} advance for ${advance.employee_name}? It will no longer be deducted from their salary.`,
+            confirmText: 'Cancel advance',
+            action: async () => {
+                await salaryAdvanceAPI.cancel(advance.id);
+                toast.success('Advance cancelled');
+                loadAdvances();
+            },
+        });
     };
 
     return (
@@ -305,7 +365,7 @@ const Payroll = () => {
                     <h1>Payroll</h1>
                     <p className="text-muted">Periods, lines from employee salaries, salary advances, lock, and GL posting</p>
                 </div>
-                {canRun && (
+                {canCreate && (
                     tab === 'periods'
                         ? <button type="button" className="btn btn-primary" onClick={() => setShowNew(true)}>New period</button>
                         : <button type="button" className="btn btn-primary" onClick={() => setShowAdvance(true)}>New advance</button>
@@ -391,7 +451,7 @@ const Payroll = () => {
                                 </div>
                             </div>
 
-                            <div className="table-responsive">
+                            <div className="table-responsive table-scroll-x">
                                 <table className="data-table">
                                     <thead>
                                         <tr>
@@ -465,7 +525,9 @@ const Payroll = () => {
                     )}
 
                     {advancesLoading ? <div className="loading-inline">Loading…</div> : (
-                        <div className="table-responsive">
+                        // Eight columns: wider than the card on ordinary screens, so it
+                        // must scroll inside it (table-scroll-x) instead of spilling out.
+                        <div className="table-responsive table-scroll-x">
                             <table className="data-table">
                                 <thead>
                                     <tr>
@@ -497,15 +559,10 @@ const Payroll = () => {
                                             <td><span className={`badge badge-${a.status === 'settled' ? 'success' : a.status === 'cancelled' ? 'secondary' : 'warning'}`}>{a.status}</span></td>
                                             {canRun && (
                                                 <td className="adv-actions">
-                                                    {a.status === 'outstanding' && (
-                                                        <>
-                                                            {/* An advance comes off the next payroll on its own; the
-                                                                only thing left to decide is whether it should have
-                                                                been given at all. */}
-                                                            {a.recovered === 0 && (
-                                                                <button type="button" className="btn btn-sm btn-secondary" onClick={() => cancelAdvance(a)}>Cancel</button>
-                                                            )}
-                                                        </>
+                                                    {/* Cancelling is a delete on the server, so the same
+                                                        permission decides here. */}
+                                                    {canDelete && a.status === 'outstanding' && a.recovered === 0 && (
+                                                        <button type="button" className="btn btn-sm btn-secondary" onClick={() => cancelAdvance(a)}>Cancel</button>
                                                     )}
                                                 </td>
                                             )}
@@ -543,6 +600,10 @@ const Payroll = () => {
                                                 <td>{p.line_count}</td>
                                                 <td>
                                                     <button type="button" className="btn btn-sm btn-secondary" onClick={() => loadLines(p.id)}>Open</button>
+                                                    {/* Posted periods live in the ledger; only a proposal can go. */}
+                                                    {canDelete && p.status !== 'posted' && (
+                                                        <button type="button" className="btn btn-sm btn-danger" style={{ marginLeft: '0.4rem' }} onClick={() => removePeriod(p)}>Delete</button>
+                                                    )}
                                                 </td>
                                             </tr>
                                         ))}
@@ -578,6 +639,9 @@ const Payroll = () => {
                                         </div>
                                         <div className="data-card-footer" onClick={e => e.stopPropagation()}>
                                             <button type="button" className="btn btn-sm btn-secondary" onClick={() => loadLines(p.id)}>Open</button>
+                                            {canDelete && p.status !== 'posted' && (
+                                                <button type="button" className="btn btn-sm btn-danger" onClick={() => removePeriod(p)}>Delete</button>
+                                            )}
                                         </div>
                                     </div>
                                 ))}
@@ -593,18 +657,22 @@ const Payroll = () => {
                         <h2 style={{ fontSize: '1.1rem' }}>{linesData.period.label}</h2>
                         {canRun && (
                             <div className="header-actions" style={{ flexWrap: 'wrap', gap: '0.5rem' }}>
-                                <button type="button" className="btn btn-secondary btn-sm" onClick={runGenerate} disabled={linesData.period.status !== 'draft'}>Generate lines</button>
-                                <button type="button" className="btn btn-secondary btn-sm" onClick={runLock} disabled={linesData.period.status !== 'draft'}>Lock</button>
-                                <button type="button" className="btn btn-secondary btn-sm" onClick={runPost} disabled={linesData.period.status !== 'locked'}>Post to ledger</button>
-                                {/* Salaries can only leave once the period is posted. */}
-                                <button
-                                    type="button"
-                                    className="btn btn-primary btn-sm"
-                                    onClick={payEveryone}
-                                    disabled={linesData.period.status !== 'posted' || !(linesData.lines || []).some((l) => Number(l.remaining_amount) > 0)}
-                                >
-                                    Pay everyone
-                                </button>
+                                {canCreate && (
+                                    <button type="button" className="btn btn-secondary btn-sm" onClick={runGenerate} disabled={linesData.period.status !== 'draft'}>Generate lines</button>
+                                )}
+                                {canEdit && <>
+                                    <button type="button" className="btn btn-secondary btn-sm" onClick={runLock} disabled={linesData.period.status !== 'draft'}>Lock</button>
+                                    <button type="button" className="btn btn-secondary btn-sm" onClick={runPost} disabled={linesData.period.status !== 'locked'}>Post to ledger</button>
+                                    {/* Salaries can only leave once the period is posted. */}
+                                    <button
+                                        type="button"
+                                        className="btn btn-primary btn-sm"
+                                        onClick={payEveryone}
+                                        disabled={linesData.period.status !== 'posted' || !(linesData.lines || []).some((l) => Number(l.remaining_amount) > 0)}
+                                    >
+                                        Pay everyone
+                                    </button>
+                                </>}
                             </div>
                         )}
                     </div>
@@ -652,7 +720,7 @@ const Payroll = () => {
                                                             {ln.payments.map((p) => (
                                                                 <span key={p.id} className="pay-chip">
                                                                     {money(p.amount)} · {p.paid_on} · {p.method}
-                                                                    {canRun && (
+                                                                    {canDelete && (
                                                                         <button
                                                                             type="button"
                                                                             title="Remove this payment"
@@ -695,12 +763,12 @@ const Payroll = () => {
                                                 <td>
                                                     {/* A draft is still a proposal: this is where the month's
                                                         salary is corrected and an advance deduction is chosen. */}
-                                                    {linesData.period.status === 'draft' && (
+                                                    {canEdit && linesData.period.status === 'draft' && (
                                                         <button type="button" className="btn btn-sm btn-secondary" onClick={() => openEdit(ln)}>
                                                             Edit
                                                         </button>
                                                     )}
-                                                    {linesData.period.status === 'posted' && Number(ln.remaining_amount) > 0 && (
+                                                    {canEdit && linesData.period.status === 'posted' && Number(ln.remaining_amount) > 0 && (
                                                         <button type="button" className="btn btn-sm btn-primary" onClick={() => openPay(ln)}>
                                                             Pay
                                                         </button>
@@ -776,10 +844,10 @@ const Payroll = () => {
                                     </div>
                                     <div className="data-card-footer">
                                         <PayBadge line={ln} periodStatus={linesData.period.status} />
-                                        {canRun && linesData.period.status === 'draft' && (
+                                        {canEdit && linesData.period.status === 'draft' && (
                                             <button type="button" className="btn btn-sm btn-secondary" onClick={() => openEdit(ln)}>Edit</button>
                                         )}
-                                        {canRun && linesData.period.status === 'posted' && Number(ln.remaining_amount) > 0 && (
+                                        {canEdit && linesData.period.status === 'posted' && Number(ln.remaining_amount) > 0 && (
                                             <button type="button" className="btn btn-sm btn-primary" onClick={() => openPay(ln)}>Pay</button>
                                         )}
                                     </div>
@@ -917,6 +985,14 @@ const Payroll = () => {
                         <form onSubmit={submitPayment}>
                             <div className="modal-body">
                                 <div className="adv-summary">
+                                    {/* The advance came off before the net was struck — shown so the
+                                        payer can see why the figure is less than the salary. */}
+                                    {Number(payLine.advance_deduction) > 0 && (
+                                        <div className="adv-stat">
+                                            <span>Advance already cut</span>
+                                            <strong>{money(payLine.advance_deduction)}</strong>
+                                        </div>
+                                    )}
                                     <div className="adv-stat">
                                         <span>Net for the month</span>
                                         <strong>{money(payLine.net_amount)}</strong>
@@ -1097,19 +1173,28 @@ const Payroll = () => {
                         </div>
                         <form onSubmit={createPeriod}>
                             <div className="modal-body">
+                                {/* One month, one period. The server makes it run from the 1st to
+                                    the month's own last day (28/29/30/31) and names it itself, and
+                                    refuses a month that already exists. */}
                                 <div className="form-group">
-                                    <label>Label</label>
-                                    <input className="form-control" value={newForm.label} onChange={(ev) => setNewForm({ ...newForm, label: ev.target.value })} required />
-                                </div>
-                                <div className="form-row">
-                                    <div className="form-group">
-                                        <label>Start</label>
-                                        <input type="date" className="form-control" value={newForm.period_start} onChange={(ev) => setNewForm({ ...newForm, period_start: ev.target.value })} required />
-                                    </div>
-                                    <div className="form-group">
-                                        <label>End</label>
-                                        <input type="date" className="form-control" value={newForm.period_end} onChange={(ev) => setNewForm({ ...newForm, period_end: ev.target.value })} required />
-                                    </div>
+                                    <label htmlFor="period-month">Salary month *</label>
+                                    <input
+                                        id="period-month"
+                                        type="month"
+                                        className="form-control"
+                                        value={newForm.month}
+                                        onChange={(ev) => setNewForm({ month: ev.target.value })}
+                                        required
+                                    />
+                                    <small className="text-muted">
+                                        The period covers the whole month automatically
+                                        {newForm.month ? (() => {
+                                            const [y, m] = newForm.month.split('-').map(Number);
+                                            const last = new Date(y, m, 0).getDate();
+                                            const name = new Date(y, m - 1, 1).toLocaleString('en', { month: 'long' });
+                                            return ` — ${name} ${y}: 1 to ${last} (${last} days)`;
+                                        })() : ''}.
+                                    </small>
                                 </div>
                             </div>
                             <div className="modal-footer">
@@ -1120,6 +1205,16 @@ const Payroll = () => {
                     </div>
                 </div>
             )}
+
+            <ConfirmModal
+                isOpen={!!confirmBox}
+                title={confirmBox?.title || ''}
+                message={confirmBox?.message || ''}
+                confirmText={confirmBox?.confirmText || 'Confirm'}
+                type={confirmBox?.type || 'danger'}
+                onConfirm={runConfirmed}
+                onCancel={() => setConfirmBox(null)}
+            />
         </div>
     );
 };

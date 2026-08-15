@@ -10,6 +10,7 @@ router.use(fieldMask('payroll'));
 
 router.get('/periods', authenticate, authorizeAction('payroll', 'view'), payroll.listPeriods);
 router.post('/periods', authenticate, authorizeAction('payroll', 'create'), payroll.createPeriod);
+router.delete('/periods/:id', authenticate, authorizeAction('payroll', 'delete'), payroll.deletePeriod);
 router.get('/periods/:id/lines', authenticate, authorizeAction('payroll', 'view'), payroll.getPeriodLines);
 router.post('/periods/:id/generate', authenticate, authorizeAction('payroll', 'create'), payroll.generateLines);
 router.post('/periods/:id/lock', authenticate, authorizeAction('payroll', 'edit'), payroll.lockPeriod);

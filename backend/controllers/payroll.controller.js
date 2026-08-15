@@ -181,26 +181,85 @@ const listPeriods = async (req, res, next) => {
     }
 };
 
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'];
+
 /**
  * Create a payroll period
  * @route POST /api/payroll/periods
+ *
+ * A period is one whole calendar month. The client sends `month` ("2026-08")
+ * and the first day, the last day (28/29/30/31 — the month decides) and the
+ * label ("August 2026") all follow from it. `label`/`period_start`/`period_end`
+ * are still accepted for API callers that predate the month picker.
  */
 const createPeriod = async (req, res, next) => {
     try {
-        const { label, period_start, period_end } = req.body;
-        if (!label || !period_start || !period_end) {
-            throw new AppError('label, period_start, period_end required', 400);
+        const { label, period_start, period_end, month } = req.body;
+
+        let periodStart;
+        let periodEnd;
+        let finalLabel;
+        if (month) {
+            const parsed = /^(\d{4})-(\d{2})$/.exec(String(month).trim());
+            const year = parsed ? Number(parsed[1]) : NaN;
+            const monthNo = parsed ? Number(parsed[2]) : NaN;
+            if (!parsed || monthNo < 1 || monthNo > 12) {
+                throw new AppError('month must look like 2026-08', 400);
+            }
+            // UTC keeps the stored dates exactly on the 1st and the last day,
+            // whatever timezone the server wakes up in.
+            periodStart = new Date(Date.UTC(year, monthNo - 1, 1));
+            periodEnd = new Date(Date.UTC(year, monthNo, 0));
+            finalLabel = String(label || '').trim() || `${MONTH_NAMES[monthNo - 1]} ${year}`;
+        } else {
+            if (!label || !period_start || !period_end) {
+                throw new AppError('month (e.g. 2026-08) or label, period_start, period_end required', 400);
+            }
+            periodStart = new Date(period_start);
+            periodEnd = new Date(period_end);
+            finalLabel = String(label).trim();
+        }
+
+        // The same month twice would pay everyone twice. Overlap (not equality)
+        // is what is checked, so a hand-made half-month cannot slip past either.
+        const clash = await Payroll.findOne({
+            periodStart: { $lte: periodEnd },
+            periodEnd: { $gte: periodStart },
+        }).select('label').lean();
+        if (clash) {
+            throw new AppError(`This period overlaps the existing "${clash.label}" — each month can only be created once`, 409);
         }
 
         const period = await Payroll.create({
-            label: String(label).trim(),
-            periodStart: new Date(period_start),
-            periodEnd: new Date(period_end),
+            label: finalLabel,
+            periodStart,
+            periodEnd,
             status: 'draft',
             createdBy: getUserId(req),
         });
 
         res.status(201).json({ success: true, data: mapPeriod(period.toObject()) });
+    } catch (e) {
+        next(e);
+    }
+};
+
+/**
+ * Delete a period that has not been posted.
+ * @route DELETE /api/payroll/periods/:id
+ *
+ * A posted period is in the ledger and its payments have left the till — that
+ * history is not deletable. A draft or locked period is still only a proposal.
+ */
+const deletePeriod = async (req, res, next) => {
+    try {
+        const period = await findPeriodOr404(req.params.id);
+        if (period.status === 'posted') {
+            throw new AppError('A posted period is in the ledger and cannot be deleted', 400);
+        }
+        await period.deleteOne();
+        res.json({ success: true, message: `Period "${period.label}" deleted` });
     } catch (e) {
         next(e);
     }
@@ -259,7 +318,6 @@ const generateLines = async (req, res, next) => {
         const owedByEmployee = await outstandingByEmployee(employees.map((e) => e._id));
 
         let added = 0;
-        let advanceTotal = 0;
         const flagged = [];
         for (const emp of employees) {
             if (existing.has(String(emp._id))) continue;
@@ -290,10 +348,36 @@ const generateLines = async (req, res, next) => {
                 notes,
             });
             line.advanceBalance = round2(owed - line.advanceDeduction);
-            advanceTotal = round2(advanceTotal + line.advanceDeduction);
 
             period.lines.push(line);
             added++;
+        }
+
+        /**
+         * Generate is also the "refresh from today's data" button: an advance
+         * issued *after* the lines were made only showed up as "still to
+         * deduct", and clicking Generate again skipped the existing lines, so
+         * nothing ever moved it into the deduction. Every line is re-settled
+         * against the employee's current advance balance — which also means a
+         * hand-lowered deduction goes back to the full figure; the Edit dialog
+         * is where "take less this month" is decided, after the sync.
+         *
+         * Queried per line rather than reusing `owedByEmployee`: a line can
+         * belong to an employee who has since been deactivated.
+         */
+        let refreshed = 0;
+        let advanceTotal = 0;
+        const owedForLines = await outstandingByEmployee(period.lines.map((l) => l.employee));
+        for (const line of period.lines) {
+            const before = round2(line.advanceDeduction);
+            const owed = round2(owedForLines.get(String(line.employee)) || 0);
+            line.advanceDeduction = owed;
+            settleLine(line);
+            line.advanceBalance = round2(owed - line.advanceDeduction);
+            // A just-added line re-settles to the value it was born with, so
+            // only genuinely moved lines — the stale existing ones — count.
+            if (round2(line.advanceDeduction) !== before) refreshed++;
+            advanceTotal = round2(advanceTotal + line.advanceDeduction);
         }
 
         period.updatedBy = getUserId(req);
@@ -302,6 +386,7 @@ const generateLines = async (req, res, next) => {
         const populated = await findPeriodOr404(period._id, true);
 
         const notices = [`${added} line(s) generated`];
+        if (refreshed > 0) notices.push(`${refreshed} existing line(s) updated to the current advance balances`);
         if (advanceTotal > 0) notices.push(`${advanceTotal} of salary advances already given, deducted from this month`);
         if (flagged.length) notices.push(`${flagged.length} employee(s) had a negative salary and were set to 0`);
 
@@ -780,6 +865,7 @@ const outstandingSalaries = async (req, res, next) => {
 module.exports = {
     listPeriods,
     createPeriod,
+    deletePeriod,
     getPeriodLines,
     generateLines,
     lockPeriod,
