@@ -57,11 +57,22 @@ const PartsInventory = () => {
   const canCreatePart = allows('create');
   const canEditPart = allows('edit');
   const canDeletePart = allows('delete');
-  // Separate grants, apart from edit: goods-in may only add stock, goods-out
-  // may only remove it (Role Jobs → "Increase stock" / "Decrease stock").
+  /**
+   * One grant per way of moving stock, apart from edit: goods-in may only add,
+   * goods-out may only remove, and overwriting the count is its own trust
+   * (Role Jobs → "Increase stock" / "Decrease stock" / "Set exact stock
+   * value"). Each grant is exactly one option in the Adjust Stock dialog, and
+   * a role holding none of them is not offered the dialog at all.
+   */
   const canIncreaseStock = allows('stockIncrease');
   const canDecreaseStock = allows('stockDecrease');
-  const canAdjustStock = canIncreaseStock || canDecreaseStock;
+  const canSetStock = allows('stockSet');
+  const stockAdjustTypes = [
+    canIncreaseStock && { value: 'increase', label: 'Increase (+)' },
+    canDecreaseStock && { value: 'decrease', label: 'Decrease (-)' },
+    canSetStock && { value: 'set', label: 'Set to Exact Value' },
+  ].filter(Boolean);
+  const canAdjustStock = stockAdjustTypes.length > 0;
 
   // State
   const [parts, setParts] = useState([]);
@@ -316,12 +327,13 @@ const PartsInventory = () => {
     setSelectedPart(null);
   };
 
-  // Open stock adjustment modal — the default direction is one this role is
-  // actually allowed to take.
+  // Open stock adjustment modal — the dialog opens on a movement this role is
+  // actually allowed to make, so submitting without touching the dropdown can
+  // never be refused.
   const openStockModal = (part) => {
     setSelectedPart(part);
     setStockForm({
-      adjustmentType: canIncreaseStock ? "increase" : "decrease",
+      adjustmentType: stockAdjustTypes[0]?.value || "",
       quantity: "",
       reason: "",
     });
@@ -1381,18 +1393,18 @@ const PartsInventory = () => {
                       help="Increase adds stock, Decrease subtracts stock, Set overwrites stock to an exact value."
                     />
                   </label>
-                  {/* Only the directions this role holds; "Set" can move the
-                      level either way, so it needs both grants. */}
+                  {/* Only the movements this role is granted. Passed as
+                      `options` rather than <option> children: the children form
+                      would leave `false` holes for the withheld ones. */}
                   <SearchableSelect
                     name="adjustmentType"
                     value={stockForm.adjustmentType}
                     onChange={handleStockFormChange}
+                    options={stockAdjustTypes}
+                    labelField="label"
+                    valueField="value"
                     required
-                  >
-                    {canIncreaseStock && <option value="increase">Increase (+)</option>}
-                    {canDecreaseStock && <option value="decrease">Decrease (-)</option>}
-                    {canIncreaseStock && canDecreaseStock && <option value="set">Set to Exact Value</option>}
-                  </SearchableSelect>
+                  />
                 </div>
 
                 <div className="form-group">

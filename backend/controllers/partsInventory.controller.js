@@ -5,7 +5,6 @@ const { PartCategory, Supplier } = require('../models/VehicleMaster.model');
 const { AppError } = require('../middleware/errorHandler');
 const logger = require('../utils/logger');
 const { nextBarcode } = require('../utils/barcode');
-const { canDo } = require('../utils/roleJobs');
 const { logStockMovements } = require('../services/partMovementLog.service');
 
 const DEFAULT_SOURCE_TYPES = [
@@ -503,14 +502,11 @@ const adjustStock = async (req, res, next) => {
                 throw new AppError('Stock cannot be negative', 400);
             }
         } else if (adjustmentType === 'set') {
+            // "Set exact stock value" is its own grant (checked on the route),
+            // deliberately independent of increase/decrease: it is the stock
+            // count after a physical check, which may land either side of the
+            // recorded figure. Granting it is trusting the role with the count.
             newStock = qty;
-            // The route could not know which way a "set" moves; now that the
-            // current level is in hand, it needs the grant for that direction.
-            const need = newStock > part.currentStock ? 'stockIncrease'
-                : newStock < part.currentStock ? 'stockDecrease' : null;
-            if (need && !canDo(req.user, 'parts', need)) {
-                throw new AppError(`Permission denied: cannot ${need === 'stockIncrease' ? 'increase' : 'decrease'} stock`, 403);
-            }
         } else {
             throw new AppError('Invalid adjustment type. Use: increase, decrease, or set', 400);
         }

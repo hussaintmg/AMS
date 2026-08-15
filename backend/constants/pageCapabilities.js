@@ -25,7 +25,7 @@
  * it, so offering the checkbox only promised a restriction that was never
  * applied. The field stays on the Role model so old documents still load.
  */
-const ALL_ACTIONS = ['create', 'edit', 'delete', 'approve', 'sendEmail', 'downloadPdf', 'stockIncrease', 'stockDecrease'];
+const ALL_ACTIONS = ['create', 'edit', 'delete', 'approve', 'sendEmail', 'downloadPdf', 'stockIncrease', 'stockDecrease', 'stockSet'];
 
 const ACTION_LABELS = {
   create: 'Create',
@@ -34,11 +34,13 @@ const ACTION_LABELS = {
   approve: 'Approve',
   sendEmail: 'Send email',
   downloadPdf: 'Download PDF',
-  // Raising and lowering a holding are separate grants — the client staffs
-  // goods-in and goods-out differently, so one role may only ever add stock
-  // and another only remove it.
+  // One grant per way of moving a holding — the client staffs goods-in and
+  // goods-out differently, so a role may be allowed to add stock, to remove
+  // it, or to overwrite the count after a physical check, independently.
+  // Each one is exactly the option it puts in the Adjust Stock dialog.
   stockIncrease: 'Increase stock',
   stockDecrease: 'Decrease stock',
+  stockSet: 'Set exact stock value',
 };
 
 /**
@@ -68,7 +70,7 @@ const PAGE_CAPABILITIES = {
   leads: { actions: ['create', 'edit', 'delete'], dataScope: true },
   customers: { actions: ['create', 'edit', 'delete'], dataScope: true },
   vehicles: { actions: ['create', 'edit', 'delete'], dataScope: true },
-  parts: { actions: ['create', 'edit', 'delete', 'stockIncrease', 'stockDecrease'], dataScope: true },
+  parts: { actions: ['create', 'edit', 'delete', 'stockIncrease', 'stockDecrease', 'stockSet'], dataScope: true },
   // A read-only view over sales orders that already carry dispatch evidence.
   dispatch: { actions: [], dataScope: true },
 

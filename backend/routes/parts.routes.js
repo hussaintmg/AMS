@@ -51,13 +51,15 @@ router.post('/', authenticate, canCreate, partsController.createPart);
 router.put('/:id', authenticate, canEdit, partsController.updatePart);
 router.delete('/:id', authenticate, canDelete, partsController.deletePart);
 
-// Raising or lowering a holding is its own pair of grants (Role Jobs →
-// "Increase stock" / "Decrease stock"), separate from editing the part record.
+// Each way of moving a holding is its own grant (Role Jobs → "Increase stock",
+// "Decrease stock", "Set exact stock value"), separate from editing the part
+// record. One route per direction so the guard on each is a plain, auditable
+// authorizeAction rather than a decision hidden inside a wrapper.
 router.post('/:id/adjust', authenticate, whenType('increase'), authorizeAction('parts', 'stockIncrease'), partsController.adjustStock);
 router.post('/:id/adjust', authenticate, whenType('decrease'), authorizeAction('parts', 'stockDecrease'), partsController.adjustStock);
-// "set" can move the level either way, so which grant it needs is only known
-// once the current stock is read — the controller enforces the direction; this
-// route just proves page access.
+router.post('/:id/adjust', authenticate, whenType('set'), authorizeAction('parts', 'stockSet'), partsController.adjustStock);
+// Anything else is not an adjustment type at all; the controller answers with
+// the "use increase, decrease or set" message rather than a 403.
 router.post('/:id/adjust', authenticate, canView, partsController.adjustStock);
 
 module.exports = router;

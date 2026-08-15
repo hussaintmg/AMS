@@ -2,13 +2,15 @@
  * Migration for the split stock-adjustment grants.
  *
  * POST /parts/:id/adjust used to ride on the parts *edit* permission, then
- * briefly on a combined `adjustStock` action. It now takes two separate grants
- * — `stockIncrease` and `stockDecrease` — so a goods-in role can be allowed to
- * add stock without being allowed to remove it, and vice versa.
+ * briefly on a combined `adjustStock` action. It now takes three separate
+ * grants — `stockIncrease`, `stockDecrease` and `stockSet` — one per option in
+ * the Adjust Stock dialog, so a goods-in role can be allowed to add stock
+ * without being allowed to remove it or overwrite the count.
  *
  * Any role whose parts job row grants edit (or carries the old combined
- * adjustStock) gets both new grants, keeping the ability it already had; an
- * administrator then unticks whichever direction a role should lose.
+ * adjustStock, or an earlier half of the split) gets all three, keeping the
+ * ability it already had; an administrator then unticks what a role should
+ * lose.
  *
  * Idempotent: rerunning finds nothing left to change.
  *
@@ -32,15 +34,19 @@ const { keysForPage } = require('../utils/pageRegistry');
     let touched = false;
     for (const job of role.jobs) {
       if (!partsKeys.has(job.pageKey)) continue;
-      const hadAbility = job.actions?.edit === true || job.actions?.adjustStock === true;
+      const hadAbility = job.actions?.edit === true
+        || job.actions?.adjustStock === true
+        || job.actions?.stockIncrease === true
+        || job.actions?.stockDecrease === true;
       if (!hadAbility) continue;
-      if (job.actions.stockIncrease !== true) { job.actions.stockIncrease = true; touched = true; }
-      if (job.actions.stockDecrease !== true) { job.actions.stockDecrease = true; touched = true; }
+      for (const action of ['stockIncrease', 'stockDecrease', 'stockSet']) {
+        if (job.actions[action] !== true) { job.actions[action] = true; touched = true; }
+      }
     }
     if (touched) {
       await role.save();
       changed += 1;
-      console.log(`  ${role.name}: parts edit/adjustStock → stockIncrease + stockDecrease granted`);
+      console.log(`  ${role.name}: parts stock grants filled in (increase + decrease + set)`);
     }
   }
   console.log(`${changed} role(s) updated.`);

@@ -1054,6 +1054,7 @@ exports.saveRoleJobs = async (req, res, next) => {
           approve: granted('approve'),
           stockIncrease: granted('stockIncrease'),
           stockDecrease: granted('stockDecrease'),
+          stockSet: granted('stockSet'),
         },
         dataScope: {
           mode,
