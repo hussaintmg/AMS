@@ -1,6 +1,9 @@
 .lead-stats-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  /* `--stat-card-min` lets a screen with longer labels (Accounts & Petty Cash
+     carries a money figure in its caption) ask for wider tracks without
+     changing the pages whose captions are two words. */
+  grid-template-columns: repeat(auto-fill, minmax(var(--stat-card-min, 190px), 1fr));
   gap: 1rem;
   margin-bottom: 1.5rem;
 }
@@ -14,6 +17,10 @@
   align-items: center;
   gap: 0.875rem;
   border-left: 3px solid var(--primary-color);
+  /* A grid item defaults to min-width:auto, which is the width of its content —
+     so a long caption pushed the text out past the card instead of wrapping. */
+  min-width: 0;
+  overflow: hidden;
 }
 
 .lead-stat-icon {
@@ -34,6 +41,10 @@
 .lead-stat-info {
   display: flex;
   flex-direction: column;
+  /* The other half of the overflow fix: without this the column refuses to
+     shrink below its longest line, whatever the card does. */
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .lead-stat-value {
@@ -41,12 +52,22 @@
   font-weight: 700;
   color: var(--text-primary);
   line-height: 1.2;
+  /* A large figure (PKR 1,234,567.00) wraps rather than escaping the card. */
+  overflow-wrap: anywhere;
 }
 
 .lead-stat-label {
   font-size: 0.75rem;
   color: var(--text-secondary);
-  white-space: nowrap;
+  /* Was `nowrap`, which is what made a long caption overflow. It wraps to two
+     lines now and is cut with an ellipsis beyond that; the full text is on the
+     element's title, so nothing becomes unreadable. */
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .search-bar {

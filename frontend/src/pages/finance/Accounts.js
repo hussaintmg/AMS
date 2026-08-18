@@ -125,8 +125,8 @@ export default function Accounts() {
   const limit = summary?.limit;
   const cards = summary ? [
     { key: 'total', label: 'All accounts', value: money(summary.total_balance), icon: <Landmark size={18} />, color: '#3b82f6', bg: '#dbeafe', onClick: () => setTab('accounts'), active: tab === 'accounts' },
-    ...(limit ? [{ key: 'petty', label: `${limit.account.name} (limit ${money(limit.limit)})`, value: money(limit.balance), sub: limit.over ? `Over by ${money(limit.excess)}` : 'Within limit', icon: <Wallet size={18} />, color: limit.over ? '#dc2626' : '#16a34a', bg: limit.over ? '#fee2e2' : '#dcfce7' }] : []),
-    { key: 'receivables', label: 'Receivables (credit invoices)', value: money(summary.receivables?.outstanding), sub: `${summary.receivables?.count || 0} invoice(s)`, icon: <HandCoins size={18} />, color: '#f59e0b', bg: '#fef3c7', onClick: () => setTab('receivables'), active: tab === 'receivables' },
+    ...(limit ? [{ key: 'petty', label: limit.account.name, value: money(limit.balance), sub: `Limit ${money(limit.limit)} · ${limit.over ? `over by ${money(limit.excess)}` : 'within limit'}`, icon: <Wallet size={18} />, color: limit.over ? '#dc2626' : '#16a34a', bg: limit.over ? '#fee2e2' : '#dcfce7' }] : []),
+    { key: 'receivables', label: 'Receivables', value: money(summary.receivables?.outstanding), sub: `${summary.receivables?.count || 0} credit invoice(s)`, icon: <HandCoins size={18} />, color: '#f59e0b', bg: '#fef3c7', onClick: () => setTab('receivables'), active: tab === 'receivables' },
     { key: 'payables', label: 'Payables', value: money(summary.payables?.outstanding), sub: `${summary.payables?.count || 0} open`, icon: <Receipt size={18} />, color: '#7c3aed', bg: '#ede9fe', onClick: () => setTab('payables'), active: tab === 'payables' },
   ] : [];
 
@@ -141,7 +141,9 @@ export default function Accounts() {
         </div>
       </div>
 
-      {cards.length > 0 && <StatCards items={cards} />}
+      {/* Wider tracks than the default: every figure here is money, so the
+          cards carry longer values than a "12 leads" card does. */}
+      {cards.length > 0 && <StatCards items={cards} className="acct-stats" />}
 
       {limit?.over && (
         <div className="acct-limit-banner">

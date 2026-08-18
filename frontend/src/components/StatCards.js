@@ -29,7 +29,7 @@ export default function StatCards({ items = [], className = '' }) {
           <div className="lead-stat-icon" style={{ background: item.bg || '#dbeafe', color: item.color || '#3b82f6' }}>{item.icon}</div>
           <div className="lead-stat-info">
             <span className="lead-stat-value">{item.value ?? '—'}</span>
-            <span className="lead-stat-label">{item.label}</span>
+            <span className="lead-stat-label" title={typeof item.label === 'string' ? item.label : undefined}>{item.label}</span>
             {item.sub && <span className="stat-card-sub">{item.sub}</span>}
           </div>
         </div>
