@@ -23,6 +23,7 @@ const ServiceType = require('../models/ServiceType.model');
 const Customer = require('../models/Customer.model');
 const { VehicleVariant, VehicleColor } = require('../models/VehicleMaster.model');
 const { nextDocNumber } = require('../utils/docNumber');
+const { parseServiceCharges, serviceChargeSummary } = require('../models/serviceCharges.fields');
 const { recordCustomerActivity } = require('../utils/customerSync');
 const { createInvoiceForOrder } = require('../utils/invoiceFactory');
 const { applyVehicleLifecycle, canonicalStatus } = require('../utils/vehicleLifecycle');
@@ -170,6 +171,7 @@ async function requireCustomer(customerId) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 const mapQuotation = (q) => ({
+    ...serviceChargeSummary(q),
     id: q._id,
     quotation_number: q.quotationNumber,
     customer_id: q.customer?._id || q.customer || null,
@@ -353,13 +355,20 @@ const quotationTotals = (body, lines = []) => {
     const discountAmount = num(body.discountAmount) + (lines.length ? summary.lineDiscountAmount : 0);
     const taxAmount = num(body.taxAmount) + (lines.length ? summary.lineTaxAmount : 0);
     const additionalCharges = num(body.additionalCharges);
+    // Optional service charges block (models/serviceCharges.fields.js): its
+    // own rows and per-line tax, added on top of the products.
+    const service = parseServiceCharges(body);
     return {
         vehiclePrice,
         subtotal: vehiclePrice,
         discountAmount,
         taxAmount,
         additionalCharges,
-        totalAmount: vehiclePrice - discountAmount + taxAmount + additionalCharges,
+        totalAmount: vehiclePrice - discountAmount + taxAmount + additionalCharges + service.grand,
+        hasServiceCharges: service.rows.length > 0,
+        serviceCharges: service.rows,
+        serviceChargesTotal: service.serviceChargesTotal,
+        serviceTaxTotal: service.serviceTaxTotal,
     };
 };
 
@@ -652,6 +661,7 @@ const bookingVehicleName = (booking) => [
 ].filter(Boolean).join(' ');
 
 const mapBooking = (b, order = null) => ({
+    ...serviceChargeSummary(b),
     id: b._id,
     booking_number: b.bookingNumber,
     external_order_number: b.externalOrderNumber || '',
@@ -803,7 +813,9 @@ const createBooking = async (req, res, next) => {
         });
         const legacy = legacyFieldsFromLines(lines);
         const summary = summarizeLineItems(lines);
-        const documentTotal = num(totalAmount) || summary.lineTotal;
+        // The optional service charges block sits on top of the products.
+        const service = parseServiceCharges(req.body);
+        const documentTotal = (num(totalAmount) || summary.lineTotal) + service.grand;
 
         const bookingNumber = await nextDocNumber(Booking, 'bookingNumber', 'BK');
         const booking = await Booking.create({
@@ -820,6 +832,10 @@ const createBooking = async (req, res, next) => {
             totalAmount: documentTotal,
             taxAmount: num(taxAmount),
             balanceAmount: Math.max(0, documentTotal - num(bookingAmount)),
+            hasServiceCharges: service.rows.length > 0,
+            serviceCharges: service.rows,
+            serviceChargesTotal: service.serviceChargesTotal,
+            serviceTaxTotal: service.serviceTaxTotal,
             bookingDate: new Date(),
             deliveryDate: expectedDeliveryDate ? new Date(expectedDeliveryDate) : null,
             notes,
@@ -1016,6 +1032,7 @@ const allocateVehicle = async (req, res, next) => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 const mapOrder = (o, invoice = null) => ({
+    ...serviceChargeSummary(o),
     id: o._id,
     order_number: o.orderNumber,
     external_order_number: o.externalOrderNumber || '',
@@ -1219,7 +1236,8 @@ const orderTotals = (body) => {
     const other = num(body.otherCharges);
     const exchange = num(body.exchangeValue);
     const paid = num(body.paidAmount);
-    const total = basePrice + accessories - discount + tax + registration + insurance + other - exchange;
+    const service = parseServiceCharges(body);
+    const total = basePrice + accessories - discount + tax + registration + insurance + other - exchange + service.grand;
     return {
         subtotal: basePrice,
         accessoriesTotal: accessories,
@@ -1232,6 +1250,10 @@ const orderTotals = (body) => {
         totalAmount: total,
         paidAmount: paid,
         balanceAmount: total - paid,
+        hasServiceCharges: service.rows.length > 0,
+        serviceCharges: service.rows,
+        serviceChargesTotal: service.serviceChargesTotal,
+        serviceTaxTotal: service.serviceTaxTotal,
     };
 };
 
@@ -1804,6 +1826,7 @@ const getQuotationStats = async (req, res, next) => {
                     draft: { $sum: { $cond: [{ $eq: ['$status', 'draft'] }, 1, 0] } },
                     sent: { $sum: { $cond: [{ $eq: ['$status', 'sent'] }, 1, 0] } },
                     converted: { $sum: { $cond: [{ $eq: ['$status', 'converted'] }, 1, 0] } },
+                    approved: { $sum: { $cond: [{ $eq: ['$approvalStatus', 'approved'] }, 1, 0] } },
                     expired: {
                         $sum: {
                             $cond: [

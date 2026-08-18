@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
-import { pageActions } from '../utils/roleJobs';
-import { adminAPI, serviceMasterAPI, warehouseAPI } from '../services/api';
+import { pageActions, canQuickCreate, pageKeyForPath } from '../utils/roleJobs';
+import { adminAPI, serviceMasterAPI, warehouseAPI, vehicleMasterAPI, paymentMethodsAPI, expensesAPI, partsAPI, accountsAPI } from '../services/api';
 import useModalKeyboard from '../hooks/useModalKeyboard';
 import '../styles/userManagement.css';
 
@@ -17,18 +18,28 @@ import '../styles/userManagement.css';
  * unless the role may create that record, and the same page key is what the
  * endpoint behind it guards on.
  *
+ * Two grants decide, and both must hold:
+ *   1. the owning master-data page's Create right (`spec.page`) — may this role
+ *      make such a record at all;
+ *   2. the shortcut itself, per page and per form (Role Jobs → Forms) — may it
+ *      do so from *inside this form*. A role may be allowed to create leads and
+ *      still be kept from raising new sources while doing it.
+ *
  * A role that has never been through Role Jobs keeps the old behaviour (the
  * button shows), so nothing in use today stops working.
  *
  * Usage:
- *   <MasterQuickCreate type="department" onCreated={(dept) => { … }} />
+ *   <MasterQuickCreate type="department" form="edit" onCreated={(dept) => { … }} />
  *
+ * `form` is 'create' (default) or 'edit' — which form the button sits in.
+ * `pageKey` names the screen when it cannot be told from the URL (a modal
+ * shared by several pages); otherwise it is resolved from the route.
  * `onCreated` receives the created record and should refresh the caller's list
  * (and normally select the new value).
  */
 
 const nameFrom = (record = {}) =>
-  record.name || record.warehouseName || record.packageName || record.departmentName || '';
+  record.name || record.warehouseName || record.packageName || record.departmentName || record.make_name || record.model_name || record.variant_name || record.color_name || '';
 
 const idFrom = (record = {}) => record.id || record._id || '';
 
@@ -43,6 +54,8 @@ const codeFromName = (name) => String(name || '')
  *          the same key the POST endpoint is guarded on.
  * fields — what the model actually requires; anything optional belongs on the
  *          full master-data screen, not in a quick create.
+ * A field with `fromProps` is filled from the `context` prop instead of typed
+ * (a model needs its make; a variant needs its model).
  */
 const SPECS = {
   department: {
@@ -99,10 +112,95 @@ const SPECS = {
     ],
     submit: (values) => serviceMasterAPI.createPackage(values),
   },
+  // ── Vehicle master (make → model → variant, colour) ──────────────────────
+  make: {
+    page: 'vehicle_master',
+    label: 'Make',
+    fields: [{ key: 'make_name', label: 'Make / brand name', required: true, autoFocus: true }],
+    submit: (values) => vehicleMasterAPI.createMake(values),
+  },
+  model: {
+    page: 'vehicle_master',
+    label: 'Model',
+    fields: [
+      { key: 'make_id', label: 'Make', fromProps: 'makeId', required: true },
+      { key: 'model_name', label: 'Model name', required: true, autoFocus: true },
+    ],
+    submit: (values) => vehicleMasterAPI.createModel(values),
+  },
+  variant: {
+    page: 'vehicle_master',
+    label: 'Variant',
+    fields: [
+      { key: 'model_id', label: 'Model', fromProps: 'modelId', required: true },
+      { key: 'variant_name', label: 'Variant name', required: true, autoFocus: true },
+    ],
+    submit: (values) => vehicleMasterAPI.createVariant(values),
+  },
+  color: {
+    page: 'vehicle_master',
+    label: 'Colour',
+    fields: [
+      { key: 'color_name', label: 'Colour name', required: true, autoFocus: true },
+      { key: 'color_hex', label: 'Hex code (optional)' },
+    ],
+    submit: (values) => vehicleMasterAPI.createColor(values),
+  },
+  // ── Parts master ─────────────────────────────────────────────────────────
+  category: {
+    page: 'vehicle_master',
+    label: 'Category',
+    fields: [{ key: 'name', label: 'Category name', required: true, autoFocus: true }],
+    submit: (values) => vehicleMasterAPI.createCategory(values),
+  },
+  supplier: {
+    page: 'vehicle_master',
+    label: 'Supplier',
+    fields: [
+      { key: 'name', label: 'Supplier name', required: true, autoFocus: true },
+      { key: 'phone', label: 'Phone' },
+    ],
+    submit: (values) => vehicleMasterAPI.createSupplier(values),
+  },
+  source_type: {
+    page: 'parts',
+    label: 'Source Type',
+    fields: [{ key: 'name', label: 'Source type name', required: true, autoFocus: true }],
+    submit: (values) => partsAPI.createSourceType(values),
+  },
+  // ── Finance ──────────────────────────────────────────────────────────────
+  expense_category: {
+    page: 'expenses',
+    label: 'Expense Category',
+    fields: [
+      { key: 'name', label: 'Category name', required: true, autoFocus: true },
+      { key: 'code', label: 'Code', required: true, deriveFrom: 'name' },
+    ],
+    submit: (values) => expensesAPI.createCategory(values),
+  },
+  payment_method: {
+    page: 'payment_methods',
+    label: 'Payment Method',
+    fields: [
+      { key: 'name', label: 'Payment method name', required: true, autoFocus: true },
+      { key: 'code', label: 'Code', deriveFrom: 'name' },
+    ],
+    submit: (values) => paymentMethodsAPI.create(values),
+  },
+  account: {
+    page: 'accounts',
+    label: 'Account',
+    fields: [
+      { key: 'name', label: 'Account name', required: true, autoFocus: true },
+      { key: 'code', label: 'Code', deriveFrom: 'name' },
+    ],
+    submit: (values) => accountsAPI.create({ ...values, type: values.type || 'petty_cash' }),
+  },
 };
 
-export default function MasterQuickCreate({ type, label, onCreated }) {
+export default function MasterQuickCreate({ type, label, onCreated, form = 'create', pageKey, context = {} }) {
   const { user } = useAuth();
+  const { pathname } = useLocation();
   const spec = SPECS[type];
   const [open, setOpen] = useState(false);
   const [values, setValues] = useState({});
@@ -112,16 +210,18 @@ export default function MasterQuickCreate({ type, label, onCreated }) {
 
   const submit = async () => {
     if (!spec || saving) return;
-    const missing = spec.fields.find((field) => field.required && !String(values[field.key] ?? '').trim());
+    const payload = { ...values };
+    spec.fields.forEach((field) => { if (field.fromProps) payload[field.key] = context[field.fromProps]; });
+    const missing = spec.fields.find((field) => field.required && !String(payload[field.key] ?? '').trim());
     if (missing) { toast.error(`${missing.label} is required`); return; }
     setSaving(true);
     try {
-      const res = await spec.submit(values);
+      const res = await spec.submit(payload);
       const created = res?.data?.data || res?.data || {};
       toast.success(`${spec.label} created`);
       setOpen(false);
       setValues({});
-      onCreated?.({ ...created, id: idFrom(created), name: nameFrom(created) || values[spec.fields[0].key] });
+      onCreated?.({ ...created, id: idFrom(created), name: nameFrom(created) || payload[spec.fields.find((f) => !f.fromProps).key] });
     } catch (err) {
       // The interceptor already reports the server's message; keep the dialog
       // open so the typed values are not lost to a duplicate-name rejection.
@@ -137,6 +237,9 @@ export default function MasterQuickCreate({ type, label, onCreated }) {
   // Legacy default (true) matches every other screen: a role nobody has
   // configured in Role Jobs keeps the button it has always had.
   if (!pageActions(user, spec.page)('create')) return null;
+  // And the shortcut itself must be allowed on this page's form.
+  const screen = pageKey || pageKeyForPath(user, pathname);
+  if (screen && !canQuickCreate(user, screen, form, type)) return null;
 
   const setValue = (field, raw) => setValues((prev) => {
     const next = { ...prev, [field.key]: raw };
@@ -146,9 +249,11 @@ export default function MasterQuickCreate({ type, label, onCreated }) {
     return next;
   });
 
+  const typedFields = spec.fields.filter((field) => !field.fromProps);
+
   return (
     <>
-      <button type="button" className="label-add-link" onClick={() => setOpen(true)}>
+      <button type="button" className="label-add-link" data-quick-create={type} onClick={() => setOpen(true)}>
         + Create {label || spec.label}
       </button>
 
@@ -160,7 +265,7 @@ export default function MasterQuickCreate({ type, label, onCreated }) {
               <button className="modal-close" onClick={close} disabled={saving}>×</button>
             </div>
             <div className="modal-body">
-              {spec.fields.map((field) => (
+              {typedFields.map((field) => (
                 <div className="form-group" key={field.key}>
                   <label>{field.label}{field.required ? ' *' : ''}</label>
                   <input

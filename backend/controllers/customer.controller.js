@@ -64,6 +64,9 @@ async function createAuditLog(userId, action, module, details, req) {
 
 exports.getCustomerMeta = async (req, res, next) => {
   try {
+    const { filterRows } = require('../utils/dropdownScope');
+    // The meta list serves the create form, the edit form and the filter bar.
+    const FORMS = ['create', 'edit', 'filters'];
     const statusSetting = await SystemSetting.findOne({ key: 'lead_status_collection_id' }).lean();
     let statusCollection = null;
     if (statusSetting?.value) {
@@ -77,11 +80,19 @@ exports.getCustomerMeta = async (req, res, next) => {
       statuses = await StatusItem.find({ collection: statusCollection._id, isActive: true }).sort({ order: 1 }).lean();
     }
 
-    const [sources, types, cities, departments] = await Promise.all([
+    let [sources, types, cities, departments] = await Promise.all([
       LeadSource.find({ isActive: true }).sort({ sortOrder: 1 }).lean(),
       LeadType.find({ isActive: true }).sort({ name: 1 }).lean(),
       LeadCity.find({ isActive: true }).sort({ sortOrder: 1, name: 1 }).lean(),
-      Department.find({ isActive: true }).select('name').sort({ name: 1 }).lean(),
+      Department.find({ isActive: true }).select('name createdBy').sort({ name: 1 }).lean(),
+    ]);
+    // Role Jobs → Customers → Forms: a master list can be hidden, a scoped
+    // list (departments, users) narrowed to chosen creators.
+    [sources, types, cities, departments] = await Promise.all([
+      filterRows(req.user, 'customers', FORMS, 'source', sources, ['createdBy']),
+      filterRows(req.user, 'customers', FORMS, 'type', types, ['createdBy']),
+      filterRows(req.user, 'customers', FORMS, 'city', cities, ['createdBy']),
+      filterRows(req.user, 'customers', FORMS, 'department', departments, ['createdBy', '_id']),
     ]);
 
     const setting = await SystemSetting.findOne({ key: 'lead_assignment_roles' }).lean();
@@ -93,10 +104,13 @@ exports.getCustomerMeta = async (req, res, next) => {
     let users = [];
     if (allowedRoleIds.length > 0) {
       users = await User.find({ role: { $in: allowedRoleIds }, isActive: true })
-        .select('firstName lastName email role')
+        .select('firstName lastName email role createdBy')
         .sort({ firstName: 1 })
         .lean();
     }
+    // A user "owns" their own row as well as the ones they created.
+    users = await filterRows(req.user, 'customers', FORMS, 'assignedTo', users, ['_id', 'createdBy']);
+    statuses = await filterRows(req.user, 'customers', FORMS, 'status', statuses, ['createdBy']);
 
     res.json({
       success: true,
@@ -459,7 +473,13 @@ exports.getCustomerCities = async (req, res, next) => {
 
 exports.getAllForDropdown = async (req, res, next) => {
   try {
-    const customers = await Customer.find({ isActive: true, deletedAt: null })
+    // The document forms name the dropdown they are filling
+    // (?forPage=invoices&forForm=create&forField=customer); a request that
+    // names none is unrestricted, as before.
+    const { requestDropdownFilter, isHidden } = require('../utils/dropdownScope');
+    const scope = await requestDropdownFilter(req, null, ['createdBy', 'assignedTo']);
+    if (isHidden(scope)) return res.json({ success: true, data: [] });
+    const customers = await Customer.find({ isActive: true, deletedAt: null, ...(scope || {}) })
       .select('customerCode firstName lastName phone email')
       .sort({ firstName: 1 })
       .lean();

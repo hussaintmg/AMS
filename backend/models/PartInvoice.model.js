@@ -2,6 +2,8 @@ const mongoose = require('mongoose');
 const searchPlugin = require('../plugins/searchPlugin');
 const partLineItemSchema = require('./partLineItem.schema');
 const walkInFields = require('./walkIn.fields');
+const { serviceChargeFields } = require('./serviceCharges.fields');
+const { paymentTermFields, installCreditStatus } = require('./paymentTerm.fields');
 
 /**
  * An invoice for spare parts — the one document in the parts flow that moves
@@ -29,8 +31,12 @@ const partInvoiceSchema = new mongoose.Schema({
   // to totalAmount on the printed invoice.
   otherCharges: { type: Number, default: 0 },
   totalAmount: { type: Number, default: 0 },
+  // Optional service charges block (models/serviceCharges.fields.js).
+  ...serviceChargeFields,
   paidAmount: { type: Number, default: 0 },
   balanceAmount: { type: Number, default: 0 },
+  // Paid at the counter, or issued on credit and collected later.
+  ...paymentTermFields,
 
   // Set once stock has been consumed so a re-save or a retry cannot
   // double-count it.
@@ -60,6 +66,8 @@ partInvoiceSchema.index({ invoiceNumber: 1 });
 partInvoiceSchema.index({ customer: 1 });
 partInvoiceSchema.index({ salesOrder: 1 });
 partInvoiceSchema.index({ status: 1 });
+partInvoiceSchema.index({ paymentTerm: 1, creditStatus: 1 });
+installCreditStatus(partInvoiceSchema);
 
 partInvoiceSchema.plugin(searchPlugin, { entityType: 'part_invoice' });
 const PartInvoice = mongoose.model('PartInvoice', partInvoiceSchema, 'part_invoices');

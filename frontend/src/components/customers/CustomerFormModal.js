@@ -3,7 +3,7 @@ import toast from 'react-hot-toast';
 import { X } from 'lucide-react';
 import { useCustomers } from '../../context/CustomersContext';
 import { useAuth } from '../../context/AuthContext';
-import { pageActions } from '../../utils/roleJobs';
+import { pageActions, canQuickCreate, canSeeDropdown } from '../../utils/roleJobs';
 import SearchableSelect from '../SearchableSelect';
 import LeadMasterModal from '../leads/LeadMasterModal';
 import LeadStatusItemModal from '../leads/LeadStatusItemModal';
@@ -101,13 +101,18 @@ export default function CustomerFormModal({ customer, onClose, onSaved }) {
 
   // These pickers are filled from Lead Master Data, so the shortcut belongs to
   // a role that may create there — not to anyone who can open a customer form.
+  // On top of that, Role Jobs → Customers → Forms may withhold the shortcut on
+  // this form (create vs edit) even from a role that may create the record.
+  const formKind = isEdit ? 'edit' : 'create';
+  // A dropdown Role Jobs has set to "Hidden" for this form is not drawn at all.
+  const showDropdown = (key) => canSeeDropdown(user, 'customers', formKind, key);
   const renderLabel = (text, field, quickType, page = 'lead_master') => (
-    <label className="form-label-add">
+    <div className="form-label-add">
       <span>{text}</span>
-      {pageActions(user, page)('create') && (
-        <button type="button" className="label-add-link" onClick={() => setQuickCreate(quickType || field)}>+ Create {text}</button>
+      {pageActions(user, page)('create') && canQuickCreate(user, 'customers', formKind, field) && (
+        <button type="button" className="label-add-link" data-quick-create={field} onClick={() => setQuickCreate(quickType || field)}>+ Create {text}</button>
       )}
-    </label>
+    </div>
   );
 
   const renderForm = () => {
@@ -139,6 +144,7 @@ export default function CustomerFormModal({ customer, onClose, onSaved }) {
                 <input type="text" className="form-input" value={form.companyName} onChange={(e) => set('companyName', e.target.value)} placeholder="Company name" />
               </div>
             )}
+            {showDropdown('source') && (
             <div className="form-group">
               {renderLabel('Source', 'source')}
               <SearchableSelect
@@ -150,6 +156,8 @@ export default function CustomerFormModal({ customer, onClose, onSaved }) {
                 labelField="name"
               />
             </div>
+            )}
+            {showDropdown('type') && (
             <div className="form-group">
               {renderLabel('Type', 'type')}
               <SearchableSelect
@@ -161,6 +169,8 @@ export default function CustomerFormModal({ customer, onClose, onSaved }) {
                 labelField="name"
               />
             </div>
+            )}
+            {showDropdown('status') && (
             <div className="form-group">
               {renderLabel('Status', 'status', undefined, 'status_management')}
               <SearchableSelect
@@ -172,6 +182,7 @@ export default function CustomerFormModal({ customer, onClose, onSaved }) {
                 labelField="name"
               />
             </div>
+            )}
           </>
         );
       case 'contact':
@@ -233,6 +244,7 @@ export default function CustomerFormModal({ customer, onClose, onSaved }) {
               <label>Description</label>
               <textarea className="form-input" rows="3" value={form.description} onChange={(e) => set('description', e.target.value)} placeholder="Notes or description" />
             </div>
+            {showDropdown('assignedTo') && (
             <div className="form-group">
               <label>Assign To</label>
               <SearchableSelect
@@ -244,6 +256,8 @@ export default function CustomerFormModal({ customer, onClose, onSaved }) {
                 labelField="name"
               />
             </div>
+            )}
+            {showDropdown('department') && (
             <div className="form-group">
               <label>Department</label>
               <SearchableSelect
@@ -255,6 +269,7 @@ export default function CustomerFormModal({ customer, onClose, onSaved }) {
                 labelField="name"
               />
             </div>
+            )}
           </>
         );
       default:

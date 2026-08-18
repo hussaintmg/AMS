@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const searchPlugin = require('../plugins/searchPlugin');
 const partLineItemSchema = require('./partLineItem.schema');
 const walkInFields = require('./walkIn.fields');
+const { serviceChargeFields } = require('./serviceCharges.fields');
 
 /**
  * A quotation for spare parts.
@@ -26,6 +27,8 @@ const partQuotationSchema = new mongoose.Schema({
   taxAmount: { type: Number, default: 0 },
   additionalCharges: { type: Number, default: 0 },
   totalAmount: { type: Number, default: 0 },
+  // Optional service charges block (models/serviceCharges.fields.js).
+  ...serviceChargeFields,
   validityDays: { type: Number, default: 7 },
   validUntil: { type: Date },
 

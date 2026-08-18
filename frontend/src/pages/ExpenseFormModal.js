@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import SearchableSelect from '../components/SearchableSelect';
 import useModalKeyboard from '../hooks/useModalKeyboard';
+import MasterQuickCreate from '../components/MasterQuickCreate';
 
-function ExpenseFormModal({ isOpen, mode, initialData, categories, employees, onClose, onSubmit, loading }) {
+function ExpenseFormModal({ isOpen, mode, initialData, categories, employees, onClose, onSubmit, loading, onCategoryCreated }) {
   const [formData, setFormData] = useState({
     category: '', amount: '', expenseDate: new Date().toISOString().slice(0, 10),
     description: '', vendor: '', employee: '', status: 'draft',
@@ -57,7 +58,19 @@ function ExpenseFormModal({ isOpen, mode, initialData, categories, employees, on
           <div className="modal-body">
             <div className="form-row">
               <div className="form-group">
-                <label>Category *</label>
+                <div className="form-label-add">
+                  <span>Category *</span>
+                  <MasterQuickCreate
+                    type="expense_category"
+                    label="Category"
+                    pageKey="expenses"
+                    form={mode === 'create' ? 'create' : 'edit'}
+                    onCreated={async (created) => {
+                      await onCategoryCreated?.();
+                      if (created?.name) setFormData(p => ({ ...p, category: created.name }));
+                    }}
+                  />
+                </div>
                 <SearchableSelect options={catOptions} value={formData.category}
                   onChange={e => setFormData(p => ({ ...p, category: e.target.value }))} required />
                 {errors.category && <span className="field-error">{errors.category}</span>}

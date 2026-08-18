@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const searchPlugin = require('../plugins/searchPlugin');
 const lineItemSchema = require('./lineItem.schema');
 const walkInFields = require('./walkIn.fields');
+const { serviceChargeFields } = require('./serviceCharges.fields');
 
 const quotationItemSchema = new mongoose.Schema({
   description: { type: String },
@@ -30,6 +31,8 @@ const quotationSchema = new mongoose.Schema({
   taxAmount: { type: Number, default: 0 },
   additionalCharges: { type: Number, default: 0 },
   totalAmount: { type: Number, default: 0 },
+  // Optional service charges block (models/serviceCharges.fields.js).
+  ...serviceChargeFields,
   validityDays: { type: Number, default: 7 },
   validUntil: { type: Date },
   items: { type: [quotationItemSchema], default: [] },

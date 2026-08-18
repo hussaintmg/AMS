@@ -66,6 +66,10 @@ const emailRoutes = require("./routes/email.routes");
 const pdfManagementRoutes = require("./routes/pdf-management.routes");
 const notificationRoutes = require("./routes/notifications.routes");
 const barcodeRoutes = require("./routes/barcode.routes");
+// Added 2026-08-18: custom (free-text) documents, money accounts, gate passes.
+const customRoutes = require("./routes/custom.routes");
+const accountsRoutes = require("./routes/accounts.routes");
+const gatepassRoutes = require("./routes/gatepass.routes");
 const businessNotifications = require("./middleware/businessNotifications");
 
 const app = express();
@@ -265,6 +269,9 @@ app.use("/api/email", emailRoutes);
 app.use("/api/pdf-management", pdfManagementRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/barcode", barcodeRoutes);
+app.use("/api/custom", customRoutes);
+app.use("/api/accounts", accountsRoutes);
+app.use("/api/gatepasses", gatepassRoutes);
 
 // 404 Handler
 app.use((req, res) => {

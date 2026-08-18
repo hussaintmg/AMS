@@ -47,7 +47,8 @@ export function ExpensesProvider({ children }) {
   }, []);
 
   const loadEmployees = useCallback(async () => {
-    try { const res = await employeeAPI.list({ limit: 200 });
+    // Names its dropdown so Role Jobs → Expenses → Forms can narrow whose employees it lists.
+    try { const res = await employeeAPI.list({ limit: 200, forPage: 'expenses', forForm: 'create', forField: 'employee' });
       const d = res.data?.data || res.data; const list = d?.employees || (Array.isArray(d) ? d : []);
       setEmployees(list); return list;
     } catch (err) { showApiError(err, 'Failed to load employees'); throw err; }

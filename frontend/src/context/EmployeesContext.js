@@ -39,7 +39,8 @@ export function EmployeesProvider({ children }) {
   }, []);
 
   const loadDepartments = useCallback(async () => {
-    try { const res = await adminAPI.getDepartments({ flat: true });
+    // Names its dropdown so Role Jobs → Employees → Forms can narrow which departments it lists.
+    try { const res = await adminAPI.getDepartments({ flat: true, forPage: 'employees', forForm: 'create', forField: 'department' });
       const d = res.data?.data || []; const list = d?.flat || (Array.isArray(d) ? d : []);
       // Only active departments should be selectable in the employee form.
       const active = list.filter((x) => (x.is_active ?? x.isActive) !== false);

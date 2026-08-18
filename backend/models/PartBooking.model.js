@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const searchPlugin = require('../plugins/searchPlugin');
 const partLineItemSchema = require('./partLineItem.schema');
 const walkInFields = require('./walkIn.fields');
+const { serviceChargeFields } = require('./serviceCharges.fields');
 
 /**
  * A booking (advance order) for spare parts.
@@ -33,6 +34,8 @@ const partBookingSchema = new mongoose.Schema({
   discountAmount: { type: Number, default: 0 },
   taxAmount: { type: Number, default: 0 },
   totalAmount: { type: Number, default: 0 },
+  // Optional service charges block (models/serviceCharges.fields.js).
+  ...serviceChargeFields,
 
   bookingDate: { type: Date },
   deliveryDate: { type: Date },

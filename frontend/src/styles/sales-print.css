@@ -134,3 +134,75 @@
     white-space: nowrap;
 }
 
+
+/* Paid | Credit tabs on the invoice screens (Sales.js) — the same strip the
+   Parts Inventory source-type tabs use. */
+.sales-term-tabs { display: flex; gap: 6px; padding: 0 16px 10px; flex-wrap: wrap; }
+.sales-term-tab { border: 1px solid #dbe2ea; background: #fff; border-radius: 999px; padding: 6px 14px; font-size: 13px; font-weight: 600; color: #475569; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+.sales-term-tab:hover { background: #f1f5f9; }
+.sales-term-tab.active { background: #1e8de6; border-color: #1e8de6; color: #fff; }
+.sales-term-count { background: rgba(255,255,255,.25); border-radius: 999px; padding: 0 7px; font-size: 11px; }
+.sales-term-tab:not(.active) .sales-term-count { background: #fef3c7; color: #b45309; }
+.sales-page .lead-stats-grid { padding: 0 16px; }
+
+/* Service charges block (components/sales/ServiceChargesEditor.js) */
+.service-charges-block { margin: 12px 0 4px; border: 1px dashed #dbe2ea; border-radius: 8px; padding: 10px 12px; background: #fbfdff; }
+.service-charges-toggle { display: inline-flex !important; flex-direction: row !important; align-items: center; gap: 8px; font-weight: 600; font-size: 13.5px; color: #1e293b; cursor: pointer; margin: 0; }
+.service-charges-toggle input { width: 16px; height: 16px; }
+.service-charges-pill { background: #eff6ff; color: #1d4ed8; border-radius: 999px; padding: 2px 9px; font-size: 12px; }
+.service-charges-rows { margin-top: 10px; display: grid; gap: 8px; }
+.service-charge-row { display: grid; grid-template-columns: minmax(180px, 1.4fr) minmax(160px, 1.4fr) 70px 120px 80px 120px 36px; gap: 8px; align-items: end; padding: 8px; background: #fff; border: 1px solid #e8edf3; border-radius: 6px; }
+.service-charge-row .form-group { margin: 0; }
+.service-charge-row .form-group > label, .service-charge-line-total > label { font-size: 11px; color: #64748b; display: block; margin-bottom: 4px; }
+.service-charge-row input { width: 100%; }
+.service-charge-line-total strong { font-size: 13px; color: #0f172a; display: block; padding: 8px 0; }
+.service-charge-remove { align-self: end; margin-bottom: 4px; }
+.service-charges-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.service-charges-summary { font-size: 12.5px; color: #475569; }
+@media (max-width: 900px) { .service-charge-row { grid-template-columns: 1fr 1fr; } }
+
+/* Custom documents (pages/custom/CustomDocuments.js) — free-text line editor */
+.custom-lines { display: grid; gap: 8px; }
+.custom-line { display: grid; grid-template-columns: minmax(200px, 2fr) 70px 70px 120px 100px 80px 130px 36px; gap: 8px; align-items: end; padding: 8px; background: #fbfdff; border: 1px solid #e8edf3; border-radius: 6px; }
+.custom-line .form-group { margin: 0; }
+.custom-line .form-group > label, .custom-line-total > label { font-size: 11px; color: #64748b; display: block; margin-bottom: 4px; }
+.custom-line input { width: 100%; }
+.custom-line-total strong { display: block; padding: 8px 0; font-size: 13px; }
+.custom-totals { display: flex; gap: 18px; flex-wrap: wrap; justify-content: flex-end; padding: 10px 4px 0; border-top: 2px solid #e5e7eb; margin-top: 8px; font-size: 13px; color: #475569; }
+.custom-totals strong { color: #0f172a; margin-left: 4px; }
+.custom-grand { font-size: 15px; }
+@media (max-width: 900px) { .custom-line { grid-template-columns: 1fr 1fr; } }
+
+/* Accounts & petty cash (pages/finance/Accounts.js) */
+.acct-limit-banner { margin: 0 16px 12px; padding: 10px 14px; border: 1px solid #fecaca; background: #fef2f2; color: #7f1d1d; border-radius: 8px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.acct-limit-banner .btn { margin-left: auto; }
+.acct-range { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: #64748b; }
+.acct-range input { padding: 5px 8px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px; }
+.acct-table-tools { display: flex; align-items: center; justify-content: space-between; padding: 6px 16px; font-size: 12.5px; color: #64748b; }
+
+
+/* Gate passes (pages/gatepass/*) */
+.gp-filters { display: grid; grid-template-columns: minmax(220px, 2fr) 140px 140px 140px 140px auto; gap: 8px; padding: 0 16px 12px; align-items: center; }
+.gp-filters input, .gp-filters select { padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; }
+.gp-items { display: grid; gap: 8px; }
+.gp-item { display: grid; grid-template-columns: minmax(180px, 1.3fr) minmax(180px, 1.5fr) 70px 80px 150px 36px; gap: 8px; align-items: end; padding: 8px; background: #fbfdff; border: 1px solid #e8edf3; border-radius: 6px; }
+.gp-item .form-group { margin: 0; }
+.gp-item .form-group > label { font-size: 11px; color: #64748b; display: block; margin-bottom: 4px; }
+.gp-item input { width: 100%; }
+.gp-check { display: inline-flex !important; flex-direction: row !important; align-items: center; gap: 6px; font-size: 12px !important; color: #334155 !important; padding: 8px 0; }
+.gp-attachments { display: flex; gap: 8px; flex-wrap: wrap; }
+.gp-attachment img { width: 96px; height: 96px; object-fit: cover; border-radius: 6px; border: 1px solid #e2e8f0; }
+.gp-attachment span { display: inline-block; padding: 8px 10px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 12px; }
+.gp-verify { padding: 0 16px 16px; }
+.gp-verify-search { display: flex; align-items: center; gap: 10px; background: #fff; border: 2px solid #1e8de6; border-radius: 12px; padding: 10px 14px; margin-bottom: 16px; }
+.gp-verify-search input { flex: 1; border: 0; font-size: 18px; outline: none; padding: 6px 0; }
+.gp-verify-card { border: 2px solid #e2e8f0; border-radius: 12px; padding: 16px; background: #fff; }
+.gp-verify-card.gp-verify-issued { border-color: #f59e0b; }
+.gp-verify-card.gp-verify-verified, .gp-verify-card.gp-verify-closed { border-color: #16a34a; }
+.gp-verify-card.gp-verify-cancelled, .gp-verify-card.gp-verify-draft { border-color: #dc2626; }
+.gp-verify-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+.gp-verify-head strong { font-size: 20px; margin-right: 8px; }
+.gp-verify-warn { background: #fef2f2; color: #7f1d1d; padding: 10px 12px; border-radius: 8px; font-weight: 600; }
+.gp-verify-ok { background: #f0fdf4; color: #14532d; padding: 10px 12px; border-radius: 8px; font-weight: 600; }
+.gp-verify-recent h4 { margin: 8px 0; font-size: 14px; color: #334155; }
+@media (max-width: 900px) { .gp-filters { grid-template-columns: 1fr 1fr; } .gp-item { grid-template-columns: 1fr 1fr; } }

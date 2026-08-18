@@ -9,7 +9,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { authenticate, authorizeRouter } = require('../middleware/auth');
+const { authenticate, authorizeRouter, authorizeAction } = require('../middleware/auth');
 const serviceController = require('../controllers/serviceManagement.controller');
 
 router.use(authenticate);
@@ -352,6 +352,11 @@ router.get('/job-cards/:id', serviceController.getJobCardById);
  *       201:
  *         description: Job card created
  */
+// Raising a job card *from an appointment* is its own grant on the
+// appointments page (Role Jobs → Create job card), on top of Services create;
+// a job card raised on its own needs only the router's Services guard.
+const whenFromAppointment = (req, res, next) => (req.body?.appointmentId ? next() : next('route'));
+router.post('/job-cards', whenFromAppointment, authorizeAction('service_appointments', 'createJobCard'), serviceController.createJobCard);
 router.post('/job-cards', serviceController.createJobCard);
 
 /**

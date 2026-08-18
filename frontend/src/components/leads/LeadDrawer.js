@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { X, Pencil, Trash2, User, CalendarDays, DollarSign, Phone, Mail, MapPin, Tag, Flag, MessageSquare, ArrowRightLeft } from 'lucide-react';
 import { useLeads } from '../../context/LeadsContext';
 import { useAuth } from '../../context/AuthContext';
-import { pageActions } from '../../utils/roleJobs';
+import { pageActions, canQuickCreate } from '../../utils/roleJobs';
 import SearchableSelect from '../SearchableSelect';
 import ConfirmModal from '../ConfirmModal';
 import LeadQuickCreateModal from './LeadQuickCreateModal';
@@ -185,15 +185,17 @@ export default function LeadDrawer({ leadId, onClose, onUpdated }) {
    */
   // Only a role that may create on the owning master-data page is offered the
   // shortcut; otherwise the button's only outcome is a 403.
+  // The drawer's inline form is the lead's edit form, so Role Jobs → Leads →
+  // Forms → Edit decides which shortcuts it may carry.
   const renderFieldLabel = (text, type, field, page = 'lead_master') => (
-    <label className="form-label-add">
+    <div className="form-label-add">
       <span>{text}</span>
-      {pageActions(user, page)('create') && (
+      {pageActions(user, page)('create') && canQuickCreate(user, 'leads', 'edit', field) && (
         <button type="button" className="label-add-link" title={`Create ${text}`} onClick={() => setQuickCreate({ show: true, type, field })}>
           + {text}
         </button>
       )}
-    </label>
+    </div>
   );
 
   if (loading) {
@@ -289,7 +291,7 @@ export default function LeadDrawer({ leadId, onClose, onUpdated }) {
                   />
                 </div>
                 <div className="form-group">
-                  <label className="form-label-add">
+                  <div className="form-label-add">
                     <span>Status</span>
                     <button
                       type="button"
@@ -305,7 +307,7 @@ export default function LeadDrawer({ leadId, onClose, onUpdated }) {
                     >
                       + Status
                     </button>
-                  </label>
+                  </div>
                   <select className="form-input" value={editForm.status} onChange={(e) => setEditForm((p) => ({ ...p, status: e.target.value }))}>
                     <option value="">Select status</option>
                     {meta.statuses.map((s) => (
@@ -410,6 +412,9 @@ export default function LeadDrawer({ leadId, onClose, onUpdated }) {
                     </div>
                   )}
                 </div>
+                {/* Assigning and converting are their own grants (Role Jobs →
+                    Leads); a role that has never been configured keeps both. */}
+                {pageActions(user, 'leads')('assign') && (
                 <div className="action-dropdown">
                   <button className="btn btn-secondary btn-sm" onClick={() => setShowAssignMenu(!showAssignMenu)}>Assign</button>
                   {showAssignMenu && (
@@ -421,7 +426,8 @@ export default function LeadDrawer({ leadId, onClose, onUpdated }) {
                     </div>
                   )}
                 </div>
-                {!lead.convertedToCustomer && !lead.lostReason && (
+                )}
+                {!lead.convertedToCustomer && !lead.lostReason && pageActions(user, 'leads')('convert') && (
                   <button className="btn btn-success btn-sm" onClick={handleConvert}>Convert</button>
                 )}
                 {!lead.lostReason && (

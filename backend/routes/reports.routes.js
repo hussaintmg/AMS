@@ -28,6 +28,12 @@ router.get('/low-stock-parts', authenticate, authorizeAction('reports', 'view'),
 router.get('/expenses', authenticate, authorizeAction('reports', 'view'), reportsController.getExpenseReport);
 router.get('/payments', authenticate, authorizeAction('reports', 'view'), reportsController.getPaymentReport);
 router.get('/employees', authenticate, authorizeAction('reports', 'view'), reportsController.getEmployeeReport);
+// Added 2026-08-18: credit receivables, payables, account balances, gate passes.
+const financeReports = require('../controllers/financeReports.controller');
+router.get('/credit-receivables', authenticate, authorizeAction('reports', 'view'), financeReports.getCreditReceivables);
+router.get('/payables', authenticate, authorizeAction('reports', 'view'), financeReports.getPayablesReport);
+router.get('/account-balances', authenticate, authorizeAction('reports', 'view'), financeReports.getAccountBalances);
+router.get('/gate-passes', authenticate, authorizeAction('reports', 'view'), financeReports.getGatePassReport);
 
 // Parameterized Routes
 router.get('/:id', authenticate, authorizeAction('reports', 'view'), reportsController.getReportById);

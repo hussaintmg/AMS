@@ -12,7 +12,9 @@ import FilterBar, {
   SearchInput,
   ResetFiltersButton,
 } from "../components/filters/FilterBar";
-import { serverManagementAPI, adminAPI, customerRoleConfigAPI, employeeRoleConfigAPI, warehouseManagerRolesAPI, serviceAdvisorRolesAPI } from "../services/api";
+import { serverManagementAPI, adminAPI, customerRoleConfigAPI, employeeRoleConfigAPI, warehouseManagerRolesAPI, serviceAdvisorRolesAPI, modulesAPI } from "../services/api";
+import ToggleSwitch from "../components/ToggleSwitch";
+import { useAuth } from "../context/AuthContext";
 import { showApiSuccess, showApiError } from "../utils/toastResponse";
 import "../styles/serverManagement.css";
 import "../styles/filters.css";
@@ -25,6 +27,9 @@ const tabs = [
   "Log Permissions",
   "Role Jobs",
   "Role Usage",
+  // Optional modules: the custom (free-text) quotation / invoice / booking
+  // screens, each behind its own switch.
+  "Custom",
 ];
 const assetFields = [
   ["favicon", "Favicon"],
@@ -392,6 +397,17 @@ function ServerManagement() {
   const [fieldCatalog, setFieldCatalog] = useState({});
   const [pageCapabilities, setPageCapabilities] = useState({});
   const [actionLabels, setActionLabels] = useState({});
+  // The screen catalog: table columns, drawer rows and buttons, form
+  // shortcuts and dropdowns per page (constants/pageCatalog.js on the server).
+  const [pageCatalog, setPageCatalog] = useState({});
+  const [dropdownModes, setDropdownModes] = useState(['all', 'own', 'selected_roles', 'selected_users', 'none']);
+  const [dropdownModeLabels, setDropdownModeLabels] = useState({});
+  // Which of a card's screen sections are unfolded: "pageKey:section".
+  const [openJobSections, setOpenJobSections] = useState({});
+  // Optional modules (Custom tab).
+  const [modules, setModules] = useState([]);
+  const [modulesLoading, setModulesLoading] = useState(false);
+  const { refreshUser } = useAuth();
   // Every page is listed now, so the screen needs a way to narrow it down.
   const [roleJobSearch, setRoleJobSearch] = useState('');
   const [roleJobShowAll, setRoleJobShowAll] = useState(false);
@@ -2234,6 +2250,15 @@ function ServerManagement() {
       setFieldCatalog(catalog);
       setPageCapabilities(res?.data?.capabilities || {});
       setActionLabels(res?.data?.actionLabels || {});
+      const screenCatalog = res?.data?.catalog || {};
+      setPageCatalog(screenCatalog);
+      if (Array.isArray(res?.data?.dropdownModes)) setDropdownModes(res.data.dropdownModes);
+      setDropdownModeLabels(res?.data?.dropdownModeLabels || {});
+      // "all" is stored as an empty allow-list; the screen shows it as
+      // everything ticked so unticking one is one click.
+      const allowListOf = (block, keys) => (block?.mode === 'selected'
+        ? { mode: 'selected', allowed: (block.allowed || []).map(String) }
+        : { mode: 'all', allowed: keys });
       // The document pages used to live behind one "sales" permission. A role
       // still carrying that row keeps access to all four.
       const LEGACY_SALES = ['quotations', 'bookings', 'sales_orders', 'invoices'];
@@ -2260,6 +2285,23 @@ function ServerManagement() {
           fields: current.fields?.mode === 'selected'
             ? { mode: 'selected', allowed: (current.fields.allowed || []).map(String) }
             : { mode: 'all', allowed: (catalog[page.name] || []).map((field) => field.key) },
+          columns: allowListOf(current.columns, (screenCatalog[page.name]?.columns || []).map((column) => column.key)),
+          drawerFields: allowListOf(current.drawerFields, (screenCatalog[page.name]?.drawer?.fields || []).map((field) => field.key)),
+          drawerExtras: allowListOf(current.drawerExtras, (screenCatalog[page.name]?.drawer?.extras || []).map((extra) => extra.key)),
+          quickCreate: current.quickCreate?.mode === 'selected'
+            ? { mode: 'selected', create: (current.quickCreate.create || []).map(String), edit: (current.quickCreate.edit || []).map(String) }
+            : {
+              mode: 'all',
+              create: (screenCatalog[page.name]?.forms?.create?.quickCreate || []).map((item) => item.key),
+              edit: (screenCatalog[page.name]?.forms?.edit?.quickCreate || []).map((item) => item.key),
+            },
+          dropdowns: (current.dropdowns || []).map((row) => ({
+            key: row.key,
+            form: row.form || 'create',
+            mode: row.mode || 'all',
+            roles: (row.roles || []).map((item) => String(item._id || item)),
+            users: (row.users || []).map((item) => String(item._id || item)),
+          })),
         };
       }));
     } catch (err) { showApiError(err, 'Failed to load role jobs'); }
@@ -2340,6 +2382,224 @@ function ServerManagement() {
 
   /** What a page can be permitted to do; an unknown page gets everything. */
   const capabilityOf = (pageKey) => pageCapabilities[pageKey] || { actions: Object.keys(actionLabels), dataScope: true };
+
+  // ── Screen-level sections: columns, drawer, forms ────────────────────────
+  // Every list below is drawn from the catalog the API sent, so a page that
+  // gains a column or a shortcut shows the new checkbox with no change here.
+
+  const isSectionOpen = (pageKey, section) => openJobSections[`${pageKey}:${section}`] === true;
+  const toggleSection = (pageKey, section) => setOpenJobSections((prev) => {
+    const id = `${pageKey}:${section}`;
+    return { ...prev, [id]: !prev[id] };
+  });
+
+  /** Toggle one key in an allow-list block (columns / drawerFields / drawerExtras). */
+  const toggleAllowKey = (pageKey, block, key, allKeys) => updateRoleJob(pageKey, (item) => {
+    const current = item[block]?.allowed || [];
+    const allowed = current.includes(key) ? current.filter((value) => value !== key) : [...current, key];
+    return { ...item, [block]: { mode: allowed.length === allKeys.length ? 'all' : 'selected', allowed } };
+  });
+  const setAllAllowKeys = (pageKey, block, allKeys, on) => updateRoleJob(pageKey, (item) => ({
+    ...item, [block]: on ? { mode: 'all', allowed: allKeys } : { mode: 'selected', allowed: [] },
+  }));
+
+  const renderAllowList = (job, block, title, entries, note) => {
+    if (!entries.length) return null;
+    const allKeys = entries.map((entry) => entry.key);
+    const setting = job[block] || { mode: 'all', allowed: allKeys };
+    const allOn = setting.mode === 'all';
+    const count = allOn ? allKeys.length : setting.allowed.length;
+    return (
+      <div className="sm-role-job-fields">
+        <div className="sm-role-job-fields-head">
+          <label>{title} <span className="sm-field-count">{count} of {allKeys.length}</span></label>
+          <span className="sm-field-bulk">
+            <button type="button" className="btn-link" onClick={() => setAllAllowKeys(job.pageKey, block, allKeys, true)}>Select all</button>
+            <button type="button" className="btn-link" onClick={() => setAllAllowKeys(job.pageKey, block, allKeys, false)}>Clear all</button>
+          </span>
+        </div>
+        {note && <p className="sm-role-job-note">{note}</p>}
+        <div className="sm-scope-options">
+          {entries.map((entry) => (
+            <label key={entry.key}>
+              <input
+                type="checkbox"
+                checked={allOn || setting.allowed.includes(entry.key)}
+                onChange={() => toggleAllowKey(job.pageKey, block, entry.key, allKeys)}
+              />
+              {entry.label}
+            </label>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  /** Quick-create shortcuts of one form. */
+  const toggleQuickCreate = (pageKey, form, key) => updateRoleJob(pageKey, (item) => {
+    const catalog = pageCatalog[pageKey]?.forms || {};
+    const allCreate = (catalog.create?.quickCreate || []).map((entry) => entry.key);
+    const allEdit = (catalog.edit?.quickCreate || []).map((entry) => entry.key);
+    const current = item.quickCreate || { mode: 'all', create: allCreate, edit: allEdit };
+    const list = current[form] || [];
+    const nextList = list.includes(key) ? list.filter((value) => value !== key) : [...list, key];
+    const next = { ...current, [form]: nextList };
+    const everything = next.create.length === allCreate.length && next.edit.length === allEdit.length;
+    return { ...item, quickCreate: { ...next, mode: everything ? 'all' : 'selected' } };
+  });
+
+  /** One dropdown's rule on one form. */
+  const setDropdownRule = (pageKey, form, key, patchIn) => updateRoleJob(pageKey, (item) => {
+    const rows = item.dropdowns || [];
+    const at = rows.findIndex((row) => row.key === key && row.form === form);
+    const base = at >= 0 ? rows[at] : { key, form, mode: 'all', roles: [], users: [] };
+    const next = { ...base, ...patchIn };
+    const others = rows.filter((row, index) => index !== at);
+    // "all" is the default; not storing it keeps the row list a list of exceptions.
+    return { ...item, dropdowns: next.mode === 'all' ? others : [...others, next] };
+  });
+  const dropdownRuleOf = (job, form, key) => (job.dropdowns || []).find((row) => row.key === key && row.form === form) || { mode: 'all', roles: [], users: [] };
+  const toggleDropdownMember = (pageKey, form, key, kind, id) => updateRoleJob(pageKey, (item) => {
+    const rows = item.dropdowns || [];
+    const at = rows.findIndex((row) => row.key === key && row.form === form);
+    if (at < 0) return item;
+    const row = rows[at];
+    const list = row[kind] || [];
+    const nextRow = { ...row, [kind]: list.includes(id) ? list.filter((value) => value !== id) : [...list, id] };
+    return { ...item, dropdowns: rows.map((entry, index) => (index === at ? nextRow : entry)) };
+  });
+
+  const FORM_TITLES = { create: 'Create form', edit: 'Edit form', filters: 'Filter bar' };
+
+  const renderFormsSection = (job) => {
+    const forms = pageCatalog[job.pageKey]?.forms || {};
+    const formKeys = ['create', 'edit', 'filters'].filter((form) => (forms[form]?.quickCreate || []).length || (forms[form]?.dropdowns || []).length);
+    if (!formKeys.length) return null;
+    return (
+      <div className="sm-role-job-forms">
+        {formKeys.map((form) => {
+          const quick = forms[form]?.quickCreate || [];
+          const dropdowns = forms[form]?.dropdowns || [];
+          const quickSetting = job.quickCreate || { mode: 'all', create: quick.map((entry) => entry.key), edit: quick.map((entry) => entry.key) };
+          return (
+            <div className="sm-role-job-form" key={form}>
+              <div className="sm-role-job-form-title">{FORM_TITLES[form]}</div>
+              {quick.length > 0 && form !== 'filters' && (
+                <div className="sm-role-job-form-block">
+                  <span className="sm-field-group-name">Quick-create shortcuts</span>
+                  <div className="sm-scope-options">
+                    {quick.map((entry) => (
+                      <label key={entry.key} title={'Also needs Create on ' + entry.owner}>
+                        <input
+                          type="checkbox"
+                          checked={quickSetting.mode === 'all' || (quickSetting[form] || []).includes(entry.key)}
+                          onChange={() => toggleQuickCreate(job.pageKey, form, entry.key)}
+                        />
+                        {entry.label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {dropdowns.length > 0 && (
+                <div className="sm-role-job-form-block">
+                  <span className="sm-field-group-name">Dropdowns — whose data they offer</span>
+                  <div className="sm-dropdown-rules">
+                    {dropdowns.map((entry) => {
+                      const rule = dropdownRuleOf(job, form, entry.key);
+                      const modes = entry.scope ? dropdownModes : ['all', 'none'];
+                      return (
+                        <div className="sm-dropdown-rule" key={entry.key}>
+                          <span className="sm-dropdown-rule-name" title={'From ' + entry.model}>{entry.label}</span>
+                          <select
+                            value={rule.mode}
+                            onChange={(event) => setDropdownRule(job.pageKey, form, entry.key, { mode: event.target.value })}
+                          >
+                            {modes.map((mode) => <option key={mode} value={mode}>{dropdownModeLabels[mode] || mode}</option>)}
+                          </select>
+                          {rule.mode === 'selected_roles' && (
+                            <div className="sm-scope-options sm-dropdown-members">
+                              {scopeRoleOptions
+                                .filter((role) => String(getRoleId(role)) !== String(selectedJobRoleId))
+                                .map((role) => {
+                                  const id = String(getRoleId(role));
+                                  return (
+                                    <label key={id}>
+                                      <input type="checkbox" checked={(rule.roles || []).includes(id)} onChange={() => toggleDropdownMember(job.pageKey, form, entry.key, 'roles', id)} />
+                                      {role.displayName || role.name}
+                                    </label>
+                                  );
+                                })}
+                            </div>
+                          )}
+                          {rule.mode === 'selected_users' && (
+                            <div className="sm-scope-options sm-dropdown-members">
+                              {scopeUserOptions.map((person) => {
+                                const id = String(person._id || person.id);
+                                return (
+                                  <label key={id}>
+                                    <input type="checkbox" checked={(rule.users || []).includes(id)} onChange={() => toggleDropdownMember(job.pageKey, form, entry.key, 'users', id)} />
+                                    {person.firstName} {person.lastName}
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  /**
+   * The screen-level part of a card, folded by default so the list of forty
+   * cards stays readable: Table columns · Drawer · Forms.
+   */
+  const renderScreenSections = (job) => {
+    const entry = pageCatalog[job.pageKey];
+    if (!entry) return null;
+    const columns = entry.columns || [];
+    const drawerFields = entry.drawer?.fields || [];
+    const drawerExtras = entry.drawer?.extras || [];
+    const forms = entry.forms || {};
+    const hasForms = ['create', 'edit', 'filters'].some((form) => (forms[form]?.quickCreate || []).length || (forms[form]?.dropdowns || []).length);
+    const shown = (block, all) => (job[block]?.mode === 'all' ? all.length : (job[block]?.allowed || []).length);
+    const sections = [
+      columns.length && { key: 'columns', title: 'Table columns', count: shown('columns', columns) + ' of ' + columns.length },
+      (drawerFields.length || drawerExtras.length) && { key: 'drawer', title: 'Drawer', count: shown('drawerFields', drawerFields) + ' of ' + drawerFields.length + ' rows' },
+      hasForms && { key: 'forms', title: 'Forms — shortcuts & dropdowns', count: (job.dropdowns || []).length ? (job.dropdowns || []).length + ' dropdown rule(s)' : (job.quickCreate?.mode === 'selected' ? 'shortcuts limited' : 'default') },
+    ].filter(Boolean);
+    if (!sections.length) return null;
+    return (
+      <div className="sm-role-job-screen">
+        {sections.map((section) => (
+          <div className="sm-role-job-section" key={section.key}>
+            <button type="button" className="sm-role-job-section-toggle" onClick={() => toggleSection(job.pageKey, section.key)}>
+              <span>{isSectionOpen(job.pageKey, section.key) ? '▾' : '▸'} {section.title}</span>
+              <span className="sm-field-count">{section.count}</span>
+            </button>
+            {isSectionOpen(job.pageKey, section.key) && (
+              <div className="sm-role-job-section-body">
+                {section.key === 'columns' && renderAllowList(job, 'columns', 'Visible table columns', columns, 'Unticked columns are hidden from the table on this page. "Visible data fields" above still decides which data the API sends at all.')}
+                {section.key === 'drawer' && (<>
+                  {renderAllowList(job, 'drawerFields', 'Drawer rows & sections', drawerFields)}
+                  {renderAllowList(job, 'drawerExtras', 'Buttons inside the drawer', drawerExtras)}
+                </>)}
+                {section.key === 'forms' && renderFormsSection(job)}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    );
+  };
 
   /**
    * One page's card: what the role may do there, whose records it sees, and
@@ -2453,6 +2713,7 @@ function ServerManagement() {
         )}
 
         {renderJobFields(job)}
+        {renderScreenSections(job)}
         </>)}
       </section>
     );
@@ -2654,6 +2915,59 @@ function ServerManagement() {
         )}
       </div>
     </form>
+  );
+
+  // ── Custom modules ───────────────────────────────────────────────────────
+  const loadModules = async () => {
+    setModulesLoading(true);
+    try {
+      const { data: res } = await modulesAPI.getAll();
+      setModules(res?.data || []);
+    } catch (err) { showApiError(err, 'Failed to load modules'); }
+    finally { setModulesLoading(false); }
+  };
+  useEffect(() => { if (activeTab === 'Custom') loadModules(); }, [activeTab]);
+
+  const toggleModule = async (key, enabled) => {
+    // Optimistic: the switch answers at once, and is put back if the save fails.
+    setModules((items) => items.map((item) => (item.key === key ? { ...item, enabled } : item)));
+    try {
+      const { data: res } = await modulesAPI.update(key, enabled);
+      showApiSuccess(res, enabled ? 'Module enabled' : 'Module disabled');
+      // The sidebar and the session both carry the flags; refresh them.
+      if (typeof refreshUser === 'function') refreshUser();
+      window.dispatchEvent(new Event('ams:sidebar-refresh'));
+    } catch (err) {
+      showApiError(err, 'Failed to update module');
+      setModules((items) => items.map((item) => (item.key === key ? { ...item, enabled: !enabled } : item)));
+    }
+  };
+
+  const renderCustom = () => (
+    <div className="sm-panel">
+      <div className="sm-panel-head">
+        <div>
+          <h2>Custom documents</h2>
+          <p>Quote, book and invoice anything that is neither a vehicle nor a part — free-text lines, no stock. Each screen is hidden, and its API closed, until its switch is on. Grant the pages in Role Jobs as usual.</p>
+        </div>
+      </div>
+      {modulesLoading ? <p className="sm-role-job-note">Loading…</p> : (
+        <div className="sm-module-list">
+          {modules.map((item) => (
+            <div className="sm-module-row" key={item.key}>
+              <div>
+                <strong>{item.label}</strong>
+                <span className="sm-module-page">/{item.pages.join(', /')} — page key <code>{item.pages[0]}</code></span>
+              </div>
+              <div className="sm-module-switch">
+                <span className={item.enabled ? 'sm-module-on' : 'sm-module-off'}>{item.enabled ? 'On' : 'Off'}</span>
+                <ToggleSwitch checked={item.enabled} onChange={(checked) => toggleModule(item.key, checked)} />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 
   const renderRoleUsage = () => (
@@ -2906,6 +3220,7 @@ function ServerManagement() {
       {activeTab === "Log Permissions" && renderLogPermissions()}
       {activeTab === "Role Jobs" && renderRoleJobs()}
       {activeTab === "Role Usage" && renderRoleUsage()}
+      {activeTab === "Custom" && renderCustom()}
       {renderPageModal()}
       <UserFormModal
         isOpen={showUserModal}

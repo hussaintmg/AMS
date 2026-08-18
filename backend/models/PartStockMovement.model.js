@@ -18,7 +18,8 @@ const partStockMovementSchema = new mongoose.Schema({
   source: {
     type: String,
     required: true,
-    enum: ['initial', 'adjustment', 'sale', 'sale_reverted', 'import', 'import_update'],
+    // gate_receipt: parts received on a logistic gate-pass entry.
+    enum: ['initial', 'adjustment', 'sale', 'sale_reverted', 'import', 'import_update', 'gate_receipt'],
   },
   // Human-readable anchor: invoice number, adjustment reason, import note.
   reference: { type: String, trim: true, default: '' },

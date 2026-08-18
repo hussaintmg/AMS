@@ -12,7 +12,7 @@ import ExpenseDrawer from "./ExpenseDrawer";
 import CategoryDrawer from "./CategoryDrawer";
 import BulkSelectionBar from "../components/BulkSelectionBar";
 import { Search } from "lucide-react";
-import { fieldAccessor, pageActions } from "../utils/roleJobs";
+import { fieldAccessor, pageActions, getRoleJob } from "../utils/roleJobs";
 import "../styles/userManagement.css";
 
 const GROUP_LABELS = {
@@ -107,7 +107,9 @@ const Expenses = () => {
   };
 
   // Posting an expense to the ledger is guarded on the server as an edit.
-  const canPost = can('edit') && hasRole(["super_admin", "admin", "accountant"]);
+  // Posting to the ledger is its own grant (Role Jobs → Expenses → Post to
+  // ledger); the role list is only the fallback for an unconfigured role.
+  const canPost = getRoleJob(currentUser, 'expenses') ? can('postLedger') : (can('edit') && hasRole(["super_admin", "admin", "accountant"]));
 
   useEffect(() => {
     const h = (location.hash || "").replace(/^#/, "");
@@ -659,6 +661,7 @@ const Expenses = () => {
                 : handleUpdateExpense
             }
             loading={saving}
+            onCategoryCreated={loadReferenceData}
           />
         </>
       )}

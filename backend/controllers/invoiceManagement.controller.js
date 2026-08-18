@@ -18,6 +18,7 @@ const PaymentMethod = require('../models/PaymentMethod.model');
 const SalesOrder = require('../models/SalesOrder.model');
 const Customer = require('../models/Customer.model');
 const { nextDocNumber } = require('../utils/docNumber');
+const { parseServiceCharges, serviceChargeSummary } = require('../models/serviceCharges.fields');
 const { recordCustomerActivity } = require('../utils/customerSync');
 const { createInvoiceForOrder, round2 } = require('../utils/invoiceFactory');
 const { mapLineItem } = require('../services/lineItems.service');
@@ -80,6 +81,10 @@ const mapInvoiceRow = (inv) => ({
     total_amount: inv.totalAmount || 0,
     paid_amount: inv.paidAmount || 0,
     balance_amount: inv.balanceAmount || 0,
+    payment_term: inv.paymentTerm || 'paid',
+    credit_due_date: inv.creditDueDate || null,
+    credit_status: inv.paymentTerm === 'credit' ? (inv.creditStatus || 'open') : null,
+    ...serviceChargeSummary(inv),
     line_items: (inv.lineItems || []).map(mapLineItem),
     item_count: (inv.lineItems || []).length,
     stock_applied: inv.stockApplied === true,
@@ -123,6 +128,11 @@ const getAllInvoices = async (req, res, next) => {
             filter.status = status;
         }
         if (type) filter.invoiceType = type;
+        // The Paid | Credit tabs. Invoices written before the split carry no
+        // paymentTerm and count as paid.
+        if (req.query.paymentTerm === 'credit') filter.paymentTerm = 'credit';
+        else if (req.query.paymentTerm === 'paid') filter.paymentTerm = { $ne: 'credit' };
+        if (req.query.creditStatus) filter.creditStatus = req.query.creditStatus;
         if (sanitizeId(customerId)) filter.customer = customerId;
         if (sanitizeId(salesOrderId)) filter.salesOrder = salesOrderId;
         if (dateFrom || dateTo) {
@@ -281,19 +291,31 @@ const createInvoice = async (req, res, next) => {
         const subtotal = round2(invoiceItems.reduce((sum, item) => sum + item.totalPrice, 0));
         const taxAmount = round2(invoiceItems.reduce((sum, item) => sum + item.taxAmount, 0));
         const discount = num(discountAmount);
-        const totalAmount = round2(subtotal - discount + taxAmount);
+        // Optional service charges block, on top of the lines.
+        const service = parseServiceCharges(req.body);
+        const totalAmount = round2(subtotal - discount + taxAmount + service.grand);
 
-        // An invoice is only ever raised once it has been paid in full, so the
-        // money arrives with the request instead of being recorded against a
-        // balance afterwards. Over-tender is change, exactly as at the counter.
-        const paymentMethod = await resolvePaymentMethod(req.body.paymentMethodId, { required: true });
-        const tendered = round2(num(req.body.paidAmount));
+        // Two ways to raise an invoice. "Paid": the money arrives with the
+        // request, so nothing is recorded against a balance afterwards and
+        // over-tender is change, exactly as at the counter. "Credit": the
+        // invoice is issued unpaid with a due date, and the money comes later
+        // through Record Payment. No approval step either way (client
+        // decision, 2026-08-18): a credit invoice prints and emails like any
+        // other, marked CREDIT with its balance due.
+        const isCredit = String(req.body.paymentTerm || 'paid').toLowerCase() === 'credit';
+        const paymentMethod = await resolvePaymentMethod(req.body.paymentMethodId, { required: !isCredit });
+        const tendered = isCredit ? 0 : round2(num(req.body.paidAmount));
         if (tendered < 0) throw new AppError('Paid amount cannot be negative', 400);
-        assertFullPayment(totalAmount, tendered);
-        const changeDue = round2(Math.max(0, tendered - totalAmount));
+        if (!isCredit) assertFullPayment(totalAmount, tendered);
+        const changeDue = isCredit ? 0 : round2(Math.max(0, tendered - totalAmount));
 
         const invoiceNumber = await nextDocNumber(Invoice, 'invoiceNumber', 'INV');
         const now = new Date();
+        const dueDate = new Date(now.getTime() + Math.max(0, num(dueDays, 30)) * 24 * 60 * 60 * 1000);
+        const creditDueDate = isCredit
+            ? (req.body.creditDueDate ? new Date(req.body.creditDueDate) : dueDate)
+            : null;
+        if (isCredit && Number.isNaN(creditDueDate.getTime())) throw new AppError('Credit due date is invalid', 400);
 
         const invoice = await Invoice.create({
             invoiceNumber,
@@ -302,40 +324,48 @@ const createInvoice = async (req, res, next) => {
             jobCard: sanitizeId(jobCardId),
             customer: customer._id,
             walkIn, walkInName, walkInPhone,
-            status: 'paid',
+            status: isCredit ? 'sent' : 'paid',
             invoiceDate: now,
-            dueDate: new Date(now.getTime() + Math.max(0, num(dueDays, 30)) * 24 * 60 * 60 * 1000),
+            dueDate: isCredit ? creditDueDate : dueDate,
             subtotal,
             taxAmount,
             discountAmount: discount,
             totalAmount,
-            paidAmount: totalAmount,
-            balanceAmount: 0,
+            paidAmount: isCredit ? 0 : totalAmount,
+            balanceAmount: isCredit ? totalAmount : 0,
+            paymentTerm: isCredit ? 'credit' : 'paid',
+            creditDueDate,
+            hasServiceCharges: service.rows.length > 0,
+            serviceCharges: service.rows,
+            serviceChargesTotal: service.serviceChargesTotal,
+            serviceTaxTotal: service.serviceTaxTotal,
             amountTendered: changeDue > 0 ? tendered : 0,
             changeDue,
-            paymentMethod: paymentMethod.id,
-            paymentMode: paymentMethod.name,
+            paymentMethod: paymentMethod ? paymentMethod.id : null,
+            paymentMode: paymentMethod ? paymentMethod.name : '',
             items: invoiceItems,
             notes,
             termsAndConditions,
             createdBy: req.user.id,
         });
 
-        // The payment itself, so the invoice's money is traceable to a method
-        // and shows up in the payments list like any other.
-        const paymentNumber = await nextDocNumber(Payment, 'paymentNumber', 'PAY');
-        await Payment.create({
-            paymentNumber,
-            invoice: invoice._id,
-            customer: customer._id,
-            methodRef: paymentMethod.id,
-            method: { name: paymentMethod.name, code: paymentMethod.code, type: paymentMethod.type },
-            amount: totalAmount,
-            paymentDate: now,
-            notes: `Payment in full with invoice ${invoiceNumber}`,
-            status: 'completed',
-            createdBy: req.user.id,
-        });
+        if (!isCredit) {
+            // The payment itself, so the invoice's money is traceable to a method
+            // and shows up in the payments list like any other.
+            const paymentNumber = await nextDocNumber(Payment, 'paymentNumber', 'PAY');
+            await Payment.create({
+                paymentNumber,
+                invoice: invoice._id,
+                customer: customer._id,
+                methodRef: paymentMethod.id,
+                method: { name: paymentMethod.name, code: paymentMethod.code, type: paymentMethod.type },
+                amount: totalAmount,
+                paymentDate: now,
+                notes: `Payment in full with invoice ${invoiceNumber}`,
+                status: 'completed',
+                createdBy: req.user.id,
+            });
+        }
 
         await recordCustomerActivity({
             customerId: customer._id,
@@ -343,23 +373,26 @@ const createInvoice = async (req, res, next) => {
             docId: invoice._id,
             number: invoiceNumber,
             amount: totalAmount,
-            description: `Invoice ${invoiceNumber} (${invoiceType || 'sales'}) created`,
+            description: `Invoice ${invoiceNumber} (${invoiceType || 'sales'}) created${isCredit ? ' on credit' : ''}`,
             userId: req.user.id,
             spentDelta: sanitizeId(salesOrderId) ? 0 : totalAmount,
-            paidDelta: totalAmount,
-            outstandingDelta: 0,
+            paidDelta: isCredit ? 0 : totalAmount,
+            outstandingDelta: isCredit ? totalAmount : 0,
         });
 
-        logger.info(`Invoice ${invoiceNumber} created by user ${req.user.id}`);
+        logger.info(`Invoice ${invoiceNumber} created${isCredit ? ' on credit' : ''} by user ${req.user.id}`);
         res.status(201).json({
             success: true,
             data: {
                 id: invoice._id, invoice_number: invoiceNumber, invoiceNumber,
                 totalAmount, amountTendered: tendered, changeDue,
+                paymentTerm: isCredit ? 'credit' : 'paid', creditDueDate,
             },
-            message: changeDue > 0
-                ? `Invoice created. Return change of PKR ${changeDue.toLocaleString('en-PK')}`
-                : 'Invoice created successfully',
+            message: isCredit
+                ? `Credit invoice created. PKR ${totalAmount.toLocaleString('en-PK')} due by ${creditDueDate.toLocaleDateString('en-GB')}`
+                : changeDue > 0
+                    ? `Invoice created. Return change of PKR ${changeDue.toLocaleString('en-PK')}`
+                    : 'Invoice created successfully',
         });
     } catch (error) {
         logger.error('Error creating invoice:', error);
@@ -919,7 +952,28 @@ const getInvoiceHistory = async (req, res, next) => {
     }
 };
 
+/**
+ * The card figures over the invoices this user may see: total, paid, credit,
+ * outstanding and overdue. Same data scope as the list.
+ */
+const getInvoiceSummary = async (req, res, next) => {
+    try {
+        const { invoiceSummary } = require('../models/paymentTerm.fields');
+        const filter = {};
+        const invoiceOwnerIds = await allowedOwnerIds(req.user, 'invoices');
+        if (invoiceOwnerIds !== null) filter.createdBy = { $in: invoiceOwnerIds };
+        if (req.query.type) filter.invoiceType = req.query.type;
+        if (req.query.dateFrom || req.query.dateTo) {
+            filter.invoiceDate = {};
+            if (req.query.dateFrom) filter.invoiceDate.$gte = new Date(req.query.dateFrom);
+            if (req.query.dateTo) { const end = new Date(req.query.dateTo); end.setHours(23, 59, 59, 999); filter.invoiceDate.$lte = end; }
+        }
+        res.json({ success: true, data: await invoiceSummary(Invoice, filter) });
+    } catch (error) { next(error); }
+};
+
 module.exports = {
+    getInvoiceSummary,
     getAllInvoices,
     getInvoiceById,
     createInvoice,

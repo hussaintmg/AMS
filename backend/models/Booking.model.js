@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const searchPlugin = require('../plugins/searchPlugin');
 const lineItemSchema = require('./lineItem.schema');
 const walkInFields = require('./walkIn.fields');
+const { serviceChargeFields } = require('./serviceCharges.fields');
 
 const bookingSchema = new mongoose.Schema({
   bookingNumber: { type: String, trim: true, required: [true, 'Booking number is required'] },
@@ -35,6 +36,8 @@ const bookingSchema = new mongoose.Schema({
   paidAmount: { type: Number, default: 0 },
   balanceAmount: { type: Number, default: 0 },
   totalAmount: { type: Number, default: 0 },
+  // Optional service charges block (models/serviceCharges.fields.js).
+  ...serviceChargeFields,
   taxAmount: { type: Number, default: 0 },
   bookingDate: { type: Date },
   deliveryDate: { type: Date },

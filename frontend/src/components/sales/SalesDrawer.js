@@ -28,6 +28,8 @@ export default function SalesDrawer({
   paymentMethods = [],
   onRecordPayment = null,
   loading = false,
+  // The optional service charges block, as the API maps it (service_charges).
+  serviceCharges = [],
 }) {
   const [draftStatus, setDraftStatus] = useState(status || '');
   const [payAmount, setPayAmount] = useState('');
@@ -153,6 +155,36 @@ export default function SalesDrawer({
                             <td style={{ textAlign: 'right' }}>{item.quantity ?? 1}</td>
                             <td style={{ textAlign: 'right' }}>{money(item.unitPrice ?? item.unit_price ?? item.price)}</td>
                             <td style={{ textAlign: 'right' }}>{money(item.total ?? item.lineTotal ?? item.amount)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {Array.isArray(serviceCharges) && serviceCharges.length > 0 && (
+                <div className="email-drawer-section">
+                  <h4>Service Charges</h4>
+                  <div style={{ overflowX: 'auto' }}>
+                    <table className="data-table" style={{ width: '100%' }}>
+                      <thead>
+                        <tr>
+                          <th>Service</th>
+                          <th style={{ textAlign: 'right' }}>Qty</th>
+                          <th style={{ textAlign: 'right' }}>Amount</th>
+                          <th style={{ textAlign: 'right' }}>Tax</th>
+                          <th style={{ textAlign: 'right' }}>Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {serviceCharges.map((row, index) => (
+                          <tr key={row.id || index}>
+                            <td>{[row.name, row.description].filter(Boolean).join(' — ') || 'Service charge'}</td>
+                            <td style={{ textAlign: 'right' }}>{row.quantity ?? 1}</td>
+                            <td style={{ textAlign: 'right' }}>{money(row.amount)}</td>
+                            <td style={{ textAlign: 'right' }}>{money(row.tax_amount ?? row.taxAmount)}{row.tax_percent ? <small> ({row.tax_percent}%)</small> : null}</td>
+                            <td style={{ textAlign: 'right' }}>{money(row.total)}</td>
                           </tr>
                         ))}
                       </tbody>

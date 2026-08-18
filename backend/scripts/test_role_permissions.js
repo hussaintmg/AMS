@@ -530,6 +530,7 @@ async function scenarioEveryPageIsMasked() {
     sales_orders: ['/sales?limit=3', 'customer', 'customer_name'],
     invoices: ['/invoices?limit=3', 'amounts', 'total_amount'],
     part_quotations: ['/parts-sales/quotations?limit=3', 'amounts', 'total_amount'],
+    part_bookings: ['/parts-sales/bookings?limit=3', 'customer', 'customer_name'],
     part_invoices: ['/parts-sales/invoices?limit=3', 'amounts', 'total_amount'],
     services: ['/services/job-cards?limit=3', 'amounts', 'grand_total'],
     service_appointments: ['/services/appointments?limit=3', 'customer', 'customer_name'],
@@ -623,8 +624,14 @@ async function scenarioCapabilityTable() {
 
   // Rendered in the browser from a template, so there is no endpoint to guard —
   // the checkbox gates the download button itself.
-  const CLIENT_SIDE = ['quotations', 'bookings', 'sales_orders', 'invoices', 'part_quotations', 'part_invoices']
-    .reduce((acc, page) => ({ ...acc, [page]: ['downloadPdf'] }), {});
+  const CLIENT_SIDE = ['quotations', 'bookings', 'sales_orders', 'invoices', 'part_quotations', 'part_bookings', 'part_invoices', 'custom_quotations', 'custom_bookings', 'custom_invoices']
+    .reduce((acc, page) => ({ ...acc, [page]: ['downloadPdf'] }), {
+      // Printed from the browser (window.print → PDF), exported as CSV in the browser.
+      gatepass_in: ['downloadPdf'],
+      gatepass_out: ['downloadPdf'],
+      ledger: ['export'],
+      accounts: ['export'],
+    });
 
   const report = build();
   const routeActions = {};

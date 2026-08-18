@@ -9,7 +9,7 @@ import SalesDrawer from '../components/sales/SalesDrawer';
 import CustomerQuickCreate from '../components/customers/CustomerQuickCreate';
 import useModalKeyboard from '../hooks/useModalKeyboard';
 import { useAuth } from '../context/AuthContext';
-import { pageActions } from '../utils/roleJobs';
+import { pageActions, dropdownHint } from '../utils/roleJobs';
 import MasterQuickCreate from '../components/MasterQuickCreate';
 import vehicleBrandingService from '../services/vehicleBrandingService';
 import useErpDocumentSettings from '../hooks/useErpDocumentSettings';
@@ -44,8 +44,9 @@ function customerOptionLabel(customer) {
   return `${no}${name}${phone}`.trim();
 }
 
-async function fetchAllCustomersForDropdown() {
-  const res = await customerAPI.getAllForDropdown();
+async function fetchAllCustomersForDropdown(pageKey) {
+  // The page names itself so Role Jobs → Forms can narrow whose customers it lists.
+  const res = await customerAPI.getAllForDropdown(pageKey ? dropdownHint(pageKey, 'create', 'customer') : undefined);
   const all = res?.data?.data || [];
   const seen = new Set();
   return all.filter((c) => { if (!c?.id || seen.has(c.id)) return false; seen.add(c.id); return true; });
@@ -164,7 +165,7 @@ function Appointments() {
   const fetchDropdowns = useCallback(async () => {
     try {
       const results = await Promise.allSettled([
-        fetchAllCustomersForDropdown(),
+        fetchAllCustomersForDropdown('service_appointments'),
         serviceMasterAPI.getTypes(),
         serviceAPI.getAdvisors().catch(() => ({ data: { data: [] } })),
         vehicleAPI.getMakes(),
@@ -207,7 +208,7 @@ function Appointments() {
 
   // Rule 2 — refresh dropdown and auto-select the customer created inline
   const handleCustomerCreated = useCallback(async (created) => {
-    try { setCustomers(await fetchAllCustomersForDropdown()); } catch (_) { /* best-effort refresh */ }
+    try { setCustomers(await fetchAllCustomersForDropdown('service_appointments')); } catch (_) { /* best-effort refresh */ }
     const newId = created?._id || created?.id;
     if (newId) setFormData((prev) => ({ ...prev, customerId: String(newId) }));
   }, []);
@@ -406,7 +407,7 @@ function Appointments() {
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
                   </button>
                 )}
-                {canCreate && ['scheduled', 'confirmed'].includes(r.status) && (
+                {can('createJobCard') && ['scheduled', 'confirmed'].includes(r.status) && (
                   <button className="btn-action btn-success" onClick={() => handleConvertToJobCard(r)} title="Create Job Card"
                     style={{ backgroundColor: '#22c55e', color: '#fff' }}>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
@@ -460,7 +461,7 @@ function Appointments() {
             <form onSubmit={modalMode === 'view' ? (e) => e.preventDefault() : handleSubmit}>
               <div className="modal-body">
                 <div className="form-group">
-                  <label className="form-label-add"><span>Customer *</span> {modalMode !== 'view' && <CustomerQuickCreate onCreated={handleCustomerCreated} />}</label>
+                  <div className="form-label-add"><span>Customer *</span> {modalMode !== 'view' && <CustomerQuickCreate form={modalMode === 'edit' ? 'edit' : 'create'} onCreated={handleCustomerCreated} />}</div>
                   <SearchableSelect name="customerId" value={formData.customerId} onChange={handleChange}
                     options={customerOptions} placeholder="Select Customer"
                     required disabled={modalMode === 'view'} />
@@ -503,15 +504,15 @@ function Appointments() {
                 </div>
                 <div className="form-row">
                   <div className="form-group">
-                    <label className="form-label-add">
+                    <div className="form-label-add">
                       Service Type
                       {modalMode !== 'view' && (
-                        <MasterQuickCreate type="service_type" onCreated={async (created) => {
+                        <MasterQuickCreate type="service_type" form={modalMode === 'edit' ? 'edit' : 'create'} onCreated={async (created) => {
                           await fetchDropdowns();
                           if (created?.id) setFormData((p) => ({ ...p, serviceTypeId: created.id }));
                         }} />
                       )}
-                    </label>
+                    </div>
                     <SearchableSelect name="serviceTypeId" value={formData.serviceTypeId} onChange={handleChange}
                       options={stOptions} placeholder="Select Service Type" disabled={modalMode === 'view'} />
                   </div>
@@ -689,7 +690,7 @@ function JobCards() {
   const fetchDropdowns = useCallback(async () => {
     try {
       const results = await Promise.allSettled([
-        fetchAllCustomersForDropdown(),
+        fetchAllCustomersForDropdown('services'),
         serviceMasterAPI.getTypes(),
         serviceMasterAPI.getLaborRates(),
         serviceMasterAPI.getWarranties(),
@@ -868,7 +869,7 @@ function JobCards() {
 
   // Rule 2 — refresh dropdown and auto-select the customer created inline
   const handleCustomerCreated = useCallback(async (created) => {
-    try { setCustomers(await fetchAllCustomersForDropdown()); } catch (_) { /* best-effort refresh */ }
+    try { setCustomers(await fetchAllCustomersForDropdown('services')); } catch (_) { /* best-effort refresh */ }
     const newId = created?._id || created?.id;
     if (newId) setFormData((prev) => ({ ...prev, customerId: String(newId) }));
   }, []);
@@ -1020,7 +1021,7 @@ function JobCards() {
                   <div>
                     <h4 style={{ marginBottom: '0.75rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.5rem' }}>Customer & Vehicle</h4>
                     <div className="form-group">
-                      <label className="form-label-add"><span>Customer *</span> {modalMode !== 'view' && <CustomerQuickCreate onCreated={handleCustomerCreated} />}</label>
+                      <div className="form-label-add"><span>Customer *</span> {modalMode !== 'view' && <CustomerQuickCreate form={modalMode === 'edit' ? 'edit' : 'create'} onCreated={handleCustomerCreated} />}</div>
                       <SearchableSelect name="customerId" value={formData.customerId} onChange={handleChange}
                         options={customerOptions} placeholder="Select Customer" required disabled={modalMode === 'view'} />
                     </div>
@@ -1075,29 +1076,29 @@ function JobCards() {
                     </div>
                     {/* Warranty Type */}
                     <div className="form-group">
-                      <label className="form-label-add">
+                      <div className="form-label-add">
                         Warranty Type
                         {modalMode !== 'view' && (
-                          <MasterQuickCreate type="warranty_type" onCreated={async (created) => {
+                          <MasterQuickCreate type="warranty_type" form={modalMode === 'edit' ? 'edit' : 'create'} onCreated={async (created) => {
                             await fetchDropdowns();
                             if (created?.id) setFormData((p) => ({ ...p, warrantyTypeId: created.id }));
                           }} />
                         )}
-                      </label>
+                      </div>
                       <SearchableSelect name="warrantyTypeId" value={formData.warrantyTypeId || ''}
                         onChange={handleChange} options={wtOptions} placeholder="Select warranty (optional)"
                         disabled={modalMode === 'view'} />
                     </div>
                     <div className="form-group">
-                      <label className="form-label-add">
+                      <div className="form-label-add">
                         Service Package
                         {modalMode !== 'view' && (
-                          <MasterQuickCreate type="service_package" onCreated={async (created) => {
+                          <MasterQuickCreate type="service_package" form={modalMode === 'edit' ? 'edit' : 'create'} onCreated={async (created) => {
                             await fetchDropdowns();
                             if (created?.id) setFormData((p) => ({ ...p, servicePackageId: created.id }));
                           }} />
                         )}
-                      </label>
+                      </div>
                       <SearchableSelect name="servicePackageId" value={formData.servicePackageId || ''}
                         onChange={handleChange} options={packageOptions} placeholder="Select package (optional)"
                         disabled={modalMode === 'view'} />
@@ -1207,13 +1208,13 @@ function JobCards() {
             </div>
             <div className="modal-body">
               <div className="form-group">
-                <label className="form-label-add">
+                <div className="form-label-add">
                   Service Type
-                  <MasterQuickCreate type="service_type" onCreated={async (created) => {
+                  <MasterQuickCreate type="service_type" form={modalMode === 'edit' ? 'edit' : 'create'} onCreated={async (created) => {
                     await fetchDropdowns();
                     if (created?.id) setServiceForm((p) => ({ ...p, serviceTypeId: created.id, description: p.description || created.name || '' }));
                   }} />
-                </label>
+                </div>
                 <SearchableSelect value={serviceForm.serviceTypeId} onChange={(e) => {
                   const st = serviceTypes.find((t) => String(t._id || t.id) === String(e.target.value));
                   const lr = laborRates.length === 1 ? laborRates[0] : null;
@@ -1226,13 +1227,13 @@ function JobCards() {
                 }} options={stOptions} placeholder="Select Type" />
               </div>
               <div className="form-group">
-                <label className="form-label-add">
+                <div className="form-label-add">
                   Labor Rate
-                  <MasterQuickCreate type="labor_rate" onCreated={async (created) => {
+                  <MasterQuickCreate type="labor_rate" form={modalMode === 'edit' ? 'edit' : 'create'} onCreated={async (created) => {
                     await fetchDropdowns();
                     if (created?.id) setServiceForm((p) => ({ ...p, laborRateId: created.id, rate: created.rate ?? p.rate }));
                   }} />
-                </label>
+                </div>
                 <SearchableSelect value={serviceForm.laborRateId || ''} onChange={(e) => {
                   const lr = laborRates.find((l) => String(l._id || l.id) === String(e.target.value));
                   setServiceForm({ ...serviceForm, laborRateId: e.target.value, rate: lr?.rate || serviceForm.rate });

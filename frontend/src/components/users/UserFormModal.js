@@ -221,7 +221,7 @@ function UserFormModal({
 
             <div className="form-row">
               <div className="form-group">
-                <label className="form-label-add">
+                <div className="form-label-add">
                   Role *
                   {allowCreateRole && onOpenCreateRole && (
                     <button
@@ -233,7 +233,7 @@ function UserFormModal({
                       + Create Role
                     </button>
                   )}
-                </label>
+                </div>
                 <SearchableSelect
                   name="roleId"
                   value={formData.roleId}
@@ -256,7 +256,7 @@ function UserFormModal({
                 )}
               </div>
               <div className="form-group">
-                <label className="form-label-add">
+                <div className="form-label-add">
                   Department
                   {allowCreateDepartment && onOpenCreateDepartment && (
                     <button
@@ -268,7 +268,7 @@ function UserFormModal({
                       + Create Department
                     </button>
                   )}
-                </label>
+                </div>
                 <div
                   style={{ display: "flex", gap: 8, alignItems: "flex-start" }}
                 >

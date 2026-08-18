@@ -32,6 +32,10 @@ async function postDoubleEntry({
     referenceType,
     referenceId,
     userId,
+    // Money-account ids (Account.model.js) for either side, when known. The
+    // name is still what prints; the ref is what the balance sheet sums.
+    debitAccountRef = null,
+    creditAccountRef = null,
 }) {
     const value = Number(amount);
 
@@ -55,10 +59,18 @@ async function postDoubleEntry({
         createdBy: userId || null,
     };
 
-    return LedgerEntry.create([
-        { ...base, account: debit, debit: value, credit: 0 },
-        { ...base, account: credit, debit: 0, credit: value },
+    const rows = await LedgerEntry.create([
+        { ...base, account: debit, accountRef: debitAccountRef || null, debit: value, credit: 0 },
+        { ...base, account: credit, accountRef: creditAccountRef || null, debit: 0, credit: value },
     ]);
+    // Keep the running balances the account cards show in step (an asset
+    // account: debit brings money in, credit takes it out).
+    try {
+        const Account = require('../models/Account.model');
+        if (debitAccountRef) await Account.updateOne({ _id: debitAccountRef }, { $inc: { currentBalance: value } });
+        if (creditAccountRef) await Account.updateOne({ _id: creditAccountRef }, { $inc: { currentBalance: -value } });
+    } catch (error) { /* the balance sheet re-sums the ledger; the card catches up on the next post */ }
+    return rows;
 }
 
 /** True when this reference already has ledger rows — keeps posting idempotent. */
@@ -73,6 +85,14 @@ async function isAlreadyPosted(referenceType, referenceId) {
 
 /** Remove the ledger rows for a reference (used when a posting is reversed). */
 async function reverseEntries(referenceType, referenceId, userId) {
+    // Give the running balances back what the rows took.
+    try {
+        const Account = require('../models/Account.model');
+        const rows = await LedgerEntry.find({ referenceType, referenceId, isDeleted: false, accountRef: { $ne: null } }).lean();
+        for (const row of rows) {
+            await Account.updateOne({ _id: row.accountRef }, { $inc: { currentBalance: -(Number(row.debit) || 0) + (Number(row.credit) || 0) } });
+        }
+    } catch (error) { /* see postDoubleEntry */ }
     return LedgerEntry.updateMany(
         { referenceType, referenceId, isDeleted: false },
         { $set: { isDeleted: true, updatedBy: userId || null } }

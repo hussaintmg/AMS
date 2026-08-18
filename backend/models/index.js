@@ -17,6 +17,8 @@ const PartQuotation = require('./PartQuotation.model');
 const PartBooking = require('./PartBooking.model');
 const PartSalesOrder = require('./PartSalesOrder.model');
 const PartInvoice = require('./PartInvoice.model');
+// Custom (free-text) documents — module-gated, see utils/moduleFlags.js.
+const { CustomQuotation, CustomBooking, CustomInvoice } = require('./CustomDocument.model');
 const Payment = require('./Payment.model');
 const PaymentMethod = require('./PaymentMethod.model');
 const ServiceAppointment = require('./ServiceAppointment.model');
@@ -79,6 +81,9 @@ module.exports = {
   PartBooking,
   PartSalesOrder,
   PartInvoice,
+  CustomQuotation,
+  CustomBooking,
+  CustomInvoice,
   Payment,
   PaymentMethod,
   ServiceAppointment,

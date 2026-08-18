@@ -12,6 +12,8 @@ const emailSender = require('../services/emailSender.service');
 const { getPermissionSettings, resolvePagePermissions } = require('../utils/permissionResolver');
 const { fieldPermissionsForUser } = require('../utils/fieldPermissions');
 const { canonicalizeRows } = require('../utils/pageRegistry');
+const { catalogForClient } = require('../constants/pageCatalog');
+const { moduleFlags } = require('../utils/moduleFlags');
 
 /**
  * The role, in the page keys this build is written against.
@@ -357,7 +359,13 @@ router.post('/login', async (req, res, next) => {
           permissions: effectivePagePermissions,
           logPermissionSource: user.logPermissionSource || 'role',
           logsPermissions: user.logsPermissions || [],
-          logPermissionMode: logPermissionSettings.logPermissionMode
+          logPermissionMode: logPermissionSettings.logPermissionMode,
+          // The screen catalog the browser enforces role choices with, and which
+          // optional modules (custom documents) are switched on. Both are
+          // build-level, but ride on the session so the client has no second
+          // table to keep in step.
+          pageCatalog: catalogForClient(),
+          modules: await moduleFlags(),
         },
         logPermissionMode: logPermissionSettings.logPermissionMode,
         token,
@@ -616,6 +624,7 @@ router.post('/reset-password', async (req, res, next) => {
 
 router.get('/me', authenticate, async (req, res) => {
   const roleObj = req.user.role;
+  const modules = await moduleFlags();
   res.json({
     success: true,
     message: 'Current user loaded',
@@ -637,7 +646,9 @@ router.get('/me', authenticate, async (req, res) => {
       logPermissionSource: req.user.logPermissionSource || 'role',
       logsPermissions: req.user.logsPermissions || [],
       logPermissionMode: req.user.effectiveLogPermission?.source || 'role',
-      lastLogin: req.user.lastLogin
+      lastLogin: req.user.lastLogin,
+      pageCatalog: catalogForClient(),
+      modules,
     }
   });
 });

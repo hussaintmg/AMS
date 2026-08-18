@@ -355,6 +355,9 @@ export default function SearchableSelect({
     const handleKeyDownGlobal = (e) => {
       if (e.key === "Escape" && isOpen) {
         e.preventDefault();
+        // Escape closes the list, and only the list. Without this the same
+        // press reaches the dialog's keyboard hook and closes the form too.
+        e.stopPropagation();
         close();
         if (triggerRef.current) triggerRef.current.focus();
       }
@@ -414,12 +417,19 @@ export default function SearchableSelect({
         });
       } else if (e.key === "Enter" && isOpen) {
         e.preventDefault();
+        e.stopPropagation();
         if (
           highlightedIndex >= 0 &&
           highlightedIndex < filteredOptions.length
         ) {
           selectOption(filteredOptions[highlightedIndex]);
         }
+      } else if (e.key === "Enter" && !isOpen) {
+        // Enter on a closed picker opens it rather than submitting the form
+        // the person is still filling in.
+        e.preventDefault();
+        e.stopPropagation();
+        open();
       }
     },
     [disabled, isOpen, open, filteredOptions, highlightedIndex, selectOption],
@@ -429,6 +439,7 @@ export default function SearchableSelect({
     (e) => {
       if (e.key === "Escape") {
         e.preventDefault();
+        e.stopPropagation();
         close();
         if (triggerRef.current) triggerRef.current.focus();
         return;
@@ -443,7 +454,9 @@ export default function SearchableSelect({
         if (len === 0) return;
         setHighlightedIndex((prev) => (prev <= 0 ? len - 1 : prev - 1));
       } else if (e.key === "Enter") {
+        // Enter picks an option; it must not also submit the form around us.
         e.preventDefault();
+        e.stopPropagation();
         if (highlightedIndex >= 0 && highlightedIndex < len) {
           selectOption(filteredOptions[highlightedIndex]);
         } else if (len > 0) {

@@ -14,7 +14,8 @@ router.delete('/bulk', authenticate, authorizeAction('employees', 'delete'), emp
 router.get('/:id', authenticate, authorizeAction('employees', 'view'), employees.getEmployee);
 router.post('/', authenticate, authorizeAction('employees', 'create'), employees.createEmployee);
 router.put('/:id', authenticate, authorizeAction('employees', 'edit'), employees.updateEmployee);
-router.patch('/:id/toggle', authenticate, authorizeAction('employees', 'edit'), employees.toggleEmployeeStatus);
+// Activating / deactivating is its own grant, not part of edit.
+router.patch('/:id/toggle', authenticate, authorizeAction('employees', 'toggleStatus'), employees.toggleEmployeeStatus);
 router.delete('/:id', authenticate, authorizeAction('employees', 'delete'), employees.deleteEmployee);
 
 module.exports = router;

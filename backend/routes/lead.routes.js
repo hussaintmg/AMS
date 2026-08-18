@@ -305,11 +305,12 @@ router.get('/:id', authenticate, authorizeAction('leads', 'view'), leadControlle
 router.put('/:id', authenticate, authorizeAction('leads', 'edit'), leadController.updateLead);
 router.delete('/:id', authenticate, authorizeAction('leads', 'delete'), leadController.deleteLead);
 
-router.put('/:id/assign', authenticate, authorizeAction('leads', 'edit'), leadController.assignLead);
+// Assigning and converting are their own grants (Role Jobs → Leads), not part of edit.
+router.put('/:id/assign', authenticate, authorizeAction('leads', 'assign'), leadController.assignLead);
 router.put('/:id/status', authenticate, authorizeAction('leads', 'edit'), leadController.changeStatus);
 router.post('/:id/notes', authenticate, authorizeAction('leads', 'edit'), leadController.addNote);
 router.get('/:id/activities', authenticate, authorizeAction('leads', 'view'), leadController.getActivities);
-router.post('/:id/convert', authenticate, authorizeAction('leads', 'edit'), leadController.convertToCustomer);
+router.post('/:id/convert', authenticate, authorizeAction('leads', 'convert'), leadController.convertToCustomer);
 router.post('/:id/lost', authenticate, authorizeAction('leads', 'edit'), leadController.markLost);
 
 module.exports = router;

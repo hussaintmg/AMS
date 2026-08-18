@@ -34,6 +34,8 @@ const bulkPermission = require('../middleware/bulkSalesPermission');
  *     security: [{ bearerAuth: [] }]
  */
 router.get('/stats', authenticate, canView, invoiceController.getInvoiceStats);
+// Card figures: total / paid / credit / outstanding / overdue.
+router.get('/summary', authenticate, canView, invoiceController.getInvoiceSummary);
 router.post('/bulk', authenticate, bulkPermission('invoices'), invoiceController.bulkInvoices);
 
 /**
@@ -130,6 +132,11 @@ router.get('/:id/qr-data', authenticate, canView, invoiceController.getQRCodeDat
  *               notes: { type: string }
  *               items: { type: array }
  */
+// Issuing on credit is its own grant on top of create: `whenCredit` passes a
+// paid invoice down to the plain create route (parts.routes.js dispatches
+// stock adjustments the same way).
+const whenCredit = (req, res, next) => (String(req.body?.paymentTerm || '').toLowerCase() === 'credit' ? next() : next('route'));
+router.post('/', authenticate, whenCredit, authorizeAction('invoices', 'changePaymentTerm'), authorizeAction('invoices', 'create'), invoiceController.createInvoice);
 router.post('/', authenticate, authorizeAction('invoices', 'create'), invoiceController.createInvoice);
 
 /**
@@ -201,7 +208,7 @@ router.delete('/:id', authenticate, authorizeAction('invoices', 'delete'), invoi
  *               status: { type: string, enum: [draft, sent, partial, paid, overdue, cancelled] }
  */
 router.put('/:id/status', authenticate, authorizeAction('invoices', 'edit'), invoiceController.updateInvoiceStatus);
-router.put('/:id/payment-method', authenticate, authorizeAction('invoices', 'edit'), invoiceController.updatePaymentMethod);
+router.put('/:id/payment-method', authenticate, authorizeAction('invoices', 'recordPayment'), invoiceController.updatePaymentMethod);
 
 /**
  * @swagger
@@ -265,7 +272,8 @@ router.delete('/:id/items/:itemId', authenticate, authorizeAction('invoices', 'd
  *               referenceNumber: { type: string }
  *               notes: { type: string }
  */
-router.post('/:id/payments', authenticate, authorizeAction('invoices', 'edit'), invoiceController.recordPayment);
+// Taking money against an invoice is its own grant, not part of edit.
+router.post('/:id/payments', authenticate, authorizeAction('invoices', 'recordPayment'), invoiceController.recordPayment);
 
 /**
  * @swagger

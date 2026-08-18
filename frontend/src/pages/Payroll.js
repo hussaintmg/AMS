@@ -43,7 +43,12 @@ const Payroll = () => {
     const canCreate = can('create');
     const canEdit = can('edit');
     const canDelete = can('delete');
-    const canRun = canCreate || canEdit || canDelete;
+    // Locking, posting and paying are their own grants (Role Jobs → Payroll);
+    // an unconfigured role keeps the legacy behaviour through `can`.
+    const canLock = can('lock');
+    const canPost = can('postLedger');
+    const canPay = can('payout');
+    const canRun = canCreate || canEdit || canDelete || canLock || canPost || canPay;
     // Which columns this role may read. The API already strips what it
     // withholds, so this only stops us drawing an always-blank column.
     const showField = fieldAccessor(user, 'payroll');
@@ -660,10 +665,14 @@ const Payroll = () => {
                                 {canCreate && (
                                     <button type="button" className="btn btn-secondary btn-sm" onClick={runGenerate} disabled={linesData.period.status !== 'draft'}>Generate lines</button>
                                 )}
-                                {canEdit && <>
+                                {canLock && (
                                     <button type="button" className="btn btn-secondary btn-sm" onClick={runLock} disabled={linesData.period.status !== 'draft'}>Lock</button>
+                                )}
+                                {canPost && (
                                     <button type="button" className="btn btn-secondary btn-sm" onClick={runPost} disabled={linesData.period.status !== 'locked'}>Post to ledger</button>
-                                    {/* Salaries can only leave once the period is posted. */}
+                                )}
+                                {/* Salaries can only leave once the period is posted. */}
+                                {canPay && (
                                     <button
                                         type="button"
                                         className="btn btn-primary btn-sm"
@@ -672,7 +681,7 @@ const Payroll = () => {
                                     >
                                         Pay everyone
                                     </button>
-                                </>}
+                                )}
                             </div>
                         )}
                     </div>
@@ -768,7 +777,7 @@ const Payroll = () => {
                                                             Edit
                                                         </button>
                                                     )}
-                                                    {canEdit && linesData.period.status === 'posted' && Number(ln.remaining_amount) > 0 && (
+                                                    {canPay && linesData.period.status === 'posted' && Number(ln.remaining_amount) > 0 && (
                                                         <button type="button" className="btn btn-sm btn-primary" onClick={() => openPay(ln)}>
                                                             Pay
                                                         </button>
@@ -847,7 +856,7 @@ const Payroll = () => {
                                         {canEdit && linesData.period.status === 'draft' && (
                                             <button type="button" className="btn btn-sm btn-secondary" onClick={() => openEdit(ln)}>Edit</button>
                                         )}
-                                        {canEdit && linesData.period.status === 'posted' && Number(ln.remaining_amount) > 0 && (
+                                        {canPay && linesData.period.status === 'posted' && Number(ln.remaining_amount) > 0 && (
                                             <button type="button" className="btn btn-sm btn-primary" onClick={() => openPay(ln)}>Pay</button>
                                         )}
                                     </div>

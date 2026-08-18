@@ -47,6 +47,11 @@ const getAllWarehouses = async (req, res, next) => {
     const { skip, limit: lim, page: p, limit: l } = paginate(page, limit);
     const filter = buildSearchFilter(search);
     if (is_active !== undefined) filter.isActive = is_active === 'true';
+    // The vehicle form's Warehouse dropdown names itself so Role Jobs can narrow it.
+    const { requestDropdownFilter, isHidden } = require('../utils/dropdownScope');
+    const scope = await requestDropdownFilter(req, null, ['createdBy']);
+    if (isHidden(scope)) return res.json({ success: true, data: [], pagination: { page: p, limit: l, total: 0, totalPages: 0 } });
+    if (scope) Object.assign(filter, scope);
 
     const [items, total] = await Promise.all([
       Warehouse.find(filter).sort({ warehouseName: 1 }).skip(skip).limit(lim).lean(),

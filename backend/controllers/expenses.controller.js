@@ -24,16 +24,27 @@ async function postExpenseToLedger(item, req) {
     throw new AppError('Cannot post an expense with a zero or negative amount', 400);
   }
 
+  // Debit the expense category; credit the money account it was paid from —
+  // petty cash unless the expense named another (`account` holds the money
+  // account's name or id since 2026-08-18; older rows may hold an expense
+  // account name, which then simply is not a money account and falls back).
+  const accountsService = require('../services/accounts.service');
+  const paidFrom = (await accountsService.resolveAccount(item.paidFromAccount || item.account)) || (await accountsService.pettyCashAccount());
   await postDoubleEntry({
     transactionDate: item.expenseDate,
-    debitAccount: item.account || item.category || DEFAULT_EXPENSE_ACCOUNT,
-    creditAccount: DEFAULT_CREDIT_ACCOUNT,
+    debitAccount: item.category || DEFAULT_EXPENSE_ACCOUNT,
+    creditAccount: paidFrom ? paidFrom.name : DEFAULT_CREDIT_ACCOUNT,
+    creditAccountRef: paidFrom ? paidFrom._id : null,
     amount: item.amount,
     description: item.description || `Expense ${item.expenseNumber}`,
     referenceType: 'expense',
     referenceId: item.expenseNumber,
     userId: getUserId(req),
   });
+  if (paidFrom) {
+    item.paidFromAccount = paidFrom._id;
+    await accountsService.syncBalance(paidFrom._id);
+  }
 
   item.status = 'posted';
   item.updatedBy = getUserId(req);
@@ -111,7 +122,7 @@ exports.getExpense = async (req, res, next) => {
 
 exports.createExpense = async (req, res, next) => {
   try {
-    const { category, account, employee, amount, expenseDate, description, vendor, status } = req.body;
+    const { category, account, employee, amount, expenseDate, description, vendor, status, paidFromAccount } = req.body;
     if (!category || amount == null || !expenseDate) {
       throw new AppError('Category, amount, and expense date are required', 400);
     }
@@ -122,6 +133,7 @@ exports.createExpense = async (req, res, next) => {
 
     const item = await Expense.create({
       expenseNumber, category, account, employee: employee || null,
+      paidFromAccount: (paidFromAccount || account) && require('mongoose').Types.ObjectId.isValid(paidFromAccount || account) ? (paidFromAccount || account) : null,
       amount: Number(amount), expenseDate, description: description || '',
       vendor: vendor || '', status: status || 'draft',
       createdBy: getUserId(req), updatedBy: getUserId(req),
@@ -135,7 +147,7 @@ exports.updateExpense = async (req, res, next) => {
     const item = await Expense.findOne({ _id: req.params.id, isDeleted: false });
     if (!item) throw new AppError('Expense not found', 404);
     if (item.status === 'posted') throw new AppError('Posted expenses cannot be edited', 400);
-    const updFields = ['category', 'account', 'employee', 'amount', 'expenseDate', 'description', 'vendor', 'status'];
+    const updFields = ['category', 'account', 'employee', 'amount', 'expenseDate', 'description', 'vendor', 'status', 'paidFromAccount'];
     updFields.forEach(f => { if (req.body[f] !== undefined) item[f] = req.body[f]; });
     item.updatedBy = getUserId(req);
     await item.save();

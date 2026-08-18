@@ -62,7 +62,11 @@ const getDepartmentStats = async (req, res, next) => {
  */
 const getAllDepartments = async (req, res, next) => {
   try {
-    const depts = await Department.find()
+    // A form's Department dropdown names itself so Role Jobs can narrow it.
+    const { requestDropdownFilter, isHidden } = require('../utils/dropdownScope');
+    const scope = await requestDropdownFilter(req, null, ['createdBy', '_id']);
+    if (isHidden(scope)) return res.json({ success: true, data: [] });
+    const depts = await Department.find(scope || {})
       .populate('manager', 'firstName lastName email status department')
       .populate('createdBy', 'firstName lastName email')
       .sort({ name: 1 })

@@ -118,6 +118,7 @@ const FIELD_CATALOG = {
   sales_orders: { label: 'Vehicle Sales Orders', fields: salesDocumentFields() },
   invoices: { label: 'Vehicle Invoices', fields: salesDocumentFields() },
   part_quotations: { label: 'Parts Quotations', fields: salesDocumentFields() },
+  part_bookings: { label: 'Parts Bookings', fields: salesDocumentFields() },
   part_invoices: { label: 'Parts Invoices', fields: salesDocumentFields() },
 
   customers: {

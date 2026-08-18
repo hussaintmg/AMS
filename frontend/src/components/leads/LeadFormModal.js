@@ -3,7 +3,7 @@ import toast from 'react-hot-toast';
 import { X } from 'lucide-react';
 import { useLeads } from '../../context/LeadsContext';
 import { useAuth } from '../../context/AuthContext';
-import { pageActions } from '../../utils/roleJobs';
+import { pageActions, canQuickCreate, canSeeDropdown } from '../../utils/roleJobs';
 import MasterQuickCreate from '../MasterQuickCreate';
 import SearchableSelect from '../SearchableSelect';
 import LeadMasterModal from './LeadMasterModal';
@@ -177,13 +177,18 @@ export default function LeadFormModal({ lead, onClose, onSaved }) {
    * Management for a status item. The button is offered only to a role that
    * may create there, so it can no longer hand out a guaranteed 403.
    */
+  // Role Jobs → Leads → Forms may withhold a shortcut on this form (create vs
+  // edit) even from a role that may create the record on its own page.
+  const formKind = lead ? 'edit' : 'create';
+  // A dropdown Role Jobs has set to "Hidden" for this form is not drawn at all.
+  const showDropdown = (key) => canSeeDropdown(user, 'leads', formKind, key);
   const renderLabel = (text, field, onCreate, page = 'lead_master') => (
-    <label className="form-label-add">
+    <div className="form-label-add">
       <span>{text}</span>
-      {onCreate && pageActions(user, page)('create') && (
-        <button type="button" className="label-add-link" onClick={onCreate}>+ Create {text}</button>
+      {onCreate && pageActions(user, page)('create') && canQuickCreate(user, 'leads', formKind, field) && (
+        <button type="button" className="label-add-link" data-quick-create={field} onClick={onCreate}>+ Create {text}</button>
       )}
-    </label>
+    </div>
   );
 
   const handleStatusItemCreated = (newItem) => {
@@ -229,6 +234,7 @@ export default function LeadFormModal({ lead, onClose, onSaved }) {
               <textarea className="form-input" rows="2" value={form.address} onChange={(e) => set('address', e.target.value)} placeholder="Street address" />
             </div>
             <div className="form-row">
+              {showDropdown('city') && (
               <div className="form-group">
                 {renderLabel('City', 'city', () => setQuickCreate({ show: true, type: 'cities' }))}
                 <SearchableSelect
@@ -241,6 +247,7 @@ export default function LeadFormModal({ lead, onClose, onSaved }) {
                 />
                 {errors.city && <small className="field-error">{errors.city}</small>}
               </div>
+              )}
               <div className="form-group">
                 <label>State</label>
                 <input type="text" className="form-input" value={form.state} onChange={(e) => set('state', e.target.value)} placeholder="State / Province" />
@@ -262,6 +269,7 @@ export default function LeadFormModal({ lead, onClose, onSaved }) {
         return (
           <>
             <div className="form-row">
+              {showDropdown('source') && (
               <div className="form-group">
                 {renderLabel('Source', 'source', () => setQuickCreate({ show: true, type: 'sources' }))}
                 <SearchableSelect
@@ -273,6 +281,8 @@ export default function LeadFormModal({ lead, onClose, onSaved }) {
                   labelField="name"
                 />
               </div>
+              )}
+              {showDropdown('type') && (
               <div className="form-group">
                 {renderLabel('Type', 'type', () => setQuickCreate({ show: true, type: 'types' }))}
                 <SearchableSelect
@@ -284,8 +294,10 @@ export default function LeadFormModal({ lead, onClose, onSaved }) {
                   labelField="name"
                 />
               </div>
+              )}
             </div>
             <div className="form-row">
+              {showDropdown('priority') && (
               <div className="form-group">
                 {renderLabel('Priority', 'priority', () => setQuickCreate({ show: true, type: 'priorities' }))}
                 <SearchableSelect
@@ -297,6 +309,7 @@ export default function LeadFormModal({ lead, onClose, onSaved }) {
                   labelField="name"
                 />
               </div>
+              )}
               <div className="form-group">
                 {renderLabel('Status', 'status', () => {
                   if (!meta.leadStatusCollectionId) {
@@ -373,13 +386,13 @@ export default function LeadFormModal({ lead, onClose, onSaved }) {
               )}
             </div>
             <div className="form-group">
-              <label className="form-label-add">
+              <div className="form-label-add">
                 <span>Department</span>
-                <MasterQuickCreate type="department" onCreated={async (dept) => {
+                <MasterQuickCreate type="department" pageKey="leads" form={lead ? 'edit' : 'create'} onCreated={async (dept) => {
                   await loadMeta();
                   if (dept?.id) set('department', dept.id);
                 }} />
-              </label>
+              </div>
               <SearchableSelect
                 options={meta.departments}
                 value={form.department}

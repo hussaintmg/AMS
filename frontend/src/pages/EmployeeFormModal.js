@@ -88,10 +88,12 @@ function EmployeeFormModal({ isOpen, mode, initialData, departments, roles, onCl
                 {/* Department is required here, so somebody staffing a new team
                     must be able to raise one without leaving the form — if
                     their role may create departments. */}
-                <label className="form-label-add">
+                <div className="form-label-add">
                   Department *
                   <MasterQuickCreate
                     type="department"
+                    pageKey="employees"
+                    form={mode === 'create' ? 'create' : 'edit'}
                     onCreated={async (dept) => {
                       await onDepartmentCreated?.();
                       if (dept?.id) {
@@ -100,7 +102,7 @@ function EmployeeFormModal({ isOpen, mode, initialData, departments, roles, onCl
                       }
                     }}
                   />
-                </label>
+                </div>
                 <SearchableSelect options={deptOptions} value={formData.department}
                   onChange={e => { setFormData(p => ({ ...p, department: e.target.value })); if (errors.department) setErrors(p => ({ ...p, department: undefined })); }} placeholder="Select department" />
                 {errors.department && <span className="field-error">{errors.department}</span>}

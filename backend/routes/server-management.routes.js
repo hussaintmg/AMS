@@ -687,6 +687,9 @@ router.put('/roles/:id/permissions', requireSuperAdmin, controller.updateRolePer
 router.put('/users/:id/logs-permissions', requireSuperAdmin, controller.updateUserLogsPermissions);
 router.put('/roles/:id/logs-permissions', requireSuperAdmin, controller.saveRoleLogsPermissions);
 router.get('/field-catalog', requireSuperAdmin, controller.getFieldCatalog);
+// Optional modules (Server Management → Custom): the custom-document screens.
+router.get('/modules', requireSuperAdmin, controller.getModules);
+router.put('/modules/:key', requireSuperAdmin, controller.updateModule);
 router.get('/roles/:id/jobs', requireSuperAdmin, controller.getRoleJobs);
 router.put('/roles/:id/jobs', requireSuperAdmin, controller.saveRoleJobs);
 

@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const searchPlugin = require('../plugins/searchPlugin');
 const partLineItemSchema = require('./partLineItem.schema');
 const walkInFields = require('./walkIn.fields');
+const { serviceChargeFields } = require('./serviceCharges.fields');
 
 /**
  * A confirmed order for spare parts.
@@ -27,6 +28,8 @@ const partSalesOrderSchema = new mongoose.Schema({
   discountAmount: { type: Number, default: 0 },
   otherCharges: { type: Number, default: 0 },
   totalAmount: { type: Number, default: 0 },
+  // Optional service charges block (models/serviceCharges.fields.js).
+  ...serviceChargeFields,
   paidAmount: { type: Number, default: 0 },
   balanceAmount: { type: Number, default: 0 },
   // paymentMode is the method's name as it stood at the sale; paymentMethod is

@@ -17,7 +17,11 @@ const { getPublicFileUrl } = require('../utils/url');
 const Log = require('../models/mongo/Log.model');
 const { syncFromUser } = require('../utils/relationshipSync');
 const { pageFieldKeys, catalogForUi } = require('../constants/fieldPermissions');
-const { PAGE_CAPABILITIES, capabilitiesFor, ACTION_LABELS } = require('../constants/pageCapabilities');
+const { PAGE_CAPABILITIES, capabilitiesFor, ACTION_LABELS, ALL_ACTIONS } = require('../constants/pageCapabilities');
+const {
+  PAGE_CATALOG, FORM_KEYS, DROPDOWN_MODES, DROPDOWN_MODE_LABELS,
+  pageColumnKeys, pageDrawerFieldKeys, pageDrawerExtraKeys, pageQuickCreateKeys, pageDropdowns,
+} = require('../constants/pageCatalog');
 const { keyForPath, canonicalKey } = require('../utils/pageRegistry');
 
 const uploadRoot = path.join(__dirname, '..', 'uploads', 'branding');
@@ -308,7 +312,12 @@ exports.updatePages = async (req, res, next) => {
 exports.getSidebar = async (req, res, next) => {
   try {
     const pages = await getPagesSorted({ isActive: true }).lean();
-    const visiblePages = await filterPagesForUser(pages, req.user);
+    // Pages of a module that is switched off stay out of the sidebar for
+    // everyone, super admin included — the module is not on this install.
+    const { moduleFlags, moduleOfPage } = require('../utils/moduleFlags');
+    const flags = await moduleFlags();
+    const enabledPages = pages.filter((page) => { const key = moduleOfPage(page.name); return !key || flags[key]; });
+    const visiblePages = await filterPagesForUser(enabledPages, req.user);
     const branding = await getBrandingDoc();
 
     res.json({
@@ -940,6 +949,57 @@ const normalizeJobFields = (pageKey, fields) => {
   return { mode: 'selected', allowed };
 };
 
+/**
+ * The same collapse for a screen-level allow-list (columns, drawer rows,
+ * drawer buttons): keep only keys the catalog has, and "everything ticked"
+ * is stored as mode "all" so a later catalog addition stays visible.
+ */
+const normalizeAllowList = (catalogKeys, block) => {
+  if (!catalogKeys.length || block?.mode !== 'selected') return { mode: 'all', allowed: [] };
+  const allowed = catalogKeys.filter((key) => (block.allowed || []).map(String).includes(key));
+  if (allowed.length === catalogKeys.length) return { mode: 'all', allowed: [] };
+  return { mode: 'selected', allowed };
+};
+
+/** Quick-create shortcuts, per form. */
+const normalizeQuickCreate = (pageKey, block) => {
+  const createKeys = pageQuickCreateKeys(pageKey, 'create');
+  const editKeys = pageQuickCreateKeys(pageKey, 'edit');
+  if ((!createKeys.length && !editKeys.length) || block?.mode !== 'selected') return { mode: 'all', create: [], edit: [] };
+  const create = createKeys.filter((key) => (block.create || []).map(String).includes(key));
+  const edit = editKeys.filter((key) => (block.edit || []).map(String).includes(key));
+  if (create.length === createKeys.length && edit.length === editKeys.length) return { mode: 'all', create: [], edit: [] };
+  return { mode: 'selected', create, edit };
+};
+
+/**
+ * Dropdown scopes: only rows for dropdowns the page really has, only modes the
+ * schema knows, and nothing stored for the default ("all") so the list stays
+ * a list of exceptions.
+ */
+const normalizeDropdowns = (pageKey, rows) => {
+  const out = [];
+  (Array.isArray(rows) ? rows : []).forEach((rowIn) => {
+    const form = FORM_KEYS.includes(rowIn?.form) ? rowIn.form : 'create';
+    const definition = pageDropdowns(pageKey, form).find((item) => item.key === rowIn?.key);
+    if (!definition) return;
+    const mode = DROPDOWN_MODES.includes(rowIn.mode) ? rowIn.mode : 'all';
+    if (mode === 'all') return;
+    // A master list can only be shown or hidden; "own"/"selected" would read as
+    // a restriction nothing can apply, so it collapses to hidden vs shown.
+    const effective = definition.scope ? mode : (mode === 'none' ? 'none' : 'all');
+    if (effective === 'all') return;
+    out.push({
+      key: definition.key,
+      form,
+      mode: effective,
+      roles: effective === 'selected_roles' ? (rowIn.roles || []).map((id) => id?._id || id) : [],
+      users: effective === 'selected_users' ? (rowIn.users || []).map((id) => id?._id || id) : [],
+    });
+  });
+  return out;
+};
+
 exports.getRoleJobs = async (req, res, next) => {
   try {
     const role = await Role.findById(req.params.id)
@@ -981,8 +1041,34 @@ exports.getRoleJobs = async (req, res, next) => {
         // So the screen can offer each page only the actions it really has.
         capabilities: forPages(PAGE_CAPABILITIES),
         actionLabels: ACTION_LABELS,
+        // Columns, drawer rows and buttons, quick-create shortcuts and dropdowns
+        // — everything else on the screen a role can be granted or denied.
+        catalog: forPages(PAGE_CATALOG),
+        formKeys: FORM_KEYS,
+        dropdownModes: DROPDOWN_MODES,
+        dropdownModeLabels: DROPDOWN_MODE_LABELS,
       },
     });
+  } catch (error) { next(error); }
+};
+
+/** The optional modules and whether each is switched on. */
+exports.getModules = async (req, res, next) => {
+  try {
+    const { MODULES, moduleFlags } = require('../utils/moduleFlags');
+    const flags = await moduleFlags();
+    res.json({ success: true, data: MODULES.map((item) => ({ key: item.key, label: item.label, pages: item.pages, enabled: flags[item.key] === true })) });
+  } catch (error) { next(error); }
+};
+
+/** Switch a module on or off. Its pages appear in the sidebar and its API opens. */
+exports.updateModule = async (req, res, next) => {
+  try {
+    const { setModuleFlag } = require('../utils/moduleFlags');
+    const result = await setModuleFlag(req.params.key, req.body.enabled === true || req.body.enabled === 'true', getUserId(req));
+    if (!result) throw new AppError('Unknown module', 404);
+    await createAuditLog(getUserId(req), 'Update Module', 'Server Management', `Module ${req.params.key} ${result.enabled ? 'enabled' : 'disabled'}`, req);
+    res.json({ success: true, message: `Module ${result.enabled ? 'enabled' : 'disabled'}`, data: result });
   } catch (error) { next(error); }
 };
 
@@ -1043,25 +1129,20 @@ exports.saveRoleJobs = async (req, res, next) => {
       return {
         pageKey: job.pageKey,
         module: page.module || job.module || job.pageKey,
-        actions: {
-          view: true,
-          create: granted('create'),
-          edit: granted('edit'),
-          delete: granted('delete'),
-          sendEmail: granted('sendEmail'),
-          downloadPdf: granted('downloadPdf'),
-          export: granted('export'),
-          approve: granted('approve'),
-          stockIncrease: granted('stockIncrease'),
-          stockDecrease: granted('stockDecrease'),
-          stockSet: granted('stockSet'),
-        },
+        // One entry per action the build knows, so a new action needs no edit
+        // here — the capability table decides whether the page really has it.
+        actions: { view: true, ...Object.fromEntries(ALL_ACTIONS.map((action) => [action, granted(action)])) },
         dataScope: {
           mode,
           roles: mode === 'selected_roles' ? (job.dataScope?.roles || []) : [],
           users: mode === 'selected_users' ? (job.dataScope?.users || []) : [],
         },
         fields: normalizeJobFields(job.pageKey, job.fields),
+        columns: normalizeAllowList(pageColumnKeys(job.pageKey), job.columns),
+        drawerFields: normalizeAllowList(pageDrawerFieldKeys(job.pageKey), job.drawerFields),
+        drawerExtras: normalizeAllowList(pageDrawerExtraKeys(job.pageKey), job.drawerExtras),
+        quickCreate: normalizeQuickCreate(job.pageKey, job.quickCreate),
+        dropdowns: normalizeDropdowns(job.pageKey, job.dropdowns),
       };
     });
     role.updatedBy = getUserId(req); await role.save();

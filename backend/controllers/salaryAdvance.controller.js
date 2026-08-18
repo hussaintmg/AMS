@@ -186,16 +186,22 @@ const create = async (req, res, next) => {
       createdBy: getUserId(req),
     });
 
+    // The cash leaves a named money account — petty cash unless the form said
+    // otherwise — so the account balances and the balance sheet reflect it.
+    const accountsService = require('../services/accounts.service');
+    const paidFrom = (await accountsService.resolveAccount(req.body.accountId || req.body.account)) || (await accountsService.pettyCashAccount());
     await postDoubleEntry({
       transactionDate: advance.issuedOn,
       debitAccount: ADVANCE_ACCOUNT,
-      creditAccount: DEFAULT_CREDIT_ACCOUNT,
+      creditAccount: paidFrom ? paidFrom.name : DEFAULT_CREDIT_ACCOUNT,
+      creditAccountRef: paidFrom ? paidFrom._id : null,
       amount: value,
       description: `Salary advance to ${employeeName(employee)}${employee.employeeCode ? ` (${employee.employeeCode})` : ''}`,
       referenceType: 'salary',
       referenceId: `ADV-${advance._id}`,
       userId: getUserId(req),
     });
+    if (paidFrom) await accountsService.syncBalance(paidFrom._id);
 
     const populated = await SalaryAdvance.findById(advance._id)
       .populate('employee', 'firstName lastName employeeCode').lean();
@@ -227,10 +233,13 @@ const repay = async (req, res, next) => {
     advance.updatedBy = getUserId(req);
     await advance.save();
 
-    // Cash comes back in, the receivable shrinks.
+    // Cash comes back in (to a named account), the receivable shrinks.
+    const accountsService = require('../services/accounts.service');
+    const paidInto = (await accountsService.resolveAccount(req.body.accountId || req.body.account)) || (await accountsService.pettyCashAccount());
     await postDoubleEntry({
       transactionDate: new Date(),
-      debitAccount: DEFAULT_CREDIT_ACCOUNT,
+      debitAccount: paidInto ? paidInto.name : DEFAULT_CREDIT_ACCOUNT,
+      debitAccountRef: paidInto ? paidInto._id : null,
       creditAccount: ADVANCE_ACCOUNT,
       amount: value,
       description: `Salary advance repayment (advance ${advance._id})`,
@@ -239,6 +248,7 @@ const repay = async (req, res, next) => {
       referenceId: `ADVREP-${advance._id}-${Date.now()}`,
       userId: getUserId(req),
     });
+    if (paidInto) await accountsService.syncBalance(paidInto._id);
 
     const populated = await SalaryAdvance.findById(advance._id)
       .populate('employee', 'firstName lastName employeeCode').lean();

@@ -253,7 +253,7 @@ export const employeeRoleConfigAPI = {
 // Customers (MongoDB)
 export const customerAPI = {
     getAll: (params) => api.get('/customers', { params }),
-    getAllForDropdown: () => api.get('/customers/all'),
+    getAllForDropdown: (params) => api.get('/customers/all', { params }),
     getById: (id) => api.get(`/customers/${id}`),
     create: (data) => api.post('/customers', data),
     update: (id, data) => api.put(`/customers/${id}`, data),
@@ -341,12 +341,14 @@ export const partsSalesAPI = {
     // Stats
     getSalesStats: () => api.get('/parts-sales/stats'),
     getStats: () => api.get('/parts-sales/stats'),
+    getQuotationStats: () => api.get('/parts-sales/quotations/stats'),
 };
 
 // Parts invoices, shaped like invoiceAPI so the Invoices screen can take either
 // namespace from the URL without changing its call sites.
 export const partsInvoiceAPI = {
     getAll: (params) => api.get('/parts-sales/invoices', { params }),
+    getSummary: (params) => api.get('/parts-sales/invoices/summary', { params }),
     getById: (id) => api.get(`/parts-sales/invoices/${id}`),
     create: (data) => api.post('/parts-sales/invoices', data),
     updateStatus: (id, status) => api.put(`/parts-sales/invoices/${id}/status`, { status }),
@@ -489,6 +491,7 @@ export const salesMasterAPI = {
 // Invoices
 export const invoiceAPI = {
     getAll: (params) => api.get('/invoices', { params }),
+    getSummary: (params) => api.get('/invoices/summary', { params }),
     getById: (id) => api.get(`/invoices/${id}`),
     create: (data) => api.post('/invoices', data),
     createFromSalesOrder: (data) => api.post('/invoices/from-sales-order', data),
@@ -592,7 +595,12 @@ export const reportAPI = {
     getLowStockParts: (params) => api.get('/reports/low-stock-parts', { params }),
     getExpenses: (params) => api.get('/reports/expenses', { params }),
     getPayments: (params) => api.get('/reports/payments', { params }),
-    getEmployees: (params) => api.get('/reports/employees', { params })
+    getEmployees: (params) => api.get('/reports/employees', { params }),
+    // Added 2026-08-18
+    getCreditReceivables: (params) => api.get('/reports/credit-receivables', { params }),
+    getPayables: (params) => api.get('/reports/payables', { params }),
+    getAccountBalances: (params) => api.get('/reports/account-balances', { params }),
+    getGatePasses: (params) => api.get('/reports/gate-passes', { params }),
 };
 
 // Admin - User Management
@@ -1015,3 +1023,73 @@ export const uploaderAPI = {
 };
 
 export default api;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Added 2026-08-18: accounts & petty cash, custom documents, gate passes,
+// optional modules. See docs/PLAN-2026-08-18-ams-changes.md.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Money accounts (petty cash, IBFT, card machine, online, internal company),
+// transfers between them, payables and the balance sheet.
+export const accountsAPI = {
+    getAll: (params) => api.get('/accounts', { params }),
+    getById: (id) => api.get(`/accounts/${id}`),
+    create: (data) => api.post('/accounts', data),
+    update: (id, data) => api.put(`/accounts/${id}`, data),
+    delete: (id) => api.delete(`/accounts/${id}`),
+    getSummary: (params) => api.get('/accounts/summary', { params }),
+    getBalanceSheet: (params) => api.get('/accounts/balance-sheet', { params }),
+    getTransfers: (params) => api.get('/accounts/transfers', { params }),
+    createTransfer: (data) => api.post('/accounts/transfers', data),
+    getPayables: (params) => api.get('/accounts/payables', { params }),
+    createPayable: (data) => api.post('/accounts/payables', data),
+    updatePayable: (id, data) => api.put(`/accounts/payables/${id}`, data),
+    deletePayable: (id) => api.delete(`/accounts/payables/${id}`),
+    payPayable: (id, data) => api.post(`/accounts/payables/${id}/pay`, data),
+    getReceivables: (params) => api.get('/accounts/receivables', { params }),
+    adjust: (id, data) => api.post(`/accounts/${id}/adjust`, data),
+    getLimitStatus: (params) => api.get('/accounts/limit-status', { params }),
+    sweep: (data) => api.post('/accounts/sweep', data || {}),
+    reverseTransfer: (id) => api.post(`/accounts/transfers/${id}/reverse`),
+};
+
+// Free-text quotations / bookings / invoices — behind Server Management → Custom.
+const customDocs = (kind) => ({
+    getAll: (params) => api.get(`/custom/${kind}`, { params }),
+    getById: (id) => api.get(`/custom/${kind}/${id}`),
+    getSummary: (params) => api.get(`/custom/${kind}/summary`, { params }),
+    create: (data) => api.post(`/custom/${kind}`, data),
+    update: (id, data) => api.put(`/custom/${kind}/${id}`, data),
+    delete: (id) => api.delete(`/custom/${kind}/${id}`),
+    approve: (id, data) => api.post(`/custom/${kind}/${id}/approve`, data),
+    convert: (id, data) => api.post(`/custom/${kind}/${id}/convert`, data),
+    recordPayment: (id, data) => api.post(`/custom/${kind}/${id}/payments`, data),
+    sendEmail: (id, data) => api.post(`/custom/${kind}/${id}/email`, data),
+});
+export const customQuotationsAPI = customDocs('quotations');
+export const customBookingsAPI = customDocs('bookings');
+export const customInvoicesAPI = customDocs('invoices');
+
+// Gate passes: logistic / customer entries, exits, GRNs and the guard's verify.
+export const gatePassAPI = {
+    getAll: (params) => api.get('/gatepasses', { params }),
+    getById: (id) => api.get(`/gatepasses/${id}`),
+    getSummary: (params) => api.get('/gatepasses/summary', { params }),
+    lookup: (number) => api.get(`/gatepasses/lookup/${encodeURIComponent(number)}`),
+    create: (data) => api.post('/gatepasses', data),
+    update: (id, data) => api.put(`/gatepasses/${id}`, data),
+    delete: (id) => api.delete(`/gatepasses/${id}`),
+    issue: (id) => api.post(`/gatepasses/${id}/issue`),
+    verify: (id, data) => api.post(`/gatepasses/${id}/verify`, data),
+    close: (id) => api.post(`/gatepasses/${id}/close`),
+    createGrn: (id, data) => api.post(`/gatepasses/${id}/grn`, data),
+    getGrns: (params) => api.get('/gatepasses/grns', { params }),
+    uploadAttachment: (id, formData) => api.post(`/gatepasses/${id}/attachments`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+    openEntries: (params) => api.get('/gatepasses/open-entries', { params }),
+};
+
+// Optional modules switched on and off in Server Management → Custom.
+export const modulesAPI = {
+    getAll: () => api.get('/server-management/modules'),
+    update: (key, enabled) => api.put(`/server-management/modules/${key}`, { enabled }),
+};

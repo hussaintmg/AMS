@@ -461,7 +461,7 @@ function ModelForm({ formData, onChange, set, makes, onQuickCreate }) {
     <>
       <div className="form-row">
         <div className="form-group">
-          <label className="form-label-add">
+          <div className="form-label-add">
             Brand *{" "}
             <a
               className="label-add-link"
@@ -470,7 +470,7 @@ function ModelForm({ formData, onChange, set, makes, onQuickCreate }) {
             >
               + Brand
             </a>
-          </label>
+          </div>
           <SearchableSelect
             name="makeId"
             value={formData.makeId || ""}
@@ -610,7 +610,7 @@ function VariantForm({
     <>
       <div className="form-row">
         <div className="form-group">
-          <label className="form-label-add">
+          <div className="form-label-add">
             Brand *{" "}
             <a
               className="label-add-link"
@@ -619,7 +619,7 @@ function VariantForm({
             >
               + Brand
             </a>
-          </label>
+          </div>
           <SearchableSelect
             value={variantMakeId}
             onChange={(e) => {
@@ -636,7 +636,7 @@ function VariantForm({
           </SearchableSelect>
         </div>
         <div className="form-group">
-          <label className="form-label-add">
+          <div className="form-label-add">
             Model *{" "}
             <a
               className="label-add-link"
@@ -645,7 +645,7 @@ function VariantForm({
             >
               + Model
             </a>
-          </label>
+          </div>
           <SearchableSelect
             name="modelId"
             value={formData.modelId || ""}

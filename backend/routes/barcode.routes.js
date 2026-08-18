@@ -52,10 +52,16 @@ router.get('/search', authenticate, barcodeController.search);
  *     summary: Printable sheet of labels for many parts or vehicles at once
  *     security: [{ bearerAuth: [] }]
  */
-// Assigns a barcode to any selected record that has none, so this needs `edit`.
-router.post('/:kind/labels', authenticate, guard('edit'), barcodeController.labels);
-router.post('/:kind/backfill', authenticate, guard('edit'), barcodeController.backfill);
-router.post('/:kind/:id', authenticate, guard('edit'), barcodeController.assign);
+// Assigning a barcode is its own grant (Role Jobs → Generate barcode) on the
+// Vehicles / Parts page, separate from editing the record. One line per kind
+// so the route audit can read the guard (`whenKind` dispatches).
+const whenKind = (kind) => (req, res, next) => (req.params.kind === kind ? next() : next('route'));
+router.post('/:kind/labels', authenticate, whenKind('vehicle'), authorizeAction('vehicles', 'barcode'), barcodeController.labels);
+router.post('/:kind/labels', authenticate, whenKind('part'), authorizeAction('parts', 'barcode'), barcodeController.labels);
+router.post('/:kind/backfill', authenticate, whenKind('vehicle'), authorizeAction('vehicles', 'barcode'), barcodeController.backfill);
+router.post('/:kind/backfill', authenticate, whenKind('part'), authorizeAction('parts', 'barcode'), barcodeController.backfill);
+router.post('/:kind/:id', authenticate, whenKind('vehicle'), authorizeAction('vehicles', 'barcode'), barcodeController.assign);
+router.post('/:kind/:id', authenticate, whenKind('part'), authorizeAction('parts', 'barcode'), barcodeController.assign);
 
 /**
  * @swagger

@@ -49,27 +49,29 @@ router.use(authenticate);
 /** Any authenticated user may download templates (instructions + column layout). */
 router.get('/template/:type', bulkImportController.downloadTemplate);
 
-router.post('/leads', authorizeAction('leads', 'create'), uploadSingle('file'), bulkImportController.importLeads);
+// Importing a spreadsheet is its own grant (Role Jobs → Bulk upload / import),
+// separate from raising one record at a time.
+router.post('/leads', authorizeAction('leads', 'import'), uploadSingle('file'), bulkImportController.importLeads);
 
-router.post('/customers', authorizeAction('customers', 'create'), uploadSingle('file'), bulkImportController.importCustomers);
+router.post('/customers', authorizeAction('customers', 'import'), uploadSingle('file'), bulkImportController.importCustomers);
 
-router.post('/vehicles', authorizeAction('vehicles', 'create'), uploadSingle('file'), bulkImportController.importVehicles);
+router.post('/vehicles', authorizeAction('vehicles', 'import'), uploadSingle('file'), bulkImportController.importVehicles);
 
-router.post('/parts', authorizeAction('parts', 'create'), uploadSingle('file'), bulkImportController.importParts);
+router.post('/parts', authorizeAction('parts', 'import'), uploadSingle('file'), bulkImportController.importParts);
 
 // The page list is given explicitly so this does not inherit the barcode
 // scanner's "create" alias — raising one order at the counter is a long way
 // from importing a spreadsheet of them.
 router.post(
     '/sales-orders',
-    authorizeAction(['sales_orders'], 'create'),
+    authorizeAction(['sales_orders'], 'import'),
     uploadSingle('file'),
     bulkImportController.importSalesOrders
 );
 
 router.post(
     '/employees',
-    authorizeAction('employees', 'create'),
+    authorizeAction('employees', 'import'),
     uploadSingle('file'),
     bulkImportController.importEmployees
 );

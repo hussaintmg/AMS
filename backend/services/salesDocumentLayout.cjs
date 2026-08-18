@@ -81,6 +81,7 @@ function summaryRows(type, data) {
     if (d.discountAmount) rows.push(['Less; Discount', fmtMoney(d.discountAmount)]);
     if (d.taxAmount) rows.push(['Add; Tax', fmtMoney(d.taxAmount)]);
     if (d.additionalCharges) rows.push(['Add; Other Charges', fmtMoney(d.additionalCharges)]);
+    if (d.serviceChargesTotal) rows.push(['Add; Service Charges', fmtMoney(Number(d.serviceChargesTotal) + Number(d.serviceTaxTotal || 0))]);
     rows.push(['NET', fmtMoney(d.totalAmount)]);
   } else if (type === 'booking') {
     rows.push(['Total Amount', fmtMoney(d.totalAmount)]);
@@ -89,16 +90,22 @@ function summaryRows(type, data) {
   } else if (type === 'order') {
     if (d.discountAmount) rows.push(['Less; Discount', fmtMoney(d.discountAmount)]);
     if (d.taxAmount) rows.push(['Add; Tax', fmtMoney(d.taxAmount)]);
+    if (d.serviceChargesTotal) rows.push(['Add; Service Charges', fmtMoney(Number(d.serviceChargesTotal) + Number(d.serviceTaxTotal || 0))]);
     rows.push(['Gross Amount', fmtMoney(d.totalAmount)]);
     rows.push(['Paid', fmtMoney(d.paidAmount)]);
     rows.push(['NET', fmtMoney(d.balanceAmount)]);
   } else {
     if (d.discountAmount) rows.push(['Less; Discount', fmtMoney(d.discountAmount)]);
     if (d.taxAmount) rows.push(['Add; Sales Tax', fmtMoney(d.taxAmount)]);
+    if (d.serviceChargesTotal) rows.push(['Add; Service Charges', fmtMoney(Number(d.serviceChargesTotal) + Number(d.serviceTaxTotal || 0))]);
     rows.push(['Gross Amount', fmtMoney(d.totalAmount)]);
+    // A credit invoice is issued unpaid: say so, and when it falls due.
+    if (d.paymentTerm === 'credit') {
+      rows.push(['Payment Terms', d.creditDueDate ? `CREDIT — due ${new Date(d.creditDueDate).toLocaleDateString('en-GB')}` : 'CREDIT']);
+    }
     rows.push(['Paid', fmtMoney(d.paidAmount)]);
     if (d.changeDue) rows.push(['Change Returned', fmtMoney(d.changeDue)]);
-    rows.push(['NET', fmtMoney(d.balanceAmount)]);
+    rows.push([d.paymentTerm === 'credit' ? 'BALANCE DUE' : 'NET', fmtMoney(d.balanceAmount)]);
   }
   return rows;
 }

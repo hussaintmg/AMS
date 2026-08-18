@@ -13,7 +13,7 @@ import SearchableSelect from "../components/SearchableSelect";
 import VehicleMasterModal from "../components/vehicle/VehicleMasterModal";
 import { useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { fieldAccessor, pageActions } from "../utils/roleJobs";
+import { fieldAccessor, pageActions, canQuickCreate } from "../utils/roleJobs";
 import MasterQuickCreate from "../components/MasterQuickCreate";
 import { vehicleAPI, adminAPI, vehicleMasterAPI } from "../services/api";
 import toast from "react-hot-toast";
@@ -63,6 +63,10 @@ const Vehicles = () => {
   // Modal states
   const [showModal, setShowModal] = useState(false);
   const [modalMode, setModalMode] = useState("create");
+  // Role Jobs → Vehicles → Forms may withhold a shortcut on this form even
+  // from a role that may create the record on Vehicle Master Data.
+  const formKind = modalMode === 'edit' ? 'edit' : 'create';
+  const quick = (key) => canCreateVehicleMaster && canQuickCreate(currentUser, 'vehicles', formKind, key);
   const [selectedVehicle, setSelectedVehicle] = useState(null);
   const [showBulkUpload, setShowBulkUpload] = useState(false);
   const [quickCreateType, setQuickCreateType] = useState(null);
@@ -626,13 +630,13 @@ const Vehicles = () => {
       style: { width: "140px" },
       render: (row) => (
         <div onClick={(e) => e.stopPropagation()} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <BarcodeButton
+          {can('barcode') && <BarcodeButton
             kind="vehicle"
             id={row.id}
             code={row.barcode}
             label={row.vehicle_name || row.vin}
             subtitle={row.chassis_number || row.vin || ""}
-          />
+          />}
           <ActionButtons
             onEdit={can('edit') ? () => openModal("edit", row) : null}
             onDelete={can('delete') ? () => handleDeleteVehicle(row.id, row.vin) : null}
@@ -673,7 +677,7 @@ const Vehicles = () => {
             <ScanLine size={18} style={{ marginRight: 6 }} />
             Scan
           </a>
-          {can('create') && <button
+          {can('import') && <button
             type="button"
             className="btn btn-secondary btn-create"
             onClick={() => setShowBulkUpload(true)}
@@ -974,17 +978,18 @@ const Vehicles = () => {
                   <h3>Vehicle Details</h3>
                   <div className="form-row">
                     <div className="form-group">
-                      <label className="form-label-add">
+                      <div className="form-label-add">
                         Brand *
-                        {canCreateVehicleMaster && (
+                        {quick("make") && (
                           <a
                             className="label-add-link"
+                            data-quick-create="make"
                             onClick={() => openQuickCreate("make")}
                           >
                             + Brand
                           </a>
                         )}
-                      </label>
+                      </div>
                       <SearchableSelect
                         name="makeId"
                         value={formData.makeId}
@@ -1000,17 +1005,18 @@ const Vehicles = () => {
                       </SearchableSelect>
                     </div>
                     <div className="form-group">
-                      <label className="form-label-add">
+                      <div className="form-label-add">
                         Model *
-                        {canCreateVehicleMaster && (
+                        {quick("model") && (
                           <a
                             className="label-add-link"
+                            data-quick-create="model"
                             onClick={() => openQuickCreate("model")}
                           >
                             + Model
                           </a>
                         )}
-                      </label>
+                      </div>
                       <SearchableSelect
                         name="modelId"
                         value={formData.modelId}
@@ -1029,17 +1035,18 @@ const Vehicles = () => {
                   </div>
                   <div className="form-row">
                     <div className="form-group">
-                      <label className="form-label-add">
+                      <div className="form-label-add">
                         Variant *
-                        {canCreateVehicleMaster && (
+                        {quick("variant") && (
                           <a
                             className="label-add-link"
+                            data-quick-create="variant"
                             onClick={() => openQuickCreate("variant")}
                           >
                             + Variant
                           </a>
                         )}
-                      </label>
+                      </div>
                       <SearchableSelect
                         name="variantId"
                         value={formData.variantId}
@@ -1056,17 +1063,18 @@ const Vehicles = () => {
                       </SearchableSelect>
                     </div>
                     <div className="form-group">
-                      <label className="form-label-add">
+                      <div className="form-label-add">
                         Color *
-                        {canCreateVehicleMaster && (
+                        {quick("color") && (
                           <a
                             className="label-add-link"
+                            data-quick-create="color"
                             onClick={() => openQuickCreate("color")}
                           >
                             + Color
                           </a>
                         )}
-                      </label>
+                      </div>
                       <SearchableSelect
                         name="colorId"
                         value={formData.colorId}
@@ -1097,7 +1105,7 @@ const Vehicles = () => {
                       />
                     </div>
                     <div className="form-group">
-                      <label className="form-label-add">
+                      <div className="form-label-add">
                         Condition
                         {canCreateVehicleMaster && (
                         <a
@@ -1108,7 +1116,7 @@ const Vehicles = () => {
                           + Condition
                         </a>
                         )}
-                      </label>
+                      </div>
                       <SearchableSelect
                         name="conditionType"
                         value={formData.conditionType}
@@ -1165,13 +1173,13 @@ const Vehicles = () => {
                   </div>
                   <div className="form-row">
                     <div className="form-group">
-                      <label className="form-label-add">
+                      <div className="form-label-add">
                         Warehouse
-                        <MasterQuickCreate type="warehouse" onCreated={async (created) => {
+                        <MasterQuickCreate type="warehouse" form={formKind} onCreated={async (created) => {
                           await fetchReferenceData();
                           if (created?.id) setFormData((p) => ({ ...p, warehouseId: created.id }));
                         }} />
-                      </label>
+                      </div>
                       <SearchableSelect
                         name="warehouseId"
                         value={formData.warehouseId}

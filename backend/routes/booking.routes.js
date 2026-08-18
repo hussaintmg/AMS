@@ -135,6 +135,7 @@ router.post('/:id/allocate', authenticate, authorizeAction('bookings', 'edit'), 
  *     summary: Convert booking to sales order
  *     security: [{ bearerAuth: [] }]
  */
-router.post('/:id/convert', authenticate, authorizeAction('bookings', 'edit'), salesController.convertBookingToOrder);
+// Converting a booking is its own grant (Role Jobs → Bookings → Convert), not part of edit.
+router.post('/:id/convert', authenticate, authorizeAction('bookings', 'convert'), salesController.convertBookingToOrder);
 
 module.exports = router;

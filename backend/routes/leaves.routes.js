@@ -14,7 +14,8 @@ router.delete('/bulk', authenticate, authorizeAction('leaves', 'delete'), leaves
 router.get('/:id', authenticate, authorizeAction('leaves', 'view'), leaves.getLeave);
 router.post('/', authenticate, authorizeAction('leaves', 'create'), leaves.createLeave);
 router.put('/:id', authenticate, authorizeAction('leaves', 'edit'), leaves.updateLeave);
-router.patch('/:id/status', authenticate, authorizeAction('leaves', 'edit'), leaves.approveRejectLeave);
+// Approving or rejecting is its own grant, not part of edit.
+router.patch('/:id/status', authenticate, authorizeAction('leaves', 'approve'), leaves.approveRejectLeave);
 router.delete('/:id', authenticate, authorizeAction('leaves', 'delete'), leaves.deleteLeave);
 
 module.exports = router;

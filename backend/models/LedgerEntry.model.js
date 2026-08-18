@@ -3,9 +3,14 @@ const searchPlugin = require('../plugins/searchPlugin');
 
 const ledgerEntrySchema = new mongoose.Schema({
   transactionDate: { type: Date },
-  referenceType: { type: String, enum: ['expense', 'leave', 'salary', 'manual'], trim: true },
+  referenceType: { type: String, enum: ['expense', 'leave', 'salary', 'manual', 'advance', 'transfer', 'payable', 'invoice_payment', 'account_adjust'], trim: true },
   referenceId: { type: String, trim: true },
+  // The account name as posted (kept: reports and the journal screen read it),
+  // and, since 2026-08-18, the money account it belongs to. Rows written
+  // before then carry only the name; scripts/backfill_ledger_accounts.js maps
+  // them (Cash → Petty Cash) so the balance sheet sees them too.
   account: { type: String, trim: true },
+  accountRef: { type: mongoose.Schema.Types.ObjectId, ref: 'Account', default: null },
   debit: { type: Number, default: 0 },
   credit: { type: Number, default: 0 },
   description: { type: String },
@@ -17,6 +22,7 @@ const ledgerEntrySchema = new mongoose.Schema({
 
 ledgerEntrySchema.index({ transactionDate: -1 });
 ledgerEntrySchema.index({ account: 1 });
+ledgerEntrySchema.index({ accountRef: 1, transactionDate: -1 });
 ledgerEntrySchema.index({ referenceType: 1, referenceId: 1 });
 ledgerEntrySchema.index({ isDeleted: 1 });
 

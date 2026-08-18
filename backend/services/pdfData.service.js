@@ -23,11 +23,14 @@ const mongoose = require('mongoose');
  * `Model` stays the vehicle model on purpose: it is what the variable catalog
  * is built from, and the catalog must advertise the vehicle fields too.
  */
+const { CustomQuotation, CustomBooking, CustomInvoice } = require('../models/CustomDocument.model');
+// `extraModels`: the custom (free-text) documents print as ordinary
+// quotations / bookings / invoices — same templates, same variables.
 const TYPES = {
-  quotation: { label: 'Quotation', Model: Quotation, altModel: PartQuotation, number: 'quotationNumber' },
-  booking: { label: 'Booking', Model: Booking, altModel: PartBooking, number: 'bookingNumber' },
+  quotation: { label: 'Quotation', Model: Quotation, altModel: PartQuotation, extraModels: [CustomQuotation], number: 'quotationNumber' },
+  booking: { label: 'Booking', Model: Booking, altModel: PartBooking, extraModels: [CustomBooking], number: 'bookingNumber' },
   order: { label: 'Sales Order', Model: SalesOrder, altModel: PartSalesOrder, number: 'orderNumber' },
-  invoice: { label: 'Invoice', Model: Invoice, altModel: PartInvoice, number: 'invoiceNumber' },
+  invoice: { label: 'Invoice', Model: Invoice, altModel: PartInvoice, extraModels: [CustomInvoice], number: 'invoiceNumber' },
 };
 
 /**
@@ -38,13 +41,13 @@ const TYPES = {
 async function findDocument(type, id, populate = []) {
   const config = TYPES[type];
   if (!config) return null;
-  for (const Model of [config.Model, config.altModel].filter(Boolean)) {
+  for (const Model of [config.Model, config.altModel, ...(config.extraModels || [])].filter(Boolean)) {
     let query = Model.findById(id);
     populate.forEach(({ path, select }) => {
       if (Model.schema.path(path)) query = query.populate(path, select);
     });
     const record = await query.lean();
-    if (record) return { record, Model, isParts: Model === config.altModel };
+    if (record) return { record, Model, isParts: Model === config.altModel, isCustom: (config.extraModels || []).includes(Model) };
   }
   return null;
 }
@@ -118,7 +121,21 @@ function buildItemRows(record) {
   const source = Array.isArray(record.lineItems) && record.lineItems.length
     ? record.lineItems
     : (Array.isArray(record.items) ? record.items : []);
-  return source.map((line, index) => {
+  // Service charges print as their own rows under the products, type
+  // 'service', so `{{#each items}}` and `{{items.table}}` show the whole bill.
+  const services = (Array.isArray(record.serviceCharges) ? record.serviceCharges : []).map((row) => ({
+    itemType: 'service',
+    code: '',
+    barcode: '',
+    name: row.name || 'Service charge',
+    description: [row.name, row.description].filter(Boolean).join(' — '),
+    quantity: Number(row.quantity) || 1,
+    unitPrice: Number(row.amount) || 0,
+    discountAmount: 0,
+    taxAmount: Number(row.taxAmount) || 0,
+    totalPrice: Number(row.total) || 0,
+  }));
+  return [...source, ...services].map((line, index) => {
     const quantity = Number(line.quantity) || 1;
     const unitPrice = Number(line.unitPrice) || 0;
     const totalPrice = Number(line.totalPrice) || unitPrice * quantity;
@@ -187,8 +204,10 @@ function buildDataBag(type, record, extras = {}) {
     subtotal: rows.reduce((sum, row) => sum + row.totalPrice, 0),
     subtotalText: money(rows.reduce((sum, row) => sum + row.totalPrice, 0)),
   });
-  const vehicleItems = withGroupMeta(itemRows.filter((row) => row.type !== 'part'));
+  const vehicleItems = withGroupMeta(itemRows.filter((row) => row.type !== 'part' && row.type !== 'service'));
   const partItems = withGroupMeta(itemRows.filter((row) => row.type === 'part'));
+  // `{{#each serviceItems}}` prints the service charges block on its own.
+  const serviceItems = withGroupMeta(itemRows.filter((row) => row.type === 'service'));
   return {
     // `{{#each items}}` iterates this; `{{items.table}}` prints the whole table.
     items: Object.assign(itemRows.slice(), {
@@ -199,6 +218,7 @@ function buildDataBag(type, record, extras = {}) {
     lineItems: itemRows,
     vehicleItems,
     partItems,
+    serviceItems,
     // Spreading the raw record first means any real schema field is reachable
     // as document.<field> even if it is not in the curated catalog below.
     document: {
@@ -208,6 +228,15 @@ function buildDataBag(type, record, extras = {}) {
       date: record.createdAt,
       itemName: itemName(record),
       totalInWords: amountInWords(record.totalAmount),
+      // Paid vs credit, spelled out for the printed page. A credit invoice
+      // prints like any other, marked CREDIT with its balance due and date.
+      paymentTermLabel: record.paymentTerm === 'credit' ? 'CREDIT' : 'PAID',
+      isCredit: record.paymentTerm === 'credit',
+      creditDueDate: record.creditDueDate || null,
+      creditStatusLabel: record.paymentTerm === 'credit' ? String(record.creditStatus || 'open').toUpperCase() : '',
+      creditBand: record.paymentTerm === 'credit'
+        ? `CREDIT INVOICE — Balance due ${Number(record.balanceAmount || 0).toLocaleString('en-PK')}${record.creditDueDate ? ` by ${new Date(record.creditDueDate).toLocaleDateString('en-GB')}` : ''}`
+        : '',
     },
     // A walk-in sale is booked against the shared walk-in record, but the
     // document must print the buyer who actually stood at the counter.
@@ -338,6 +367,10 @@ const EXTRA = {
     ['document.discountAmount', 'Discount amount'],
     ['document.paidAmount', 'Paid amount'],
     ['document.balanceAmount', 'Balance amount'],
+    ['document.paymentTermLabel', 'Payment terms (PAID / CREDIT)'],
+    ['document.creditDueDate', 'Credit due date'],
+    ['document.creditStatusLabel', 'Credit status'],
+    ['document.creditBand', 'Credit band ("CREDIT INVOICE — Balance due …")'],
   ],
 };
 

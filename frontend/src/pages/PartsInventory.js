@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { fieldAccessor, canRoleDo, getRoleJob, pageActions } from "../utils/roleJobs";
+import { fieldAccessor, canRoleDo, getRoleJob, pageActions, canQuickCreate } from "../utils/roleJobs";
 import { partsAPI, vehicleMasterAPI } from "../services/api";
 import toast from "react-hot-toast";
 import { Package, Search, Plus, Upload, Pencil, Trash2, ScanLine } from "lucide-react";
@@ -55,6 +55,10 @@ const PartsInventory = () => {
    */
   const allows = (action) => (getRoleJob(currentUser, 'parts') ? canRoleDo(currentUser, 'parts', action) : true);
   const canCreatePart = allows('create');
+  // Generating a barcode and importing a spreadsheet are their own grants
+  // (Role Jobs → Parts); an unconfigured role keeps what it had.
+  const canGenerateBarcode = getRoleJob(currentUser, 'parts') ? canRoleDo(currentUser, 'parts', 'barcode') : true;
+  const canImportParts = getRoleJob(currentUser, 'parts') ? canRoleDo(currentUser, 'parts', 'import') : canCreatePart;
   const canEditPart = allows('edit');
   const canDeletePart = allows('delete');
   /**
@@ -108,6 +112,10 @@ const PartsInventory = () => {
   // Modal states
   const [showModal, setShowModal] = useState(false);
   const [modalMode, setModalMode] = useState("create");
+  // Role Jobs → Parts → Forms may withhold a shortcut on this form even from a
+  // role that may create the record on its own master-data page.
+  const partFormKind = modalMode === 'edit' ? 'edit' : 'create';
+  const partQuick = (key) => canQuickCreate(currentUser, 'parts', partFormKind, key);
   const [selectedPart, setSelectedPart] = useState(null);
   const [showStockModal, setShowStockModal] = useState(false);
   const stockFormRef = useRef(null);
@@ -702,13 +710,13 @@ const PartsInventory = () => {
               <Package size={16} />
             </button>
           )}
-          <BarcodeButton
+          {canGenerateBarcode && <BarcodeButton
             kind="part"
             id={row.id}
             code={row.barcode}
             label={row.name || row.part_name}
             subtitle={row.part_number || row.sku || ""}
-          />
+          />}
           <ActionButtons
             onEdit={canEditPart ? () => openModal("edit", row) : null}
             onDelete={canDeletePart ? () => openDeleteConfirm(row) : null}
@@ -750,7 +758,7 @@ const PartsInventory = () => {
             Scan
           </a>
           {/* Both create parts, so both need Create. */}
-          {canCreatePart && (
+          {canImportParts && (
             <button
               type="button"
               className="btn btn-secondary btn-create"
@@ -1062,15 +1070,16 @@ const PartsInventory = () => {
                   </div>
                   <div className="form-row">
                     <div className="form-group">
-                      <label className="form-label-add">
+                      <div className="form-label-add">
                         <InfoLabel
                           label="Source Type *"
                           help="Where the part comes from. Manufacturer = OEM, 3rd Party = aftermarket. Add your own types with + Create Source Type."
                         />
-                        {canCreateSourceType && (
+                        {canCreateSourceType && partQuick('source_type') && (
                           <button
                             type="button"
                             className="label-add-link"
+                            data-quick-create="source_type"
                             onClick={() => {
                               setEditingSourceType(null);
                               setShowSourceTypeModal(true);
@@ -1079,7 +1088,7 @@ const PartsInventory = () => {
                             + Create Source Type
                           </button>
                         )}
-                      </label>
+                      </div>
                       <SearchableSelect
                         name="sourceType"
                         value={formData.sourceType}
@@ -1094,21 +1103,22 @@ const PartsInventory = () => {
                       </SearchableSelect>
                     </div>
                     <div className="form-group">
-                      <label className="form-label-add">
+                      <div className="form-label-add">
                         <InfoLabel
                           label="Category"
                           help="Optional grouping for reporting and filtering (e.g., Engine, Electrical)."
                         />
-                        {canCreateVehicleMaster && (
+                        {canCreateVehicleMaster && partQuick('category') && (
                           <button
                             type="button"
                             className="label-add-link"
+                            data-quick-create="category"
                             onClick={() => setShowCategoryModal(true)}
                           >
                             + Create Category
                           </button>
                         )}
-                      </label>
+                      </div>
                       <SearchableSelect
                         name="categoryId"
                         value={formData.categoryId}
@@ -1138,21 +1148,22 @@ const PartsInventory = () => {
                       />
                     </div>
                     <div className="form-group">
-                      <label className="form-label-add">
+                      <div className="form-label-add">
                         <InfoLabel
                           label="Supplier"
                           help="Supplier you purchase this part from (optional)."
                         />
-                        {canCreateVehicleMaster && (
+                        {canCreateVehicleMaster && partQuick('supplier') && (
                           <button
                             type="button"
                             className="label-add-link"
+                            data-quick-create="supplier"
                             onClick={() => setShowSupplierModal(true)}
                           >
                             + Create Supplier
                           </button>
                         )}
-                      </label>
+                      </div>
                       <SearchableSelect
                         name="supplierId"
                         value={formData.supplierId}

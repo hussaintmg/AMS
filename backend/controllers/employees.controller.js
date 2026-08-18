@@ -46,6 +46,12 @@ exports.listEmployees = async (req, res, next) => {
     if (department) filter.department = department;
     if (status === 'active') filter.isActive = true;
     if (status === 'inactive') filter.isActive = false;
+    // A form's Employee dropdown names itself (?forPage=leaves&forForm=create
+    // &forField=employee) so Role Jobs can narrow whose employees it lists.
+    const { requestDropdownFilter, isHidden } = require('../utils/dropdownScope');
+    const scope = await requestDropdownFilter(req, null, ['createdBy']);
+    if (isHidden(scope)) return res.json({ success: true, data: [], pagination: { page: 1, limit: Number(limit), total: 0, totalPages: 0 } });
+    if (scope) Object.assign(filter, scope.$or && filter.$or ? { $and: [{ $or: filter.$or }, scope] } : scope);
 
     const items = await Employee.find(filter)
       .populate('department', 'name code')

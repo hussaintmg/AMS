@@ -20,6 +20,7 @@
 
 const mongoose = require('mongoose');
 const { AppError } = require('../middleware/errorHandler');
+const { parseServiceCharges, serviceChargeSummary } = require('../models/serviceCharges.fields');
 const logger = require('../utils/logger');
 const PartQuotation = require('../models/PartQuotation.model');
 const PartBooking = require('../models/PartBooking.model');
@@ -118,17 +119,31 @@ function documentTotals(body, lines) {
     const discountAmount = round2(num(body.discountAmount) + summary.lineDiscountAmount);
     const taxAmount = round2(num(body.taxAmount) + summary.lineTaxAmount);
     const additionalCharges = round2(num(body.additionalCharges) || num(body.otherCharges));
-    const totalAmount = round2(summary.subtotal - discountAmount + taxAmount + additionalCharges);
-    if (totalAmount < 0) throw new AppError('Discount cannot exceed the value of the parts', 400);
+    const partsTotal = round2(summary.subtotal - discountAmount + taxAmount + additionalCharges);
+    if (partsTotal < 0) throw new AppError('Discount cannot exceed the value of the parts', 400);
+    // Optional service charges block (models/serviceCharges.fields.js): its
+    // own rows, its own per-line tax, added on top of the parts.
+    const service = parseServiceCharges(body);
     return {
         subtotal: summary.subtotal,
         discountAmount,
         taxAmount,
         additionalCharges,
         otherCharges: additionalCharges,
-        totalAmount,
+        totalAmount: round2(partsTotal + service.grand),
+        hasServiceCharges: service.rows.length > 0,
+        serviceCharges: service.rows,
+        serviceChargesTotal: service.serviceChargesTotal,
+        serviceTaxTotal: service.serviceTaxTotal,
     };
 }
+/** The service-charge fields of a totals object, for a create that lists fields by name. */
+const svc = (totals) => ({
+    hasServiceCharges: totals.hasServiceCharges,
+    serviceCharges: totals.serviceCharges,
+    serviceChargesTotal: totals.serviceChargesTotal,
+    serviceTaxTotal: totals.serviceTaxTotal,
+});
 
 /**
  * Split a stored document's discount/tax back into the document-level part.
@@ -172,6 +187,7 @@ const commonFields = (doc) => ({
     walk_in_name: doc.walkInName || '',
     walk_in_phone: doc.walkInPhone || '',
     sale_type: 'parts',
+    ...serviceChargeSummary(doc),
     line_items: (doc.lineItems || []).map(mapLine),
     item_count: (doc.lineItems || []).length,
     item_name: doc.lineItems?.[0]?.description || '',
@@ -201,6 +217,10 @@ function listHandler({ Model, permissionKey, numberField, sortMap, searchFields,
             const ownerIds = await allowedOwnerIds(req.user, permissionKey);
             if (ownerIds !== null) filter.createdBy = { $in: ownerIds };
             if (status) filter.status = status;
+            // The Paid | Credit tabs on the invoices screen; documents written
+            // before the split carry no paymentTerm and count as paid.
+            if (req.query.paymentTerm === 'credit') filter.paymentTerm = 'credit';
+            else if (req.query.paymentTerm === 'paid') filter.paymentTerm = { $ne: 'credit' };
             if (sanitizeId(customerId)) filter.customer = customerId;
             const range = dateRangeFilter(dateFrom, dateTo);
             if (range) filter.createdAt = range;
@@ -275,6 +295,30 @@ const getAllQuotations = listHandler({
     searchFields: ['quotationNumber'],
     map: mapQuotation,
 });
+
+/** Card figures for the parts quotations screen: total / draft / sent / approved / expired. */
+const getQuotationStats = async (req, res, next) => {
+    try {
+        const ownerIds = await allowedOwnerIds(req.user, 'part_quotations');
+        const match = { status: { $ne: 'cancelled' } };
+        if (ownerIds !== null) match.createdBy = { $in: ownerIds.map((id) => new mongoose.Types.ObjectId(id)) };
+        const [result] = await PartQuotation.aggregate([
+            { $match: match },
+            {
+                $group: {
+                    _id: null,
+                    total: { $sum: 1 },
+                    draft: { $sum: { $cond: [{ $eq: ['$status', 'draft'] }, 1, 0] } },
+                    sent: { $sum: { $cond: [{ $eq: ['$status', 'sent'] }, 1, 0] } },
+                    converted: { $sum: { $cond: [{ $eq: ['$status', 'converted'] }, 1, 0] } },
+                    approved: { $sum: { $cond: [{ $eq: ['$approvalStatus', 'approved'] }, 1, 0] } },
+                    expired: { $sum: { $cond: [{ $and: [{ $lt: ['$validUntil', new Date()] }, { $not: [{ $in: ['$status', ['converted', 'cancelled']] }] }] }, 1, 0] } },
+                },
+            },
+        ]);
+        res.json({ success: true, data: result || { total: 0, draft: 0, sent: 0, converted: 0, approved: 0, expired: 0 } });
+    } catch (error) { next(error); }
+};
 
 const getQuotationById = async (req, res, next) => {
     try {
@@ -470,6 +514,9 @@ const convertQuotationToInvoice = async (req, res, next) => {
             // discount/tax travels on the lines themselves (see documentLevelOnly).
             ...documentLevelOnly(quotation),
             additionalCharges: num(quotation.otherCharges),
+            // The quotation's service charges convert with it.
+            hasServiceCharges: quotation.hasServiceCharges === true,
+            serviceCharges: (quotation.serviceCharges || []).map((row) => ({ serviceTypeId: row.serviceType ? String(row.serviceType._id || row.serviceType) : null, name: row.name, description: row.description, quantity: row.quantity, amount: row.amount, taxPercent: row.taxPercent })),
             paidAmount: num(req.body.paidAmount),
             notes: req.body.notes || quotation.notes,
         };
@@ -503,6 +550,7 @@ const convertQuotationToInvoice = async (req, res, next) => {
             discountAmount: totals.discountAmount,
             otherCharges: totals.otherCharges,
             totalAmount: totals.totalAmount,
+            ...svc(totals),
             paidAmount,
             balanceAmount: round2(totals.totalAmount - paidAmount),
             amountTendered: changeDue > 0 ? tendered : 0,
@@ -702,6 +750,7 @@ const createBooking = async (req, res, next) => {
             discountAmount: totals.discountAmount,
             taxAmount: totals.taxAmount,
             totalAmount: totals.totalAmount,
+            ...svc(totals),
             bookingAmount,
             paidAmount: bookingAmount,
             balanceAmount: round2(totals.totalAmount - bookingAmount),
@@ -752,6 +801,7 @@ const updateBooking = async (req, res, next) => {
             booking.discountAmount = totals.discountAmount;
             booking.taxAmount = totals.taxAmount;
             booking.totalAmount = totals.totalAmount;
+            Object.assign(booking, svc(totals));
         }
 
         if (req.body.customerId !== undefined || req.body.walkIn !== undefined) {
@@ -946,6 +996,7 @@ async function createOrderInternal({ body, userId, user, bookingId = null, quota
         taxAmount: totals.taxAmount,
         otherCharges: totals.otherCharges,
         totalAmount: totals.totalAmount,
+        ...svc(totals),
         paidAmount,
         balanceAmount: round2(totals.totalAmount - paidAmount),
         paymentMode: paymentMethod.name || body.paymentMode || 'cash',
@@ -1069,6 +1120,9 @@ const convertBookingToOrder = async (req, res, next) => {
                 // document-level part must be passed on, or documentTotals would
                 // add the line amounts a second time.
                 ...documentLevelOnly(booking),
+                // The booking's service charges convert with it.
+                hasServiceCharges: booking.hasServiceCharges === true,
+                serviceCharges: (booking.serviceCharges || []).map((row) => ({ serviceTypeId: row.serviceType ? String(row.serviceType._id || row.serviceType) : null, name: row.name, description: row.description, quantity: row.quantity, amount: row.amount, taxPercent: row.taxPercent })),
                 // Whatever was taken at booking counts as already paid.
                 paidAmount: num(req.body.paidAmount) + num(booking.paidAmount),
             },
@@ -1161,6 +1215,9 @@ const mapInvoice = (inv) => ({
     total_amount: inv.totalAmount || 0,
     paid_amount: inv.paidAmount || 0,
     balance_amount: inv.balanceAmount || 0,
+    payment_term: inv.paymentTerm || 'paid',
+    credit_due_date: inv.creditDueDate || null,
+    credit_status: inv.paymentTerm === 'credit' ? (inv.creditStatus || 'open') : null,
     amount_tendered: inv.amountTendered || 0,
     change_due: inv.changeDue || 0,
     payment_method_id: inv.paymentMethod || null,
@@ -1168,6 +1225,19 @@ const mapInvoice = (inv) => ({
     stock_applied: inv.stockApplied === true,
     terms_and_conditions: inv.termsAndConditions || '',
 });
+
+/** Card figures for the parts invoices this user may see. */
+const getInvoiceSummary = async (req, res, next) => {
+    try {
+        const { invoiceSummary } = require('../models/paymentTerm.fields');
+        const filter = {};
+        const ownerIds = await allowedOwnerIds(req.user, 'part_invoices');
+        if (ownerIds !== null) filter.createdBy = { $in: ownerIds };
+        const range = dateRangeFilter(req.query.dateFrom, req.query.dateTo);
+        if (range) filter.createdAt = range;
+        res.json({ success: true, data: await invoiceSummary(PartInvoice, filter) });
+    } catch (error) { next(error); }
+};
 
 const getAllInvoices = listHandler({
     Model: PartInvoice,
@@ -1203,29 +1273,39 @@ const createInvoice = async (req, res, next) => {
         await assertPartsAvailable(lines);
 
         const totals = documentTotals(req.body, lines);
-        const tendered = round2(num(req.body.paidAmount));
-        const changeDue = round2(Math.max(0, tendered - totals.totalAmount));
-        const paidAmount = changeDue > 0 ? totals.totalAmount : tendered;
-        assertFullPayment(totals.totalAmount, tendered, { document: 'invoice' });
+        // "Paid" is settled at the counter; "credit" is issued unpaid with a
+        // due date and collected later through Record Payment. Stock moves at
+        // the invoice either way.
+        const isCredit = String(req.body.paymentTerm || 'paid').toLowerCase() === 'credit';
+        const tendered = isCredit ? 0 : round2(num(req.body.paidAmount));
+        const changeDue = isCredit ? 0 : round2(Math.max(0, tendered - totals.totalAmount));
+        const paidAmount = isCredit ? 0 : (changeDue > 0 ? totals.totalAmount : tendered);
+        if (!isCredit) assertFullPayment(totals.totalAmount, tendered, { document: 'invoice' });
 
         const invoiceNumber = await nextDocNumber(PartInvoice, 'invoiceNumber', 'PINV');
         const now = new Date();
+        const dueDate = new Date(now.getTime() + Math.max(0, num(req.body.dueDays, 30)) * 24 * 60 * 60 * 1000);
+        const creditDueDate = isCredit ? (req.body.creditDueDate ? new Date(req.body.creditDueDate) : dueDate) : null;
+        if (isCredit && Number.isNaN(creditDueDate.getTime())) throw new AppError('Credit due date is invalid', 400);
 
         const invoice = await PartInvoice.create({
             invoiceNumber,
             customer: customer._id,
             walkIn, walkInName, walkInPhone,
             lineItems: lines,
-            status: statusForPayment(totals.totalAmount, paidAmount),
+            status: isCredit ? 'sent' : statusForPayment(totals.totalAmount, paidAmount),
             invoiceDate: now,
-            dueDate: new Date(now.getTime() + Math.max(0, num(req.body.dueDays, 30)) * 24 * 60 * 60 * 1000),
+            dueDate: isCredit ? creditDueDate : dueDate,
             subtotal: totals.subtotal,
             taxAmount: totals.taxAmount,
             discountAmount: totals.discountAmount,
             otherCharges: totals.otherCharges,
             totalAmount: totals.totalAmount,
+            ...svc(totals),
             paidAmount,
             balanceAmount: round2(totals.totalAmount - paidAmount),
+            paymentTerm: isCredit ? 'credit' : 'paid',
+            creditDueDate,
             amountTendered: changeDue > 0 ? tendered : 0,
             changeDue,
             notes: req.body.notes,
@@ -1260,11 +1340,13 @@ const createInvoice = async (req, res, next) => {
             outstandingDelta: round2(totals.totalAmount - paidAmount),
         });
 
-        logger.info(`Parts invoice ${invoiceNumber} created by user ${req.user.id}`);
+        logger.info(`Parts invoice ${invoiceNumber} created${isCredit ? ' on credit' : ''} by user ${req.user.id}`);
         res.status(201).json({
             success: true,
-            data: { id: invoice._id, invoiceNumber, changeDue },
-            message: 'Invoice created successfully',
+            data: { id: invoice._id, invoiceNumber, changeDue, paymentTerm: isCredit ? 'credit' : 'paid', creditDueDate },
+            message: isCredit
+                ? `Credit invoice created. PKR ${totals.totalAmount.toLocaleString('en-PK')} due by ${creditDueDate.toLocaleDateString('en-GB')}`
+                : 'Invoice created successfully',
         });
     } catch (error) {
         logger.error('Error creating parts invoice:', error);
@@ -1602,7 +1684,7 @@ const getStats = async (req, res, next) => {
 
 module.exports = {
     // Quotations
-    getAllQuotations, getQuotationById, createQuotation, updateQuotation,
+    getAllQuotations, getQuotationById, getQuotationStats, createQuotation, updateQuotation,
     deleteQuotation, updateQuotationStatus, approveQuotation, convertQuotationToBooking,
     convertQuotationToInvoice,
     // Bookings
@@ -1610,7 +1692,7 @@ module.exports = {
     // Orders
     getAllOrders, getOrderById, createOrder, convertBookingToOrder, updateOrderStatus, deleteOrder,
     // Invoices
-    getAllInvoices, getInvoiceById, createInvoice, updateInvoiceStatus, updateInvoicePaymentMethod, deleteInvoice, recordPayment,
+    getAllInvoices, getInvoiceById, createInvoice, updateInvoiceStatus, updateInvoicePaymentMethod, deleteInvoice, recordPayment, getInvoiceSummary,
     // Email — same templates as the vehicle documents
     sendQuotationEmail, sendBookingEmail, sendOrderEmail, sendInvoiceEmail,
     downloadQuotationEstimate, sendQuotationEstimateEmail, bulkDocuments,

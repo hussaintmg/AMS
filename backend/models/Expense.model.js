@@ -5,6 +5,8 @@ const expenseSchema = new mongoose.Schema({
   expenseNumber: { type: String, trim: true, required: [true, 'Expense number is required'] },
   category: { type: String, trim: true, required: [true, 'Expense category is required'] },
   account: { type: String, trim: true },
+  // The money account the expense was paid from (Account.model.js).
+  paidFromAccount: { type: mongoose.Schema.Types.ObjectId, ref: 'Account', default: null },
   employee: { type: mongoose.Schema.Types.ObjectId, ref: 'Employee' },
   amount: {
     type: Number,

@@ -594,18 +594,28 @@ exports.getLeadStats = async (req, res, next) => {
 
 exports.getLeadMeta = async (req, res, next) => {
   try {
+    const { filterRows } = require('../utils/dropdownScope');
+    const FORMS = ['create', 'edit', 'filters'];
     const statusCollection = await getLeadStatusCollection();
     let statuses = [];
     if (statusCollection) {
       statuses = await StatusItem.find({ collection: statusCollection._id, isActive: true }).sort({ order: 1 }).lean();
     }
 
-    const [sources, types, priorities, cities, departments] = await Promise.all([
+    let [sources, types, priorities, cities, departments] = await Promise.all([
       LeadSource.find({ isActive: true }).sort({ sortOrder: 1 }).lean(),
       LeadType.find({ isActive: true }).sort({ name: 1 }).lean(),
       LeadPriority.find({ isActive: true }).sort({ sortOrder: 1 }).lean(),
       LeadCity.find({ isActive: true }).sort({ sortOrder: 1, name: 1 }).lean(),
-      Department.find({ isActive: true }).select('name').sort({ name: 1 }).lean(),
+      Department.find({ isActive: true }).select('name createdBy').sort({ name: 1 }).lean(),
+    ]);
+    // Role Jobs → Leads → Forms decides what each dropdown may offer.
+    [sources, types, priorities, cities, departments] = await Promise.all([
+      filterRows(req.user, 'leads', FORMS, 'source', sources, ['createdBy']),
+      filterRows(req.user, 'leads', FORMS, 'type', types, ['createdBy']),
+      filterRows(req.user, 'leads', FORMS, 'priority', priorities, ['createdBy']),
+      filterRows(req.user, 'leads', FORMS, 'city', cities, ['createdBy']),
+      filterRows(req.user, 'leads', FORMS, 'department', departments, ['createdBy', '_id']),
     ]);
 
     const setting = await SystemSetting.findOne({ key: 'lead_assignment_roles' }).lean();
@@ -617,10 +627,12 @@ exports.getLeadMeta = async (req, res, next) => {
     let users = [];
     if (allowedRoleIds.length > 0) {
       users = await User.find({ role: { $in: allowedRoleIds }, isActive: true })
-        .select('firstName lastName email role')
+        .select('firstName lastName email role createdBy')
         .sort({ firstName: 1 })
         .lean();
     }
+    users = await filterRows(req.user, 'leads', FORMS, 'assignedTo', users, ['_id', 'createdBy']);
+    statuses = await filterRows(req.user, 'leads', FORMS, 'status', statuses, ['createdBy']);
 
     const inactiveWithLeads = await findInactiveItemsWithLeads();
 

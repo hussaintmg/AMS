@@ -13,7 +13,10 @@ const { seedPages, LEGACY_PATHS } = require('../constants/pages');
 const pages = seedPages();
 
 
-const allActions = { view: true, create: true, edit: true, delete: true, sendEmail: true, downloadPdf: true, export: true };
+// Every action the build knows, so the super admin's job rows never lag the
+// action set (super admin bypasses the checks anyway; this keeps the data honest).
+const { ALL_ACTIONS } = require('../constants/pageCapabilities');
+const allActions = { view: true, ...Object.fromEntries(ALL_ACTIONS.map((action) => [action, true])) };
 
 async function run() {
   const uri = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017';

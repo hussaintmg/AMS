@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { fieldAccessor, pageActions } from "../utils/roleJobs";
+import { fieldAccessor, pageActions, getRoleJob } from "../utils/roleJobs";
 import { useEmployees } from "../context/EmployeesContext";
 import toast from "react-hot-toast";
 import ErrorPopup from "../components/ErrorPopup";
@@ -20,9 +20,11 @@ const Employees = () => {
   // Every write on this screen was drawn for anyone who could open it; only
   // the bulk upload asked anything, and it asked about the role's *name*.
   const can = pageActions(currentUser, 'employees');
-  const canBulkUpload = can('create') && ["super_admin", "admin", "hr_admin"].includes(
-    currentUser?.role,
-  );
+  // Importing a spreadsheet is its own grant (Role Jobs → Employees → Bulk
+  // upload / import); the role list is only the fallback for an unconfigured role.
+  const canBulkUpload = getRoleJob(currentUser, 'employees')
+    ? can('import')
+    : (can('create') && ["super_admin", "admin", "hr_admin"].includes(currentUser?.role));
   const showField = fieldAccessor(currentUser, 'employees');
   const {
     employees: ctxEmployees,
@@ -372,12 +374,12 @@ const Employees = () => {
                     <td onClick={(e) => e.stopPropagation()}>
                       <ActionButtons
                         onEdit={can('edit') ? () => openModal("edit", emp) : null}
-                        onToggle={can('edit') ? () => handleToggleStatus(id) : null}
+                        onToggle={can('toggleStatus') ? () => handleToggleStatus(id) : null}
                         onDelete={can('delete') ? () => setConfirmDelete(emp) : null}
                         status={emp.isActive}
                         title={emp.email || fullName(emp)}
                         showEdit={can('edit')}
-                        showToggle={can('edit')}
+                        showToggle={can('toggleStatus')}
                         showDelete={can('delete')}
                       />
                     </td>
@@ -455,12 +457,12 @@ const Employees = () => {
                   >
                     <ActionButtons
                       onEdit={can('edit') ? () => openModal("edit", emp) : null}
-                      onToggle={can('edit') ? () => handleToggleStatus(id) : null}
+                      onToggle={can('toggleStatus') ? () => handleToggleStatus(id) : null}
                       onDelete={can('delete') ? () => setConfirmDelete(emp) : null}
                       status={emp.isActive}
                       title={emp.email || fullName(emp)}
                       showEdit={can('edit')}
-                      showToggle={can('edit')}
+                      showToggle={can('toggleStatus')}
                       showDelete
                     />
                   </div>

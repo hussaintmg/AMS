@@ -17,9 +17,11 @@ import ActionButtons from '../components/ActionButtons';
 import ConfirmModal from '../components/ConfirmModal';
 import CustomerQuickCreate from '../components/customers/CustomerQuickCreate';
 import { useAuth } from '../context/AuthContext';
-import { Send, DollarSign, FileText, Truck, Eye, Pencil, Trash2, Upload, X, Download, Mail, CheckCircle, ScanLine, UserRound } from 'lucide-react';
+import { Send, DollarSign, FileText, Truck, Eye, Pencil, Trash2, Upload, X, Download, Mail, CheckCircle, ScanLine, UserRound, CreditCard, Wallet, AlertTriangle, Clock } from 'lucide-react';
 import BulkUploadModal from '../components/BulkUploadModal';
 import ServerPagination from '../components/ServerPagination';
+import StatCards from '../components/StatCards';
+import ServiceChargesEditor, { useServiceCharges } from '../components/sales/ServiceChargesEditor';
 
 import SalesFilterBar from '../components/sales/SalesFilterBar';
 import SalesDrawer from '../components/sales/SalesDrawer';
@@ -28,7 +30,7 @@ import useErpDocumentSettings from '../hooks/useErpDocumentSettings';
 import ProductCell from '../components/sales/ProductCell';
 import '../styles/sales-print.css';
 import '../styles/userManagement.css';
-import { getRoleJob, canRoleDo, fieldAccessor } from '../utils/roleJobs';
+import { getRoleJob, canRoleDo, fieldAccessor, dropdownHint } from '../utils/roleJobs';
 
 const policyAllows = (user, resource, action, legacy) => getRoleJob(user, resource) ? canRoleDo(user, resource, action) : legacy;
 
@@ -151,7 +153,7 @@ function CustomerField({ formData, onChange, customers, onCustomerCreated, requi
 
     return (
         <>
-            <label className="form-label-add">
+            <div className="form-label-add">
                 <span>{walkIn ? 'Walk-in customer' : 'Customer *'}</span>
                 <span className="walkin-toggle">
                     <label>
@@ -160,7 +162,7 @@ function CustomerField({ formData, onChange, customers, onCustomerCreated, requi
                     </label>
                     {!walkIn && <CustomerQuickCreate onCreated={onCustomerCreated} />}
                 </span>
-            </label>
+            </div>
             {walkIn ? (
                 <div className="form-row walkin-fields">
                     <input
@@ -297,9 +299,10 @@ function customerOptionLabel(customer) {
     return `${customerNo}${name}${phone}`.trim();
 }
 
-async function fetchAllCustomersForDropdown() {
-    // Prefer dedicated non-paginated endpoint for form dropdown stability.
-    const allCustomersRes = await customerAPI.getAllForDropdown();
+async function fetchAllCustomersForDropdown(pageKey) {
+    // Prefer dedicated non-paginated endpoint for form dropdown stability. The
+    // page names itself so Role Jobs → Forms can narrow whose customers it lists.
+    const allCustomersRes = await customerAPI.getAllForDropdown(pageKey ? dropdownHint(pageKey, 'create', 'customer') : undefined);
     const allCustomers = allCustomersRes?.data?.data || [];
 
     // Keep stable unique customer entries by id.
@@ -366,6 +369,8 @@ function Quotations({ category = 'vehicle' }) {
     // A quotation may quote any mix of vehicles and parts; lineItems is the
     // source of truth and vehiclePrice below is only the derived subtotal.
     const [lineItems, setLineItems] = useState([]);
+    // Optional service charges block (tick box on the form).
+    const svc = useServiceCharges();
     const [formData, setFormData] = useState({
         customerId: '', walkIn: false, walkInName: '', walkInPhone: '', vehiclePrice: '', discountAmount: '0',
         taxAmount: '0', additionalCharges: '0', validityDays: '7', notes: '', termsAndConditions: ''
@@ -399,6 +404,9 @@ function Quotations({ category = 'vehicle' }) {
     const [drawerItem, setDrawerItem] = useState(null);
     const [drawerLoading, setDrawerLoading] = useState(false);
     const [savingStatus, setSavingStatus] = useState(false);
+
+    // Cards: total / draft / sent / approved / expired.
+    const [quoteStats, setQuoteStats] = useState(null);
 
     const loadDrawer = useCallback(async (id) => {
         setDrawerLoading(true);
@@ -459,6 +467,12 @@ function Quotations({ category = 'vehicle' }) {
                 total: res.data?.pagination?.total || 0,
                 totalPages: res.data?.pagination?.totalPages || 0
             }));
+            // The figure cards above the list.
+            if (typeof docApi.getQuotationStats === 'function') {
+                docApi.getQuotationStats()
+                    .then((statsRes) => setQuoteStats(statsRes.data?.data || null))
+                    .catch(() => setQuoteStats(null));
+            }
         } catch (error) {
             console.error('Error fetching quotations:', error);
             setData([]);
@@ -470,7 +484,7 @@ function Quotations({ category = 'vehicle' }) {
     const fetchDropdowns = useCallback(async () => {
         try {
             const results = await Promise.allSettled([
-                fetchAllCustomersForDropdown(),
+                fetchAllCustomersForDropdown(isParts ? 'part_quotations' : 'quotations'),
                 vehicleAPI.getAll({ limit: 200 }),
                 vehicleAPI.getVariants(),
                 partsAPI.getAll({ limit: 200 }),
@@ -494,7 +508,7 @@ function Quotations({ category = 'vehicle' }) {
 
     // Rule 2 — refresh dropdown and auto-select the customer created inline
     const handleCustomerCreated = useCallback(async (created) => {
-        try { setCustomers(await fetchAllCustomersForDropdown()); } catch (_) { /* dropdown refresh best-effort */ }
+        try { setCustomers(await fetchAllCustomersForDropdown(isParts ? 'part_quotations' : 'quotations')); } catch (_) { /* dropdown refresh best-effort */ }
         const newId = created?._id || created?.id;
         if (newId) setFormData(prev => ({ ...prev, customerId: String(newId) }));
     }, []);
@@ -512,6 +526,8 @@ function Quotations({ category = 'vehicle' }) {
     const openModal = (mode, item = null) => {
         setModalMode(mode);
         setSelectedItem(item);
+        // The service charges block follows the document being opened.
+        if (item) svc.loadFrom(item); else svc.reset();
         if (item) {
             setLineItems(categoryLines(item.line_items, config.key).map((line, index) => ({
                 key: `saved-${index}`,
@@ -592,7 +608,8 @@ function Quotations({ category = 'vehicle' }) {
                 })),
                 taxAmount: Number(formData.taxAmount) > 0 || !salesTax
                     ? Number(formData.taxAmount || 0)
-                    : calculateConfiguredTax(baseAmount, salesTax)
+                    : calculateConfiguredTax(baseAmount, salesTax),
+                ...svc.payload(),
             };
             if (modalMode === 'create') {
                 await docApi.createQuotation(payload);
@@ -918,6 +935,17 @@ function Quotations({ category = 'vehicle' }) {
             />
             {config.can.bulk && <BulkSalesActions type="quotation" config={config} selectedRows={data.filter(x=>selectedIds.includes(x.id))} onClear={()=>setSelectedIds([])} onRefresh={fetchData} canEmail={canSendEmail} canPdf={canDownloadPdf} canDelete={canDelete}/>}
 
+            {/* Cards, not a report: the whole set at a glance. */}
+            {quoteStats && (
+                <StatCards items={[
+                    { key: 'total', label: 'Total quotations', value: quoteStats.total, icon: <FileText size={18} />, color: '#3b82f6', bg: '#dbeafe' },
+                    { key: 'draft', label: 'Draft', value: quoteStats.draft, icon: <Pencil size={18} />, color: '#64748b', bg: '#f1f5f9' },
+                    { key: 'sent', label: 'Sent', value: quoteStats.sent, icon: <Send size={18} />, color: '#0ea5e9', bg: '#e0f2fe' },
+                    { key: 'approved', label: 'Approved', value: quoteStats.approved ?? quoteStats.converted, icon: <CheckCircle size={18} />, color: '#16a34a', bg: '#dcfce7' },
+                    { key: 'expired', label: 'Expired', value: quoteStats.expired, icon: <Clock size={18} />, color: '#dc2626', bg: '#fee2e2' },
+                ]} />
+            )}
+
             <div className="desktop-table">
                 <table className="data-table">
                     <thead>
@@ -1033,6 +1061,7 @@ function Quotations({ category = 'vehicle' }) {
                                 currencyCode={currency.code}
                                 category={config.key}
                             />
+                            <ServiceChargesEditor {...svc.editorProps} currencyCode={currency.code} form={modalMode === 'edit' ? 'edit' : 'create'} pageKey={isParts ? 'part_quotations' : 'quotations'} />
 
                             <div className="form-row">
                                 <div className="form-group">
@@ -1093,6 +1122,7 @@ function Quotations({ category = 'vehicle' }) {
                     { label: 'Notes', value: drawerItem?.notes, full: true },
                 ]}
                 items={drawerItem?.items || []}
+                serviceCharges={drawerItem?.service_charges || []}
                 statusOptions={statusOptions}
                 status={drawerItem?.status}
                 onStatusChange={handleDrawerStatus}
@@ -1130,6 +1160,8 @@ function Bookings({ category = 'vehicle' }) {
 
     // A booking can reserve several vehicles and order several parts at once.
     const [bookingLines, setBookingLines] = useState([]);
+    // Optional service charges block (tick box on the form).
+    const svc = useServiceCharges();
     const [formData, setFormData] = useState({
         customerId: '', walkIn: false, walkInName: '', walkInPhone: '', bookingAmount: '',
         totalAmount: '', taxAmount: '0', expectedDeliveryDate: '', priority: 'normal', notes: ''
@@ -1144,10 +1176,12 @@ function Bookings({ category = 'vehicle' }) {
     });
     const debouncedSearch = useDebounce(filters.search, 300);
 
-    const allows = documentPolicy(user, config.key, 'bookings', 'bookings');
+    const allows = documentPolicy(user, config.key, 'bookings', 'part_bookings');
     const canAction = allows('edit', ['super_admin','admin','sales_manager'].includes(user?.role));
+    // Converting a booking is its own grant (Role Jobs → Convert), separate from edit.
+    const canConvert = allows('convert', canAction);
     const canDelete = allows('delete', ['super_admin','sales_manager'].includes(user?.role));
-    const showField = documentFieldAccessor(user, config.key, 'bookings', 'bookings');
+    const showField = documentFieldAccessor(user, config.key, 'bookings', 'part_bookings');
 
     // Detail drawer
     const [drawerItem, setDrawerItem] = useState(null);
@@ -1224,7 +1258,7 @@ function Bookings({ category = 'vehicle' }) {
     const fetchDropdowns = useCallback(async () => {
         try {
             const results = await Promise.allSettled([
-                fetchAllCustomersForDropdown(),
+                fetchAllCustomersForDropdown(isParts ? 'part_bookings' : 'bookings'),
                 vehicleAPI.getAll({ limit: 200 }),
                 partsAPI.getAll({ limit: 500 }),
                 paymentMethodsAPI.getAll({ status: 'active' })
@@ -1244,7 +1278,7 @@ function Bookings({ category = 'vehicle' }) {
 
     // Rule 2 — refresh dropdown and auto-select the customer created inline
     const handleCustomerCreated = useCallback(async (created) => {
-        try { setCustomers(await fetchAllCustomersForDropdown()); } catch (_) { /* dropdown refresh best-effort */ }
+        try { setCustomers(await fetchAllCustomersForDropdown(isParts ? 'part_bookings' : 'bookings')); } catch (_) { /* dropdown refresh best-effort */ }
         const newId = created?._id || created?.id;
         if (newId) setFormData(prev => ({ ...prev, customerId: String(newId) }));
     }, []);
@@ -1262,6 +1296,8 @@ function Bookings({ category = 'vehicle' }) {
     const openModal = (mode, item = null) => {
         setModalMode(mode);
         setSelectedItem(item);
+        // The service charges block follows the document being opened.
+        if (item) svc.loadFrom(item); else svc.reset();
         if (item) {
             setBookingLines(categoryLines(item.line_items, config.key).map((line, index) => ({
                 key: `saved-${index}`,
@@ -1343,7 +1379,8 @@ function Bookings({ category = 'vehicle' }) {
                 })),
                 taxAmount: Number(formData.taxAmount) > 0 || !salesTax
                     ? Number(formData.taxAmount || 0)
-                    : calculateConfiguredTax(baseAmount, salesTax)
+                    : calculateConfiguredTax(baseAmount, salesTax),
+                ...svc.payload(),
             };
             if (modalMode === 'create') {
                 await docApi.createBooking(payload);
@@ -1543,7 +1580,7 @@ function Bookings({ category = 'vehicle' }) {
                                     <ActionButtons
                                         onEdit={canAction && !['cancelled', 'completed'].includes(b.status) ? () => openModal('edit', b) : null}
                                         customActions={[
-                                            ...(canAction && !['cancelled', 'completed', 'converted'].includes(b.status) ? [{ icon: <Truck size={18}/>, title: 'Convert to Sales Order', onClick: () => handleConvertClick(b), className: 'btn-success', disabled: convertingId === b.id, loading: convertingId === b.id }] : []),
+                                            ...(canConvert && !['cancelled', 'completed', 'converted'].includes(b.status) ? [{ icon: <Truck size={18}/>, title: 'Convert to Sales Order', onClick: () => handleConvertClick(b), className: 'btn-success', disabled: convertingId === b.id, loading: convertingId === b.id }] : []),
                                             ...(canDownloadPdf ? [{ icon: <Download size={18}/>, title: 'Download PDF', onClick: () => downloadSalesPdf('booking', b.id, b.booking_number), className: 'btn-info' }] : []),
                                             ...(canSendEmail ? [{ icon: <Send size={18} className="action-icon" />, title: 'Send booking email', onClick: () => handleSendEmail(b), className: 'btn-info', disabled: sendingEmail === b.id, loading: sendingEmail === b.id }] : [])
                                         ]}
@@ -1578,7 +1615,7 @@ function Bookings({ category = 'vehicle' }) {
                                         onEdit={canAction && !['cancelled', 'completed'].includes(b.status) ? () => openModal('edit', b) : null}
                                         customActions={[
                                             ...(canDownloadPdf ? [{ icon: <Download size={18}/>, title: 'Download PDF', onClick: () => downloadSalesPdf('booking', b.id, b.booking_number), className: 'btn-info' }] : []),
-                                            ...(canAction && !['cancelled', 'completed', 'converted'].includes(b.status) ? [{ icon: <Truck size={18}/>, title: 'Convert to Sales Order', onClick: () => handleConvertClick(b), className: 'btn-success', disabled: convertingId === b.id, loading: convertingId === b.id }] : []),
+                                            ...(canConvert && !['cancelled', 'completed', 'converted'].includes(b.status) ? [{ icon: <Truck size={18}/>, title: 'Convert to Sales Order', onClick: () => handleConvertClick(b), className: 'btn-success', disabled: convertingId === b.id, loading: convertingId === b.id }] : []),
                                             ...(canSendEmail ? [{ icon: <Send size={18} className="action-icon" />, title: 'Send booking email', onClick: () => handleSendEmail(b), className: 'btn-info', disabled: sendingEmail === b.id, loading: sendingEmail === b.id }] : [])
                                         ]}
                                     />
@@ -1629,6 +1666,7 @@ function Bookings({ category = 'vehicle' }) {
                                     requireInventoryVehicle
                                     category={config.key}
                                 />
+                                <ServiceChargesEditor {...svc.editorProps} currencyCode={currency.code} form={modalMode === 'edit' ? 'edit' : 'create'} pageKey={isParts ? 'part_bookings' : 'bookings'} />
                                 <div className="form-row">
                                     <div className="form-group">
                                         <label>Booking Amount ({currency.code}) *</label>
@@ -1696,6 +1734,7 @@ function Bookings({ category = 'vehicle' }) {
                     { label: 'Notes', value: drawerItem?.notes, full: true },
                 ]}
                 items={drawerItem?.items || []}
+                serviceCharges={drawerItem?.service_charges || []}
                 statusOptions={statusOptions}
                 status={drawerItem?.status}
                 onStatusChange={handleDrawerStatus}
@@ -1739,6 +1778,8 @@ function SalesOrders({ category = 'vehicle' }) {
 
     // A sales order may sell any mix of vehicles and parts in one document.
     const [orderLines, setOrderLines] = useState([]);
+    // Optional service charges block (tick box on the form).
+    const svc = useServiceCharges();
     const [formData, setFormData] = useState({
         customerId: '', walkIn: false, walkInName: '', walkInPhone: '',
         vehiclePrice: '', accessoriesTotal: '0',
@@ -1760,6 +1801,9 @@ function SalesOrders({ category = 'vehicle' }) {
     // fallback for a role that has never been through Role Jobs.
     const canDeliverOrInvoice = config.can.deliver
         && allows('edit', ['super_admin', 'admin', 'sales_manager', 'accountant'].includes(user?.role));
+    // Marking delivered and importing are their own grants, separate from edit / create.
+    const canMarkDelivered = config.can.deliver && allows('markDelivered', canDeliverOrInvoice);
+    const canImportOrders = allows('import', ['super_admin', 'admin', 'sales_manager'].includes(user?.role));
     // These two used to be the category's capability flag alone, which says
     // whether the *screen* has the feature, never whether this role may use it.
     const canEditInvoice = config.can.editInvoice && policyAllows(user, 'invoices', 'edit', canEdit);
@@ -1848,7 +1892,7 @@ function SalesOrders({ category = 'vehicle' }) {
     const fetchDropdowns = useCallback(async () => {
         try {
             const results = await Promise.allSettled([
-                fetchAllCustomersForDropdown(),
+                fetchAllCustomersForDropdown(isParts ? 'sales_orders' : 'sales_orders'),
                 vehicleAPI.getAll({ limit: 500 }),
                 partsAPI.getAll({ limit: 200 }),
                 paymentMethodsAPI.getAll({ status: 'active' })
@@ -1888,6 +1932,8 @@ function SalesOrders({ category = 'vehicle' }) {
     const openModal = (mode, item = null) => {
         setModalMode(mode);
         setSelectedItem(item);
+        // The service charges block follows the document being opened.
+        if (item) svc.loadFrom(item); else svc.reset();
         if (item) {
             setOrderLines(categoryLines(item.line_items, config.key).map((line, index) => ({
                 key: `saved-${index}`,
@@ -1939,7 +1985,7 @@ function SalesOrders({ category = 'vehicle' }) {
 
     // Rule 2 — refresh dropdown and auto-select the customer created inline
     const handleCustomerCreated = useCallback(async (created) => {
-        try { setCustomers(await fetchAllCustomersForDropdown()); } catch (_) { /* dropdown refresh best-effort */ }
+        try { setCustomers(await fetchAllCustomersForDropdown(isParts ? 'sales_orders' : 'sales_orders')); } catch (_) { /* dropdown refresh best-effort */ }
         const newId = created?._id || created?.id;
         if (newId) setFormData(prev => ({ ...prev, customerId: String(newId) }));
     }, []);
@@ -2002,7 +2048,8 @@ function SalesOrders({ category = 'vehicle' }) {
                 })),
                 taxAmount: Number(formData.taxAmount) > 0 || !salesTax
                     ? Number(formData.taxAmount || 0)
-                    : calculateConfiguredTax(orderSubtotal || Number(formData.vehiclePrice || 0), salesTax)
+                    : calculateConfiguredTax(orderSubtotal || Number(formData.vehiclePrice || 0), salesTax),
+                ...svc.payload(),
             };
             if (modalMode === 'create') {
                 const res = await docApi.createDirectOrder(payload);
@@ -2149,7 +2196,7 @@ function SalesOrders({ category = 'vehicle' }) {
                 <div><h3>{config.label} Sales Orders</h3>{config.can.bulk && <BulkSalesActions type="order" config={config} selectedRows={data.filter(x=>selectedIds.includes(x.id))} onClear={()=>setSelectedIds([])} onRefresh={fetchData} canEmail={canSendEmail} canPdf={canDownloadPdf} canDelete={canDelete}/>}</div>
                 {canCreate && (
                     <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                        <button
+                        {canImportOrders && <button
                             type="button"
                             className="btn btn-secondary"
                             onClick={() => setShowBulkUpload(true)}
@@ -2157,7 +2204,7 @@ function SalesOrders({ category = 'vehicle' }) {
                         >
                             <Upload size={18} style={{ marginRight: 4 }} />
                             Upload
-                        </button>
+                        </button>}
                         <ScanLink config={config} doc="order" />
                         <button className="btn btn-primary" onClick={() => openModal('create')}>
                             <span className="material-icons" style={{ fontSize: '18px', verticalAlign: 'middle', marginRight: '4px' }}>add</span>
@@ -2237,7 +2284,7 @@ function SalesOrders({ category = 'vehicle' }) {
                                                 onClick: () => handleGenerateInvoice(o),
                                                 className: 'btn-info'
                                             }] : []),
-                                            ...(canDeliverOrInvoice && o.status === 'dispatched' ? [{
+                                            ...(canMarkDelivered && o.status === 'dispatched' ? [{
                                                 icon: <Truck size={18} className="action-icon" />,
                                                 title: 'Mark Delivered',
                                                 onClick: () => handleDeliverClick(o),
@@ -2379,7 +2426,7 @@ function SalesOrders({ category = 'vehicle' }) {
                                 />
                             </div>
 
-                            {modalMode === 'create' && (
+                            {modalMode === 'create' && (<>
                                 <LineItemsEditor
                                     value={orderLines}
                                     onChange={setOrderLines}
@@ -2389,6 +2436,8 @@ function SalesOrders({ category = 'vehicle' }) {
                                     requireInventoryVehicle
                                     category={config.key}
                                 />
+                                <ServiceChargesEditor {...svc.editorProps} currencyCode={currency.code} form="create" pageKey="sales_orders" />
+                                </>
                             )}
 
                             <div className="form-row">
@@ -2550,6 +2599,7 @@ function SalesOrders({ category = 'vehicle' }) {
                     { label: 'Notes', value: drawerItem?.notes, full: true },
                 ]}
                 items={drawerItem?.items || []}
+                serviceCharges={drawerItem?.service_charges || []}
                 statusOptions={statusOptions}
                 status={drawerItem?.status}
                 onStatusChange={handleDrawerStatus}
@@ -2584,6 +2634,8 @@ function Invoices({ category = 'vehicle' }) {
     // rather than the free-text rows a vehicle/service invoice uses.
     const [partOptions, setPartOptions] = useState([]);
     const [partLines, setPartLines] = useState([]);
+    // Optional service charges block (tick box on the form).
+    const svc = useServiceCharges();
     const { user } = useAuth();
     const { currency, salesTax, serviceTax, taxAmount: calculateConfiguredTax } = useErpDocumentSettings();
     const [searchParams] = useSearchParams();
@@ -2604,9 +2656,13 @@ function Invoices({ category = 'vehicle' }) {
     const [filters, setFilters] = useState({
         search: urlSearch, status: '', customerId: '',
         dateFrom: '', dateTo: '',
+        // The Paid | Credit tabs. '' shows both.
+        paymentTerm: '',
         sortBy: 'created_at', sortOrder: 'desc'
     });
     const debouncedSearch = useDebounce(filters.search, 300);
+    // The figure cards above the list: total / paid / credit / outstanding / overdue.
+    const [summary, setSummary] = useState(null);
 
     // Payment Modal
     const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -2621,6 +2677,8 @@ function Invoices({ category = 'vehicle' }) {
     const [formData, setFormData] = useState({
         invoiceType: 'sales', customerId: '', walkIn: false, walkInName: '', walkInPhone: '', dueDays: '30', notes: '', termsAndConditions: '',
         status: 'paid',
+        // Paid at the counter, or issued on credit and collected later.
+        paymentTerm: 'paid', creditDueDate: '',
         paymentMethodId: '',
         paidAmount: '',
         items: [{ description: '', quantity: 1, unitPrice: '', taxAmount: '0' }]
@@ -2632,7 +2690,11 @@ function Invoices({ category = 'vehicle' }) {
     // lines are not editable; cancelling it (delete) is what returns the stock.
     const canEdit = config.can.editInvoice && allows('edit', ['super_admin','admin','accountant'].includes(user?.role));
     const canDelete = allows('delete', user?.role === 'super_admin');
-    const canRecordPayment = ['super_admin', 'admin', 'sales_manager', 'accountant'].includes(user?.role);
+    // Taking money against an invoice is its own grant (Role Jobs → Record
+    // payment); the role list is only the fallback for an unconfigured role.
+    const canRecordPayment = allows('recordPayment', ['super_admin', 'admin', 'sales_manager', 'accountant'].includes(user?.role));
+    const canChangePaymentTerm = allows('changePaymentTerm', canCreate);
+    const canImportInvoices = allows('import', canCreate);
     const showField = documentFieldAccessor(user, config.key, 'invoices', 'part_invoices');
 
     // Detail drawer (status + payment ledger)
@@ -2709,6 +2771,12 @@ function Invoices({ category = 'vehicle' }) {
             } else {
                 setData(res.data || []);
             }
+            // The cards are over the whole set (all tabs), narrowed only by dates.
+            if (typeof docApi.getSummary === 'function') {
+                docApi.getSummary({ dateFrom: filters.dateFrom || undefined, dateTo: filters.dateTo || undefined })
+                    .then((summaryRes) => setSummary(summaryRes.data?.data || null))
+                    .catch(() => setSummary(null));
+            }
         } catch (error) {
             console.error('Error fetching invoices:', error);
             setData([]);
@@ -2724,14 +2792,14 @@ function Invoices({ category = 'vehicle' }) {
     };
 
     const clearFilters = () => {
-        setFilters({ search: '', status: '', customerId: '', dateFrom: '', dateTo: '', sortBy: 'created_at', sortOrder: 'desc' });
+        setFilters({ search: '', status: '', customerId: '', dateFrom: '', dateTo: '', paymentTerm: '', sortBy: 'created_at', sortOrder: 'desc' });
         setPagination(prev => ({ ...prev, page: 1 }));
     };
 
     const fetchDropdowns = useCallback(async () => {
         try {
             const results = await Promise.allSettled([
-                fetchAllCustomersForDropdown(),
+                fetchAllCustomersForDropdown(isParts ? 'part_invoices' : 'invoices'),
                 docApi.getPaymentMethods(),
                 erpSettingsAPI.getCompanies({ limit: 1 }),
                 serviceMasterAPI.getTypes({ is_active: true, limit: 200 }),
@@ -2774,7 +2842,7 @@ function Invoices({ category = 'vehicle' }) {
 
     // Rule 2 — refresh dropdown and auto-select the customer created inline
     const handleCustomerCreated = useCallback(async (created) => {
-        try { setCustomers(await fetchAllCustomersForDropdown()); } catch (_) { /* dropdown refresh best-effort */ }
+        try { setCustomers(await fetchAllCustomersForDropdown(isParts ? 'part_invoices' : 'invoices')); } catch (_) { /* dropdown refresh best-effort */ }
         const newId = created?._id || created?.id;
         if (newId) setFormData(prev => ({ ...prev, customerId: String(newId) }));
     }, []);
@@ -2782,6 +2850,8 @@ function Invoices({ category = 'vehicle' }) {
     const openModal = async (mode, item = null) => {
         setModalMode(mode);
         setSelectedItem(item);
+        // The service charges block follows the document being opened.
+        if (item) svc.loadFrom(item); else svc.reset();
 
         if (mode === 'create') {
             setPartLines([]);
@@ -2789,6 +2859,7 @@ function Invoices({ category = 'vehicle' }) {
                 invoiceType: isParts ? 'parts' : 'sales',
                 customerId: '', walkIn: false, walkInName: '', walkInPhone: '', dueDays: '30', notes: '', termsAndConditions: '',
                 status: 'paid',
+                paymentTerm: 'paid', creditDueDate: '',
                 paymentMethodId: '',
                 paidAmount: '',
                 items: [{ description: '', quantity: 1, unitPrice: '', taxAmount: '0' }]
@@ -2873,7 +2944,7 @@ function Invoices({ category = 'vehicle' }) {
     );
 
     // Matches what the server stores: gross, less line discounts, plus line tax.
-    const calculateInvoiceTotal = () => calculateSubtotal() - calculateTotalDiscount() + calculateTotalTax();
+    const calculateInvoiceTotal = () => calculateSubtotal() - calculateTotalDiscount() + calculateTotalTax() + svc.totals.grand;
     // Over-tender is change; anything short of the total means no invoice.
     const invoiceTendered = Number(formData.paidAmount) || 0;
     const invoiceShortfall = Math.max(0, calculateInvoiceTotal() - invoiceTendered);
@@ -2899,26 +2970,36 @@ function Invoices({ category = 'vehicle' }) {
                 const preparedTax = calculateTotalTax();
                 const invoiceTotal = calculateInvoiceTotal();
 
-                // An invoice is raised only against money already collected —
-                // there is no such thing here as an invoice with a balance. The
-                // price is negotiated on the quotation; by this point it is paid.
-                if (!formData.paymentMethodId) {
-                    toast.error('Select how the customer is paying');
-                    return;
-                }
-                const tendered = formData.paidAmount === '' || formData.paidAmount == null
-                    ? 0
-                    : Number(formData.paidAmount);
-                if (Number.isNaN(tendered) || tendered < 0) {
-                    toast.error('Amount received must be a valid, positive number');
-                    return;
-                }
-                if (tendered + 0.009 < invoiceTotal) {
-                    toast.error(
-                        `An invoice can only be created once it is paid in full — ${currency.code} `
-                        + `${(invoiceTotal - tendered).toLocaleString()} is still outstanding.`,
-                    );
-                    return;
+                // Two ways to raise an invoice. Paid: raised only against money
+                // already collected, no such thing as a balance. Credit: issued
+                // unpaid with a due date; the money comes later through Record
+                // Payment. No approval step either way.
+                const isCredit = formData.paymentTerm === 'credit';
+                let tendered = 0;
+                if (isCredit) {
+                    if (!formData.creditDueDate) {
+                        toast.error('Give the credit invoice a due date');
+                        return;
+                    }
+                } else {
+                    if (!formData.paymentMethodId) {
+                        toast.error('Select how the customer is paying');
+                        return;
+                    }
+                    tendered = formData.paidAmount === '' || formData.paidAmount == null
+                        ? 0
+                        : Number(formData.paidAmount);
+                    if (Number.isNaN(tendered) || tendered < 0) {
+                        toast.error('Amount received must be a valid, positive number');
+                        return;
+                    }
+                    if (tendered + 0.009 < invoiceTotal) {
+                        toast.error(
+                            `A paid invoice can only be created once it is paid in full — ${currency.code} `
+                            + `${(invoiceTotal - tendered).toLocaleString()} is still outstanding. Switch to Credit to issue it unpaid.`,
+                        );
+                        return;
+                    }
                 }
 
                 const submitData = {
@@ -2928,17 +3009,22 @@ function Invoices({ category = 'vehicle' }) {
                     // Line tax already sits on each part line; sending it at the
                     // document level too would tax the sale twice.
                     taxAmount: isParts ? 0 : preparedTax,
-                    // The server records the payment as part of creating the
+                    // The server records the payment as part of creating a paid
                     // invoice, so there is no window where an unpaid one exists.
                     paidAmount: tendered,
-                    paymentMethodId: formData.paymentMethodId,
+                    paymentMethodId: isCredit ? undefined : formData.paymentMethodId,
+                    paymentTerm: isCredit ? 'credit' : 'paid',
+                    creditDueDate: isCredit ? formData.creditDueDate : undefined,
+                    ...svc.payload(),
                 };
                 const res = await docApi.create(submitData);
 
                 const change = Number(res?.data?.data?.changeDue) || 0;
-                toast.success(change > 0
-                    ? `Invoice created — return change of ${currency.code} ${change.toLocaleString()}`
-                    : 'Invoice created successfully');
+                toast.success(isCredit
+                    ? (res?.data?.message || 'Credit invoice created')
+                    : change > 0
+                        ? `Invoice created — return change of ${currency.code} ${change.toLocaleString()}`
+                        : 'Invoice created successfully');
             } else if (modalMode === 'edit') {
                 await docApi.update(selectedItem.id, formData);
                 toast.success('Invoice updated successfully');
@@ -3075,6 +3161,36 @@ function Invoices({ category = 'vehicle' }) {
                 )}
             </div>
 
+            {/* Cards, not a report: the whole set at a glance. The Credit and
+                Overdue cards double as shortcuts to the Credit tab. */}
+            {summary && showField('amounts') && (
+                <StatCards items={[
+                    { key: 'total', label: 'Total invoices', value: summary.total, sub: formatPKR(summary.totalAmount), icon: <FileText size={18} />, color: '#3b82f6', bg: '#dbeafe', onClick: () => handleFilterChange('paymentTerm', ''), active: !filters.paymentTerm },
+                    { key: 'paid', label: 'Paid', value: summary.paidCount, sub: formatPKR(summary.paidAmount), icon: <Wallet size={18} />, color: '#16a34a', bg: '#dcfce7', onClick: () => handleFilterChange('paymentTerm', 'paid'), active: filters.paymentTerm === 'paid' },
+                    { key: 'credit', label: 'Credit', value: summary.creditCount, sub: formatPKR(summary.creditAmount), icon: <CreditCard size={18} />, color: '#f59e0b', bg: '#fef3c7', onClick: () => handleFilterChange('paymentTerm', 'credit'), active: filters.paymentTerm === 'credit' },
+                    { key: 'outstanding', label: 'Outstanding (credit)', value: formatPKR(summary.creditOutstanding), icon: <Clock size={18} />, color: '#7c3aed', bg: '#ede9fe' },
+                    { key: 'overdue', label: 'Overdue', value: summary.overdueCount, sub: formatPKR(summary.overdueAmount), icon: <AlertTriangle size={18} />, color: '#dc2626', bg: '#fee2e2' },
+                ]} />
+            )}
+
+            {/* Paid | Credit tabs — the same strip the Parts Inventory source
+                types use. */}
+            <div className="sales-term-tabs" role="tablist">
+                {[['', 'All'], ['paid', 'Paid'], ['credit', 'Credit']].map(([value, label]) => (
+                    <button
+                        key={value || 'all'}
+                        type="button"
+                        role="tab"
+                        aria-selected={filters.paymentTerm === value}
+                        className={`sales-term-tab${filters.paymentTerm === value ? ' active' : ''}`}
+                        onClick={() => handleFilterChange('paymentTerm', value)}
+                    >
+                        {label}
+                        {value === 'credit' && summary?.creditCount > 0 && <span className="sales-term-count">{summary.creditCount}</span>}
+                    </button>
+                ))}
+            </div>
+
             <SalesFilterBar
                 filters={filters}
                 onFilterChange={handleFilterChange}
@@ -3098,6 +3214,7 @@ function Invoices({ category = 'vehicle' }) {
                             {showField('amounts') && <th>Total</th>}
                             {showField('payments') && <th>Paid</th>}
                             {showField('payments') && <th>Balance</th>}
+                            {showField('payments') && <th>Payment Term</th>}
                             <th>Status</th>
                             <th>Actions</th>
                         </tr>
@@ -3131,6 +3248,13 @@ function Invoices({ category = 'vehicle' }) {
                                 {showField('payments') && <td>PKR {Number(inv.paid_amount || 0).toLocaleString()}</td>}
                                 {showField('payments') && <td style={{ color: inv.balance_amount > 0 ? '#dc2626' : '#16a34a' }}>
                                     PKR {Number(inv.balance_amount).toLocaleString()}
+                                </td>}
+                                {showField('payments') && <td>
+                                    {inv.payment_term === 'credit'
+                                        ? <span className={`badge ${inv.credit_status === 'overdue' ? 'badge-danger' : inv.credit_status === 'settled' ? 'badge-success' : 'badge-warning'}`} title={inv.credit_due_date ? `Due ${new Date(inv.credit_due_date).toLocaleDateString()}` : ''}>
+                                            CREDIT{inv.credit_status && inv.credit_status !== 'open' ? ` · ${inv.credit_status.toUpperCase()}` : ''}
+                                          </span>
+                                        : <span className="badge badge-success">PAID</span>}
                                 </td>}
                                 <td>{getStatusBadge(inv.status)}</td>
                                 <td onClick={e=>e.stopPropagation()}>
@@ -3266,6 +3390,7 @@ function Invoices({ category = 'vehicle' }) {
                     { label: 'Notes', value: drawerInvoice?.notes, full: true },
                 ]}
                 items={drawerInvoice?.items || []}
+                serviceCharges={drawerInvoice?.service_charges || []}
                 statusOptions={statusOptions}
                 status={drawerInvoice?.status}
                 onStatusChange={handleDrawerStatus}
@@ -3382,6 +3507,7 @@ function Invoices({ category = 'vehicle' }) {
                                         </div>
                                         </>
                                         )}
+                                        <ServiceChargesEditor {...svc.editorProps} currencyCode={currency.code} form={modalMode === 'edit' ? 'edit' : 'create'} pageKey={isParts ? 'part_invoices' : 'invoices'} />
                                     </div>
                                 </div>
 
@@ -3398,9 +3524,44 @@ function Invoices({ category = 'vehicle' }) {
                                         <input type="number" name="dueDays" value={formData.dueDays} onChange={handleChange} min="0" max="365" />
                                     </div>
 
-                                    {/* No status picker here: an invoice is only ever
-                                        raised once it has been paid in full, so it is
-                                        born paid. */}
+                                    {/* Paid at the counter, or issued on credit and collected
+                                        later. A paid invoice is born paid; a credit invoice
+                                        is born with a balance and a due date. */}
+                                    <div className="form-group">
+                                        <label>Payment Terms *</label>
+                                        <div className="sales-term-tabs" style={{ padding: 0 }} role="tablist">
+                                            {[['paid', 'Paid now'], ['credit', 'Credit']].map(([value, label]) => (
+                                                <button
+                                                    key={value}
+                                                    type="button"
+                                                    role="tab"
+                                                    aria-selected={formData.paymentTerm === value}
+                                                    className={`sales-term-tab${formData.paymentTerm === value ? ' active' : ''}`}
+                                                    disabled={value === 'credit' && !canChangePaymentTerm}
+                                                    title={value === 'credit' && !canChangePaymentTerm ? 'Your role may not issue credit invoices' : ''}
+                                                    onClick={() => setFormData(prev => ({ ...prev, paymentTerm: value }))}
+                                                >
+                                                    {label}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    {formData.paymentTerm === 'credit' && (
+                                        <div className="form-group">
+                                            <label>Credit Due Date *</label>
+                                            <input
+                                                type="date"
+                                                name="creditDueDate"
+                                                value={formData.creditDueDate}
+                                                onChange={handleChange}
+                                                min={new Date().toISOString().slice(0, 10)}
+                                            />
+                                            <small style={{ color: '#b45309', fontWeight: 600, display: 'block', marginTop: '0.4rem' }}>
+                                                Issued unpaid — {currency.code} {calculateInvoiceTotal().toLocaleString()} will show as outstanding until recorded.
+                                            </small>
+                                        </div>
+                                    )}
+                                    {formData.paymentTerm !== 'credit' && (<>
                                     <div className="form-group">
                                         <label>Payment Mode *</label>
                                         <SearchableSelect
@@ -3443,6 +3604,7 @@ function Invoices({ category = 'vehicle' }) {
                                             </small>
                                         ) : null}
                                     </div>
+                                    </>)}
 
                                     <div style={{ borderTop: '2px solid #e5e7eb', marginTop: '1.5rem', paddingTop: '1.5rem' }}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>

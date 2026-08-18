@@ -1720,8 +1720,14 @@ img {
  * The layout declarations are forced because roughly a dozen page stylesheets
  * set `display` on `.form-group label` with enough specificity to win — the
  * Users page is one. Chasing each of those would leave the next new page broken
- * again, so this one purpose-built class overrides them all. Only the layout is
- * forced; colour and type still come from the page.
+ * again, so this one purpose-built class overrides them all.
+ *
+ * It is a <div>, never a <label>. A <label> activates its first labelable
+ * descendant when any part of it is clicked, and here that descendant is the
+ * quick-create <button> or the walk-in checkbox — so clicking the caption
+ * "Customer *" opened the New Customer dialog, or switched the sale to walk-in.
+ * A <div> has no activation behaviour, so it carries the label typography
+ * itself instead of inheriting it from the page's `label` rules.
  */
 .form-label-add,
 label:has(> .label-add-link),
@@ -1731,6 +1737,19 @@ label:has(> .label-add-actions) {
   align-items: center !important;
   justify-content: space-between !important;
   gap: 12px;
+}
+
+.form-label-add {
+  margin-bottom: 8px;
+  font-weight: 500;
+  font-size: 14px;
+  color: #334155;
+}
+
+/* The caption inside behaves like the label text it replaced. */
+.form-label-add > span:first-child {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 /* Several controls on one label (e.g. "+ Vehicle" and "+ Part"). */
@@ -2018,4 +2037,13 @@ label:has(> .label-add-link) > .label-add-link {
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ROLE VIEW GATE (components/ViewGate.js)
+   A table column, drawer row or drawer button the role may not see. Set from
+   Role Jobs → Table columns / Drawer; applied by reading the words on screen.
+   ═══════════════════════════════════════════════════════════════ */
+.vg-hidden.vg-hidden {
+  display: none !important;
 }

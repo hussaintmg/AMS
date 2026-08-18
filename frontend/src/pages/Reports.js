@@ -18,6 +18,12 @@ const TABS = [
   { key: 'expenses', label: 'Expenses Report', icon: '💳' },
   { key: 'payments', label: 'Payments Report', icon: '💵' },
   { key: 'employee', label: 'Employee Report', icon: '👤' },
+  // Added 2026-08-18: money owed to us, money we owe, the accounts it sits
+  // in, and what came through the gate.
+  { key: 'credit', label: 'Credit / Receivables', icon: '🧾' },
+  { key: 'payables', label: 'Payables', icon: '📤' },
+  { key: 'accounts', label: 'Petty Cash & Accounts', icon: '🏦' },
+  { key: 'gatepass', label: 'Gate Passes', icon: '🚧' },
 ];
 
 const TAB_CARDS = {
@@ -83,6 +89,32 @@ const TAB_CARDS = {
     { key: 'activeEmployees', label: 'Active', default: '—' },
     { key: 'onLeave', label: 'On Leave', default: '—' },
     { key: 'departments', label: 'Departments', default: '—' },
+  ],
+  credit: [
+    { key: 'outstanding', label: 'Outstanding (credit)', default: '—', prefix: 'PKR ' },
+    { key: 'overdue', label: 'Overdue', default: '—', prefix: 'PKR ' },
+    { key: 'invoiceCount', label: 'Credit Invoices', default: '—' },
+    { key: 'customersWithCredit', label: 'Customers with Credit', default: '—' },
+    { key: 'avgDaysOverdue', label: 'Avg Days Overdue', default: '—' },
+  ],
+  payables: [
+    { key: 'outstanding', label: 'Outstanding', default: '—', prefix: 'PKR ' },
+    { key: 'overdue', label: 'Overdue', default: '—', prefix: 'PKR ' },
+    { key: 'count', label: 'Payables', default: '—' },
+    { key: 'vendors', label: 'Vendors', default: '—' },
+  ],
+  accounts: [
+    { key: 'opening', label: 'Opening', default: '—', prefix: 'PKR ' },
+    { key: 'totalIn', label: 'Money In', default: '—', prefix: 'PKR ' },
+    { key: 'totalOut', label: 'Money Out', default: '—', prefix: 'PKR ' },
+    { key: 'closing', label: 'Closing', default: '—', prefix: 'PKR ' },
+    { key: 'overLimit', label: 'Accounts Over Limit', default: '—' },
+  ],
+  gatepass: [
+    { key: 'inToday', label: 'In Today', default: '—' },
+    { key: 'outToday', label: 'Out Today', default: '—' },
+    { key: 'open', label: 'Still Inside', default: '—' },
+    { key: 'itemsReceived', label: 'Items Received', default: '—' },
   ],
 };
 
@@ -319,12 +351,54 @@ const TAB_FETCHERS = {
       errors,
     };
   },
+  // The four finance / gate reports all answer { summary, rows }.
+  credit: async (params) => {
+    const res = await reportAPI.getCreditReceivables(params);
+    const { summary = {}, rows = [] } = res.data?.data || {};
+    const b = summary.buckets || {};
+    return {
+      cards: { outstanding: summary.outstanding, overdue: summary.overdue, invoiceCount: summary.invoice_count, customersWithCredit: summary.customers_with_credit, avgDaysOverdue: summary.avg_days_overdue },
+      sections: [
+        { key: 'ageing', title: 'Ageing', rows: [{ bucket: 'Current', outstanding: b.current || 0 }, { bucket: '1–30 days', outstanding: b['1_30'] || 0 }, { bucket: '31–60 days', outstanding: b['31_60'] || 0 }, { bucket: '61–90 days', outstanding: b['61_90'] || 0 }, { bucket: '90+ days', outstanding: b['90_plus'] || 0 }] },
+        { key: 'invoices', title: 'Credit invoices outstanding', rows },
+      ],
+      errors: [],
+    };
+  },
+  payables: async (params) => {
+    const res = await reportAPI.getPayables(params);
+    const { summary = {}, rows = [] } = res.data?.data || {};
+    return {
+      cards: { outstanding: summary.outstanding, overdue: summary.overdue, count: summary.count, vendors: summary.vendors },
+      sections: [{ key: 'payables', title: 'Payables', rows }],
+      errors: [],
+    };
+  },
+  accounts: async (params) => {
+    const res = await reportAPI.getAccountBalances(params);
+    const { summary = {}, rows = [] } = res.data?.data || {};
+    return {
+      cards: { opening: summary.opening, totalIn: summary.total_in, totalOut: summary.total_out, closing: summary.closing, overLimit: summary.over_limit },
+      sections: [{ key: 'accounts', title: 'Balance sheet by account', rows }],
+      errors: [],
+    };
+  },
+  gatepass: async (params) => {
+    const res = await reportAPI.getGatePasses(params);
+    const { summary = {}, rows = [] } = res.data?.data || {};
+    return {
+      cards: { inToday: summary.in_today, outToday: summary.out_today, open: summary.open, itemsReceived: summary.items_received },
+      sections: [{ key: 'passes', title: 'Gate passes', rows }],
+      errors: [],
+    };
+  },
 };
 
 const HIDDEN_COLUMNS = new Set(['id', '_id', 'customerId', 'onLeave', 'departments', 'invoice_id', 'line_items', 'customer_id', 'quotation_id', 'sales_order_id', 'seller_id']);
 const MONEY_COLUMNS = new Set([
   'amount', 'revenue', 'payment', 'balance', 'outstanding', 'stockValue', 'totalAmount', 'paidAmount',
   'balanceAmount', 'total_purchased', 'total_paid', 'overdue_amount', 'paid', 'subtotal', 'discount',
+  'opening', 'closing', 'money_in', 'money_out', 'current_balance', 'limit',
 ]);
 const isMoneyColumn = (key) => MONEY_COLUMNS.has(key) || /(_price|_amount|_total|_value)$/.test(key);
 const isDateColumn = (key) => /date/i.test(key) || /_at$/.test(key);

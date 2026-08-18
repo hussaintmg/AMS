@@ -10,7 +10,7 @@ import LeaveFormModal from './LeaveFormModal';
 import LeaveDrawer from './LeaveDrawer';
 import BulkSelectionBar from '../components/BulkSelectionBar';
 import { Search } from "lucide-react";
-import { fieldAccessor, pageActions } from '../utils/roleJobs';
+import { fieldAccessor, pageActions, getRoleJob } from '../utils/roleJobs';
 import '../styles/userManagement.css';
 
 const STATUS_BADGE = {
@@ -63,7 +63,9 @@ const Leaves = () => {
     else if (result.error) setErrorPopup(result.error);
   };
 
-  const canApprove = can('edit') && hasRole(['super_admin', 'admin', 'hr_admin']);
+  // Approving / rejecting is its own grant (Role Jobs → Leaves → Approve); the
+  // role list is only the fallback for a role that has never been configured.
+  const canApprove = getRoleJob(currentUser, 'leaves') ? can('approve') : (can('edit') && hasRole(['super_admin', 'admin', 'hr_admin']));
 
   const fetchLeaves = useCallback(async () => {
     try {

@@ -44,7 +44,9 @@ function LeadsPage() {
   const canDelete = allows('delete', true);
   // Converting writes a Customer and stamps the lead; the API guards it as an
   // edit of the lead.
-  const canConvert = canEdit;
+  // Converting is its own grant (Role Jobs → Leads → Convert), separate from edit.
+  const canConvert = allows('convert', canEdit);
+  const canImport = allows('import', canCreate);
   const [urlParams] = useSearchParams();
   const { leads, meta, stats, pagination, search, filters, loading, handleSearch, handleFilter, clearFilters, goToPage, setPageSize, refreshLeads, deleteLead, loadLeads, convertLead } = useLeads();
   const [showForm, setShowForm] = useState(false);
@@ -451,7 +453,7 @@ function LeadsPage() {
         </div>
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
           {/* Bulk upload creates leads, so it is the same permission as Add. */}
-          {canCreate && (
+          {canImport && (
             <button
               type="button"
               className="btn btn-secondary btn-create"

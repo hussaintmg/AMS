@@ -96,6 +96,13 @@ const getAllUsers = async (req, res, next) => {
     if (status) {
       query.status = status;
     }
+    // A form's user dropdown (manager, advisor, technician, assignee) names
+    // itself so Role Jobs can narrow whose users it lists. A user owns their
+    // own row as well as the ones they created.
+    const { requestDropdownFilter, isHidden } = require('../utils/dropdownScope');
+    const scope = await requestDropdownFilter(req, null, ['_id', 'createdBy']);
+    if (isHidden(scope)) return res.json({ success: true, data: [], pagination: { page: 1, limit: Number(limit), total: 0, totalPages: 0 } });
+    if (scope) Object.assign(query, query.$or ? { $and: [{ $or: query.$or }, scope] } : scope);
 
     const pageNum = Math.max(1, Number(page));
     const limitNum = Math.min(1000, Math.max(1, Number(limit)));

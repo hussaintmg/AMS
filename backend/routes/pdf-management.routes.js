@@ -32,11 +32,12 @@ router.delete('/variables/:id', admin, controller.deleteVariable);
  * loader tries the vehicle model and its parts twin, so both sides' pages are
  * accepted here the same way.
  */
+// Custom (free-text) documents print under the same document types.
 const DOCUMENT_PAGES = {
-  quotation: ['quotations', 'part_quotations'],
-  booking: ['bookings'],
+  quotation: ['quotations', 'part_quotations', 'custom_quotations'],
+  booking: ['bookings', 'part_bookings', 'custom_bookings'],
   order: ['sales_orders', 'part_invoices'],
-  invoice: ['invoices', 'part_invoices'],
+  invoice: ['invoices', 'part_invoices', 'custom_invoices'],
 };
 
 const canReachDocument = (action) => (req, res, next) => {

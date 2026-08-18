@@ -21,7 +21,8 @@ router.get('/:id', authenticate, authorizeAction('expenses', 'view'), expenses.g
 router.post('/', authenticate, authorizeAction('expenses', 'create'), expenses.createExpense);
 router.put('/:id', authenticate, authorizeAction('expenses', 'edit'), expenses.updateExpense);
 router.patch('/:id/status', authenticate, authorizeAction('expenses', 'edit'), expenses.toggleExpenseStatus);
-router.post('/:id/post', authenticate, authorizeAction('expenses', 'edit'), expenses.postExpense);
+// Posting to the ledger is its own grant, not part of edit.
+router.post('/:id/post', authenticate, authorizeAction('expenses', 'postLedger'), expenses.postExpense);
 router.delete('/:id', authenticate, authorizeAction('expenses', 'delete'), expenses.deleteExpense);
 
 module.exports = router;

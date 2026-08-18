@@ -2,6 +2,8 @@ const mongoose = require('mongoose');
 const searchPlugin = require('../plugins/searchPlugin');
 const lineItemSchema = require('./lineItem.schema');
 const walkInFields = require('./walkIn.fields');
+const { serviceChargeFields } = require('./serviceCharges.fields');
+const { paymentTermFields, installCreditStatus } = require('./paymentTerm.fields');
 
 const invoiceItemSchema = new mongoose.Schema({
   description: { type: String },
@@ -31,8 +33,12 @@ const invoiceSchema = new mongoose.Schema({
   taxAmount: { type: Number, default: 0 },
   discountAmount: { type: Number, default: 0 },
   totalAmount: { type: Number, default: 0 },
+  // Optional service charges block (models/serviceCharges.fields.js).
+  ...serviceChargeFields,
   paidAmount: { type: Number, default: 0 },
   balanceAmount: { type: Number, default: 0 },
+  // Paid at the counter, or issued on credit and collected later.
+  ...paymentTermFields,
   items: { type: [invoiceItemSchema], default: [] },
   // Every sellable line (vehicles and/or parts). Reaching an invoice is what
   // moves stock: parts decrement here, vehicles become sold here.
@@ -69,6 +75,8 @@ invoiceSchema.index(
 invoiceSchema.index({ customer: 1 });
 invoiceSchema.index({ salesOrder: 1 });
 invoiceSchema.index({ status: 1 });
+invoiceSchema.index({ paymentTerm: 1, creditStatus: 1 });
+installCreditStatus(invoiceSchema);
 
 invoiceSchema.plugin(searchPlugin, { entityType: 'invoice' });
 const Invoice = mongoose.model('Invoice', invoiceSchema);

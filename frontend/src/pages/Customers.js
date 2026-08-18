@@ -10,7 +10,7 @@ import ConfirmModal from '../components/ConfirmModal';
 import BulkUploadModal from '../components/BulkUploadModal';
 import ServerPagination from '../components/ServerPagination';
 import { useAuth } from '../context/AuthContext';
-import { fieldAccessor, canRoleDo } from '../utils/roleJobs';
+import { fieldAccessor, canRoleDo, getRoleJob } from '../utils/roleJobs';
 import '../styles/leadManagement.css';
 import '../styles/filters.css';
 
@@ -43,7 +43,11 @@ function CustomersPage() {
   const { user } = useAuth();
   const showField = fieldAccessor(user, 'customers');
   const canCreateCustomer = canRoleDo(user, 'customers', 'create');
+  // Importing a spreadsheet is its own grant, separate from create.
+  const canImportCustomers = getRoleJob(user, 'customers') ? canRoleDo(user, 'customers', 'import') : canCreateCustomer;
   const canEditCustomer = canRoleDo(user, 'customers', 'edit');
+  // Activating / deactivating is its own grant, separate from edit.
+  const canToggleCustomer = getRoleJob(user, 'customers') ? canRoleDo(user, 'customers', 'toggleStatus') : canEditCustomer;
   const canDeleteCustomer = canRoleDo(user, 'customers', 'delete');
 
   const toggleSelect = (id) => {
@@ -212,11 +216,11 @@ function CustomersPage() {
                 <td>
                   <ActionButtons
                     onEdit={canEditCustomer ? () => { setEditCustomer(c); setShowForm(true); } : null}
-                    onToggle={canEditCustomer ? () => toggleCustomerStatus(c._id).then((res) => { if (res?.success) toast.success(res.message); }).catch(() => toast.error('Failed to toggle status')) : null}
+                    onToggle={canToggleCustomer ? () => toggleCustomerStatus(c._id).then((res) => { if (res?.success) toast.success(res.message); }).catch(() => toast.error('Failed to toggle status')) : null}
                     onDelete={canDeleteCustomer ? () => setDeleteTarget(c) : null}
                     status={c.isActive}
                     title={c.customerCode}
-                    showToggle={canEditCustomer}
+                    showToggle={canToggleCustomer}
                   />
                 </td>
               </tr>
@@ -259,11 +263,11 @@ function CustomersPage() {
                     the one a counter actually uses. */}
                 <ActionButtons
                   onEdit={canEditCustomer ? () => { setEditCustomer(c); setShowForm(true); } : null}
-                  onToggle={canEditCustomer ? () => toggleCustomerStatus(c._id).then((res) => { if (res?.success) toast.success(res.message); }).catch(() => toast.error('Failed')) : null}
+                  onToggle={canToggleCustomer ? () => toggleCustomerStatus(c._id).then((res) => { if (res?.success) toast.success(res.message); }).catch(() => toast.error('Failed')) : null}
                   onDelete={canDeleteCustomer ? () => setDeleteTarget(c) : null}
                   status={c.isActive}
                   title={c.customerCode}
-                  showToggle={canEditCustomer}
+                  showToggle={canToggleCustomer}
                 />
               </div>
             </div>
@@ -365,7 +369,7 @@ function CustomersPage() {
           <p className="subtitle">Manage customer records</p>
         </div>
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
-          {canCreateCustomer && (
+          {canImportCustomers && (
             <button
               type="button"
               className="btn btn-secondary btn-create"

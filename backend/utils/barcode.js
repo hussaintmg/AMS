@@ -28,7 +28,7 @@ const PATTERNS = [
 const START_B = 104;
 const STOP = 106;
 
-const PREFIXES = { part: 'PRT', vehicle: 'VEH' };
+const PREFIXES = { part: 'PRT', vehicle: 'VEH', gatepass: 'GPS' };
 
 const clean = (value) => String(value == null ? '' : value).trim();
 

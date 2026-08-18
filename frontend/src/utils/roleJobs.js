@@ -61,3 +61,104 @@ export const canSeeField = (user, pageKey, fieldKey) => {
 
 /** Bound helper so a screen can write `showField('customer')`. */
 export const fieldAccessor = (user, pageKey) => (fieldKey) => canSeeField(user, pageKey, fieldKey);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Screen-level grants (constants/pageCatalog.js on the server)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// The API-level `fields` mask above decides what data the server sends. These
+// decide what the *screen* draws with it: which table columns, which rows of a
+// record's drawer, which of the drawer's own buttons, which "+ Create X"
+// shortcuts inside a form, and whose records a dropdown offers. Every default
+// is "everything", so a role nobody has configured looks exactly as it did.
+
+/** "Selling Price" → "selling_price" — the same slug the catalog uses. */
+export const catalogSlug = (value) => String(value || '')
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g, '_')
+  .replace(/^_+|_+$/g, '');
+
+const allowList = (job, block) => {
+  if (!job || job.superAdmin) return null;
+  const setting = job[block];
+  if (!setting || setting.mode !== 'selected') return null;
+  return new Set((setting.allowed || []).map(String));
+};
+
+/** May the role see this table column (by catalog key, or by header text)? */
+export const canSeeColumn = (user, pageKey, columnKeyOrLabel) => {
+  const allowed = allowList(getRoleJob(user, pageKey), 'columns');
+  if (!allowed) return true;
+  const key = catalogSlug(columnKeyOrLabel);
+  // Selection and Actions columns are never withheld — nothing to grant there.
+  if (!key || key === 'actions') return true;
+  return allowed.has(key);
+};
+
+/** May the role see this row of the record's drawer (by key or label)? */
+export const canSeeDrawerField = (user, pageKey, fieldKeyOrLabel) => {
+  const allowed = allowList(getRoleJob(user, pageKey), 'drawerFields');
+  if (!allowed) return true;
+  const key = catalogSlug(fieldKeyOrLabel);
+  return !key || allowed.has(key);
+};
+
+/** May the role use this button inside the drawer (e.g. 'drawer.record_payment')? */
+export const canUseDrawerExtra = (user, pageKey, extraKey) => {
+  const allowed = allowList(getRoleJob(user, pageKey), 'drawerExtras');
+  return !allowed || allowed.has(String(extraKey));
+};
+
+/**
+ * May the role raise a new record from inside this page's form?
+ * `form` is 'create' or 'edit'; `key` is what the shortcut raises
+ * ('source', 'department', 'customer', 'service_type'…). The owning page's
+ * Create right is still required — the caller checks that separately.
+ */
+export const canQuickCreate = (user, pageKey, form, key) => {
+  const job = getRoleJob(user, pageKey);
+  if (!job || job.superAdmin) return true;
+  const setting = job.quickCreate;
+  if (!setting || setting.mode !== 'selected') return true;
+  const list = form === 'edit' ? setting.edit : setting.create;
+  return (list || []).map(String).includes(String(key));
+};
+
+/**
+ * The role's rule for one dropdown of one form: { mode, roles, users }, or
+ * null when unrestricted. 'none' means the dropdown is hidden altogether.
+ */
+export const dropdownRule = (user, pageKey, form, key) => {
+  const job = getRoleJob(user, pageKey);
+  if (!job || job.superAdmin) return null;
+  const rows = Array.isArray(job.dropdowns) ? job.dropdowns : [];
+  return rows.find((row) => row.key === key && (row.form || 'create') === form) || null;
+};
+
+/** Whether a dropdown is shown at all for this role. */
+export const canSeeDropdown = (user, pageKey, form, key) => dropdownRule(user, pageKey, form, key)?.mode !== 'none';
+
+/**
+ * Query-string hint a dropdown loader sends so the server can apply the
+ * role's rule for exactly this dropdown:
+ *   customerAPI.getAll({ ...dropdownHint('invoices', 'create', 'customer') })
+ */
+export const dropdownHint = (pageKey, form, key) => ({ forPage: pageKey, forForm: form, forField: key });
+
+/**
+ * The page key for the screen the browser is on, from the catalog's paths —
+ * the longest page path the current path starts with, so /vehicle-sales/…
+ * never resolves to a shorter unrelated page.
+ */
+export const pageKeyForPath = (user, pathname) => {
+  const catalog = user?.pageCatalog || {};
+  const target = String(pathname || '').split('?')[0].replace(/\/+$/, '').toLowerCase() || '/';
+  let best = '';
+  let bestLength = 0;
+  Object.entries(catalog).forEach(([key, entry]) => {
+    const path = String(entry?.path || '').toLowerCase();
+    if (!path) return;
+    if ((target === path || target.startsWith(`${path}/`)) && path.length > bestLength) { best = key; bestLength = path.length; }
+  });
+  return best;
+};

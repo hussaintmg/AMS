@@ -851,3 +851,34 @@
 .sm-gradient-presets button:hover { transform: translateY(-1px); box-shadow: 0 4px 12px #0f172a2e; }
 .sm-sidebar-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin-top: 20px; }
 @media (max-width: 640px) { .sm-sidebar-actions > * { width: 100%; justify-content: center; } }
+
+/* ── Role Jobs: screen-level sections (Table columns · Drawer · Forms) ────
+   Folded by default so a list of forty cards stays readable. Rendered from
+   the page catalog the API sends (constants/pageCatalog.js on the server). */
+.sm-role-job-screen{margin-top:14px;display:grid;gap:8px}
+.sm-role-job-section{border:1px solid #e2e8f0;border-radius:6px;background:#fafcff}
+.sm-role-job-section-toggle{width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 12px;background:none;border:0;font-size:12.5px;font-weight:600;color:#334155;cursor:pointer;text-align:left}
+.sm-role-job-section-toggle:hover{background:#f1f5f9;border-radius:6px}
+.sm-role-job-section-body{padding:0 12px 12px}
+.sm-role-job-section-body .sm-role-job-fields{margin-top:8px;padding-top:8px;border-top:0}
+.sm-role-job-forms{display:grid;gap:12px;margin-top:6px}
+.sm-role-job-form{border:1px dashed #dbe2ea;border-radius:6px;padding:10px 12px;background:#fff}
+.sm-role-job-form-title{font-size:12px;font-weight:700;color:#1d4ed8;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px}
+.sm-role-job-form-block{margin-top:8px}
+.sm-role-job-form-block>.sm-field-group-name{display:block;font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.04em}
+.sm-dropdown-rules{display:grid;gap:8px;margin-top:8px}
+.sm-dropdown-rule{display:grid;grid-template-columns:minmax(160px,220px) minmax(200px,280px);gap:10px;align-items:center}
+.sm-dropdown-rule-name{font-size:12.5px;color:#334155}
+.sm-dropdown-rule>select{padding:7px 8px;border:1px solid #cbd5e1;border-radius:5px;font-size:12.5px;background:#fff}
+.sm-dropdown-members{grid-column:1/-1;margin-top:0}
+@media(max-width:720px){.sm-dropdown-rule{grid-template-columns:1fr}}
+
+/* ── Custom tab: optional module switches ─────────────────────────────── */
+.sm-module-list{display:grid;gap:10px;margin-top:14px}
+.sm-module-row{display:flex;align-items:center;justify-content:space-between;gap:16px;border:1px solid #e2e8f0;border-radius:8px;padding:14px 16px;background:#fff}
+.sm-module-row>div:first-child{display:flex;flex-direction:column;gap:3px}
+.sm-module-page{font-size:12px;color:#64748b}
+.sm-module-page code{background:#f1f5f9;border-radius:4px;padding:1px 5px;font-size:11px}
+.sm-module-switch{display:inline-flex;align-items:center;gap:10px}
+.sm-module-on{font-size:12px;font-weight:700;color:#047857}
+.sm-module-off{font-size:12px;font-weight:700;color:#94a3b8}

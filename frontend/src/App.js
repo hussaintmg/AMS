@@ -43,6 +43,12 @@ import Profile from "./pages/Profile";
 import DataImport from "./pages/DataImport";
 import DispatchReport from "./pages/DispatchReport";
 import TableEnhancer from "./components/TableEnhancer";
+import ViewGate from "./components/ViewGate";
+import CustomDocuments from "./pages/custom/CustomDocuments";
+import Accounts from "./pages/finance/Accounts";
+import GatePassIn from "./pages/gatepass/GatePassIn";
+import GatePassOut from "./pages/gatepass/GatePassOut";
+import GateVerify from "./pages/gatepass/GateVerify";
 import MasterDataHub from "./pages/MasterDataHub";
 import ServerManagement from "./pages/ServerManagement";
 import Logs from "./pages/Logs";
@@ -110,6 +116,7 @@ const AppLayout = () => {
         <Header onMenuClick={toggleSidebar} />
         <CommandPalette />
         <TableEnhancer />
+        <ViewGate />
         <main className="main-content">
           <Routes>
             <Route index element={<RootRedirect />} />
@@ -215,7 +222,10 @@ const AppLayout = () => {
               {
                 base: "parts-sales",
                 category: "parts",
-                sections: ["quotations", "invoices"],
+                // "bookings" (plural) is the client's live path for the parts
+                // booking screen, restored 2026-08-18; the section is still
+                // "booking" inside Sales.js.
+                sections: ["quotations", "bookings", "invoices"],
               },
             ].flatMap(({ base, category, sections }) => [
               ...sections.map((section) => (
@@ -224,7 +234,7 @@ const AppLayout = () => {
                   path={`${base}/${section}`}
                   element={
                     <ProtectedPage path={`/${base}/${section}`}>
-                      <Sales section={section} category={category} />
+                      <Sales section={section === "bookings" ? "booking" : section} category={category} />
                     </ProtectedPage>
                   }
                 />
@@ -303,7 +313,11 @@ const AppLayout = () => {
             />
             <Route
               path="parts/booking"
-              element={<Navigate to="/parts-sales/booking" replace />}
+              element={<Navigate to="/parts-sales/bookings" replace />}
+            />
+            <Route
+              path="parts-sales/booking"
+              element={<Navigate to="/parts-sales/bookings" replace />}
             />
             <Route
               path="parts/barcode-scan"
@@ -445,6 +459,21 @@ const AppLayout = () => {
                 </ProtectedPage>
               }
             />
+
+            {/* Custom (free-text) documents — module-gated in Server Management → Custom */}
+            {["quotations", "bookings", "invoices"].map((kind) => (
+              <Route
+                key={`custom-${kind}`}
+                path={`custom/${kind}`}
+                element={<ProtectedPage path={`/custom/${kind}`}><CustomDocuments kind={kind} /></ProtectedPage>}
+              />
+            ))}
+            {/* Accounts & petty cash */}
+            <Route path="finance/accounts" element={<ProtectedPage path="/finance/accounts"><Accounts /></ProtectedPage>} />
+            {/* Gate passes */}
+            <Route path="gatepass/in" element={<ProtectedPage path="/gatepass/in"><GatePassIn /></ProtectedPage>} />
+            <Route path="gatepass/out" element={<ProtectedPage path="/gatepass/out"><GatePassOut /></ProtectedPage>} />
+            <Route path="gatepass/verify" element={<ProtectedPage path="/gatepass/verify"><GateVerify /></ProtectedPage>} />
 
             {/* Admin Routes */}
             <Route

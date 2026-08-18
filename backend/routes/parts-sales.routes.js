@@ -26,7 +26,7 @@ router.use(authenticate);
 const { fieldMask } = require('../utils/fieldPermissions');
 router.use('/quotations', fieldMask(['part_quotations', 'quotations']));
 router.use('/invoices', fieldMask(['part_invoices', 'invoices']));
-router.use('/bookings', fieldMask(['bookings']));
+router.use('/bookings', fieldMask(['part_bookings', 'bookings']));
 router.use('/orders', fieldMask(['sales_orders']));
 
 /**
@@ -51,7 +51,7 @@ const COUNTER_SALE = { page: 'part_invoices', actions: ['create'] };
 const PARTS_PAGES = {
     quotations: ['part_quotations', 'quotations', SCAN],
     invoices: ['part_invoices', 'invoices', SCAN],
-    bookings: ['bookings', SCAN],
+    bookings: ['part_bookings', 'bookings', SCAN],
     sales_orders: ['sales_orders', SCAN, COUNTER_SALE],
 };
 
@@ -73,6 +73,7 @@ Object.entries(BULK_PERMISSION).forEach(([type, page]) => {
 
 // ── Quotations ─────────────────────────────────────────────────────────────
 router.get('/quotations', can('quotations', 'view'), controller.getAllQuotations);
+router.get('/quotations/stats', can('quotations', 'view'), controller.getQuotationStats);
 router.get('/quotations/:id', can('quotations', 'view'), controller.getQuotationById);
 router.post('/quotations', can('quotations', 'create'), controller.createQuotation);
 router.put('/quotations/:id', can('quotations', 'edit'), controller.updateQuotation);
@@ -94,7 +95,9 @@ router.post('/bookings', can('bookings', 'create'), controller.createBooking);
 router.put('/bookings/:id', can('bookings', 'edit'), controller.updateBooking);
 router.delete('/bookings/:id', can('bookings', 'delete'), controller.deleteBooking);
 // Converting a booking raises an order and its invoice, so it needs create on orders.
-router.post('/bookings/:id/convert', can('sales_orders', 'create'), controller.convertBookingToOrder);
+// Converting a booking is its own grant on the bookings page; the order + invoice
+// it raises still need Create on the counter-sale pages.
+router.post('/bookings/:id/convert', can('bookings', 'convert'), can('sales_orders', 'create'), controller.convertBookingToOrder);
 router.post('/bookings/:id/send-email', can('bookings', 'sendEmail'), controller.sendBookingEmail);
 
 // ── Sales orders ───────────────────────────────────────────────────────────
@@ -107,11 +110,17 @@ router.post('/orders/:id/send-email', can('sales_orders', 'sendEmail'), controll
 
 // ── Invoices ───────────────────────────────────────────────────────────────
 router.get('/invoices', can('invoices', 'view'), controller.getAllInvoices);
+// Card figures: total / paid / credit / outstanding / overdue.
+router.get('/invoices/summary', can('invoices', 'view'), controller.getInvoiceSummary);
 router.get('/invoices/:id', can('invoices', 'view'), controller.getInvoiceById);
+// Issuing on credit is its own grant on top of create (`whenCredit` dispatches).
+const whenCredit = (req, res, next) => (String(req.body?.paymentTerm || '').toLowerCase() === 'credit' ? next() : next('route'));
+router.post('/invoices', whenCredit, can('invoices', 'changePaymentTerm'), can('invoices', 'create'), controller.createInvoice);
 router.post('/invoices', can('invoices', 'create'), controller.createInvoice);
 router.put('/invoices/:id/status', can('invoices', 'edit'), controller.updateInvoiceStatus);
-router.put('/invoices/:id/payment-method', can('invoices', 'edit'), controller.updateInvoicePaymentMethod);
-router.post('/invoices/:id/payments', can('invoices', 'edit'), controller.recordPayment);
+router.put('/invoices/:id/payment-method', can('invoices', 'recordPayment'), controller.updateInvoicePaymentMethod);
+// Taking money against an invoice is its own grant, not part of edit.
+router.post('/invoices/:id/payments', can('invoices', 'recordPayment'), controller.recordPayment);
 router.post('/invoices/:id/send-email', can('invoices', 'sendEmail'), controller.sendInvoiceEmail);
 // Cancelling is what returns the stock, so it is the only way to void an invoice.
 router.delete('/invoices/:id', can('invoices', 'delete'), controller.deleteInvoice);

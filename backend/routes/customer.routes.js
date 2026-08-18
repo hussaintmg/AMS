@@ -249,6 +249,7 @@ router.post('/', canCreate, controller.createCustomer);
 router.get('/:id', canView, controller.getCustomerById);
 router.put('/:id', canEdit, controller.updateCustomer);
 router.delete('/:id', canDelete, controller.deleteCustomer);
-router.patch('/:id/status', canEdit, controller.toggleCustomerStatus);
+// Activating / deactivating is its own grant, not part of edit.
+router.patch('/:id/status', authenticate, authorizeAction('customers', 'toggleStatus'), controller.toggleCustomerStatus);
 
 module.exports = router;

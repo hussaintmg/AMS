@@ -20,12 +20,19 @@
 
 /**
  * Every action Role Jobs knows how to store, in display order.
- *
- * `export` is deliberately absent: nothing in the API or the UI has ever read
- * it, so offering the checkbox only promised a restriction that was never
- * applied. The field stays on the Role model so old documents still load.
  */
-const ALL_ACTIONS = ['create', 'edit', 'delete', 'approve', 'sendEmail', 'downloadPdf', 'stockIncrease', 'stockDecrease', 'stockSet'];
+const ALL_ACTIONS = [
+  'create', 'edit', 'delete', 'approve', 'sendEmail', 'downloadPdf',
+  'stockIncrease', 'stockDecrease', 'stockSet',
+  // Granted separately since 2026-08-18. Each used to ride on `edit` (or on
+  // nothing at all): a role that could edit an invoice could also record money
+  // against it, convert bookings, approve leave, post to the ledger… Roles
+  // holding `edit` on deploy day were given these by
+  // scripts/migrate_role_catalog.js, so nobody lost an ability they had.
+  'import', 'export', 'toggleStatus', 'convert', 'assign', 'barcode',
+  'recordPayment', 'changePaymentTerm', 'markDelivered', 'createJobCard',
+  'postLedger', 'transfer', 'verify', 'generateGrn', 'lock', 'payout',
+];
 
 const ACTION_LABELS = {
   create: 'Create',
@@ -41,6 +48,22 @@ const ACTION_LABELS = {
   stockIncrease: 'Increase stock',
   stockDecrease: 'Decrease stock',
   stockSet: 'Set exact stock value',
+  import: 'Bulk upload / import',
+  export: 'Export (CSV / XLSX / PDF)',
+  toggleStatus: 'Activate / deactivate',
+  convert: 'Convert (lead → customer, booking → order / invoice)',
+  assign: 'Assign to user',
+  barcode: 'Generate barcode',
+  recordPayment: 'Record payment',
+  changePaymentTerm: 'Change payment terms (Paid / Credit)',
+  markDelivered: 'Mark delivered',
+  createJobCard: 'Create job card',
+  postLedger: 'Post to ledger',
+  transfer: 'Transfer between accounts',
+  verify: 'Verify (gate pass)',
+  generateGrn: 'Issue goods receiving note',
+  lock: 'Lock / unlock period',
+  payout: 'Pay salaries / advances',
 };
 
 /**
@@ -55,36 +78,54 @@ const PAGE_CAPABILITIES = {
   // those documents are rendered from templates in the browser — but the button
   // is gated on it, so the checkbox does something and belongs here.
   quotations: { actions: ['create', 'edit', 'delete', 'approve', 'sendEmail', 'downloadPdf'], dataScope: true },
-  bookings: { actions: ['create', 'edit', 'delete', 'sendEmail', 'downloadPdf'], dataScope: true },
-  sales_orders: { actions: ['create', 'edit', 'delete', 'sendEmail', 'downloadPdf'], dataScope: true },
-  invoices: { actions: ['create', 'edit', 'delete', 'sendEmail', 'downloadPdf'], dataScope: true },
+  bookings: { actions: ['create', 'edit', 'delete', 'sendEmail', 'downloadPdf', 'convert'], dataScope: true },
+  sales_orders: { actions: ['create', 'edit', 'delete', 'sendEmail', 'downloadPdf', 'markDelivered', 'import'], dataScope: true },
+  invoices: { actions: ['create', 'edit', 'delete', 'sendEmail', 'downloadPdf', 'recordPayment', 'changePaymentTerm'], dataScope: true },
   // The scanner only ever raises new documents.
   vehicle_scan: { actions: ['create'], dataScope: false },
 
   // ── Parts sales ──────────────────────────────────────────────────────────
   part_quotations: { actions: ['create', 'edit', 'delete', 'approve', 'sendEmail', 'downloadPdf'], dataScope: true },
-  part_invoices: { actions: ['create', 'edit', 'delete', 'sendEmail', 'downloadPdf'], dataScope: true },
+  // Restored 2026-08-18 (on the client's live sidebar): converts to an order + invoice.
+  part_bookings: { actions: ['create', 'edit', 'delete', 'sendEmail', 'downloadPdf', 'convert'], dataScope: true },
+  part_invoices: { actions: ['create', 'edit', 'delete', 'sendEmail', 'downloadPdf', 'recordPayment', 'changePaymentTerm'], dataScope: true },
   part_scan: { actions: ['create'], dataScope: false },
 
+  // ── Custom documents (module-gated; see SystemSetting module.custom_*) ────
+  // Free-text line items, no inventory link. A custom booking converts into a
+  // custom invoice with `convert`, its own grant.
+  custom_quotations: { actions: ['create', 'edit', 'delete', 'approve', 'sendEmail', 'downloadPdf', 'convert'], dataScope: true },
+  custom_bookings: { actions: ['create', 'edit', 'delete', 'sendEmail', 'downloadPdf', 'convert'], dataScope: true },
+  custom_invoices: { actions: ['create', 'edit', 'delete', 'sendEmail', 'downloadPdf', 'recordPayment', 'changePaymentTerm'], dataScope: true },
+
   // ── CRM & inventory ──────────────────────────────────────────────────────
-  leads: { actions: ['create', 'edit', 'delete'], dataScope: true },
-  customers: { actions: ['create', 'edit', 'delete'], dataScope: true },
-  vehicles: { actions: ['create', 'edit', 'delete'], dataScope: true },
-  parts: { actions: ['create', 'edit', 'delete', 'stockIncrease', 'stockDecrease', 'stockSet'], dataScope: true },
+  leads: { actions: ['create', 'edit', 'delete', 'convert', 'assign', 'import'], dataScope: true },
+  customers: { actions: ['create', 'edit', 'delete', 'toggleStatus', 'import'], dataScope: true },
+  vehicles: { actions: ['create', 'edit', 'delete', 'barcode', 'import'], dataScope: true },
+  parts: { actions: ['create', 'edit', 'delete', 'stockIncrease', 'stockDecrease', 'stockSet', 'barcode', 'import'], dataScope: true },
   // A read-only view over sales orders that already carry dispatch evidence.
   dispatch: { actions: [], dataScope: true },
 
   // ── Service ──────────────────────────────────────────────────────────────
   services: { actions: ['create', 'edit', 'delete'], dataScope: true },
-  service_appointments: { actions: ['create', 'edit', 'delete'], dataScope: true },
+  service_appointments: { actions: ['create', 'edit', 'delete', 'createJobCard'], dataScope: true },
 
   // ── HR & finance ─────────────────────────────────────────────────────────
-  employees: { actions: ['create', 'edit', 'delete'], dataScope: true },
-  leaves: { actions: ['create', 'edit', 'delete'], dataScope: true },
-  expenses: { actions: ['create', 'edit', 'delete'], dataScope: true },
+  employees: { actions: ['create', 'edit', 'delete', 'toggleStatus', 'import'], dataScope: true },
+  leaves: { actions: ['create', 'edit', 'delete', 'approve'], dataScope: true },
+  expenses: { actions: ['create', 'edit', 'delete', 'postLedger'], dataScope: true },
   // Ledger entries are an append-only journal: posted, never amended.
-  ledger: { actions: ['create'], dataScope: true },
-  payroll: { actions: ['create', 'edit', 'delete'], dataScope: true },
+  ledger: { actions: ['create', 'export'], dataScope: true },
+  payroll: { actions: ['create', 'edit', 'delete', 'lock', 'postLedger', 'payout'], dataScope: true },
+  // Money accounts (petty cash, IBFT, card machine…), transfers between them,
+  // payables, and the balance sheet over all of them.
+  accounts: { actions: ['create', 'edit', 'delete', 'transfer', 'recordPayment', 'export'], dataScope: false },
+
+  // ── Gate passes ──────────────────────────────────────────────────────────
+  gatepass_in: { actions: ['create', 'edit', 'delete', 'downloadPdf'], dataScope: true },
+  gatepass_out: { actions: ['create', 'edit', 'delete', 'downloadPdf', 'generateGrn', 'verify'], dataScope: true },
+  // The guard's screen: look a pass up and confirm it. Nothing else.
+  gatepass_verify: { actions: ['verify'], dataScope: false },
 
   // ── Master data: shared by everyone, so no per-creator scope ─────────────
   // "Master Data" itself is a hub of links to the screens below; it has no

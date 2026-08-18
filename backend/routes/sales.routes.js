@@ -236,7 +236,7 @@ router.delete('/:id', authenticate, authorizeAction('sales_orders', 'delete'), s
  *     summary: Mark order as delivered
  *     security: [{ bearerAuth: [] }]
  */
-router.post('/:id/deliver', authenticate, authorizeAction('sales_orders', 'edit'), salesController.deliverSalesOrder);
+router.post('/:id/deliver', authenticate, authorizeAction('sales_orders', 'markDelivered'), salesController.deliverSalesOrder);
 
 /**
  * @swagger

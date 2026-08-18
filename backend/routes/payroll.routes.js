@@ -13,8 +13,9 @@ router.post('/periods', authenticate, authorizeAction('payroll', 'create'), payr
 router.delete('/periods/:id', authenticate, authorizeAction('payroll', 'delete'), payroll.deletePeriod);
 router.get('/periods/:id/lines', authenticate, authorizeAction('payroll', 'view'), payroll.getPeriodLines);
 router.post('/periods/:id/generate', authenticate, authorizeAction('payroll', 'create'), payroll.generateLines);
-router.post('/periods/:id/lock', authenticate, authorizeAction('payroll', 'edit'), payroll.lockPeriod);
-router.post('/periods/:id/post', authenticate, authorizeAction('payroll', 'edit'), payroll.postPeriod);
+// Locking, posting and paying are their own grants, not part of edit.
+router.post('/periods/:id/lock', authenticate, authorizeAction('payroll', 'lock'), payroll.lockPeriod);
+router.post('/periods/:id/post', authenticate, authorizeAction('payroll', 'postLedger'), payroll.postPeriod);
 router.patch('/lines/:lineId', authenticate, authorizeAction('payroll', 'edit'), payroll.updateLine);
 
 /**
@@ -25,7 +26,7 @@ router.patch('/lines/:lineId', authenticate, authorizeAction('payroll', 'edit'),
  *     summary: Record a salary payment (full or partial) against one line
  *     security: [{ bearerAuth: [] }]
  */
-router.post('/lines/:lineId/pay', authenticate, authorizeAction('payroll', 'edit'), payroll.payLine);
+router.post('/lines/:lineId/pay', authenticate, authorizeAction('payroll', 'payout'), payroll.payLine);
 router.delete('/lines/:lineId/payments/:paymentId', authenticate, authorizeAction('payroll', 'delete'), payroll.deletePayment);
 
 /**
@@ -36,7 +37,7 @@ router.delete('/lines/:lineId/payments/:paymentId', authenticate, authorizeActio
  *     summary: Settle every unpaid salary in a period
  *     security: [{ bearerAuth: [] }]
  */
-router.post('/periods/:id/pay-all', authenticate, authorizeAction('payroll', 'edit'), payroll.payPeriod);
+router.post('/periods/:id/pay-all', authenticate, authorizeAction('payroll', 'payout'), payroll.payPeriod);
 
 /**
  * @swagger
