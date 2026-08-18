@@ -70,8 +70,14 @@ const normalizePageInput = (page = {}, index = 0) => {
   // `part_scan`. The role then had Create ticked on a key nothing reads. A page
   // sitting on a path this build knows takes that page's key; anything else is
   // at least slugified, so a key is never a sentence.
+  // Only a path this build *exactly* knows lends its key. `keyForPath` also
+  // matches a prefix — and a query string or an anchor normalises away — so a
+  // row parked on "/settings#payment-methods" would otherwise adopt the ERP
+  // Settings key and collide with the real page on the next save.
   const requested = slugify(page.name || page.key) || slugify(label);
-  const name = keyForPath(page.path) || requested;
+  const raw = String(page.path || '');
+  const exactPath = !raw.includes('#') && !raw.includes('?');
+  const name = (exactPath && keyForPath(page.path)) || requested;
 
   return {
     name,
@@ -242,14 +248,36 @@ exports.getPages = async (_req, res, next) => {
   }
 };
 
+/**
+ * Give every page a distinct, gap-free sortOrder (0…n-1) in its current
+ * order. Called after any write that could leave two pages on one number, so
+ * the sidebar order is always exactly what Frontend Management shows.
+ */
+const renumberPages = async (userId) => {
+  const pages = await Page.find({}).sort({ sortOrder: 1, label: 1 }).select('_id sortOrder').lean();
+  const writes = pages
+    .map((page, index) => ({ page, index }))
+    .filter(({ page, index }) => page.sortOrder !== index)
+    .map(({ page, index }) => ({ updateOne: { filter: { _id: page._id }, update: { $set: { sortOrder: index, updatedBy: userId } } } }));
+  if (writes.length) await Page.bulkWrite(writes, { ordered: false });
+};
+
 exports.createPage = async (req, res, next) => {
   try {
-    const payload = normalizePageInput(req.body, 0);
+    const total = await Page.countDocuments({});
+    const payload = normalizePageInput(req.body, total);
+    // Inserting at a position (the "+ Add page here" affordance between two
+    // rows): everything from that position down moves one place, so the new
+    // page lands exactly where it was dropped and no two pages share a number.
+    const position = Math.max(0, Math.min(total, Number.isFinite(Number(req.body.sortOrder)) ? Number(req.body.sortOrder) : total));
+    await Page.updateMany({ sortOrder: { $gte: position } }, { $inc: { sortOrder: 1 } });
     const page = await Page.create({
       ...payload,
+      sortOrder: position,
       createdBy: getUserId(req),
       updatedBy: getUserId(req)
     });
+    await renumberPages(getUserId(req));
 
     const pages = await getPagesSorted();
     res.status(201).json({ success: true, message: 'Page created', data: { page, pages } });
@@ -338,11 +366,18 @@ exports.saveSidebar = async (req, res, next) => {
     if (!Array.isArray(incomingPages)) throw new AppError('pages array is required', 400);
 
     const userId = getUserId(req);
-    await Promise.all(incomingPages.map(async (page, index) => {
-      const payload = normalizePageInput(page, index);
+    // The order the screen sends is the order the sidebar shows: sort by the
+    // numbers typed (ties broken by position), then write them back dense —
+    // 0…n-1 — so two rows can never sit on the same number.
+    const ordered = incomingPages
+      .map((page, index) => ({ page, index, sort: Number.isFinite(Number(page.sortOrder)) ? Number(page.sortOrder) : index }))
+      .sort((a, b) => a.sort - b.sort || a.index - b.index);
+    await Promise.all(ordered.map(async ({ page }, position) => {
+      const payload = normalizePageInput({ ...page, sortOrder: position }, position);
       const query = page._id ? { _id: page._id } : { path: payload.path };
       await Page.findOneAndUpdate(query, { $set: { ...payload, updatedBy: userId } }, { returnDocument: 'after' });
     }));
+    await renumberPages(userId);
 
     const pages = await getPagesSorted();
     res.json({ success: true, message: 'Sidebar configuration saved', data: { pages } });

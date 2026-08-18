@@ -600,8 +600,66 @@ function ServerManagement() {
     );
   };
 
-  const openPageModal = () => {
-    setPageDraft({ ...blankPage, sortOrder: pagesArr.length });
+  /**
+   * Re-sequence the sort numbers 0…n-1 in list order. Called after every
+   * move, insert or typed number, so the Sort column always reads as the
+   * sidebar will show it and no two pages can share a number.
+   */
+  const renumber = (list) => list.map((page, index) => (page.sortOrder === index ? page : { ...page, sortOrder: index }));
+
+  /** Move the page at `from` to sit at `to` (both list indexes), then renumber. */
+  const movePage = (from, to) => {
+    if (from === to || from < 0 || to < 0) return;
+    setPages((current) => {
+      const list = asArray(current).slice();
+      if (from >= list.length || to >= list.length) return current;
+      const [moved] = list.splice(from, 1);
+      list.splice(to, 0, moved);
+      return renumber(list);
+    });
+  };
+
+  /**
+   * A typed sort number moves the row to that position (clamped) rather than
+   * storing a free number that could collide with another row.
+   */
+  const setSortNumber = (index, raw) => {
+    const target = Math.max(0, Math.min(pagesArr.length - 1, Number(raw) || 0));
+    movePage(index, target);
+  };
+
+  // ── Drag & drop rows ────────────────────────────────────────────────────
+  const [dragIndex, setDragIndex] = useState(null);
+  const [dropTarget, setDropTarget] = useState(null); // { index, edge: 'before'|'after' }
+  const dragRow = (index) => ({
+    draggable: true,
+    onDragStart: (event) => { setDragIndex(index); event.dataTransfer.effectAllowed = 'move'; try { event.dataTransfer.setData('text/plain', String(index)); } catch { /* IE */ } },
+    onDragEnd: () => { setDragIndex(null); setDropTarget(null); },
+    onDragOver: (event) => {
+      if (dragIndex === null) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+      const rect = event.currentTarget.getBoundingClientRect();
+      const edge = event.clientY - rect.top < rect.height / 2 ? 'before' : 'after';
+      if (dropTarget?.index !== index || dropTarget?.edge !== edge) setDropTarget({ index, edge });
+    },
+    onDrop: (event) => {
+      event.preventDefault();
+      if (dragIndex === null) return;
+      const rect = event.currentTarget.getBoundingClientRect();
+      const edge = event.clientY - rect.top < rect.height / 2 ? 'before' : 'after';
+      let to = edge === 'before' ? index : index + 1;
+      if (dragIndex < to) to -= 1;
+      movePage(dragIndex, to);
+      setDragIndex(null); setDropTarget(null);
+    },
+  });
+  const dropClass = (index) => (dropTarget?.index === index ? ` sm-drop-${dropTarget.edge}` : '') + (dragIndex === index ? ' sm-dragging' : '');
+
+  const openPageModal = (position = pagesArr.length, neighbour = null) => {
+    // "+ Add page here" between two rows: the new page lands at that position
+    // and inherits the group of the row above, so it files itself sensibly.
+    setPageDraft({ ...blankPage, sortOrder: position, group: neighbour?.group || '', module: neighbour?.module || neighbour?.group || '' });
     setShowPageModal(true);
   };
 
@@ -890,7 +948,7 @@ function ServerManagement() {
           <button
             type="button"
             className="btn btn-secondary"
-            onClick={openPageModal}
+            onClick={() => openPageModal()}
           >
             Add Page
           </button>
@@ -903,10 +961,12 @@ function ServerManagement() {
           </button>
         </div>
       </div>
+      <p className="sm-pages-hint">Drag a row by its handle to move it up or down. Hover between two rows for “+ Add page here”. Sort numbers renumber themselves — save to apply.</p>
       <div className="sm-table-wrapper sm-table-desktop">
-        <table className="sm-table">
+        <table className="sm-table sm-pages-table">
           <thead>
             <tr>
+              <th style={{ width: 34 }}></th>
               <th>Visible</th>
               <th>Label</th>
               <th>Path</th>
@@ -916,8 +976,23 @@ function ServerManagement() {
             </tr>
           </thead>
           <tbody>
-            {pagesArr.map((page, index) => (
-              <tr key={page._id || page.path}>
+            {pagesArr.map((page, index) => (<React.Fragment key={page._id || page.path}>
+              {/* Insert affordance above this row (hover reveals it). */}
+              <tr className="sm-insert-row" onDragOver={(e) => { if (dragIndex !== null) { e.preventDefault(); setDropTarget({ index, edge: 'before' }); } }} onDrop={(e) => { e.preventDefault(); if (dragIndex === null) return; let to = index; if (dragIndex < to) to -= 1; movePage(dragIndex, to); setDragIndex(null); setDropTarget(null); }}>
+                <td colSpan={7}>
+                  <div className={`sm-insert-line${dropTarget?.index === index && dropTarget?.edge === 'before' ? ' sm-insert-active' : ''}`}>
+                    <button type="button" className="sm-insert-btn" onClick={() => openPageModal(index, pagesArr[index - 1] || page)} title={`Insert a page at position ${index}`}>+ Add page here</button>
+                  </div>
+                </td>
+              </tr>
+              <tr className={`sm-page-row${dropClass(index)}`} {...dragRow(index)}>
+                <td className="sm-drag-cell" title="Drag to reorder">
+                  <span className="sm-drag-handle" aria-label="Drag to reorder">⋮⋮</span>
+                  <span className="sm-move-btns">
+                    <button type="button" className="sm-move-btn" onClick={() => movePage(index, index - 1)} disabled={index === 0} title="Move up">▲</button>
+                    <button type="button" className="sm-move-btn" onClick={() => movePage(index, index + 1)} disabled={index === pagesArr.length - 1} title="Move down">▼</button>
+                  </span>
+                </td>
                 <td>
                   <input
                     type="checkbox"
@@ -962,16 +1037,25 @@ function ServerManagement() {
                 </td>
                 <td>
                   <input
-                    className="form-input"
+                    className="form-input sm-sort-input"
                     type="number"
-                    value={page.sortOrder || 0}
-                    onChange={(event) =>
-                      updatePage(index, "sortOrder", Number(event.target.value))
-                    }
+                    min="0"
+                    max={Math.max(0, pagesArr.length - 1)}
+                    value={index}
+                    title="Type a position; the row moves there and everything renumbers"
+                    onChange={(event) => setSortNumber(index, event.target.value)}
                   />
                 </td>
               </tr>
-            ))}
+            </React.Fragment>))}
+            {/* Insert affordance after the last row. */}
+            <tr className="sm-insert-row" onDragOver={(e) => { if (dragIndex !== null) { e.preventDefault(); setDropTarget({ index: pagesArr.length, edge: 'before' }); } }} onDrop={(e) => { e.preventDefault(); if (dragIndex === null) return; movePage(dragIndex, pagesArr.length - 1); setDragIndex(null); setDropTarget(null); }}>
+              <td colSpan={7}>
+                <div className={`sm-insert-line${dropTarget?.index === pagesArr.length ? ' sm-insert-active' : ''}`}>
+                  <button type="button" className="sm-insert-btn" onClick={() => openPageModal(pagesArr.length, pagesArr[pagesArr.length - 1])}>+ Add page at the end</button>
+                </div>
+              </td>
+            </tr>
           </tbody>
         </table>
       </div>
@@ -989,7 +1073,11 @@ function ServerManagement() {
                 />
                 Visible
               </label>
-              <span className="sm-card-sort">Sort: {page.sortOrder || 0}</span>
+              <span className="sm-card-sort">
+                Sort: {index}
+                <button type="button" className="sm-move-btn" onClick={() => movePage(index, index - 1)} disabled={index === 0} title="Move up">▲</button>
+                <button type="button" className="sm-move-btn" onClick={() => movePage(index, index + 1)} disabled={index === pagesArr.length - 1} title="Move down">▼</button>
+              </span>
             </div>
             <div className="sm-card-field">
               <span className="sm-card-label">Label</span>

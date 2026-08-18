@@ -12,6 +12,18 @@ const { seedPages, LEGACY_PATHS } = require('../constants/pages');
 
 const pages = seedPages();
 
+/**
+ * Whether this run may re-impose the built-in sidebar order.
+ *
+ * Order belongs to the client once they have arranged it in Frontend
+ * Management (drag a row, or type a position), so an ordinary run leaves
+ * `sortOrder` alone on pages that already exist and only sets it on the ones it
+ * inserts — a deploy never undoes their arrangement. Pass --reorder to install
+ * the built-in order over the top, which is what you want the first time this
+ * table changes.
+ */
+const REORDER = process.argv.includes('--reorder');
+
 
 // Every action the build knows, so the super admin's job rows never lag the
 // action set (super admin bypasses the checks anyway; this keeps the data honest).
@@ -44,14 +56,45 @@ async function run() {
   // first both finds the row and renames it back to the key the code uses.
   const renames = [];
   for (const page of pages) {
-    const existing = await Page.findOne({ $or: [{ path: page.path }, { name: page.name }] });
+    // Path *first*, genuinely: an `$or` returns whichever row the index reaches
+    // first, and a stale row that happens to carry this key (a leftover
+    // "Payments" page slugified to `settings`) would be picked over the page
+    // actually sitting on the path — then renamed onto it and rejected by the
+    // unique path index, failing the whole seed.
+    const existing = (await Page.findOne({ path: page.path })) || (await Page.findOne({ name: page.name }));
     if (existing && existing.name !== page.name) renames.push([existing.name, page.name]);
     const query = existing ? { _id: existing._id } : { name: page.name };
+    const { sortOrder, ...rest } = page;
+    const fields = REORDER || !existing ? page : rest;
     await Page.findOneAndUpdate(
       query,
-      { $set: { ...page, updatedBy: admin._id }, $setOnInsert: { createdBy: admin._id } },
+      {
+        $set: { ...fields, updatedBy: admin._id },
+        // sortOrder goes in one operator or the other, never both — Mongo
+        // rejects an update that touches the same path twice.
+        $setOnInsert: { createdBy: admin._id, ...('sortOrder' in fields ? {} : { sortOrder: page.sortOrder }) },
+      },
       { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true },
     );
+  }
+
+  // Repair rows that ended up sharing a canonical page's key.
+  //
+  // A page saved through Frontend Management took its key from its path, and a
+  // path with an anchor ("/settings#payment-methods") normalised to the page it
+  // pointed *into* — so a leftover row could end up named `settings` alongside
+  // the real ERP Settings. The write that caused it is fixed (only an exact
+  // path lends its key); this repairs what is already stored. The row keeps its
+  // data, gets a key of its own from its label, and is left inactive as found.
+  const canonicalNames = new Set(pages.map((page) => page.name));
+  const canonicalPaths = new Set(pages.map((page) => page.path));
+  const strays = await Page.find({ name: { $in: [...canonicalNames] }, path: { $nin: [...canonicalPaths] } }).lean();
+  for (const stray of strays) {
+    const base = String(stray.label || stray.path || 'page').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'page';
+    let candidate = base;
+    for (let n = 2; await Page.exists({ name: candidate, _id: { $ne: stray._id } }); n += 1) candidate = `${base}_${n}`;
+    await Page.updateOne({ _id: stray._id }, { $set: { name: candidate, updatedBy: admin._id } });
+    console.log(`Renamed stray page "${stray.label}" (${stray.path}) from "${stray.name}" to "${candidate}"`);
   }
 
   // A renamed page leaves every role pointing at the old key, and a job row
@@ -130,7 +173,22 @@ async function run() {
   if (!branding.sidebarBackgroundColor) branding.sidebarBackgroundColor = '#1e3a5f';
   if (!branding.sidebarBackgroundType) branding.sidebarBackgroundType = 'gradient';
   await branding.save();
+  // Dense, distinct sort numbers — the same rule Frontend Management applies on
+  // save. The table above numbers the pages it owns 0…n-1; a row this build does
+  // not know (a leftover, or one added by hand) keeps its place relative to them
+  // rather than sitting on a number another page already has.
+  const ordered = await Page.find({}).sort({ sortOrder: 1, label: 1 }).select('_id sortOrder').lean();
+  const renumbered = ordered
+    .map((page, index) => ({ page, index }))
+    .filter(({ page, index }) => page.sortOrder !== index)
+    .map(({ page, index }) => ({ updateOne: { filter: { _id: page._id }, update: { $set: { sortOrder: index, updatedBy: admin._id } } } }));
+  if (renumbered.length) await Page.bulkWrite(renumbered, { ordered: false });
+
   console.log(`Seeded ${pages.length} pages, ${permissions.length} super-admin permissions, and ${jobs.length} full-access jobs.`);
+  if (renumbered.length) console.log(`Renumbered ${renumbered.length} page(s) so every sort order is distinct.`);
+  console.log(REORDER
+    ? 'Sidebar order re-imposed from constants/pages.js (--reorder).'
+    : 'Sidebar order left as arranged in Frontend Management; pass --reorder to re-impose the built-in order.');
   console.log(`Re-pointed page paths on ${rolesRepathed} role(s) and ${usersRepathed} user(s) with custom permissions.`);
   if (renames.length) {
     console.log(`\nRenamed ${renames.length} page(s) to the keys this build uses, and carried every role's`);

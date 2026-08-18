@@ -882,3 +882,29 @@
 .sm-module-switch{display:inline-flex;align-items:center;gap:10px}
 .sm-module-on{font-size:12px;font-weight:700;color:#047857}
 .sm-module-off{font-size:12px;font-weight:700;color:#94a3b8}
+
+/* ── Frontend Management: drag-and-drop rows + insert-between affordance ── */
+.sm-pages-hint{margin:-4px 0 10px;font-size:12px;color:#64748b}
+.sm-pages-table tbody tr.sm-page-row{transition:background .12s}
+.sm-pages-table tbody tr.sm-page-row:hover{background:#f8fafc}
+.sm-page-row.sm-dragging{opacity:.45}
+.sm-page-row.sm-drop-before>td{box-shadow:inset 0 3px 0 #2563eb}
+.sm-page-row.sm-drop-after>td{box-shadow:inset 0 -3px 0 #2563eb}
+.sm-drag-cell{width:34px;padding:0 4px!important;text-align:center;vertical-align:middle;white-space:nowrap}
+.sm-drag-handle{cursor:grab;color:#94a3b8;font-size:14px;letter-spacing:-2px;user-select:none;display:inline-block;padding:4px 2px}
+.sm-page-row:hover .sm-drag-handle{color:#475569}
+.sm-page-row:active .sm-drag-handle{cursor:grabbing}
+.sm-move-btns{display:none;flex-direction:column;gap:1px;vertical-align:middle;margin-left:2px}
+.sm-page-row:hover .sm-move-btns,.sm-card-sort .sm-move-btn{display:inline-flex}
+.sm-move-btn{border:1px solid #dbe2ea;background:#fff;color:#475569;border-radius:3px;font-size:8px;line-height:1;padding:2px 4px;cursor:pointer}
+.sm-move-btn:disabled{opacity:.3;cursor:default}
+.sm-move-btn:not(:disabled):hover{background:#eff6ff;border-color:#bfdbfe;color:#1d4ed8}
+.sm-sort-input{width:64px;text-align:center}
+.sm-insert-row>td{padding:0!important;border:0!important;height:8px}
+.sm-insert-line{position:relative;height:8px;display:flex;align-items:center;justify-content:center}
+.sm-insert-line::before{content:"";position:absolute;left:0;right:0;top:50%;height:2px;background:transparent;transition:background .12s}
+.sm-insert-line:hover::before,.sm-insert-line.sm-insert-active::before{background:#2563eb}
+.sm-insert-btn{position:relative;z-index:1;opacity:0;transform:scale(.9);transition:opacity .12s,transform .12s;border:1px solid #2563eb;background:#fff;color:#1d4ed8;border-radius:999px;font-size:11px;font-weight:600;padding:2px 10px;cursor:pointer;line-height:1.4}
+.sm-insert-line:hover .sm-insert-btn,.sm-insert-btn:focus{opacity:1;transform:scale(1)}
+.sm-insert-btn:hover{background:#2563eb;color:#fff}
+.sm-card-sort{display:inline-flex;align-items:center;gap:6px}
