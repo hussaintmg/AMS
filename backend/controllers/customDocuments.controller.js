@@ -450,7 +450,14 @@ const convert = async (req, res, next) => {
     if (source.status === 'cancelled') throw new AppError('Cancelled documents cannot be converted', 400);
     if (req.params.kind === 'quotations' && source.approvalStatus !== 'approved') throw new AppError('Approve the quotation before converting it', 400);
     if (source.convertedInvoice) throw new AppError('Already converted', 400);
-    const target = req.params.kind === 'bookings' ? 'invoice' : (req.body.to === 'invoice' || req.query.to === 'invoice' ? 'invoice' : 'booking');
+    // Where a quotation goes next. Bookings are an optional module: with it
+    // switched off there is no booking screen to send anyone to and the API
+    // behind it is closed, so a quotation converts straight into an invoice
+    // rather than into a document nobody can open.
+    const { moduleFlags } = require('../utils/moduleFlags');
+    const bookingsOn = (await moduleFlags()).custom_bookings === true;
+    const asked = req.body.to === 'invoice' || req.query.to === 'invoice' ? 'invoice' : 'booking';
+    const target = req.params.kind === 'bookings' || !bookingsOn ? 'invoice' : asked;
 
     const body = {
       ...req.body,
@@ -487,7 +494,13 @@ const convert = async (req, res, next) => {
     const patch = { status: req.params.kind === 'bookings' ? 'completed' : 'converted', updatedBy: req.user.id };
     if (target === 'invoice') patch.convertedInvoice = created._id; else patch.convertedBooking = created._id;
     await kind.Model.updateOne({ _id: source._id }, { $set: patch });
-    res.status(201).json({ success: true, message: `${kind.label} converted to ${target} ${number}`, data: { id: created._id, number, target } });
+    res.status(201).json({
+      success: true,
+      message: !bookingsOn && asked === 'booking' && req.params.kind === 'quotations'
+        ? `Bookings are switched off, so ${kind.label.toLowerCase()} was converted straight to invoice ${number}`
+        : `${kind.label} converted to ${target} ${number}`,
+      data: { id: created._id, number, target },
+    });
   } catch (error) { next(error); }
 };
 

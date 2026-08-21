@@ -31,6 +31,23 @@ export const pageActions = (user, pageKey, legacy = true) => (action) => (
   getRoleJob(user, pageKey) ? canRoleDo(user, pageKey, action) : legacy
 );
 
+/**
+ * Is an optional module switched on for this installation?
+ *
+ * The flags ride on the session (`/auth/me` → `modules`), set in Server
+ * Management → Custom. A screen that offers to send someone to a module that is
+ * off would be offering a door that is locked: the page is not in the menu and
+ * its API answers 404.
+ *
+ * Unknown flags read as ON, so a build that has not been told about a module
+ * behaves exactly as it did before the flag existed.
+ */
+export const moduleOn = (user, key) => {
+  const modules = user?.modules;
+  if (!modules || !(key in modules)) return true;
+  return modules[key] === true;
+};
+
 export const roleDataScope = (user, pageKey) => {
   const job = getRoleJob(user, pageKey);
   return job?.superAdmin ? { mode: 'all', ownIncluded: true } : { mode: job?.dataScope?.mode || 'own', roles: job?.dataScope?.roles || [], users: job?.dataScope?.users || [], ownIncluded: true };

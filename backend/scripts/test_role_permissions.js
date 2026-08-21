@@ -540,6 +540,14 @@ async function scenarioEveryPageIsMasked() {
     // The period wrapper carries the run's own totals; a line carries the pay.
     payroll: ['/payroll/periods?limit=3', 'net_pay', 'net_total'],
     dispatch: ['/sales/dispatched?limit=3', 'logistics', 'transport_company'],
+    // Custom documents, gate passes and the money accounts joined the catalog
+    // on 2026-08-21; before that Role Jobs offered no data controls for them
+    // and every role holding the page saw every column on it.
+    custom_quotations: ['/custom/quotations?limit=3', 'amounts', 'total_amount'],
+    custom_bookings: ['/custom/bookings?limit=3', 'customer', 'customer_name'],
+    custom_invoices: ['/custom/invoices?limit=3', 'credit_terms', 'payment_term'],
+    gatepass_in: ['/gatepasses?direction=in&limit=3', 'vehicle', 'vehicle_number'],
+    accounts: ['/accounts', 'balances', 'current_balance'],
   };
 
   /**

@@ -48,6 +48,11 @@ const loadDirection = async (req, res, next) => {
 };
 const whenDirection = (direction) => (req, res, next) => ((req.gatePassDirection || 'in') === direction ? next() : next('route'));
 
+// Field visibility (Role Jobs → Gate Pass In → Data). Both directions answer to
+// the entry page's rules: it is the same record read from either end.
+const { fieldMask } = require('../utils/fieldPermissions');
+router.use(fieldMask('gatepass_in'));
+
 router.get('/summary', canView, controller.summary);
 router.get('/open-entries', canView, controller.openEntries);
 router.get('/grns', canView, controller.listGrns);

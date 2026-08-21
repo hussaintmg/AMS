@@ -18,7 +18,7 @@ import toast from 'react-hot-toast';
 import { FileText, Pencil, Send, CheckCircle, Clock, Wallet, CreditCard, AlertTriangle, Trash2, Plus, Download, Mail, ArrowRightLeft, DollarSign, HandCoins } from 'lucide-react';
 import { customQuotationsAPI, customBookingsAPI, customInvoicesAPI, customerAPI, pdfManagementAPI, paymentMethodsAPI, accountsAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
-import { pageActions, dropdownHint, fieldAccessor } from '../../utils/roleJobs';
+import { pageActions, dropdownHint, fieldAccessor, moduleOn } from '../../utils/roleJobs';
 import useErpDocumentSettings from '../../hooks/useErpDocumentSettings';
 import useModalKeyboard from '../../hooks/useModalKeyboard';
 import SearchableSelect from '../../components/SearchableSelect';
@@ -63,6 +63,10 @@ export default function CustomDocuments({ kind = 'quotations' }) {
   const showField = fieldAccessor(user, config.page);
   const { currency, salesTax } = useErpDocumentSettings();
   const currencyCode = currency?.code || 'PKR';
+  // With bookings switched off there is no booking screen to convert into, so
+  // an approved quotation goes straight to an invoice. The server applies the
+  // same rule, so this only decides which button is worth drawing.
+  const bookingsOn = moduleOn(user, 'custom_bookings');
 
   // ── list state ──
   const [rows, setRows] = useState([]);
@@ -397,8 +401,8 @@ export default function CustomDocuments({ kind = 'quotations' }) {
         ...(can('sendEmail') ? [{ icon: <Mail size={16} />, title: 'Send email (with PDF)', onClick: () => sendEmail(row) }] : []),
         ...(isQuotation && can('approve') && row.approval_status !== 'approved' && row.status !== 'converted' ? [{ icon: <CheckCircle size={16} />, title: 'Approve quotation', className: 'btn-success', onClick: () => doApprove(row) }] : []),
         ...(isQuotation && can('convert') && row.approval_status === 'approved' && row.status !== 'converted' ? [
-          { icon: <ArrowRightLeft size={16} />, title: 'Convert to booking', className: 'btn-info', onClick: () => doConvert(row, 'booking') },
-          { icon: <DollarSign size={16} />, title: 'Convert to invoice', className: 'btn-info', onClick: () => doConvert(row, 'invoice') },
+          ...(bookingsOn ? [{ icon: <ArrowRightLeft size={16} />, title: 'Convert to booking', className: 'btn-info', onClick: () => doConvert(row, 'booking') }] : []),
+          { icon: <DollarSign size={16} />, title: bookingsOn ? 'Convert to invoice' : 'Convert to invoice (bookings are switched off)', className: 'btn-info', onClick: () => doConvert(row, 'invoice') },
         ] : []),
         ...(isBooking && can('convert') && !row.invoice_id && row.status !== 'cancelled' ? [{ icon: <DollarSign size={16} />, title: 'Convert to invoice', className: 'btn-info', onClick: () => doConvert(row, 'invoice') }] : []),
       ]}

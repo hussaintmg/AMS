@@ -9,6 +9,10 @@ const express = require('express');
 const router = express.Router();
 const { authenticate, authorizeAction } = require('../middleware/auth');
 const controller = require('../controllers/accounts.controller');
+// Field visibility (Role Jobs → Accounts & Petty Cash → Data): a role can be
+// given the screen without being shown every balance on it.
+const { fieldMask } = require('../utils/fieldPermissions');
+router.use(fieldMask('accounts'));
 
 
 // Summary, balance sheet, limit rule — before /:id so the words never resolve as ids.

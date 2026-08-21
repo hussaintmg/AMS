@@ -30,6 +30,15 @@ const whenKind = (kind) => (req, res, next) => (req.params.kind === kind ? next(
 
 router.use('/:kind', authenticate, moduleGuard);
 
+// Field visibility per kind (Role Jobs → Custom … → Data). `:kind` names the
+// page, so the rules that apply are the ones set on the screen the request came
+// from. Without this the catalog would list controls that masked nothing.
+const { fieldMask } = require('../utils/fieldPermissions');
+router.use('/:kind', (req, res, next) => {
+  const pageKey = MODULE_OF[req.params.kind];
+  return pageKey ? fieldMask(pageKey)(req, res, next) : next();
+});
+
 // ── Custom quotations ─────────────────────────────────────────────────────
 router.get('/:kind', whenKind('quotations'), authorizeAction('custom_quotations', 'view'), controller.list);
 router.get('/:kind/summary', whenKind('quotations'), authorizeAction('custom_quotations', 'view'), controller.summary);

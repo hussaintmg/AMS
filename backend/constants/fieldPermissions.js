@@ -90,7 +90,23 @@ const salesDocumentFields = () => ([
     keys: [
       'paid_amount', 'balance_amount', 'payment_mode', 'payment_method_id', 'payment_method_name',
       'finance_company', 'finance_amount', 'amount_tendered', 'change_due', 'stock_applied',
+      // Which money account took it (Accounts & Petty Cash).
+      'payment_account_id', 'payment_account_name', 'payments',
     ],
+  },
+  {
+    // Paid vs credit arrived after this catalog was written, so a role told to
+    // hide the money still saw what was owed and when it fell due.
+    key: 'credit_terms',
+    group: 'Money',
+    label: 'Credit terms & outstanding balance',
+    keys: ['payment_term', 'credit_due_date', 'credit_status'],
+  },
+  {
+    key: 'service_charges',
+    group: 'Money',
+    label: 'Service charges',
+    keys: ['has_service_charges', 'service_charges', 'service_charges_total', 'service_tax_total'],
   },
   {
     key: 'sales_person',
@@ -120,6 +136,43 @@ const FIELD_CATALOG = {
   part_quotations: { label: 'Parts Quotations', fields: salesDocumentFields() },
   part_bookings: { label: 'Parts Bookings', fields: salesDocumentFields() },
   part_invoices: { label: 'Parts Invoices', fields: salesDocumentFields() },
+
+  // Custom documents carry the same shape as the sales documents — the same
+  // mapper feeds them — so they answer to the same field list. Without these
+  // entries Role Jobs offered no data controls for them at all, and every role
+  // with the page saw every column on it.
+  custom_quotations: { label: 'Custom Quotations', fields: salesDocumentFields() },
+  custom_bookings: { label: 'Custom Bookings', fields: salesDocumentFields() },
+  custom_invoices: { label: 'Custom Invoices', fields: salesDocumentFields() },
+
+  gatepass_in: {
+    label: 'Gate Pass In',
+    fields: [
+      { key: 'document', group: 'Document', label: 'Gate pass number, date & status', keys: ['id', 'gate_pass_number', 'direction', 'entry_type', 'date', 'status', 'barcode', 'created_at', 'updated_at', 'issued_at'] },
+      { key: 'party', group: 'Customer', label: 'Customer / transporter name', keys: ['party', 'customer_id', 'customer_name', 'walk_in_name', 'transporter'] },
+      { key: 'party_contact', group: 'Customer', label: 'Phone & driver details', keys: ['walk_in_phone', 'driver_name', 'driver_phone', 'truck_number'] },
+      { key: 'references', group: 'Document', label: 'R/O, C/O & invoice numbers', keys: ['ro_number', 'co_number', 'invoice_number'] },
+      { key: 'vehicle', group: 'Vehicle', label: 'Vehicle, engine, chassis & PBO', keys: ['vehicle_number', 'customer_vehicle_number', 'engine_number', 'chassis_number', 'pbo_number'] },
+      { key: 'items', group: 'Goods', label: 'Item lines & counts', keys: ['items', 'item_count', 'add_to_inventory'] },
+      { key: 'links', group: 'Document', label: 'Linked invoice, estimate & GRN', keys: ['linked_gate_pass_id', 'linked_gate_pass_number', 'linked_invoice_id', 'linked_invoice_number', 'linked_estimate_id', 'linked_estimate_number', 'grn_number'] },
+      { key: 'attachments', group: 'Goods', label: 'Photographs & attachments', keys: ['attachments'] },
+      { key: 'notes', group: 'Notes', label: 'Purpose & notes', keys: ['purpose', 'notes'] },
+    ],
+  },
+
+  accounts: {
+    label: 'Accounts & Petty Cash',
+    fields: [
+      { key: 'account', group: 'Account', label: 'Account name, code & type', keys: ['id', 'name', 'code', 'type', 'description', 'status', 'is_active', 'sort_order'] },
+      { key: 'balances', group: 'Money', label: 'Balances & opening figures', keys: ['current_balance', 'opening_balance', 'opening', 'closing', 'money_in', 'money_out'] },
+      { key: 'limits', group: 'Money', label: 'Limit & sweep rule', keys: ['limit', 'over_limit', 'sweep_to', 'is_default'] },
+      { key: 'transfers', group: 'Movements', label: 'Transfers between accounts', keys: ['transfer_number', 'from_account', 'to_account', 'from_account_id', 'to_account_id', 'transfer_date', 'reason'] },
+      { key: 'payables', group: 'Movements', label: 'Payables — what we owe', keys: ['payable_number', 'vendor', 'vendor_id', 'source_type', 'source_id', 'issued_on'] },
+      { key: 'receivables', group: 'Movements', label: 'Receivables — what we are owed', keys: ['invoice_number', 'kind', 'customer', 'outstanding', 'days_overdue', 'credit_status'] },
+      { key: 'amounts', group: 'Money', label: 'Amounts, paid & outstanding', keys: ['amount', 'paid_amount', 'balance', 'total_amount', 'due_date'] },
+      { key: 'notes', group: 'Notes', label: 'Reference & notes', keys: ['reference', 'notes', 'category', 'description'] },
+    ],
+  },
 
   customers: {
     label: 'Customers',
