@@ -15,6 +15,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import toast from 'react-hot-toast';
 import { LogIn, LogOut, Truck, UserRound, ShieldCheck, Printer, Plus, Trash2, Paperclip, ClipboardCheck, PackageCheck } from 'lucide-react';
 import { gatePassAPI, customerAPI, partsAPI, invoiceAPI, partsInvoiceAPI, customInvoicesAPI } from '../../services/api';
+import MasterQuickCreate from '../../components/MasterQuickCreate';
 import { useAuth } from '../../context/AuthContext';
 import { pageActions, dropdownHint } from '../../utils/roleJobs';
 import useModalKeyboard from '../../hooks/useModalKeyboard';
@@ -72,6 +73,14 @@ export default function GatePassList({ direction }) {
   }, [direction, filters, pagination.page, pagination.limit]);
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  /** Re-read the parts list — after one has just been created from this form. */
+  const reloadParts = useCallback(async () => {
+    try {
+      const res = await partsAPI.getAll({ limit: 500, ...dropdownHint(pageKey, 'create', 'part') });
+      setParts(res.data?.data?.parts || res.data?.data || []);
+    } catch { /* the picker keeps whatever it had */ }
+  }, [pageKey]);
+
   const loadDropdowns = useCallback(async (entryType) => {
     try {
       const [c, p, o] = await Promise.allSettled([
@@ -90,6 +99,24 @@ export default function GatePassList({ direction }) {
       }
     } catch { /* pickers simply stay empty */ }
   }, [pageKey, isIn]);
+
+  /**
+   * Choosing a customer also brings their vehicle forward, when the form has
+   * nothing typed in those boxes yet. Never overwrites what the guard has
+   * already entered.
+   */
+  const pickCustomer = (customerId) => {
+    const customer = customers.find((c) => String(c.id || c._id) === String(customerId));
+    const vehicle = (customer?.vehicles || []).find((v) => v.isPrimary) || customer?.vehicles?.[0];
+    setForm((prev) => ({
+      ...prev,
+      customerId,
+      vehicleNumber: prev.vehicleNumber || vehicle?.registrationNumber || '',
+      engineNumber: prev.engineNumber || vehicle?.engineNumber || '',
+      chassisNumber: prev.chassisNumber || vehicle?.chassisNumber || '',
+      pboNumber: prev.pboNumber || vehicle?.pboNumber || '',
+    }));
+  };
 
   const openCreate = (entryType = 'logistic') => {
     setForm({ entryType, customerId: '', walkIn: false, walkInName: '', walkInPhone: '', roNumber: '', coNumber: '', invoiceNumber: '', transporter: '', truckNumber: '', driverName: '', driverPhone: '', vehicleNumber: '', engineNumber: '', chassisNumber: '', pboNumber: '', purpose: '', notes: '', linkedGatePassId: '', invoiceId: '', invoiceModel: '', estimateId: '' });
@@ -183,6 +210,21 @@ export default function GatePassList({ direction }) {
     { key: 'open', label: 'Entries still inside', value: summary.open, icon: <LogIn size={18} />, color: '#7c3aed', bg: '#ede9fe' },
   ]) : [], [summary, isIn, filters.entryType, filters.status]);
 
+  /**
+   * A row's buttons, defined once — the table and the cards both draw them,
+   * and two copies would drift the first time a condition changed.
+   */
+  const rowActions = (row) => (
+    <ActionButtons title={row.gate_pass_number} showEdit={can('edit') && ['draft', 'issued'].includes(row.status)} showDelete={can('delete') && row.status !== 'cancelled'} onEdit={() => openEdit(row)} onDelete={() => doDelete(row)}
+      customActions={[
+        ...(can('edit') && row.status === 'draft' ? [{ icon: <ClipboardCheck size={16} />, title: 'Issue', className: 'btn-success', onClick: () => doIssue(row) }] : []),
+        ...(!isIn && row.entry_type === 'logistic' && can('generateGrn') && !row.grn_number && row.status !== 'cancelled' ? [{ icon: <PackageCheck size={16} />, title: 'Issue GRN', className: 'btn-info', onClick: () => doGrn(row) }] : []),
+        ...(!isIn && canVerify && row.status === 'issued' ? [{ icon: <ShieldCheck size={16} />, title: 'Verify at gate', className: 'btn-success', onClick: () => doVerify(row) }] : []),
+        ...(can('downloadPdf') ? [{ icon: <Printer size={16} />, title: row.entry_type === 'customer' && isIn ? 'Print entry acknowledgement (PDF)' : 'Print gate pass (PDF)', onClick: () => doPrint(row) }] : []),
+        ...(can('downloadPdf') && row.grn_number ? [{ icon: <Printer size={16} />, title: 'Print GRN (PDF)', className: 'btn-info', onClick: () => doPrint(row, true) }] : []),
+      ]} />
+  );
+
   return (
     <div className="card sales-page">
       <div className="card-header d-flex justify-content-between align-items-center">
@@ -229,21 +271,53 @@ export default function GatePassList({ direction }) {
                   {isIn && <><td>{row.engine_number || '—'}</td><td>{row.pbo_number || '—'}</td></>}
                   <td>{row.item_count || 0}</td>
                   <td>{statusBadge(row.status)}</td>
-                  <td onClick={(e) => e.stopPropagation()}>
-                    <ActionButtons title={row.gate_pass_number} showEdit={can('edit') && ['draft', 'issued'].includes(row.status)} showDelete={can('delete') && row.status !== 'cancelled'} onEdit={() => openEdit(row)} onDelete={() => doDelete(row)}
-                      customActions={[
-                        ...(can('edit') && row.status === 'draft' ? [{ icon: <ClipboardCheck size={16} />, title: 'Issue', className: 'btn-success', onClick: () => doIssue(row) }] : []),
-                        ...(!isIn && row.entry_type === 'logistic' && can('generateGrn') && !row.grn_number && row.status !== 'cancelled' ? [{ icon: <PackageCheck size={16} />, title: 'Issue GRN', className: 'btn-info', onClick: () => doGrn(row) }] : []),
-                        ...(!isIn && canVerify && row.status === 'issued' ? [{ icon: <ShieldCheck size={16} />, title: 'Verify at gate', className: 'btn-success', onClick: () => doVerify(row) }] : []),
-                        ...(can('downloadPdf') ? [{ icon: <Printer size={16} />, title: row.entry_type === 'customer' && isIn ? 'Print entry acknowledgement (PDF)' : 'Print gate pass (PDF)', onClick: () => doPrint(row) }] : []),
-                        ...(can('downloadPdf') && row.grn_number ? [{ icon: <Printer size={16} />, title: 'Print GRN (PDF)', className: 'btn-info', onClick: () => doPrint(row, true) }] : []),
-                      ]} />
-                  </td>
+                  <td onClick={(e) => e.stopPropagation()}>{rowActions(row)}</td>
                 </tr>
               ))}
           </tbody>
         </table>
       </div>
+      {/* The same rows as cards below 1025px. This table is the widest on the
+          site — thirteen columns — so it is put away rather than squeezed. */}
+      <div className="mobile-cards-view">
+        <div className="mobile-cards-container">
+          {loading && !rows.length ? <div className="data-card"><div className="spinner" /></div>
+            : rows.length === 0 ? <div className="data-card" style={{ textAlign: 'center', color: '#94a3b8' }}>No gate passes yet</div>
+            : rows.map((row) => (
+              <div key={row.id} className="data-card" onClick={() => openDrawer(row)}>
+                <div className="data-card-top">
+                  <div className={`data-card-avatar ${row.entry_type === 'customer' ? 'avatar-cyan' : 'avatar-purple'}`}>
+                    {row.entry_type === 'customer' ? 'C' : 'L'}
+                  </div>
+                  <div className="data-card-info">
+                    <span className="data-card-title">{row.gate_pass_number}</span>
+                    <span className="data-card-subtitle">{row.party || (row.entry_type === 'customer' ? 'Customer entry' : 'Logistic entry')}</span>
+                  </div>
+                  {statusBadge(row.status)}
+                </div>
+                <div className="data-card-body">
+                  <div className="data-card-row"><span className="row-icon">📅</span><span className="row-label">Date</span><span className="row-value">{asDay(row.date)}</span></div>
+                  {isIn ? (<>
+                    {row.ro_number && <div className="data-card-row"><span className="row-icon">📄</span><span className="row-label">R/O #</span><span className="row-value">{row.ro_number}</span></div>}
+                    {row.co_number && <div className="data-card-row"><span className="row-icon">📄</span><span className="row-label">C/O #</span><span className="row-value">{row.co_number}</span></div>}
+                    {row.invoice_number && <div className="data-card-row"><span className="row-icon">🧾</span><span className="row-label">Invoice #</span><span className="row-value">{row.invoice_number}</span></div>}
+                  </>) : (<>
+                    {row.linked_gate_pass_number && <div className="data-card-row"><span className="row-icon">🔗</span><span className="row-label">Against</span><span className="row-value">{row.linked_gate_pass_number}</span></div>}
+                    {(row.linked_invoice_number || row.linked_estimate_number) && <div className="data-card-row"><span className="row-icon">🧾</span><span className="row-label">Invoice</span><span className="row-value">{row.linked_invoice_number || row.linked_estimate_number}</span></div>}
+                    {row.grn_number && <div className="data-card-row"><span className="row-icon">📦</span><span className="row-label">GRN #</span><span className="row-value">{row.grn_number}</span></div>}
+                  </>)}
+                  {row.vehicle_number && <div className="data-card-row"><span className="row-icon">🚗</span><span className="row-label">Vehicle</span><span className="row-value">{row.vehicle_number}</span></div>}
+                  {isIn && row.engine_number && <div className="data-card-row"><span className="row-icon">⚙️</span><span className="row-label">Engine</span><span className="row-value">{row.engine_number}</span></div>}
+                  {isIn && row.pbo_number && <div className="data-card-row"><span className="row-icon">🔖</span><span className="row-label">PBO</span><span className="row-value">{row.pbo_number}</span></div>}
+                  {row.entry_type === 'logistic' && row.driver_name && <div className="data-card-row"><span className="row-icon">👤</span><span className="row-label">Driver</span><span className="row-value">{row.driver_name}</span></div>}
+                  <div className="data-card-row"><span className="row-icon">📦</span><span className="row-label">Items</span><span className="row-value">{row.item_count || 0}</span></div>
+                </div>
+                <div className="data-card-footer" onClick={(e) => e.stopPropagation()}>{rowActions(row)}</div>
+              </div>
+            ))}
+        </div>
+      </div>
+
       <ServerPagination page={pagination.page} totalPages={pagination.totalPages} total={pagination.total} limit={pagination.limit} loading={loading} onPageChange={(page) => setPagination((p) => ({ ...p, page }))} onPageSizeChange={(l) => setPagination((p) => ({ ...p, limit: l, page: 1 }))} />
 
       {modal && (
@@ -292,7 +366,11 @@ export default function GatePassList({ direction }) {
                     {form.walkIn ? (
                       <div className="form-row walkin-fields"><input type="text" value={form.walkInName} onChange={(e) => set('walkInName', e.target.value)} placeholder="Name" /><input type="text" value={form.walkInPhone} onChange={(e) => set('walkInPhone', e.target.value)} placeholder="Phone" /></div>
                     ) : (
-                      <SearchableSelect value={form.customerId} onChange={(e) => set('customerId', e.target.value)} placeholder="Select customer"><option value="">Select Customer</option>{customers.map((c) => <option key={c.id} value={c.id}>{customerLabel(c)}</option>)}</SearchableSelect>
+                      // Picking the customer fills in the car they are known to
+                      // drive — registration, engine, chassis and PBO from their
+                      // record — so the gate stops asking on every visit. Still
+                      // editable: they may have brought a different car.
+                      <SearchableSelect value={form.customerId} onChange={(e) => pickCustomer(e.target.value)} placeholder="Select customer"><option value="">Select Customer</option>{customers.map((c) => <option key={c.id} value={c.id}>{customerLabel(c)}</option>)}</SearchableSelect>
                     )}
                   </div>
                   <div className="form-group"><label>Purpose</label><input type="text" value={form.purpose} onChange={(e) => set('purpose', e.target.value)} placeholder="Routine maintenance, purchase…" /></div>
@@ -324,7 +402,23 @@ export default function GatePassList({ direction }) {
                   <div className="gp-items">
                     {items.map((it, index) => (
                       <div className="gp-item" key={index}>
-                        <div className="form-group gp-item-part"><label>Part (optional)</label><SearchableSelect value={it.partId} onChange={(e) => { const part = parts.find((p) => String(p.id || p._id) === e.target.value); setItem(index, { partId: e.target.value, description: part ? (part.name || part.part_name) : it.description, itemType: part ? 'part' : it.itemType }); }} options={[{ value: '', label: '— not a stocked part —' }, ...parts.map((p) => ({ value: String(p.id || p._id), label: `${p.part_number || p.sku || ''} ${p.name || p.part_name || ''}`.trim() }))]} labelField="label" valueField="value" /></div>
+                        <div className="form-group gp-item-part">
+                          {/* A delivery can carry something that has never been
+                              stocked before; raising the part here means the entry
+                              does not have to be abandoned to go and create it. */}
+                          <div className="form-label-add">
+                            <span>Part (optional)</span>
+                            <MasterQuickCreate
+                              type="part"
+                              pageKey={pageKey}
+                              onCreated={async (created) => {
+                                await reloadParts();
+                                if (created?.id) setItem(index, { partId: String(created.id), description: created.name || '', itemType: 'part', addToInventory: true });
+                              }}
+                            />
+                          </div>
+                          <SearchableSelect value={it.partId} onChange={(e) => { const part = parts.find((p) => String(p.id || p._id) === e.target.value); setItem(index, { partId: e.target.value, description: part ? (part.name || part.part_name) : it.description, itemType: part ? 'part' : it.itemType }); }} options={[{ value: '', label: '— not a stocked part —' }, ...parts.map((p) => ({ value: String(p.id || p._id), label: `${p.part_number || p.sku || ''} ${p.name || p.part_name || ''}`.trim() }))]} labelField="label" valueField="value" />
+                        </div>
                         <div className="form-group gp-item-desc"><label>Description *</label><input type="text" value={it.description} onChange={(e) => setItem(index, { description: e.target.value })} placeholder="e.g. Brake pads / Water bottles" /></div>
                         <div className="form-group"><label>Qty</label><input type="number" min="0" value={it.quantity} onChange={(e) => setItem(index, { quantity: e.target.value })} /></div>
                         <div className="form-group"><label>Unit</label><input type="text" value={it.unit} onChange={(e) => setItem(index, { unit: e.target.value })} placeholder="pcs" /></div>

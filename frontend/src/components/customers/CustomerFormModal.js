@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
-import { X } from 'lucide-react';
+import { X, Car, Trash2 } from 'lucide-react';
 import { useCustomers } from '../../context/CustomersContext';
 import { useAuth } from '../../context/AuthContext';
 import { pageActions, canQuickCreate, canSeeDropdown } from '../../utils/roleJobs';
@@ -13,8 +13,15 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const TABS = [
   { key: 'basic', label: 'Basic Info' },
   { key: 'contact', label: 'Contact' },
+  { key: 'vehicles', label: 'Vehicles' },
   { key: 'details', label: 'Details' },
 ];
+
+/** A blank row of the customer's vehicle table. */
+const emptyVehicle = () => ({
+  registrationNumber: '', make: '', model: '', year: '', color: '',
+  engineNumber: '', chassisNumber: '', pboNumber: '', notes: '',
+});
 
 // Layout for a label carrying a quick-add control lives in index.css.
 
@@ -30,6 +37,9 @@ export default function CustomerFormModal({ customer, onClose, onSaved }) {
     assignedTo: '', department: '',
     address: '', city: '', state: '', country: 'Pakistan', zipCode: '',
   });
+  // The customer's own cars — registration, engine, chassis and PBO, the same
+  // details the gate asks for on every visit.
+  const [vehicles, setVehicles] = useState([]);
   const [errors, setErrors] = useState({});
   const [quickCreate, setQuickCreate] = useState(null);
 
@@ -57,8 +67,21 @@ export default function CustomerFormModal({ customer, onClose, onSaved }) {
         country: customer.country || 'Pakistan',
         zipCode: customer.zipCode || '',
       });
+      setVehicles((customer.vehicles || []).map((v) => ({
+        registrationNumber: v.registrationNumber || '',
+        make: v.make || '',
+        model: v.model || '',
+        year: v.year || '',
+        color: v.color || '',
+        engineNumber: v.engineNumber || '',
+        chassisNumber: v.chassisNumber || '',
+        pboNumber: v.pboNumber || '',
+        notes: v.notes || '',
+      })));
     }
   }, [customer]);
+
+  const setVehicle = (index, field, value) => setVehicles((prev) => prev.map((row, i) => (i === index ? { ...row, [field]: value } : row)));
 
   const set = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -82,6 +105,8 @@ export default function CustomerFormModal({ customer, onClose, onSaved }) {
     try {
       const payload = { ...form, email: form.email.trim().toLowerCase() || undefined };
       Object.keys(payload).forEach((k) => { if (payload[k] === '' || payload[k] === null) payload[k] = undefined; });
+      // Always sent, even when emptied — that is how a vehicle gets removed.
+      payload.vehicles = vehicles.filter((v) => Object.values(v).some((value) => String(value || '').trim()));
       const res = isEdit ? await updateCustomer(customer._id, payload) : await createCustomer(payload);
       if (res?.success) {
         toast.success(res.message);
@@ -235,6 +260,77 @@ export default function CustomerFormModal({ customer, onClose, onSaved }) {
                 <input type="text" className="form-input" value={form.zipCode} onChange={(e) => set('zipCode', e.target.value)} placeholder="Postal code" />
               </div>
             </div>
+          </>
+        );
+      case 'vehicles':
+        return (
+          <>
+            <p className="sm-role-job-note" style={{ marginTop: 0 }}>
+              Cars this customer brings in. The gate pass and the service desk read these, so a
+              registration, engine, chassis or PBO number entered once does not have to be asked again —
+              and any of them will find the customer in search.
+            </p>
+            {vehicles.length === 0 && (
+              <p style={{ color: '#94a3b8', margin: '12px 0' }}>No vehicle recorded for this customer yet.</p>
+            )}
+            {vehicles.map((vehicle, index) => (
+              <div key={index} className="card" style={{ padding: '0.9rem', border: '1px solid #e5e7eb', boxShadow: 'none', marginBottom: 12 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <strong style={{ fontSize: 13, color: '#334155' }}>
+                    <Car size={15} style={{ verticalAlign: '-3px', marginRight: 6 }} />
+                    Vehicle {index + 1}
+                  </strong>
+                  <button type="button" className="btn-action btn-delete" title="Remove this vehicle" onClick={() => setVehicles((prev) => prev.filter((_, i) => i !== index))}>
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Registration / Vehicle No.</label>
+                    <input type="text" className="form-input" value={vehicle.registrationNumber} onChange={(e) => setVehicle(index, 'registrationNumber', e.target.value)} placeholder="e.g. LEA-1234" />
+                  </div>
+                  <div className="form-group">
+                    <label>PBO No.</label>
+                    <input type="text" className="form-input" value={vehicle.pboNumber} onChange={(e) => setVehicle(index, 'pboNumber', e.target.value)} placeholder="PBO, if any" />
+                  </div>
+                </div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Engine No.</label>
+                    <input type="text" className="form-input" value={vehicle.engineNumber} onChange={(e) => setVehicle(index, 'engineNumber', e.target.value)} />
+                  </div>
+                  <div className="form-group">
+                    <label>Chassis No.</label>
+                    <input type="text" className="form-input" value={vehicle.chassisNumber} onChange={(e) => setVehicle(index, 'chassisNumber', e.target.value)} />
+                  </div>
+                </div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Make</label>
+                    <input type="text" className="form-input" value={vehicle.make} onChange={(e) => setVehicle(index, 'make', e.target.value)} placeholder="Toyota" />
+                  </div>
+                  <div className="form-group">
+                    <label>Model</label>
+                    <input type="text" className="form-input" value={vehicle.model} onChange={(e) => setVehicle(index, 'model', e.target.value)} placeholder="Corolla" />
+                  </div>
+                  <div className="form-group">
+                    <label>Year</label>
+                    <input type="text" className="form-input" value={vehicle.year} onChange={(e) => setVehicle(index, 'year', e.target.value)} placeholder="2021" />
+                  </div>
+                  <div className="form-group">
+                    <label>Colour</label>
+                    <input type="text" className="form-input" value={vehicle.color} onChange={(e) => setVehicle(index, 'color', e.target.value)} />
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label>Notes</label>
+                  <input type="text" className="form-input" value={vehicle.notes} onChange={(e) => setVehicle(index, 'notes', e.target.value)} placeholder="Anything the workshop should know" />
+                </div>
+              </div>
+            ))}
+            <button type="button" className="btn btn-secondary btn-sm" onClick={() => setVehicles((prev) => [...prev, emptyVehicle()])}>
+              + Add vehicle
+            </button>
           </>
         );
       case 'details':

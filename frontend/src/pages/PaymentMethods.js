@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { paymentMethodsAPI } from '../services/api';
+import { paymentMethodsAPI, accountsAPI } from '../services/api';
 import toast from 'react-hot-toast';
 import { Search, Plus, Package } from 'lucide-react';
 import ConfirmModal from '../components/ConfirmModal';
@@ -40,8 +40,15 @@ function PaymentMethods() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [saving, setSaving] = useState(false);
 
+  // Which money account this method settles into — "Cash" into petty cash,
+  // "Card" into the card machine. A sale taken on this method posts straight
+  // into that account, so the Accounts screen matches the counter without
+  // anybody reconciling it by hand. Left blank, the account is inferred from
+  // the method's type, and petty cash is the last resort.
+  const [accounts, setAccounts] = useState([]);
+  useEffect(() => { accountsAPI.getForPayments().then(setAccounts); }, []);
   const [formData, setFormData] = useState({
-    name: '', code: '', type: 'cash', description: '', sortOrder: 0, isActive: true,
+    name: '', code: '', type: 'cash', description: '', sortOrder: 0, isActive: true, account_id: '',
   });
 
   const fetchData = useCallback(async () => {
@@ -77,12 +84,13 @@ function PaymentMethods() {
         name: item.name || '',
         code: item.code || '',
         type: item.type || 'cash',
+        account_id: item.account_id ? String(item.account_id) : '',
         description: item.description || '',
         sortOrder: item.sort_order ?? 0,
         isActive: item.is_active !== undefined ? !!item.is_active : true,
       });
     } else {
-      setFormData({ name: '', code: '', type: 'cash', description: '', sortOrder: 0, isActive: true });
+      setFormData({ name: '', code: '', type: 'cash', description: '', sortOrder: 0, isActive: true, account_id: '' });
     }
     setShowModal(true);
   };
@@ -349,6 +357,20 @@ function PaymentMethods() {
                       min={0} />
                   </div>
                 </div>
+                {accounts.length > 0 && (
+                  <div className="form-group" style={{ marginTop: 16 }}>
+                    <label>Money lands in</label>
+                    <select className="form-control" value={formData.account_id}
+                      onChange={e => setFormData(p => ({ ...p, account_id: e.target.value }))}>
+                      <option value="">— decide from the type —</option>
+                      {accounts.map((a) => <option key={a.id || a._id} value={String(a.id || a._id)}>{a.name}</option>)}
+                    </select>
+                    <small className="text-muted">
+                      A sale taken on this method posts into this account. Left blank, the account follows
+                      the type above (cash &rarr; petty cash, card &rarr; card machine, and so on).
+                    </small>
+                  </div>
+                )}
                 <div className="form-group" style={{ marginTop: 16 }}>
                   <label>Description</label>
                   <textarea className="form-control" rows={2} value={formData.description}

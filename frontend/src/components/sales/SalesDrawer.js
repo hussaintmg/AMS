@@ -26,6 +26,9 @@ export default function SalesDrawer({
   totals = null,
   payments = null,
   paymentMethods = [],
+  // Money accounts (Accounts & Petty Cash). The payment form asks which one
+  // the money is going into; petty cash is the default the client asked for.
+  accounts = [],
   onRecordPayment = null,
   loading = false,
   // The optional service charges block, as the API maps it (service_charges).
@@ -34,8 +37,16 @@ export default function SalesDrawer({
   const [draftStatus, setDraftStatus] = useState(status || '');
   const [payAmount, setPayAmount] = useState('');
   const [payMethod, setPayMethod] = useState('');
+  const [payAccount, setPayAccount] = useState('');
   const [payReference, setPayReference] = useState('');
   const [recording, setRecording] = useState(false);
+
+  // Petty cash unless the operator says otherwise.
+  useEffect(() => {
+    if (payAccount || !accounts.length) return;
+    const petty = accounts.find((a) => a.type === 'petty_cash') || accounts[0];
+    setPayAccount(String(petty.id || petty._id || ''));
+  }, [accounts, payAccount]);
 
   useEffect(() => { setDraftStatus(status || ''); }, [status]);
 
@@ -56,8 +67,15 @@ export default function SalesDrawer({
 
   if (!isOpen) return null;
 
-  const balance = Number(totals?.balance || 0);
-  const isSettled = totals && balance <= 0;
+  // Callers pass the outstanding figure as `remaining`; reading only `balance`
+  // made it 0 on every document, which marked each one "fully paid" and hid the
+  // Record Payment form altogether — there was no way to take the rest of the
+  // money. Both names are accepted, and a missing figure falls back to
+  // total − paid rather than to zero.
+  const balance = Number(
+    totals?.remaining ?? totals?.balance ?? ((Number(totals?.total) || 0) - (Number(totals?.paid) || 0)),
+  ) || 0;
+  const isSettled = totals && balance <= 0.009;
 
   const submitPayment = async (e) => {
     e.preventDefault();
@@ -66,7 +84,7 @@ export default function SalesDrawer({
     if (!(amount > 0)) return;
     setRecording(true);
     try {
-      const ok = await onRecordPayment({ amount, paymentMethodId: payMethod, referenceNumber: payReference });
+      const ok = await onRecordPayment({ amount, paymentMethodId: payMethod, accountId: payAccount, referenceNumber: payReference });
       if (ok !== false) {
         setPayAmount('');
         setPayReference('');
@@ -271,6 +289,16 @@ export default function SalesDrawer({
                         ))}
                       </select>
                     </div>
+                    {accounts.length > 0 && (
+                      <div className="form-group" style={{ flex: '1 1 170px', margin: 0 }}>
+                        <label>Into account *</label>
+                        <select className="form-input" required value={payAccount} onChange={(e) => setPayAccount(e.target.value)}>
+                          {accounts.map((account) => (
+                            <option key={account.id || account._id} value={account.id || account._id}>{account.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
                     <div className="form-group" style={{ flex: '1 1 160px', margin: 0 }}>
                       <label>Reference</label>
                       <input
@@ -284,7 +312,8 @@ export default function SalesDrawer({
                     </button>
                   </form>
                   <small style={{ color: '#94a3b8' }}>
-                    Part payments are allowed &mdash; the remaining balance updates after each one.
+                    Part payments are allowed &mdash; the remaining balance updates after each one, and the money
+                    lands in the account chosen above.
                   </small>
                 </div>
               )}

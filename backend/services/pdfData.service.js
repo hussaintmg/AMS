@@ -117,7 +117,7 @@ function amountInWords(value) {
  * Falls back to the legacy single-line `items[]` so templates written before
  * multi-product documents still print the same rows.
  */
-function buildItemRows(record) {
+function buildItemRows(record, { isCustom = false } = {}) {
   const source = Array.isArray(record.lineItems) && record.lineItems.length
     ? record.lineItems
     : (Array.isArray(record.items) ? record.items : []);
@@ -129,13 +129,20 @@ function buildItemRows(record) {
     barcode: '',
     name: row.name || 'Service charge',
     description: [row.name, row.description].filter(Boolean).join(' — '),
+    // The typed note on its own, so the service-charges table can show it in
+    // its own column instead of repeating the service name.
+    note: row.description || '',
     quantity: Number(row.quantity) || 1,
     unitPrice: Number(row.amount) || 0,
     discountAmount: 0,
     taxAmount: Number(row.taxAmount) || 0,
     totalPrice: Number(row.total) || 0,
   }));
-  return [...source, ...services].map((line, index) => {
+  // A custom document's lines are free text — no part, no vehicle, no chassis
+  // number. Marking them here is what keeps them out of the "Vehicles" table
+  // they used to be printed in for want of anywhere else to put them.
+  const typed = source.map((line) => (isCustom && !line.part && !line.itemType ? { ...line, itemType: 'custom' } : line));
+  return [...typed, ...services].map((line, index) => {
     const quantity = Number(line.quantity) || 1;
     const unitPrice = Number(line.unitPrice) || 0;
     const totalPrice = Number(line.totalPrice) || unitPrice * quantity;
@@ -149,6 +156,7 @@ function buildItemRows(record) {
       barcode: line.barcode || '',
       name: line.name || line.description || '',
       description: line.description || line.name || '',
+      note: line.note || '',
       quantity,
       unitPrice,
       unitPriceText: money(unitPrice),
@@ -193,21 +201,30 @@ function buildDataBag(type, record, extras = {}) {
   const config = TYPES[type] || {};
   const customer = record.customer && typeof record.customer === 'object' ? record.customer : {};
   const generator = record.createdBy && typeof record.createdBy === 'object' ? record.createdBy : {};
-  const itemRows = buildItemRows(record);
+  const itemRows = buildItemRows(record, { isCustom: extras.isCustom === true });
   const itemsTable = buildItemsTable(itemRows);
   // Vehicles and parts print in separate sections — `{{#each vehicleItems}}`
   // and `{{#each partItems}}` let a template draw each group its own table,
   // like the Dealer Pro documents this ERP replaces.
-  const withGroupMeta = (rows) => Object.assign(rows.slice(), {
-    count: rows.length,
-    totalQuantity: rows.reduce((sum, row) => sum + row.quantity, 0),
-    subtotal: rows.reduce((sum, row) => sum + row.totalPrice, 0),
-    subtotalText: money(rows.reduce((sum, row) => sum + row.totalPrice, 0)),
-  });
-  const vehicleItems = withGroupMeta(itemRows.filter((row) => row.type !== 'part' && row.type !== 'service'));
+  // Each group counts from 1: the first service charge on a document reads "1",
+  // not "2" because a part happened to be listed above it. `index` keeps the
+  // document-wide position for templates that want it.
+  const withGroupMeta = (rows) => Object.assign(
+    rows.map((row, position) => ({ ...row, number: position + 1 })),
+    {
+      count: rows.length,
+      totalQuantity: rows.reduce((sum, row) => sum + row.quantity, 0),
+      subtotal: rows.reduce((sum, row) => sum + row.totalPrice, 0),
+      subtotalText: money(rows.reduce((sum, row) => sum + row.totalPrice, 0)),
+    },
+  );
+  const vehicleItems = withGroupMeta(itemRows.filter((row) => !['part', 'service', 'custom'].includes(row.type)));
   const partItems = withGroupMeta(itemRows.filter((row) => row.type === 'part'));
   // `{{#each serviceItems}}` prints the service charges block on its own.
   const serviceItems = withGroupMeta(itemRows.filter((row) => row.type === 'service'));
+  // Free-text lines from a custom document: their own "Items" table, because
+  // they are neither a vehicle with a chassis number nor a part with a code.
+  const otherItems = withGroupMeta(itemRows.filter((row) => row.type === 'custom'));
   return {
     // `{{#each items}}` iterates this; `{{items.table}}` prints the whole table.
     items: Object.assign(itemRows.slice(), {
@@ -219,6 +236,7 @@ function buildDataBag(type, record, extras = {}) {
     vehicleItems,
     partItems,
     serviceItems,
+    otherItems,
     // Spreading the raw record first means any real schema field is reachable
     // as document.<field> even if it is not in the curated catalog below.
     document: {
@@ -294,10 +312,16 @@ const COMMON = [
   ['{{#each items}}…{{/each}}', 'Repeat per product — inside use {{this.number}}, {{this.description}}, {{this.code}}, {{this.quantity}}, {{this.unitPriceText}}, {{this.totalPriceText}}'],
   ['{{#each vehicleItems}}…{{/each}}', 'Repeat per VEHICLE line only — same row fields as items'],
   ['{{#each partItems}}…{{/each}}', 'Repeat per PART line only — same row fields as items'],
+  ['{{#each serviceItems}}…{{/each}}', 'Repeat per SERVICE CHARGE line only — same row fields as items'],
+  ['{{#each otherItems}}…{{/each}}', 'Repeat per free-text (custom document) line only'],
   ['vehicleItems.count', 'Number of vehicle lines'],
   ['vehicleItems.subtotalText', 'Vehicles subtotal (formatted)'],
   ['partItems.count', 'Number of part lines'],
   ['partItems.subtotalText', 'Parts subtotal (formatted)'],
+  ['serviceItems.count', 'Number of service-charge lines'],
+  ['serviceItems.subtotalText', 'Service charges subtotal (formatted)'],
+  ['otherItems.count', 'Number of free-text lines'],
+  ['otherItems.subtotalText', 'Free-text lines subtotal (formatted)'],
   ['document.totalInWords', 'Total amount in words'],
   ['customer.fullName', 'Customer name'],
   ['customer.firstName', 'Customer first name'],

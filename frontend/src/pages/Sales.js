@@ -10,7 +10,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import SearchableSelect from '../components/SearchableSelect';
 import { Routes, Route, useNavigate, useSearchParams } from 'react-router-dom';
-import { salesAPI, invoiceAPI, partsSalesAPI, partsInvoiceAPI, customerAPI, vehicleAPI, partsAPI, serviceMasterAPI, paymentMethodsAPI, erpSettingsAPI, reportsAPI, adminAPI, pdfManagementAPI } from '../services/api';
+import { salesAPI, invoiceAPI, partsSalesAPI, partsInvoiceAPI, customerAPI, vehicleAPI, partsAPI, serviceMasterAPI, paymentMethodsAPI, erpSettingsAPI, reportsAPI, adminAPI, pdfManagementAPI, accountsAPI } from '../services/api';
 import toast from 'react-hot-toast';
 import LineItemsEditor from '../components/sales/LineItemsEditor';
 import ActionButtons from '../components/ActionButtons';
@@ -25,6 +25,7 @@ import ServiceChargesEditor, { useServiceCharges } from '../components/sales/Ser
 
 import SalesFilterBar from '../components/sales/SalesFilterBar';
 import SalesDrawer from '../components/sales/SalesDrawer';
+import EmailRecipientModal from '../components/sales/EmailRecipientModal';
 import { formatPKR } from '../components/sales/CorporateDocumentView';
 import useErpDocumentSettings from '../hooks/useErpDocumentSettings';
 import ProductCell from '../components/sales/ProductCell';
@@ -207,6 +208,24 @@ function ScanLink({ config, doc }) {
 }
 
 // Debounce hook
+/**
+ * The money accounts a counter payment can be taken into (Accounts & Petty
+ * Cash), with petty cash as the default the client asked for.
+ *
+ * Never fatal: a role without the Accounts page gets an empty list, the
+ * "into account" picker is simply not drawn, and the server falls back to
+ * petty cash on its own.
+ */
+function usePaymentAccounts() {
+    const [accounts, setAccounts] = useState([]);
+    useEffect(() => { accountsAPI.getForPayments().then(setAccounts); }, []);
+    const defaultAccountId = useMemo(() => {
+        const petty = accounts.find((a) => a.type === 'petty_cash') || accounts[0];
+        return petty ? String(petty.id || petty._id) : '';
+    }, [accounts]);
+    return { accounts, defaultAccountId };
+}
+
 function useDebounce(value, delay) {
     const [debouncedValue, setDebouncedValue] = useState(value);
     useEffect(() => {
@@ -343,6 +362,8 @@ function Sales({ section, category = 'vehicle' }) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 function Quotations({ category = 'vehicle' }) {
+    const { accounts, defaultAccountId } = usePaymentAccounts();
+    const [emailPrompt, setEmailPrompt] = useState(null);
     const config = categoryConfig(category);
     const docApi = config.sales;
     const isParts = config.key === 'parts';
@@ -720,8 +741,16 @@ function Quotations({ category = 'vehicle' }) {
         if (isParts) {
             // Parts convert straight to an invoice. The approved quotation is
             // the price the customer agreed to, so nothing is re-priced here —
-            // the modal only asks how the counter was paid.
-            setConversionForm({ item, paymentMethodId: '', paidAmount: '' });
+            // the modal asks how the counter was paid, how much was handed over
+            // and which account it went into. Anything short of the total
+            // leaves the rest on the customer's account as a credit balance.
+            setConversionForm({
+                item,
+                paymentMethodId: '',
+                paidAmount: String(Number(item.total_amount) || 0),
+                accountId: defaultAccountId,
+                creditDueDate: new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10),
+            });
             return;
         }
         setConversionForm({
@@ -739,18 +768,30 @@ function Quotations({ category = 'vehicle' }) {
             toast.error('Select the actual inventory Vehicle for this Booking.');
             return;
         }
-        if (isParts && !conversionForm.paymentMethodId) {
+        if (isParts && (Number(conversionForm.paidAmount) || 0) > 0 && !conversionForm.paymentMethodId) {
             toast.error('Select how this sale was paid.');
             return;
+        }
+        if (isParts) {
+            const outstanding = (Number(conversionForm.item.total_amount) || 0) - (Number(conversionForm.paidAmount) || 0);
+            if (outstanding > 0.009 && !conversionForm.creditDueDate) {
+                toast.error('Give the outstanding balance a due date.');
+                return;
+            }
         }
         setConverting(true);
         try {
             if (isParts) {
+                const paying = Number(conversionForm.paidAmount) || 0;
+                const outstanding = (Number(conversionForm.item.total_amount) || 0) - paying;
                 const res = await docApi.convertQuotation(conversionForm.item.id, {
-                    paymentMethodId: conversionForm.paymentMethodId,
-                    paidAmount: Number(conversionForm.paidAmount) || 0,
+                    paymentMethodId: conversionForm.paymentMethodId || undefined,
+                    paidAmount: paying,
+                    paymentTerm: outstanding > 0.009 ? 'credit' : 'paid',
+                    creditDueDate: outstanding > 0.009 ? conversionForm.creditDueDate : undefined,
+                    accountId: paying > 0 ? (conversionForm.accountId || defaultAccountId || undefined) : undefined,
                 });
-                toast.success(`Invoice ${res?.data?.data?.invoiceNumber || ''} created — stock updated`);
+                toast.success(res?.data?.message || `Invoice ${res?.data?.data?.invoiceNumber || ''} created — stock updated`);
             } else {
                 await docApi.convertQuotation(conversionForm.item.id, {
                     vehicleId: conversionForm.vehicleId || undefined,
@@ -769,13 +810,26 @@ function Quotations({ category = 'vehicle' }) {
         }
     };
 
-    const handleSendEmail = async (item) => {
+    /**
+     * Email the quotation with its PDF attached. Customers brought over from
+     * the old system carry an address the import invented, and a walk-in has
+     * none at all — rather than refuse, ask where it should go.
+     */
+    const handleSendEmail = async (item, to = null) => {
         setSendingEmail(item.id);
         try {
-            await docApi.sendQuotationEmail(item.id);
-            toast.success(`Quotation emailed to ${item.customer_name}`);
+            const res = await docApi.sendQuotationEmail(item.id, to ? { to } : undefined);
+            toast.success(res?.data?.message || `Quotation emailed to ${item.customer_name}`);
+            setEmailPrompt(null);
+            return true;
         } catch (error) {
-            toast.error(error.response?.data?.message || 'Failed to email quotation');
+            const message = error.response?.data?.message || 'Failed to email quotation';
+            if (!to && /email address|address to send/i.test(message)) {
+                setEmailPrompt({ item, label: item.quotation_number, reason: message });
+                return false;
+            }
+            toast.error(message);
+            return false;
         } finally {
             setSendingEmail(null);
         }
@@ -791,6 +845,7 @@ function Quotations({ category = 'vehicle' }) {
     return (
         <div className="card sales-page">
             <ConfirmModal {...confirmModal} loading={sendingEmail} onCancel={() => setConfirmModal({ ...confirmModal, isOpen: false })} />
+            <EmailRecipientModal prompt={emailPrompt} onClose={() => setEmailPrompt(null)} onSend={(to) => handleSendEmail(emailPrompt.item, to)} />
             {conversionForm && isParts && (() => {
                 // Nothing on the quotation is editable here: it was approved at
                 // these prices, so the invoice bills exactly that. The lines are
@@ -853,8 +908,44 @@ function Quotations({ category = 'vehicle' }) {
                                         onChange={(event) => setConversionForm((prev) => ({ ...prev, paidAmount: event.target.value }))}
                                         placeholder="What the customer paid now"
                                     />
+                                    <button
+                                        type="button"
+                                        className="btn btn-secondary btn-sm"
+                                        style={{ marginTop: '0.4rem', width: '100%' }}
+                                        onClick={() => setConversionForm((prev) => ({ ...prev, paidAmount: String(convTotal) }))}
+                                    >
+                                        Paid in full ({formatPKR(convTotal)})
+                                    </button>
                                 </div>
                             </div>
+                            {accounts.length > 0 && (Number(conversionForm.paidAmount) || 0) > 0 && (
+                                <div className="form-group">
+                                    <label>Into account *</label>
+                                    <SearchableSelect
+                                        name="accountId"
+                                        value={conversionForm.accountId || defaultAccountId}
+                                        onChange={(event) => setConversionForm((prev) => ({ ...prev, accountId: event.target.value }))}
+                                        options={accounts.map((a) => ({ label: a.name, value: String(a.id || a._id) }))}
+                                        labelField="label"
+                                        valueField="value"
+                                    />
+                                </div>
+                            )}
+                            {convTotal - (Number(conversionForm.paidAmount) || 0) > 0.009 && (
+                                <div className="form-group">
+                                    <label>Balance due by *</label>
+                                    <input
+                                        type="date"
+                                        min={new Date().toISOString().slice(0, 10)}
+                                        value={conversionForm.creditDueDate || ''}
+                                        onChange={(event) => setConversionForm((prev) => ({ ...prev, creditDueDate: event.target.value }))}
+                                    />
+                                    <small style={{ color: '#dc2626', fontWeight: 600, display: 'block', marginTop: '0.4rem' }}>
+                                        {formatPKR(convTotal - (Number(conversionForm.paidAmount) || 0))} stays on the customer
+                                        account as a credit balance.
+                                    </small>
+                                </div>
+                            )}
                             <div className="form-group">
                                 <label>Total</label>
                                 <input type="text" value={formatPKR(convTotal)} readOnly />
@@ -971,7 +1062,9 @@ function Quotations({ category = 'vehicle' }) {
                                 <td>{getStatusBadge(q.status)}</td>
                                 <td onClick={e=>e.stopPropagation()}>
                                     <ActionButtons
-                                        onEdit={canEdit && q.status === 'draft' ? () => openModal('edit', q) : null}
+                                        // An approved quotation is the price the customer agreed to;
+                                        // reopening it would move a figure that has been signed off.
+                                        onEdit={canEdit && q.status === 'draft' && q.approval_status !== 'approved' ? () => openModal('edit', q) : null}
                                         onDelete={canDelete && q.status === 'draft' ? () => handleDeleteClick(q.id) : null}
                                         customActions={[
                                             ...(canDownloadPdf ? [{ icon: <Download size={18} />, title: 'Download PDF', onClick: () => downloadSalesPdf('quotation', q.id, q.quotation_number), className: 'btn-info' }] : []),
@@ -1009,7 +1102,9 @@ function Quotations({ category = 'vehicle' }) {
                                 </div>
                                 <div className="data-card-footer">
                                     <ActionButtons
-                                        onEdit={canEdit && q.status === 'draft' ? () => openModal('edit', q) : null}
+                                        // An approved quotation is the price the customer agreed to;
+                                        // reopening it would move a figure that has been signed off.
+                                        onEdit={canEdit && q.status === 'draft' && q.approval_status !== 'approved' ? () => openModal('edit', q) : null}
                                         onDelete={canDelete && q.status === 'draft' ? () => handleDeleteClick(q.id) : null}
                                         customActions={[
                                             ...(canDownloadPdf ? [{ icon: <Download size={18} />, title: 'Download PDF', onClick: () => downloadSalesPdf('quotation', q.id, q.quotation_number), className: 'btn-info' }] : []),
@@ -2627,6 +2722,7 @@ function SalesOrders({ category = 'vehicle' }) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 function Invoices({ category = 'vehicle' }) {
+    const [emailPrompt, setEmailPrompt] = useState(null);
     const config = categoryConfig(category);
     const docApi = config.invoices;
     const isParts = config.key === 'parts';
@@ -2693,6 +2789,7 @@ function Invoices({ category = 'vehicle' }) {
     // Taking money against an invoice is its own grant (Role Jobs → Record
     // payment); the role list is only the fallback for an unconfigured role.
     const canRecordPayment = allows('recordPayment', ['super_admin', 'admin', 'sales_manager', 'accountant'].includes(user?.role));
+    const { accounts, defaultAccountId } = usePaymentAccounts();
     const canChangePaymentTerm = allows('changePaymentTerm', canCreate);
     const canImportInvoices = allows('import', canCreate);
     const showField = documentFieldAccessor(user, config.key, 'invoices', 'part_invoices');
@@ -2731,11 +2828,11 @@ function Invoices({ category = 'vehicle' }) {
         }
     };
 
-    const handleDrawerPayment = async ({ amount, paymentMethodId, referenceNumber }) => {
+    const handleDrawerPayment = async ({ amount, paymentMethodId, accountId, referenceNumber }) => {
         if (!drawerInvoice?.id) return false;
         try {
-            await docApi.recordPayment(drawerInvoice.id, { amount, paymentMethodId, referenceNumber });
-            toast.success('Payment recorded');
+            const res = await docApi.recordPayment(drawerInvoice.id, { amount, paymentMethodId, accountId: accountId || defaultAccountId || undefined, referenceNumber });
+            toast.success(res?.data?.message || 'Payment recorded');
             await Promise.all([loadDrawer(drawerInvoice.id), fetchData()]);
             return true;
         } catch (error) {
@@ -2975,10 +3072,26 @@ function Invoices({ category = 'vehicle' }) {
                 // unpaid with a due date; the money comes later through Record
                 // Payment. No approval step either way.
                 const isCredit = formData.paymentTerm === 'credit';
-                let tendered = 0;
+                let tendered = formData.paidAmount === '' || formData.paidAmount == null
+                    ? 0
+                    : Number(formData.paidAmount);
+                if (Number.isNaN(tendered) || tendered < 0) {
+                    toast.error('Amount received must be a valid, positive number');
+                    return;
+                }
                 if (isCredit) {
                     if (!formData.creditDueDate) {
                         toast.error('Give the credit invoice a due date');
+                        return;
+                    }
+                    // A credit invoice may still take a deposit: whatever is
+                    // handed over now is banked, the rest becomes the balance.
+                    if (tendered > 0 && !formData.paymentMethodId) {
+                        toast.error('Select how the deposit is being paid');
+                        return;
+                    }
+                    if (tendered > invoiceTotal + 0.009) {
+                        toast.error('The deposit cannot be more than the invoice total');
                         return;
                     }
                 } else {
@@ -2986,17 +3099,10 @@ function Invoices({ category = 'vehicle' }) {
                         toast.error('Select how the customer is paying');
                         return;
                     }
-                    tendered = formData.paidAmount === '' || formData.paidAmount == null
-                        ? 0
-                        : Number(formData.paidAmount);
-                    if (Number.isNaN(tendered) || tendered < 0) {
-                        toast.error('Amount received must be a valid, positive number');
-                        return;
-                    }
                     if (tendered + 0.009 < invoiceTotal) {
                         toast.error(
                             `A paid invoice can only be created once it is paid in full — ${currency.code} `
-                            + `${(invoiceTotal - tendered).toLocaleString()} is still outstanding. Switch to Credit to issue it unpaid.`,
+                            + `${(invoiceTotal - tendered).toLocaleString()} is still outstanding. Switch to Credit to take part of it now.`,
                         );
                         return;
                     }
@@ -3012,9 +3118,11 @@ function Invoices({ category = 'vehicle' }) {
                     // The server records the payment as part of creating a paid
                     // invoice, so there is no window where an unpaid one exists.
                     paidAmount: tendered,
-                    paymentMethodId: isCredit ? undefined : formData.paymentMethodId,
+                    paymentMethodId: formData.paymentMethodId || undefined,
                     paymentTerm: isCredit ? 'credit' : 'paid',
                     creditDueDate: isCredit ? formData.creditDueDate : undefined,
+                    // Which money account the counter took it into.
+                    accountId: tendered > 0 ? (formData.accountId || defaultAccountId || undefined) : undefined,
                     ...svc.payload(),
                 };
                 const res = await docApi.create(submitData);
@@ -3055,26 +3163,41 @@ function Invoices({ category = 'vehicle' }) {
         });
     };
 
+    /**
+     * Email the invoice with its PDF attached. A customer with no usable
+     * address is asked about rather than refused — see EmailRecipientModal.
+     */
+    const sendInvoiceEmail = async (item, to = null) => {
+        setSendingEmail(item.id);
+        try {
+            const res = await docApi.sendEmail(item.id, to ? { to } : undefined);
+            toast.success(res?.data?.message || 'Invoice emailed successfully');
+            setConfirmModal({ isOpen: false });
+            setEmailPrompt(null);
+            fetchData();
+            return true;
+        } catch (error) {
+            const message = error.response?.data?.message || 'Failed to email invoice';
+            if (!to && /email address|address to send/i.test(message)) {
+                setConfirmModal({ isOpen: false });
+                setEmailPrompt({ item, label: item.invoice_number, reason: message });
+                return false;
+            }
+            toast.error(message);
+            return false;
+        } finally {
+            setSendingEmail(null);
+        }
+    };
+
     const handleSendClick = (item) => {
         setConfirmModal({
             isOpen: true,
             title: 'Send Invoice Email',
-            message: `Email invoice ${item.invoice_number} to its customer?`,
+            message: `Email invoice ${item.invoice_number} to its customer, with the PDF attached?`,
             type: 'primary',
             confirmText: 'Send Email',
-            onConfirm: async () => {
-                setSendingEmail(item.id);
-                try {
-                    await docApi.sendEmail(item.id);
-                    toast.success('Invoice emailed successfully');
-                    setConfirmModal({ isOpen: false });
-                    fetchData();
-                } catch (error) {
-                    toast.error(error.response?.data?.message || 'Failed to email invoice');
-                } finally {
-                    setSendingEmail(null);
-                }
-            }
+            onConfirm: () => sendInvoiceEmail(item),
         });
     };
 
@@ -3148,6 +3271,7 @@ function Invoices({ category = 'vehicle' }) {
 
     return (
         <div className="card sales-page">
+            <EmailRecipientModal prompt={emailPrompt} onClose={() => setEmailPrompt(null)} onSend={(to) => sendInvoiceEmail(emailPrompt.item, to)} />
             <div className="card-header d-flex justify-content-between align-items-center">
                 <div><h3>{config.label} Invoices</h3>{config.can.bulk && <BulkSalesActions type="invoice" config={config} selectedRows={data.filter(x=>selectedIds.includes(x.id))} onClear={()=>setSelectedIds([])} onRefresh={fetchData} canEmail={canSend} canPdf={canDownloadPdf} canDelete={canDelete}/>}</div>
                 {canCreate && (
@@ -3403,6 +3527,7 @@ function Invoices({ category = 'vehicle' }) {
                 }}
                 payments={drawerInvoice?.payments || []}
                 paymentMethods={paymentMethods}
+                accounts={accounts}
                 onRecordPayment={canRecordPayment ? handleDrawerPayment : null}
             />
 
@@ -3519,10 +3644,16 @@ function Invoices({ category = 'vehicle' }) {
                                         <label>Created Date</label>
                                         <div style={{ padding: '0.5rem', background: '#fff', border: '1px solid #d1d5db', borderRadius: '6px', color: '#6b7280' }}>{new Date().toLocaleDateString()}</div>
                                     </div>
-                                    <div className="form-group">
-                                        <label>Due In (Days)</label>
-                                        <input type="number" name="dueDays" value={formData.dueDays} onChange={handleChange} min="0" max="365" />
-                                    </div>
+                                    {/* Only a credit invoice has a date by which money is
+                                        expected. A counter sale used to be stamped "due in
+                                        30 days" for no reason anyone could explain. */}
+                                    {formData.paymentTerm === 'credit' && (
+                                        <div className="form-group">
+                                            <label>Due In (Days)</label>
+                                            <input type="number" name="dueDays" value={formData.dueDays} onChange={handleChange} min="0" max="365" />
+                                            <small className="text-muted">Used when no explicit credit due date is set.</small>
+                                        </div>
+                                    )}
 
                                     {/* Paid at the counter, or issued on credit and collected
                                         later. A paid invoice is born paid; a credit invoice
@@ -3557,13 +3688,13 @@ function Invoices({ category = 'vehicle' }) {
                                                 min={new Date().toISOString().slice(0, 10)}
                                             />
                                             <small style={{ color: '#b45309', fontWeight: 600, display: 'block', marginTop: '0.4rem' }}>
-                                                Issued unpaid — {currency.code} {calculateInvoiceTotal().toLocaleString()} will show as outstanding until recorded.
+                                                {currency.code} {Math.max(0, calculateInvoiceTotal() - (Number(formData.paidAmount) || 0)).toLocaleString()} will
+                                                show as outstanding until it is collected.
                                             </small>
                                         </div>
                                     )}
-                                    {formData.paymentTerm !== 'credit' && (<>
                                     <div className="form-group">
-                                        <label>Payment Mode *</label>
+                                        <label>Payment Mode {formData.paymentTerm === 'credit' ? '' : '*'}</label>
                                         <SearchableSelect
                                             name="paymentMethodId"
                                             value={formData.paymentMethodId}
@@ -3575,7 +3706,7 @@ function Invoices({ category = 'vehicle' }) {
                                         />
                                     </div>
                                     <div className="form-group">
-                                        <label>Amount Received *</label>
+                                        <label>{formData.paymentTerm === 'credit' ? 'Received now' : 'Amount Received *'}</label>
                                         <input
                                             type="number"
                                             name="paidAmount"
@@ -3594,9 +3725,11 @@ function Invoices({ category = 'vehicle' }) {
                                             Paid in full ({currency.symbol} {calculateInvoiceTotal().toLocaleString()})
                                         </button>
                                         {invoiceShortfall > 0 ? (
-                                            <small style={{ color: '#dc2626', fontWeight: 600, display: 'block', marginTop: '0.4rem' }}>
-                                                {currency.code} {invoiceShortfall.toLocaleString()} still outstanding — an invoice
-                                                cannot be created for part of the amount.
+                                            <small style={{ color: formData.paymentTerm === 'credit' ? '#b45309' : '#dc2626', fontWeight: 600, display: 'block', marginTop: '0.4rem' }}>
+                                                {currency.code} {invoiceShortfall.toLocaleString()} still outstanding
+                                                {formData.paymentTerm === 'credit'
+                                                    ? ' — it stays on the customer account until collected.'
+                                                    : ' — switch to Credit to take part of it now.'}
                                             </small>
                                         ) : invoiceChangeDue > 0 ? (
                                             <small style={{ color: '#b45309', fontWeight: 600, display: 'block', marginTop: '0.4rem' }}>
@@ -3604,7 +3737,20 @@ function Invoices({ category = 'vehicle' }) {
                                             </small>
                                         ) : null}
                                     </div>
-                                    </>)}
+                                    {/* Which account the money lands in. Only asked when money changes hands. */}
+                                    {accounts.length > 0 && (Number(formData.paidAmount) || 0) > 0 && (
+                                        <div className="form-group">
+                                            <label>Into Account *</label>
+                                            <SearchableSelect
+                                                name="accountId"
+                                                value={formData.accountId || defaultAccountId}
+                                                onChange={handleChange}
+                                                options={accounts.map((a) => ({ label: a.name, value: String(a.id || a._id) }))}
+                                                labelField="label"
+                                                valueField="value"
+                                            />
+                                        </div>
+                                    )}
 
                                     <div style={{ borderTop: '2px solid #e5e7eb', marginTop: '1.5rem', paddingTop: '1.5rem' }}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>

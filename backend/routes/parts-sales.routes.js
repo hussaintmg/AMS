@@ -82,6 +82,10 @@ router.patch('/quotations/:id/status', can('quotations', 'edit'), controller.upd
 router.post('/quotations/:id/approve', can('quotations', 'approve'), controller.approveQuotation);
 // The parts flow is quotation → invoice directly; the invoice moves the stock,
 // so converting needs create on invoices.
+// Converting can now leave a balance behind, which makes the result a credit
+// invoice — the same extra grant the direct credit invoice needs.
+const whenConvertCredit = (req, res, next) => (String(req.body?.paymentTerm || '').toLowerCase() === 'credit' ? next() : next('route'));
+router.post('/quotations/:id/convert', whenConvertCredit, can('invoices', 'changePaymentTerm'), can('invoices', 'create'), controller.convertQuotationToInvoice);
 router.post('/quotations/:id/convert', can('invoices', 'create'), controller.convertQuotationToInvoice);
 // Email and PDF reuse the vehicle documents' templates — see the controller.
 router.post('/quotations/:id/send-email', can('quotations', 'sendEmail'), controller.sendQuotationEmail);

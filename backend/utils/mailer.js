@@ -52,7 +52,7 @@ const getTransporter = async () => {
   });
 };
 
-const sendMail = async ({ to, subject, html, text, from: overrideFrom, replyTo: overrideReplyTo }) => {
+const sendMail = async ({ to, cc, bcc, subject, html, text, attachments, from: overrideFrom, replyTo: overrideReplyTo }) => {
   const smtpConfig = await getSmtpConfig();
   const fromAddress = overrideFrom || (smtpConfig?.senderEmail
     ? `${smtpConfig.senderName || 'AMS'} <${smtpConfig.senderEmail}>`
@@ -66,6 +66,11 @@ const sendMail = async ({ to, subject, html, text, from: overrideFrom, replyTo: 
     subject,
     html,
     text,
+    ...(cc ? { cc } : {}),
+    ...(bcc ? { bcc } : {}),
+    // Documents go out with their PDF on them; dropping this silently sent a
+    // covering letter with nothing attached.
+    ...(Array.isArray(attachments) && attachments.length ? { attachments } : {}),
     ...(replyTo ? { replyTo } : {}),
   });
 

@@ -1,3 +1,5 @@
+const mongoose = require('mongoose');
+
 /**
  * Paid vs credit, on every invoice model.
  *
@@ -19,6 +21,10 @@ const paymentTermFields = {
   paymentTerm: { type: String, enum: PAYMENT_TERMS, default: 'paid' },
   creditDueDate: { type: Date, default: null },
   creditStatus: { type: String, enum: CREDIT_STATUSES, default: 'open' },
+  // Which money account the counter took the payment into (Accounts & Petty
+  // Cash). Set from the receipt posting, so the invoice and the ledger always
+  // name the same account; null on an invoice raised entirely on credit.
+  paymentAccount: { type: mongoose.Schema.Types.ObjectId, ref: 'Account', default: null },
 };
 
 /**
@@ -28,6 +34,8 @@ const paymentTermFields = {
 const applyCreditStatus = (doc, now = new Date()) => {
   if (!doc) return;
   if (doc.paymentTerm !== 'credit') { doc.creditStatus = 'settled'; return; }
+  // A credit invoice with money already against it is 'partial', not 'open' —
+  // the arithmetic below decides that, never the caller.
   const total = Number(doc.totalAmount) || 0;
   const balance = Number(doc.balanceAmount ?? (total - (Number(doc.paidAmount) || 0))) || 0;
   if (balance <= 0.009) { doc.creditStatus = 'settled'; return; }

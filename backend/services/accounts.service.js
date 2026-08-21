@@ -81,6 +81,42 @@ async function balanceSheet({ from = null, to = null } = {}) {
   };
 }
 
+/**
+ * Refuse to take more out of an account than it holds.
+ *
+ * Petty cash is real money in a real drawer: it cannot go below zero, and a
+ * balance that does is a sign the ledger has lost touch with the tin. Transfers
+ * always checked this; expenses, salary advances, payable payments and manual
+ * adjustments did not, so any of them could quietly overdraw an account and the
+ * balance sheet would report a negative figure nobody could explain.
+ *
+ * The message names the account, what it actually holds and the shortfall, so
+ * the operator knows the two ways out: move money in, or pick another account.
+ *
+ * `allowNegative` is the deliberate escape hatch — the caller passes it through
+ * from the request when someone with the authority to do so insists (an account
+ * whose opening balance was never entered, say).
+ *
+ * @param {object} account   an Account document
+ * @param {number} amount    what is about to leave it
+ * @param {object} [options]
+ * @param {boolean} [options.allowNegative]
+ * @param {string}  [options.action] what is being attempted, for the message
+ */
+async function assertSufficientFunds(account, amount, { allowNegative = false, action = 'pay' } = {}) {
+  if (!account || allowNegative) return null;
+  const value = round2(amount);
+  if (!(value > 0)) return null;
+  const held = await balanceOf(account);
+  if (value <= held + 0.009) return held;
+  const money = (number) => `PKR ${Number(number).toLocaleString('en-PK')}`;
+  throw new AppError(
+    `${account.name} holds ${money(held)}, so ${money(value)} cannot ${action} from it `
+    + `— ${money(round2(value - held))} short. Transfer money in first, or choose another account.`,
+    400,
+  );
+}
+
 /** The default petty-cash account (isDefault, else the first petty_cash one). */
 async function pettyCashAccount() {
   return (await Account.findOne({ type: 'petty_cash', isDefault: true, isActive: { $ne: false } }))
@@ -108,10 +144,7 @@ async function transfer({ fromAccountId, toAccountId, amount, transferDate, refe
   if (!from || !to) throw new AppError('Both accounts are required', 400);
   if (String(from._id) === String(to._id)) throw new AppError('From and to accounts must be different', 400);
   if (from.isActive === false || to.isActive === false) throw new AppError('Both accounts must be active', 400);
-  const available = await balanceOf(from);
-  if (!allowNegative && value > available + 0.009) {
-    throw new AppError(`${from.name} holds ${available.toLocaleString('en-PK')}; cannot transfer ${value.toLocaleString('en-PK')}`, 400);
-  }
+  await assertSufficientFunds(from, value, { allowNegative, action: 'be transferred' });
   const transferNumber = await nextDocNumber(AccountTransfer, 'transferNumber', 'TRF');
   const row = await AccountTransfer.create({
     transferNumber, fromAccount: from._id, toAccount: to._id, amount: value,
@@ -173,4 +206,4 @@ async function sweep({ accountId = null, amount = null, userId }) {
   });
 }
 
-module.exports = { movement, balanceOf, syncBalance, balanceSheet, pettyCashAccount, resolveAccount, transfer, reverseTransfer, limitStatus, sweep, rowsOf };
+module.exports = { movement, balanceOf, syncBalance, balanceSheet, pettyCashAccount, resolveAccount, assertSufficientFunds, transfer, reverseTransfer, limitStatus, sweep, rowsOf };

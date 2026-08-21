@@ -138,7 +138,7 @@ async function loadRecord(type, id) {
   // imported record has it on the lead, not on their customer record. Look it up
   // before the document is built so the address they did give actually prints.
   const customerEmail = record.walkIn ? '' : await resolveCustomerEmail(record.customer);
-  const data = buildDataBag(type, record, { companyName: company.name, company, customerEmail });
+  const data = buildDataBag(type, record, { companyName: company.name, company, customerEmail, isCustom: found.isCustom === true });
   if (PDF_DEBUG) {
     const flat = {};
     variableCatalog(type).forEach(({ key }) => { flat[key] = resolveTokens(`{{${key}}}`, data); });

@@ -15,8 +15,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { FileText, Pencil, Send, CheckCircle, Clock, Wallet, CreditCard, AlertTriangle, Trash2, Plus, Download, Mail, ArrowRightLeft, DollarSign } from 'lucide-react';
-import { customQuotationsAPI, customBookingsAPI, customInvoicesAPI, customerAPI, pdfManagementAPI, paymentMethodsAPI } from '../../services/api';
+import { FileText, Pencil, Send, CheckCircle, Clock, Wallet, CreditCard, AlertTriangle, Trash2, Plus, Download, Mail, ArrowRightLeft, DollarSign, HandCoins } from 'lucide-react';
+import { customQuotationsAPI, customBookingsAPI, customInvoicesAPI, customerAPI, pdfManagementAPI, paymentMethodsAPI, accountsAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { pageActions, dropdownHint, fieldAccessor } from '../../utils/roleJobs';
 import useErpDocumentSettings from '../../hooks/useErpDocumentSettings';
@@ -29,6 +29,7 @@ import ServerPagination from '../../components/ServerPagination';
 import CustomerQuickCreate from '../../components/customers/CustomerQuickCreate';
 import SalesFilterBar from '../../components/sales/SalesFilterBar';
 import SalesDrawer from '../../components/sales/SalesDrawer';
+import EmailRecipientModal from '../../components/sales/EmailRecipientModal';
 import ServiceChargesEditor, { useServiceCharges } from '../../components/sales/ServiceChargesEditor';
 import { formatPKR } from '../../components/sales/CorporateDocumentView';
 import '../../styles/userManagement.css';
@@ -71,7 +72,14 @@ export default function CustomDocuments({ kind = 'quotations' }) {
   const [filters, setFilters] = useState({ search: '', status: '', customerId: '', dateFrom: '', dateTo: '', paymentTerm: '', sortBy: 'created_at', sortOrder: 'desc' });
   const [customers, setCustomers] = useState([]);
   const [paymentMethods, setPaymentMethods] = useState([]);
+  // Where money taken against an invoice actually lands.
+  const [accounts, setAccounts] = useState([]);
   const [confirm, setConfirm] = useState({ isOpen: false });
+  // The "convert to invoice" question: how much is being paid now, into which
+  // account, and is the rest going on credit.
+  const [convertModal, setConvertModal] = useState(null);
+  const [payModal, setPayModal] = useState(null);
+  const [emailPrompt, setEmailPrompt] = useState(null);
 
   // ── form state ──
   const [modal, setModal] = useState(null); // { mode: 'create'|'edit', item }
@@ -111,14 +119,21 @@ export default function CustomDocuments({ kind = 'quotations' }) {
   useEffect(() => {
     loadCustomers();
     paymentMethodsAPI.getAll({ is_active: true }).then((res) => setPaymentMethods(res.data?.data || [])).catch(() => {});
+    accountsAPI.getForPayments().then(setAccounts);
   }, [loadCustomers]);
+
+  /** Petty cash unless something else is chosen — the client's stated default. */
+  const defaultAccountId = useMemo(() => {
+    const petty = accounts.find((a) => a.type === 'petty_cash') || accounts[0];
+    return petty ? String(petty.id || petty._id) : '';
+  }, [accounts]);
 
   const setFilter = (key, value) => { setFilters((prev) => ({ ...prev, [key]: value })); if (key !== 'sortBy' && key !== 'sortOrder') setPagination((prev) => ({ ...prev, page: 1 })); };
   const clearFilters = () => { setFilters({ search: '', status: '', customerId: '', dateFrom: '', dateTo: '', paymentTerm: '', sortBy: 'created_at', sortOrder: 'desc' }); setPagination((prev) => ({ ...prev, page: 1 })); };
 
   // ── form ──
   const openCreate = () => {
-    setForm({ customerId: '', walkIn: false, walkInName: '', walkInPhone: '', title: '', notes: '', termsAndConditions: '', discountAmount: '', additionalCharges: '', validityDays: 7, priority: 'normal', bookingAmount: '', expectedDeliveryDate: '', dueDays: 30, paymentTerm: 'paid', creditDueDate: '', paymentMethodId: '', paidAmount: '' });
+    setForm({ customerId: '', walkIn: false, walkInName: '', walkInPhone: '', title: '', notes: '', termsAndConditions: '', discountAmount: '', additionalCharges: '', validityDays: 7, priority: 'normal', bookingAmount: '', expectedDeliveryDate: '', dueDays: 30, paymentTerm: 'paid', creditDueDate: '', paymentMethodId: '', paidAmount: '', accountId: defaultAccountId });
     setLines([emptyLine()]); svc.reset();
     setModal({ mode: 'create', item: null });
   };
@@ -150,7 +165,10 @@ export default function CustomDocuments({ kind = 'quotations' }) {
     if (isInvoice && modal.mode === 'create') {
       if (isCredit && !form.creditDueDate) { toast.error('Give the credit invoice a due date'); return; }
       if (!isCredit && !form.paymentMethodId) { toast.error('Select how the customer is paying'); return; }
-      if (!isCredit && (Number(form.paidAmount) || 0) + 0.009 < grandTotal) { toast.error(`A paid invoice needs the full amount (${currencyCode} ${grandTotal.toLocaleString()}). Switch to Credit to issue it unpaid.`); return; }
+      if (!isCredit && (Number(form.paidAmount) || 0) + 0.009 < grandTotal) { toast.error(`A paid invoice needs the full amount (${currencyCode} ${grandTotal.toLocaleString()}). Switch to Credit to take part of it now.`); return; }
+      // A deposit on a credit invoice still has to be paid by some means.
+      if (isCredit && (Number(form.paidAmount) || 0) > 0 && !form.paymentMethodId) { toast.error('Select how the deposit is being paid'); return; }
+      if (isCredit && (Number(form.paidAmount) || 0) > grandTotal + 0.009) { toast.error('The deposit cannot be more than the invoice total'); return; }
     }
     setSaving(true);
     try {
@@ -160,8 +178,11 @@ export default function CustomDocuments({ kind = 'quotations' }) {
         ...svc.payload(),
         paymentTerm: isCredit ? 'credit' : 'paid',
         creditDueDate: isCredit ? form.creditDueDate : undefined,
-        paymentMethodId: isCredit ? undefined : (form.paymentMethodId || undefined),
-        paidAmount: isCredit ? 0 : Number(form.paidAmount) || 0,
+        paymentMethodId: form.paymentMethodId || undefined,
+        // A credit invoice keeps whatever was handed over now; the rest becomes
+        // the customer's outstanding balance.
+        paidAmount: Number(form.paidAmount) || 0,
+        accountId: (Number(form.paidAmount) || 0) > 0 ? (form.accountId || defaultAccountId || undefined) : undefined,
       };
       const res = modal.mode === 'create' ? await config.api.create(payload) : await config.api.update(modal.item.id, payload);
       toast.success(res.data?.message || 'Saved');
@@ -181,19 +202,99 @@ export default function CustomDocuments({ kind = 'quotations' }) {
   const doApprove = async (item, decision = 'approved') => {
     try { const res = await config.api.approve(item.id, { decision }); toast.success(res.data?.message); fetchData(); } catch (error) { toast.error(error.response?.data?.message || 'Failed'); }
   };
-  const doConvert = (item, to) => setConfirm({
-    isOpen: true, title: `Convert to ${to}`, message: `Convert ${item[config.numberKey]} into a custom ${to}? Its lines, customer and service charges carry over unchanged.`,
-    onConfirm: async () => {
-      try {
-        const body = to === 'invoice' ? { to: 'invoice', paymentTerm: 'credit', creditDueDate: new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10) } : { to: 'booking' };
-        const res = await config.api.convert(item.id, body);
-        toast.success(res.data?.message || 'Converted');
-        setConfirm({ isOpen: false });
-        fetchData();
-        navigate(to === 'invoice' ? '/custom/invoices' : '/custom/bookings');
-      } catch (error) { toast.error(error.response?.data?.message || 'Conversion failed'); setConfirm({ isOpen: false }); }
-    },
+  /**
+   * Converting to a booking is a straight copy. Converting to an invoice is
+   * where money changes hands, so it asks the two questions the counter has to
+   * answer: how much is the customer paying now, and into which account. Petty
+   * cash is the default; anything left unpaid becomes a credit balance.
+   */
+  const doConvert = (item, to) => {
+    if (to === 'booking') {
+      setConfirm({
+        isOpen: true, title: 'Convert to booking', message: `Convert ${item[config.numberKey]} into a custom booking? Its lines, customer and service charges carry over unchanged.`,
+        onConfirm: async () => {
+          try {
+            const res = await config.api.convert(item.id, { to: 'booking' });
+            toast.success(res.data?.message || 'Converted');
+            setConfirm({ isOpen: false }); fetchData(); navigate('/custom/bookings');
+          } catch (error) { toast.error(error.response?.data?.message || 'Conversion failed'); setConfirm({ isOpen: false }); }
+        },
+      });
+      return;
+    }
+    const alreadyPaid = Number(item.paid_amount) || 0;
+    const outstanding = Math.max(0, (Number(item.total_amount) || 0) - alreadyPaid);
+    setConvertModal({
+      item,
+      total: Number(item.total_amount) || 0,
+      alreadyPaid,
+      paidAmount: String(outstanding),
+      paymentMethodId: '',
+      accountId: defaultAccountId,
+      creditDueDate: new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10),
+      saving: false,
+    });
+  };
+
+  const submitConvert = async () => {
+    if (!convertModal || convertModal.saving) return;
+    const paying = Number(convertModal.paidAmount) || 0;
+    const outstanding = Math.max(0, convertModal.total - convertModal.alreadyPaid - paying);
+    if (paying > 0 && !convertModal.paymentMethodId) { toast.error('Select how the customer is paying'); return; }
+    if (outstanding > 0.009 && !convertModal.creditDueDate) { toast.error('Give the outstanding balance a due date'); return; }
+    setConvertModal((prev) => ({ ...prev, saving: true }));
+    try {
+      const res = await config.api.convert(convertModal.item.id, {
+        to: 'invoice',
+        paymentTerm: outstanding > 0.009 ? 'credit' : 'paid',
+        creditDueDate: outstanding > 0.009 ? convertModal.creditDueDate : undefined,
+        paidAmount: paying,
+        paymentMethodId: convertModal.paymentMethodId || undefined,
+        accountId: paying > 0 ? (convertModal.accountId || defaultAccountId || undefined) : undefined,
+      });
+      toast.success(res.data?.message || 'Converted');
+      setConvertModal(null);
+      fetchData();
+      navigate('/custom/invoices');
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Conversion failed');
+      setConvertModal((prev) => prev && { ...prev, saving: false });
+    }
+  };
+
+  /** Take money against an invoice straight from the list, without the drawer. */
+  const openPay = (item) => setPayModal({
+    item,
+    outstanding: Number(item.balance_amount) || 0,
+    amount: String(Number(item.balance_amount) || 0),
+    paymentMethodId: '',
+    accountId: defaultAccountId,
+    referenceNumber: '',
+    saving: false,
   });
+
+  const submitPay = async () => {
+    if (!payModal || payModal.saving) return;
+    const amount = Number(payModal.amount) || 0;
+    if (!(amount > 0)) { toast.error('Enter the amount received'); return; }
+    if (amount > payModal.outstanding + 0.009) { toast.error(`That is more than the ${currencyCode} ${payModal.outstanding.toLocaleString()} outstanding`); return; }
+    if (!payModal.paymentMethodId) { toast.error('Select how the customer is paying'); return; }
+    setPayModal((prev) => ({ ...prev, saving: true }));
+    try {
+      const res = await config.api.recordPayment(payModal.item.id, {
+        amount,
+        paymentMethodId: payModal.paymentMethodId,
+        accountId: payModal.accountId || defaultAccountId || undefined,
+        referenceNumber: payModal.referenceNumber,
+      });
+      toast.success(res.data?.message || 'Payment recorded');
+      setPayModal(null);
+      fetchData();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to record payment');
+      setPayModal((prev) => prev && { ...prev, saving: false });
+    }
+  };
   const downloadPdf = async (item) => {
     try {
       const response = await pdfManagementAPI.download(config.pdfType, item.id);
@@ -205,8 +306,26 @@ export default function CustomDocuments({ kind = 'quotations' }) {
       toast.error(message || 'PDF download failed');
     }
   };
-  const sendEmail = async (item) => {
-    try { const res = await config.api.sendEmail(item.id); toast.success(res.data?.message || 'Email sent'); } catch (error) { toast.error(error.response?.data?.message || 'Email failed'); }
+  /**
+   * Send the document with its PDF. When the customer has no usable address —
+   * a walk-in, or one of the imported records carrying a placeholder — ask for
+   * one instead of refusing outright, which is what read as "email is broken".
+   */
+  const sendEmail = async (item, to = null) => {
+    try {
+      const res = await config.api.sendEmail(item.id, to ? { to } : undefined);
+      toast.success(res.data?.message || 'Email sent');
+      setEmailPrompt(null);
+      return true;
+    } catch (error) {
+      const message = error.response?.data?.message || 'Email failed';
+      if (!to && /email address|address to send/i.test(message)) {
+        setEmailPrompt({ item, label: item[config.numberKey], reason: message, suggested: item.customer_email && !/@import\./.test(item.customer_email) ? item.customer_email : '' });
+        return false;
+      }
+      toast.error(message);
+      return false;
+    }
   };
 
   const openDrawer = async (item) => {
@@ -217,8 +336,12 @@ export default function CustomDocuments({ kind = 'quotations' }) {
     if (!drawer?.id) return;
     try { await config.api.update(drawer.id, { status }); toast.success('Status updated'); openDrawer({ id: drawer.id }); fetchData(); } catch (error) { toast.error(error.response?.data?.message || 'Failed'); }
   };
-  const drawerPayment = async ({ amount, paymentMethodId, referenceNumber }) => {
-    try { await config.api.recordPayment(drawer.id, { amount, paymentMethodId, referenceNumber }); toast.success('Payment recorded'); openDrawer({ id: drawer.id }); fetchData(); return true; } catch (error) { toast.error(error.response?.data?.message || 'Failed to record payment'); return false; }
+  const drawerPayment = async ({ amount, paymentMethodId, accountId, referenceNumber }) => {
+    try {
+      const res = await config.api.recordPayment(drawer.id, { amount, paymentMethodId, accountId: accountId || defaultAccountId || undefined, referenceNumber });
+      toast.success(res.data?.message || 'Payment recorded');
+      openDrawer({ id: drawer.id }); fetchData(); return true;
+    } catch (error) { toast.error(error.response?.data?.message || 'Failed to record payment'); return false; }
   };
 
   // ── cards ──
@@ -245,6 +368,49 @@ export default function CustomDocuments({ kind = 'quotations' }) {
       { key: 'converted', label: 'Invoiced', value: summary.converted, icon: <ArrowRightLeft size={18} />, color: '#16a34a', bg: '#dcfce7' },
     ];
   }, [summary, isInvoice, isQuotation, filters.paymentTerm]);
+
+  const convertOutstanding = convertModal
+    ? Math.max(0, convertModal.total - convertModal.alreadyPaid - (Number(convertModal.paidAmount) || 0))
+    : 0;
+
+  /**
+   * A row's buttons, defined once.
+   *
+   * The table and the mobile cards both draw them; two copies of this list
+   * would drift the moment a permission or a condition changed, and the copy
+   * nobody was looking at would be the wrong one.
+   */
+  const rowActions = (row) => (
+    <ActionButtons
+      title={row[config.numberKey]}
+      // An approved quotation is a price the customer agreed to, and an
+      // issued invoice has left the building — neither may be rewritten.
+      showEdit={can('edit') && !isInvoice && !['converted', 'completed', 'paid', 'cancelled'].includes(row.status)
+        && !(isQuotation && row.approval_status === 'approved')}
+      showDelete={can('delete') && !['paid'].includes(row.status)}
+      onEdit={() => openEdit(row)}
+      onDelete={() => doDelete(row)}
+      customActions={[
+        ...(can('downloadPdf') ? [{ icon: <Download size={16} />, title: 'Download PDF', onClick: () => downloadPdf(row) }] : []),
+        ...(isInvoice && can('recordPayment') && Number(row.balance_amount) > 0 && row.status !== 'cancelled'
+          ? [{ icon: <HandCoins size={16} />, title: 'Receive payment', className: 'btn-success', onClick: () => openPay(row) }] : []),
+        ...(can('sendEmail') ? [{ icon: <Mail size={16} />, title: 'Send email (with PDF)', onClick: () => sendEmail(row) }] : []),
+        ...(isQuotation && can('approve') && row.approval_status !== 'approved' && row.status !== 'converted' ? [{ icon: <CheckCircle size={16} />, title: 'Approve quotation', className: 'btn-success', onClick: () => doApprove(row) }] : []),
+        ...(isQuotation && can('convert') && row.approval_status === 'approved' && row.status !== 'converted' ? [
+          { icon: <ArrowRightLeft size={16} />, title: 'Convert to booking', className: 'btn-info', onClick: () => doConvert(row, 'booking') },
+          { icon: <DollarSign size={16} />, title: 'Convert to invoice', className: 'btn-info', onClick: () => doConvert(row, 'invoice') },
+        ] : []),
+        ...(isBooking && can('convert') && !row.invoice_id && row.status !== 'cancelled' ? [{ icon: <DollarSign size={16} />, title: 'Convert to invoice', className: 'btn-info', onClick: () => doConvert(row, 'invoice') }] : []),
+      ]}
+    />
+  );
+
+  /** The payment-term chip an invoice row shows, in the table and on a card. */
+  const termBadge = (row) => (row.payment_term === 'credit'
+    ? <span className={`badge ${row.credit_status === 'overdue' ? 'badge-danger' : row.credit_status === 'settled' ? 'badge-success' : 'badge-warning'}`}>CREDIT{row.credit_status && row.credit_status !== 'open' ? ` · ${String(row.credit_status).toUpperCase()}` : ''}</span>
+    : <span className="badge badge-success">PAID</span>);
+
+  const money = (value) => `${currencyCode} ${Number(value || 0).toLocaleString()}`;
 
   const badge = (status) => {
     const colors = { draft: 'secondary', sent: 'info', pending: 'warning', confirmed: 'info', accepted: 'success', approved: 'success', partial: 'warning', paid: 'success', completed: 'success', converted: 'success', rejected: 'danger', overdue: 'danger', expired: 'danger', cancelled: 'danger' };
@@ -311,33 +477,58 @@ export default function CustomDocuments({ kind = 'quotations' }) {
                   {isBooking && <td>{row.expected_delivery_date ? new Date(row.expected_delivery_date).toLocaleDateString('en-GB') : '-'}</td>}
                   {isInvoice && showField('payments') && <td>{currencyCode} {Number(row.paid_amount || 0).toLocaleString()}</td>}
                   {isInvoice && showField('payments') && <td style={{ color: row.balance_amount > 0 ? '#dc2626' : '#16a34a' }}>{currencyCode} {Number(row.balance_amount || 0).toLocaleString()}</td>}
-                  {isInvoice && showField('payments') && <td>{row.payment_term === 'credit' ? <span className={`badge ${row.credit_status === 'overdue' ? 'badge-danger' : row.credit_status === 'settled' ? 'badge-success' : 'badge-warning'}`}>CREDIT{row.credit_status && row.credit_status !== 'open' ? ` · ${String(row.credit_status).toUpperCase()}` : ''}</span> : <span className="badge badge-success">PAID</span>}</td>}
+                  {isInvoice && showField('payments') && <td>{termBadge(row)}</td>}
                   <td>{row.has_service_charges ? `${currencyCode} ${Number(row.service_charges_total + row.service_tax_total).toLocaleString()}` : '—'}</td>
                   <td>{badge(row.status)}{isQuotation && row.approval_status === 'approved' && <span className="badge badge-success" style={{ marginLeft: 4 }}>APPROVED</span>}</td>
-                  <td onClick={(e) => e.stopPropagation()}>
-                    <ActionButtons
-                      title={row[config.numberKey]}
-                      showEdit={can('edit') && !['converted', 'completed', 'paid', 'cancelled'].includes(row.status)}
-                      showDelete={can('delete') && !['paid'].includes(row.status)}
-                      onEdit={() => openEdit(row)}
-                      onDelete={() => doDelete(row)}
-                      customActions={[
-                        ...(can('downloadPdf') ? [{ icon: <Download size={16} />, title: 'Download PDF', onClick: () => downloadPdf(row) }] : []),
-                        ...(can('sendEmail') && !row.walk_in ? [{ icon: <Mail size={16} />, title: 'Send email', onClick: () => sendEmail(row) }] : []),
-                        ...(isQuotation && can('approve') && row.approval_status !== 'approved' && row.status !== 'converted' ? [{ icon: <CheckCircle size={16} />, title: 'Approve quotation', className: 'btn-success', onClick: () => doApprove(row) }] : []),
-                        ...(isQuotation && can('convert') && row.approval_status === 'approved' && row.status !== 'converted' ? [
-                          { icon: <ArrowRightLeft size={16} />, title: 'Convert to booking', className: 'btn-info', onClick: () => doConvert(row, 'booking') },
-                          { icon: <DollarSign size={16} />, title: 'Convert to invoice', className: 'btn-info', onClick: () => doConvert(row, 'invoice') },
-                        ] : []),
-                        ...(isBooking && can('convert') && !row.invoice_id && row.status !== 'cancelled' ? [{ icon: <DollarSign size={16} />, title: 'Convert to invoice', className: 'btn-info', onClick: () => doConvert(row, 'invoice') }] : []),
-                      ]}
-                    />
-                  </td>
+                  <td onClick={(e) => e.stopPropagation()}>{rowActions(row)}</td>
                 </tr>
               ))}
           </tbody>
         </table>
       </div>
+      {/* The same rows as a card each, for anything narrower than a desktop.
+          Without this the table was simply hidden below 1025px and the screen
+          showed a row count with no rows under it. */}
+      <div className="mobile-cards-view">
+        <div className="mobile-cards-container">
+          {loading && !rows.length ? <div className="data-card"><div className="spinner" /></div>
+            : rows.length === 0 ? <div className="data-card" style={{ textAlign: 'center', color: '#94a3b8' }}>No {config.label.toLowerCase()} yet</div>
+            : rows.map((row) => (
+              <div key={row.id} className="data-card" onClick={() => openDrawer(row)}>
+                <div className="data-card-top">
+                  <div className={`data-card-avatar ${isInvoice ? 'avatar-green' : isBooking ? 'avatar-purple' : 'avatar-amber'}`}>
+                    {isInvoice ? 'I' : isBooking ? 'B' : 'Q'}
+                  </div>
+                  <div className="data-card-info">
+                    <span className="data-card-title">{row[config.numberKey]}</span>
+                    {showField('customer') && <span className="data-card-subtitle">{row.customer_name}</span>}
+                  </div>
+                  {badge(row.status)}
+                </div>
+                <div className="data-card-body">
+                  {row.title && <div className="data-card-row"><span className="row-icon">🏷️</span><span className="row-label">Title</span><span className="row-value">{row.title}</span></div>}
+                  <div className="data-card-row"><span className="row-icon">📦</span><span className="row-label">Items</span><span className="row-value">{row.item_count} line{row.item_count === 1 ? '' : 's'}{row.item_name ? ` — ${row.item_name}` : ''}</span></div>
+                  {showField('amounts') && <div className="data-card-row"><span className="row-icon">💰</span><span className="row-label">Total</span><span className="row-value">{money(row.total_amount)}</span></div>}
+                  {(isInvoice || isBooking) && showField('payments') && <div className="data-card-row"><span className="row-icon">✅</span><span className="row-label">Paid</span><span className="row-value">{money(row.paid_amount)}</span></div>}
+                  {isInvoice && showField('payments') && (
+                    <div className="data-card-row">
+                      <span className="row-icon">⚖️</span><span className="row-label">Balance</span>
+                      <span className="row-value" style={{ color: row.balance_amount > 0 ? '#dc2626' : '#16a34a', fontWeight: 600 }}>{money(row.balance_amount)}</span>
+                    </div>
+                  )}
+                  {isInvoice && showField('payments') && <div className="data-card-row"><span className="row-icon">💳</span><span className="row-label">Terms</span><span className="row-value">{termBadge(row)}</span></div>}
+                  {isInvoice && <div className="data-card-row"><span className="row-icon">⏰</span><span className="row-label">Due</span><span className="row-value">{row.due_date ? new Date(row.due_date).toLocaleDateString('en-GB') : '—'}</span></div>}
+                  {isBooking && <div className="data-card-row"><span className="row-icon">📆</span><span className="row-label">Expected</span><span className="row-value">{row.expected_delivery_date ? new Date(row.expected_delivery_date).toLocaleDateString('en-GB') : '—'}</span></div>}
+                  {row.has_service_charges && <div className="data-card-row"><span className="row-icon">🔧</span><span className="row-label">Services</span><span className="row-value">{money(Number(row.service_charges_total) + Number(row.service_tax_total))}</span></div>}
+                  <div className="data-card-row"><span className="row-icon">📅</span><span className="row-label">Date</span><span className="row-value">{new Date(row.created_at).toLocaleDateString('en-GB')}</span></div>
+                  {isQuotation && row.approval_status === 'approved' && <div className="data-card-row"><span className="row-icon">👍</span><span className="row-label">Approval</span><span className="row-value"><span className="badge badge-success">APPROVED</span></span></div>}
+                </div>
+                <div className="data-card-footer" onClick={(e) => e.stopPropagation()}>{rowActions(row)}</div>
+              </div>
+            ))}
+        </div>
+      </div>
+
       <ServerPagination page={pagination.page} totalPages={pagination.totalPages} total={pagination.total} limit={pagination.limit} loading={loading} onPageChange={(page) => setPagination((prev) => ({ ...prev, page }))} onPageSizeChange={(limit) => setPagination((prev) => ({ ...prev, limit, page: 1 }))} />
 
       {/* ── Form ── */}
@@ -419,13 +610,26 @@ export default function CustomDocuments({ kind = 'quotations' }) {
                       ))}
                     </div>
                   </div>
-                  {form.paymentTerm === 'credit' ? (
+                  {form.paymentTerm === 'credit' && (
                     <div className="form-group"><label>Credit due date *</label><input type="date" value={form.creditDueDate || ''} min={new Date().toISOString().slice(0, 10)} onChange={(e) => set('creditDueDate', e.target.value)} /></div>
-                  ) : (<>
-                    <div className="form-group"><label>Payment mode *</label><SearchableSelect value={form.paymentMethodId} onChange={(e) => set('paymentMethodId', e.target.value)} options={paymentMethods.map((pm) => ({ label: pm.name, value: String(pm.id || pm._id) }))} labelField="label" valueField="value" placeholder="Select…" /></div>
-                    <div className="form-group"><label>Amount received *</label><input type="number" min="0" step="0.01" value={form.paidAmount ?? ''} onChange={(e) => set('paidAmount', e.target.value)} placeholder="0.00" /><button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 4, width: '100%' }} onClick={() => set('paidAmount', String(grandTotal))}>Paid in full ({currencyCode} {grandTotal.toLocaleString()})</button></div>
-                  </>)}
-                  <div className="form-group"><label>Due in (days)</label><input type="number" min="0" value={form.dueDays} onChange={(e) => set('dueDays', e.target.value)} /></div>
+                  )}
+                  <div className="form-group"><label>Payment mode {form.paymentTerm === 'credit' ? '' : '*'}</label><SearchableSelect value={form.paymentMethodId} onChange={(e) => set('paymentMethodId', e.target.value)} options={paymentMethods.map((pm) => ({ label: pm.name, value: String(pm.id || pm._id) }))} labelField="label" valueField="value" placeholder="Select…" /></div>
+                  <div className="form-group">
+                    <label>{form.paymentTerm === 'credit' ? 'Received now' : 'Amount received *'}</label>
+                    <input type="number" min="0" step="0.01" value={form.paidAmount ?? ''} onChange={(e) => set('paidAmount', e.target.value)} placeholder="0.00" />
+                    <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 4, width: '100%' }} onClick={() => set('paidAmount', String(grandTotal))}>Paid in full ({currencyCode} {grandTotal.toLocaleString()})</button>
+                  </div>
+                  {/* Where the money goes. Only asked when money is changing hands. */}
+                  {accounts.length > 0 && (Number(form.paidAmount) || 0) > 0 && (
+                    <div className="form-group"><label>Into account *</label><SearchableSelect value={form.accountId || defaultAccountId} onChange={(e) => set('accountId', e.target.value)} options={accounts.map((a) => ({ label: a.name, value: String(a.id || a._id) }))} labelField="label" valueField="value" /></div>
+                  )}
+                  {form.paymentTerm === 'credit' && (
+                    <div className="form-group" style={{ alignSelf: 'flex-end' }}>
+                      <p className="sm-role-job-note" style={{ margin: 0 }}>
+                        Outstanding after this: <strong>{currencyCode} {Math.max(0, grandTotal - (Number(form.paidAmount) || 0)).toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong>
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -460,7 +664,12 @@ export default function CustomDocuments({ kind = 'quotations' }) {
           { label: 'Customer', value: drawer?.customer_name },
           { label: 'Title', value: drawer?.title || '—' },
           { label: 'Total', value: drawer?.total_amount != null ? `${currencyCode} ${Number(drawer.total_amount).toLocaleString()}` : '-' },
-          ...(isInvoice ? [{ label: 'Payment Term', value: drawer?.payment_term === 'credit' ? `CREDIT — due ${drawer?.credit_due_date ? new Date(drawer.credit_due_date).toLocaleDateString('en-GB') : ''}` : 'PAID' }] : []),
+          ...(isInvoice ? [
+            { label: 'Payment Term', value: drawer?.payment_term === 'credit' ? `CREDIT — due ${drawer?.credit_due_date ? new Date(drawer.credit_due_date).toLocaleDateString('en-GB') : ''}` : 'PAID' },
+            // Where the money actually landed, so the counter and the Accounts
+            // screen can be reconciled from the invoice itself.
+            { label: 'Received into', value: drawer?.payment_account_name || '—' },
+          ] : []),
           ...(isQuotation ? [{ label: 'Valid Until', value: drawer?.valid_until ? new Date(drawer.valid_until).toLocaleDateString('en-GB') : '-' }, { label: 'Approval', value: drawer?.approval_status }] : []),
           ...(isBooking ? [{ label: 'Expected Date', value: drawer?.expected_delivery_date ? new Date(drawer.expected_delivery_date).toLocaleDateString('en-GB') : '-' }] : []),
           { label: 'Notes', value: drawer?.notes, full: true },
@@ -474,8 +683,85 @@ export default function CustomDocuments({ kind = 'quotations' }) {
         totals={isInvoice || isBooking ? { total: drawer?.total_amount, paid: drawer?.paid_amount, remaining: drawer?.balance_amount } : null}
         payments={isInvoice ? (drawer?.payments || []).map((p) => ({ ...p, payment_date: p.date, payment_method_name: p.method, reference_number: p.reference })) : null}
         paymentMethods={paymentMethods}
+        accounts={accounts}
         onRecordPayment={isInvoice && can('recordPayment') ? drawerPayment : null}
       />
+
+      {/* Convert to invoice: how much now, into which account, what is left on credit. */}
+      {convertModal && (
+        <div className="modal-overlay" onClick={() => !convertModal.saving && setConvertModal(null)}>
+          <div className="modal-content" style={{ maxWidth: 560 }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Convert {convertModal.item[config.numberKey]} to an invoice</h3>
+              <button className="modal-close" onClick={() => !convertModal.saving && setConvertModal(null)}>&times;</button>
+            </div>
+            <div className="modal-body">
+              <p className="sm-role-job-note">
+                Invoice total <strong>{currencyCode} {convertModal.total.toLocaleString()}</strong>
+                {convertModal.alreadyPaid > 0 && <> &middot; already taken on the booking <strong>{currencyCode} {convertModal.alreadyPaid.toLocaleString()}</strong></>}
+              </p>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Receiving now ({currencyCode})</label>
+                  <input type="number" min="0" step="0.01" autoFocus value={convertModal.paidAmount} onChange={(e) => setConvertModal((prev) => ({ ...prev, paidAmount: e.target.value }))} />
+                  <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 4, width: '100%' }} onClick={() => setConvertModal((prev) => ({ ...prev, paidAmount: String(Math.max(0, prev.total - prev.alreadyPaid)) }))}>
+                    Paid in full
+                  </button>
+                </div>
+                <div className="form-group">
+                  <label>Payment mode</label>
+                  <SearchableSelect value={convertModal.paymentMethodId} onChange={(e) => setConvertModal((prev) => ({ ...prev, paymentMethodId: e.target.value }))} options={paymentMethods.map((pm) => ({ label: pm.name, value: String(pm.id || pm._id) }))} labelField="label" valueField="value" placeholder="Select..." />
+                </div>
+              </div>
+              {accounts.length > 0 && (Number(convertModal.paidAmount) || 0) > 0 && (
+                <div className="form-group"><label>Into account</label><SearchableSelect value={convertModal.accountId} onChange={(e) => setConvertModal((prev) => ({ ...prev, accountId: e.target.value }))} options={accounts.map((a) => ({ label: a.name, value: String(a.id || a._id) }))} labelField="label" valueField="value" /></div>
+              )}
+              {convertOutstanding > 0.009 && (
+                <div className="form-group">
+                  <label>Balance due by *</label>
+                  <input type="date" min={new Date().toISOString().slice(0, 10)} value={convertModal.creditDueDate} onChange={(e) => setConvertModal((prev) => ({ ...prev, creditDueDate: e.target.value }))} />
+                  <small style={{ color: '#dc2626' }}>
+                    {currencyCode} {convertOutstanding.toLocaleString(undefined, { maximumFractionDigits: 2 })} stays on the customer account as a credit balance.
+                  </small>
+                </div>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-secondary" onClick={() => setConvertModal(null)} disabled={convertModal.saving}>Cancel</button>
+              <button type="button" className="btn btn-primary" onClick={submitConvert} disabled={convertModal.saving}>{convertModal.saving ? 'Converting...' : 'Create invoice'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Receive money against an outstanding invoice, straight from the list. */}
+      {payModal && (
+        <div className="modal-overlay" onClick={() => !payModal.saving && setPayModal(null)}>
+          <div className="modal-content" style={{ maxWidth: 520 }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Receive payment &mdash; {payModal.item[config.numberKey]}</h3>
+              <button className="modal-close" onClick={() => !payModal.saving && setPayModal(null)}>&times;</button>
+            </div>
+            <div className="modal-body">
+              <p className="sm-role-job-note">Outstanding: <strong>{currencyCode} {payModal.outstanding.toLocaleString()}</strong> from {payModal.item.customer_name}</p>
+              <div className="form-row">
+                <div className="form-group"><label>Amount *</label><input type="number" min="0.01" step="0.01" autoFocus value={payModal.amount} onChange={(e) => setPayModal((prev) => ({ ...prev, amount: e.target.value }))} /></div>
+                <div className="form-group"><label>Payment mode *</label><SearchableSelect value={payModal.paymentMethodId} onChange={(e) => setPayModal((prev) => ({ ...prev, paymentMethodId: e.target.value }))} options={paymentMethods.map((pm) => ({ label: pm.name, value: String(pm.id || pm._id) }))} labelField="label" valueField="value" placeholder="Select..." /></div>
+              </div>
+              {accounts.length > 0 && (
+                <div className="form-group"><label>Into account *</label><SearchableSelect value={payModal.accountId} onChange={(e) => setPayModal((prev) => ({ ...prev, accountId: e.target.value }))} options={accounts.map((a) => ({ label: a.name, value: String(a.id || a._id) }))} labelField="label" valueField="value" /></div>
+              )}
+              <div className="form-group"><label>Reference</label><input type="text" value={payModal.referenceNumber} onChange={(e) => setPayModal((prev) => ({ ...prev, referenceNumber: e.target.value }))} placeholder="Txn / cheque no." /></div>
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-secondary" onClick={() => setPayModal(null)} disabled={payModal.saving}>Cancel</button>
+              <button type="button" className="btn btn-primary" onClick={submitPay} disabled={payModal.saving}>{payModal.saving ? 'Saving...' : 'Record payment'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <EmailRecipientModal prompt={emailPrompt} onClose={() => setEmailPrompt(null)} onSend={(to) => sendEmail(emailPrompt.item, to)} />
 
       <ConfirmModal isOpen={confirm.isOpen} title={confirm.title} message={confirm.message} onConfirm={confirm.onConfirm} onCancel={() => setConfirm({ isOpen: false })} />
     </div>

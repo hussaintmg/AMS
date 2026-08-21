@@ -275,11 +275,21 @@ const getQuotationById = async (req, res, next) => {
 
 const sendQuotationEmail = async (req, res, next) => {
     try {
-        const { document, recipient } = await sendCustomerDocumentEmail({
+        const { document, recipient, attached } = await sendCustomerDocumentEmail({
             Model: Quotation, id: req.params.id, usageKey: 'quotation_customer', documentKey: 'quotation', userId: req.user.id,
-            buildDocument: (quote) => ({ number: quote.quotationNumber, date: quote.createdAt, validUntil: quote.validUntil, amount: quote.totalAmount, status: quote.status }),
+            to: req.body?.to,
+            // The quotation PDF rides along, and "balance due" resolves to the
+            // whole amount because nothing has been paid on a quotation yet.
+            pdfType: 'quotation',
+            buildDocument: (quote) => ({
+                number: quote.quotationNumber, date: quote.createdAt, validUntil: quote.validUntil,
+                amount: quote.totalAmount, totalAmount: quote.totalAmount,
+                paidAmount: 0, balanceAmount: quote.totalAmount, dueAmount: quote.totalAmount,
+                serviceChargesTotal: quote.serviceChargesTotal || 0, serviceTaxTotal: quote.serviceTaxTotal || 0,
+                status: quote.status,
+            }),
         });
-        res.json({ success: true, message: `Quotation ${document.quotationNumber} emailed to ${recipient}` });
+        res.json({ success: true, message: `Quotation ${document.quotationNumber} emailed to ${recipient}${attached ? ' with the PDF attached' : ''}` });
     } catch (error) { next(error); }
 };
 
@@ -1379,7 +1389,7 @@ async function createOrderInternal({
     if (totals.paidAmount > 0 && invoice) {
         try {
             const paymentNumber = await nextDocNumber(Payment, 'paymentNumber', 'PAY');
-            await Payment.create({
+            const payment = await Payment.create({
                 paymentNumber,
                 invoice: invoice._id,
                 customer: customer._id,
@@ -1391,6 +1401,20 @@ async function createOrderInternal({
                 status: 'completed',
                 createdBy: userId,
             });
+            // ...and into the money account it actually went into, so the
+            // Accounts screen agrees with the counter.
+            const { postCustomerReceipt } = require('../services/receipts.service');
+            const receipt = await postCustomerReceipt({
+                amount: totals.paidAmount,
+                accountId: body.accountId,
+                paymentMethod: method,
+                date: now,
+                description: `Receipt against invoice ${invoice.invoiceNumber} (order ${orderNumber})`,
+                referenceType: 'invoice_payment',
+                referenceId: `${invoice.invoiceNumber}#${payment._id}`,
+                userId,
+            });
+            if (receipt.account) { invoice.paymentAccount = receipt.account._id; await invoice.save(); }
             await recordCustomerActivity({
                 customerId: customer._id,
                 docType: 'payment',

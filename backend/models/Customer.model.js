@@ -27,6 +27,31 @@ const salesSummarySchema = new mongoose.Schema({
   lastActivityAt: { type: Date, default: null },
 }, { _id: false });
 
+/**
+ * A car the customer owns, as the gate and the workshop know it.
+ *
+ * The gate pass already asked for registration, engine number, chassis number
+ * and PBO every time a customer drove in; keeping them on the customer means
+ * the second visit does not have to ask again, and the field names match
+ * GatePass.model.js exactly so one can prefill the other.
+ *
+ * A list, not a single set of fields: a corporate customer runs a fleet, and an
+ * individual can easily bring in a second car.
+ */
+const customerVehicleSchema = new mongoose.Schema({
+  registrationNumber: { type: String, trim: true, default: '' },   // "vehicle no" at the gate
+  make: { type: String, trim: true, default: '' },
+  model: { type: String, trim: true, default: '' },
+  variant: { type: String, trim: true, default: '' },
+  year: { type: String, trim: true, default: '' },
+  color: { type: String, trim: true, default: '' },
+  engineNumber: { type: String, trim: true, default: '' },
+  chassisNumber: { type: String, trim: true, default: '' },
+  pboNumber: { type: String, trim: true, default: '' },
+  notes: { type: String, trim: true, default: '' },
+  isPrimary: { type: Boolean, default: false },
+}, { _id: true, timestamps: true });
+
 const customerSchema = new mongoose.Schema({
   customerCode: { type: String, unique: true, trim: true, required: [true, 'Customer code is required'] },
   importIdentityKey: { type: String, trim: true, default: '' },
@@ -56,6 +81,9 @@ const customerSchema = new mongoose.Schema({
   cnic: { type: String, trim: true, default: '' },
   ntn: { type: String, trim: true, default: '' },
   atlStatus: { type: String, trim: true, default: '' },
+
+  // ── The customer's own vehicles (registration / engine / chassis / PBO) ──
+  vehicles: { type: [customerVehicleSchema], default: [] },
 
   leadRef: { type: mongoose.Schema.Types.ObjectId, ref: 'Lead', default: null },
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
@@ -95,6 +123,9 @@ customerSchema.index({ status: 1 });
 customerSchema.index({ assignedTo: 1 });
 customerSchema.index({ department: 1 });
 customerSchema.index({ createdAt: -1 });
+// So the gate can find a customer by the plate that just pulled up.
+customerSchema.index({ 'vehicles.registrationNumber': 1 });
+customerSchema.index({ 'vehicles.chassisNumber': 1 });
 
 customerSchema.plugin(searchPlugin, { entityType: 'customer' });
 const Customer = mongoose.model('Customer', customerSchema);

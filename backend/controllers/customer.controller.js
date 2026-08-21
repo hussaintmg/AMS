@@ -181,6 +181,12 @@ exports.getCustomers = async (req, res, next) => {
         { email: searchRegex },
         { phone: searchRegex },
         { status: searchRegex },
+        // A plate, engine, chassis or PBO number finds the owner, so the gate
+        // can look a customer up from what is written on the car.
+        { 'vehicles.registrationNumber': searchRegex },
+        { 'vehicles.engineNumber': searchRegex },
+        { 'vehicles.chassisNumber': searchRegex },
+        { 'vehicles.pboNumber': searchRegex },
       ];
     }
 
@@ -309,6 +315,8 @@ exports.createCustomer = async (req, res, next) => {
     Object.keys(customerData).forEach((k) => {
       if (customerData[k] === '' || customerData[k] === null) customerData[k] = undefined;
     });
+    const vehicles = normalizeVehicles(req.body.vehicles);
+    if (vehicles && vehicles.length) customerData.vehicles = vehicles; else delete customerData.vehicles;
 
     let customer, createdUser;
 
@@ -370,6 +378,37 @@ exports.createCustomer = async (req, res, next) => {
   }
 };
 
+/**
+ * The customer's own vehicles, normalised.
+ *
+ * The gate asks for a registration, engine number, chassis number and PBO
+ * every time; storing them on the customer means the second visit does not
+ * have to ask again. Blank rows are dropped, and exactly one vehicle can be
+ * the primary one.
+ */
+const normalizeVehicles = (raw) => {
+  if (!Array.isArray(raw)) return null;
+  const text = (value) => String(value == null ? '' : value).trim().slice(0, 120);
+  const rows = raw
+    .map((row) => ({
+      registrationNumber: text(row.registrationNumber ?? row.registration_number ?? row.vehicleNumber ?? row.vehicle_number),
+      make: text(row.make),
+      model: text(row.model),
+      variant: text(row.variant),
+      year: text(row.year),
+      color: text(row.color),
+      engineNumber: text(row.engineNumber ?? row.engine_number),
+      chassisNumber: text(row.chassisNumber ?? row.chassis_number),
+      pboNumber: text(row.pboNumber ?? row.pbo_number ?? row.pbo),
+      notes: String(row.notes || '').trim().slice(0, 500),
+      isPrimary: row.isPrimary === true || row.is_primary === true,
+    }))
+    // A row with nothing on it is not a vehicle.
+    .filter((row) => row.registrationNumber || row.engineNumber || row.chassisNumber || row.pboNumber || row.make || row.model);
+  const primary = rows.findIndex((row) => row.isPrimary);
+  return rows.map((row, index) => ({ ...row, isPrimary: index === (primary === -1 ? 0 : primary) }));
+};
+
 exports.updateCustomer = async (req, res, next) => {
   try {
     const userId = req.user?._id || req.user?.id;
@@ -378,7 +417,10 @@ exports.updateCustomer = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Customer not found' });
     }
 
-    Object.assign(customer, { ...req.body, updatedBy: userId });
+    const patch = { ...req.body, updatedBy: userId };
+    const vehicles = normalizeVehicles(req.body.vehicles);
+    if (vehicles) patch.vehicles = vehicles; else delete patch.vehicles;
+    Object.assign(customer, patch);
     await customer.save();
     await syncFromCustomer(customer, userId, { syncStatus: req.body.isActive !== undefined });
 
@@ -480,7 +522,10 @@ exports.getAllForDropdown = async (req, res, next) => {
     const scope = await requestDropdownFilter(req, null, ['createdBy', 'assignedTo']);
     if (isHidden(scope)) return res.json({ success: true, data: [] });
     const customers = await Customer.find({ isActive: true, deletedAt: null, ...(scope || {}) })
-      .select('customerCode firstName lastName phone email')
+      // The vehicles come along so a form that asks for a registration, engine,
+      // chassis or PBO number (the gate pass) can fill them in from the record
+      // instead of asking the customer again on every visit.
+      .select('customerCode firstName lastName phone email vehicles')
       .sort({ firstName: 1 })
       .lean();
 

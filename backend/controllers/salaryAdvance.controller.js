@@ -190,6 +190,11 @@ const create = async (req, res, next) => {
     // otherwise — so the account balances and the balance sheet reflect it.
     const accountsService = require('../services/accounts.service');
     const paidFrom = (await accountsService.resolveAccount(req.body.accountId || req.body.account)) || (await accountsService.pettyCashAccount());
+    // The client's rule: advances come out of petty cash. They cannot come out
+    // of a petty cash that does not hold them.
+    await accountsService.assertSufficientFunds(paidFrom, value, {
+      allowNegative: req.body.allowNegative === true, action: 'be advanced',
+    });
     await postDoubleEntry({
       transactionDate: advance.issuedOn,
       debitAccount: ADVANCE_ACCOUNT,

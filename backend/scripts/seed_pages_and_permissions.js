@@ -166,6 +166,23 @@ async function run() {
     logPermissionSource: 'role',
     logsPermissions: { mode: 'all', users: [], roles: [], updatedAt: new Date(), updatedBy: admin._id }
   } });
+  // Optional modules (utils/moduleFlags.js). Their pages are seeded above, but a
+  // flag that has never been written reads as OFF — which hid the Custom Sales
+  // menu *and* 404'd its API on every fresh install, with nothing on screen to
+  // say why. Seeded on with $setOnInsert, so a first deploy makes the screens
+  // reachable and a later deliberate "off" in Server Management → Custom is
+  // never undone by the next deploy.
+  const { MODULES } = require('../utils/moduleFlags');
+  let modulesEnabled = 0;
+  for (const item of MODULES) {
+    const result = await SystemSetting.updateOne(
+      { key: item.setting },
+      { $setOnInsert: { key: item.setting, value: true, category: 'modules', description: `${item.label} module enabled` } },
+      { upsert: true },
+    );
+    if (result.upsertedCount) modulesEnabled += 1;
+  }
+
   await SystemSetting.findOneAndUpdate({ key: 'permissionMode' }, { $set: { key: 'permissionMode', value: 'role', category: 'permissions', description: 'Page permissions are read from roles.' } }, { upsert: true, setDefaultsOnInsert: true });
   await SystemSetting.findOneAndUpdate({ key: 'logPermissionMode' }, { $set: { key: 'logPermissionMode', value: 'role', category: 'permissions', description: 'Log permissions are read from roles.' } }, { upsert: true, setDefaultsOnInsert: true });
   let branding = await BrandingSetting.findOne().sort({ createdAt: 1 });
@@ -185,6 +202,7 @@ async function run() {
   if (renumbered.length) await Page.bulkWrite(renumbered, { ordered: false });
 
   console.log(`Seeded ${pages.length} pages, ${permissions.length} super-admin permissions, and ${jobs.length} full-access jobs.`);
+  if (modulesEnabled) console.log(`Switched on ${modulesEnabled} optional module(s) that had never been configured (Server Management → Custom).`);
   if (renumbered.length) console.log(`Renumbered ${renumbered.length} page(s) so every sort order is distinct.`);
   console.log(REORDER
     ? 'Sidebar order re-imposed from constants/pages.js (--reorder).'

@@ -18,6 +18,7 @@ import StatCards from '../../components/StatCards';
 import ActionButtons from '../../components/ActionButtons';
 import ConfirmModal from '../../components/ConfirmModal';
 import ServerPagination from '../../components/ServerPagination';
+import ErrorBoundary from '../../components/ErrorBoundary';
 import { formatPKR } from '../../components/sales/CorporateDocumentView';
 import '../../styles/userManagement.css';
 import '../../styles/sales-print.css';
@@ -33,6 +34,20 @@ const TYPES = [['petty_cash', 'Petty cash'], ['ibft', 'IBFT / bank transfer'], [
 const STATUSES = [['active', 'Active'], ['in_process', 'In process'], ['completed', 'Completed'], ['closed', 'Closed']];
 const money = (value) => formatPKR(Number(value) || 0);
 const asDate = (value) => (value ? new Date(value).toLocaleDateString('en-GB') : '-');
+/**
+ * Anything a table cell is asked to print, as text it can actually print.
+ *
+ * A payable whose supplier was not resolved by name arrived as an object, and
+ * React refuses to render one — which unmounted the page and left the operator
+ * looking at a blank screen with nothing to go on. Every cell here goes through
+ * this, so the worst case is an odd-looking cell rather than a dead tab.
+ */
+const text = (value) => {
+  if (value == null) return '';
+  if (typeof value === 'object') return String(value.name || value.label || value._id || '');
+  return String(value);
+};
+const label = (value) => text(value).replace(/_/g, ' ').toUpperCase();
 
 export default function Accounts() {
   const { user } = useAuth();
@@ -82,7 +97,7 @@ export default function Accounts() {
       pay: { amount: item ? item.balance : '', accountId: accounts.find((a) => a.type === 'petty_cash')?.id || '', reference: '', notes: '' },
       adjust: { amount: '', direction: 'in', notes: '' },
     }[kind];
-    const seeded = item && kind === 'account' ? { name: item.name, code: item.code, type: item.type, description: item.description, openingBalance: item.opening_balance, limit: item.limit, status: item.status, sweepTo: item.sweep_to || '' } : item && kind === 'payable' ? { vendorId: item.vendor_id || '', vendorName: item.vendor, description: item.description, category: item.category, amount: item.amount, dueDate: item.due_date ? String(item.due_date).slice(0, 10) : '', notes: item.notes } : {};
+    const seeded = item && kind === 'account' ? { name: item.name, code: item.code, type: item.type, description: item.description, openingBalance: item.opening_balance, limit: item.limit, status: item.status, sweepTo: item.sweep_to || '' } : item && kind === 'payable' ? { vendorId: text(item.vendor_id), vendorName: text(item.vendor), description: item.description, category: item.category, amount: item.amount, dueDate: item.due_date ? String(item.due_date).slice(0, 10) : '', notes: item.notes } : {};
     setForm({ ...defaults, ...seeded });
     setModal({ kind, item });
   };
@@ -164,6 +179,7 @@ export default function Accounts() {
         )}
       </div>
 
+      <ErrorBoundary where={`the ${TABS.find((t) => t.key === tab)?.label || tab} tab`} resetKey={tab}>
       <div className="desktop-table">
         {tab === 'accounts' && (
           <table className="data-table">
@@ -171,11 +187,11 @@ export default function Accounts() {
             <tbody>
               {accounts.map((row) => (
                 <tr key={row.id}>
-                  <td><strong>{row.name}</strong>{row.code && <div className="text-muted small">{row.code}</div>}{row.description && <div className="text-muted small">{row.description}</div>}</td>
-                  <td>{TYPES.find(([k]) => k === row.type)?.[1] || row.type}</td>
+                  <td><strong>{text(row.name)}</strong>{row.code && <div className="text-muted small">{text(row.code)}</div>}{row.description && <div className="text-muted small">{text(row.description)}</div>}</td>
+                  <td>{TYPES.find(([k]) => k === row.type)?.[1] || text(row.type)}</td>
                   <td style={{ color: row.current_balance < 0 ? '#dc2626' : '#0f172a', fontWeight: 600 }}>{money(row.current_balance)}</td>
                   <td>{row.limit > 0 ? <span className={row.over_limit ? 'badge badge-danger' : 'badge badge-secondary'}>{money(row.limit)}</span> : '—'}</td>
-                  <td><span className={`badge ${row.status === 'active' ? 'badge-success' : row.status === 'closed' ? 'badge-danger' : 'badge-warning'}`}>{String(row.status).replace('_', ' ').toUpperCase()}</span></td>
+                  <td><span className={`badge ${row.status === 'active' ? 'badge-success' : row.status === 'closed' ? 'badge-danger' : 'badge-warning'}`}>{label(row.status)}</span></td>
                   <td>
                     <ActionButtons title={row.name} showEdit={can('edit')} showDelete={can('delete')} onEdit={() => open('account', row)} onDelete={() => removeAccount(row)}
                       customActions={[
@@ -194,7 +210,7 @@ export default function Accounts() {
           <table className="data-table">
             <thead><tr><th>Transfer #</th><th>Date</th><th>From</th><th>To</th><th>Amount</th><th>Reason</th><th>Status</th></tr></thead>
             <tbody>
-              {rows.map((row) => <tr key={row.id}><td><strong>{row.transfer_number}</strong>{row.reference && <div className="text-muted small">{row.reference}</div>}</td><td>{asDate(row.transfer_date)}</td><td>{row.from_account}</td><td>{row.to_account}</td><td>{money(row.amount)}</td><td>{String(row.reason).replace('_', ' ')}{row.notes && <div className="text-muted small">{row.notes}</div>}</td><td><span className={`badge ${row.status === 'completed' ? 'badge-success' : 'badge-danger'}`}>{row.status.toUpperCase()}</span></td></tr>)}
+              {rows.map((row) => <tr key={row.id}><td><strong>{text(row.transfer_number)}</strong>{row.reference && <div className="text-muted small">{text(row.reference)}</div>}</td><td>{asDate(row.transfer_date)}</td><td>{text(row.from_account)}</td><td>{text(row.to_account)}</td><td>{money(row.amount)}</td><td>{text(row.reason).replace(/_/g, ' ')}{row.notes && <div className="text-muted small">{text(row.notes)}</div>}</td><td><span className={`badge ${row.status === 'completed' ? 'badge-success' : 'badge-danger'}`}>{label(row.status)}</span></td></tr>)}
               {!rows.length && !loading && <tr><td colSpan={7} style={{ textAlign: 'center', padding: 30, color: '#94a3b8' }}>No transfers yet</td></tr>}
             </tbody>
           </table>
@@ -205,7 +221,7 @@ export default function Accounts() {
           <table className="data-table">
             <thead><tr><th>Invoice #</th><th>Type</th><th>Customer</th><th>Invoice Date</th><th>Due Date</th><th>Total</th><th>Paid</th><th>Outstanding</th><th>Days Overdue</th><th>Status</th></tr></thead>
             <tbody>
-              {rows.map((row) => <tr key={row.id}><td><strong>{row.invoice_number}</strong></td><td>{row.kind}</td><td>{row.customer}{row.phone && <div className="text-muted small">{row.phone}</div>}</td><td>{asDate(row.invoice_date)}</td><td>{asDate(row.due_date)}</td><td>{money(row.total_amount)}</td><td>{money(row.paid_amount)}</td><td style={{ color: '#dc2626', fontWeight: 600 }}>{money(row.outstanding)}</td><td>{row.days_overdue || '—'}</td><td><span className={`badge ${row.days_overdue > 0 ? 'badge-danger' : 'badge-warning'}`}>{String(row.credit_status).toUpperCase()}</span></td></tr>)}
+              {rows.map((row) => <tr key={row.id}><td><strong>{text(row.invoice_number)}</strong></td><td>{text(row.kind)}</td><td>{text(row.customer)}{row.phone && <div className="text-muted small">{text(row.phone)}</div>}</td><td>{asDate(row.invoice_date)}</td><td>{asDate(row.due_date)}</td><td>{money(row.total_amount)}</td><td>{money(row.paid_amount)}</td><td style={{ color: '#dc2626', fontWeight: 600 }}>{money(row.outstanding)}</td><td>{row.days_overdue || '—'}</td><td><span className={`badge ${row.days_overdue > 0 ? 'badge-danger' : 'badge-warning'}`}>{label(row.credit_status)}</span></td></tr>)}
               {!rows.length && !loading && <tr><td colSpan={10} style={{ textAlign: 'center', padding: 30, color: '#94a3b8' }}>Nothing outstanding on credit</td></tr>}
             </tbody>
           </table>
@@ -216,8 +232,8 @@ export default function Accounts() {
           <table className="data-table">
             <thead><tr><th>Payable #</th><th>Vendor</th><th>Description</th><th>Issued</th><th>Due Date</th><th>Amount</th><th>Paid</th><th>Outstanding</th><th>Status</th><th>Actions</th></tr></thead>
             <tbody>
-              {rows.map((row) => <tr key={row.id}><td><strong>{row.payable_number}</strong></td><td>{row.vendor}</td><td>{row.description}{row.category && <div className="text-muted small">{row.category}</div>}</td><td>{asDate(row.issued_on)}</td><td>{asDate(row.due_date)}</td><td>{money(row.amount)}</td><td>{money(row.paid_amount)}</td><td style={{ color: row.balance > 0 ? '#dc2626' : '#16a34a', fontWeight: 600 }}>{money(row.balance)}</td><td><span className={`badge ${row.status === 'settled' ? 'badge-success' : row.status === 'overdue' ? 'badge-danger' : row.status === 'cancelled' ? 'badge-secondary' : 'badge-warning'}`}>{row.status.toUpperCase()}</span></td>
-                <td><ActionButtons title={row.payable_number} showEdit={can('edit') && row.status !== 'settled'} showDelete={can('delete') && !row.paid_amount} onEdit={() => open('payable', row)} onDelete={() => removePayable(row)} customActions={can('recordPayment') && row.balance > 0 && row.status !== 'cancelled' ? [{ icon: <HandCoins size={16} />, title: 'Record payment', className: 'btn-success', onClick: () => open('pay', row) }] : []} /></td></tr>)}
+              {rows.map((row) => <tr key={row.id}><td><strong>{text(row.payable_number)}</strong></td><td>{text(row.vendor)}</td><td>{text(row.description)}{row.category && <div className="text-muted small">{text(row.category)}</div>}</td><td>{asDate(row.issued_on)}</td><td>{asDate(row.due_date)}</td><td>{money(row.amount)}</td><td>{money(row.paid_amount)}</td><td style={{ color: row.balance > 0 ? '#dc2626' : '#16a34a', fontWeight: 600 }}>{money(row.balance)}</td><td><span className={`badge ${row.status === 'settled' ? 'badge-success' : row.status === 'overdue' ? 'badge-danger' : row.status === 'cancelled' ? 'badge-secondary' : 'badge-warning'}`}>{label(row.status)}</span></td>
+                <td><ActionButtons title={text(row.payable_number)} showEdit={can('edit') && row.status !== 'settled'} showDelete={can('delete') && !row.paid_amount} onEdit={() => open('payable', row)} onDelete={() => removePayable(row)} customActions={can('recordPayment') && row.balance > 0 && row.status !== 'cancelled' ? [{ icon: <HandCoins size={16} />, title: 'Record payment', className: 'btn-success', onClick: () => open('pay', row) }] : []} /></td></tr>)}
               {!rows.length && !loading && <tr><td colSpan={10} style={{ textAlign: 'center', padding: 30, color: '#94a3b8' }}>No payables recorded</td></tr>}
             </tbody>
           </table>
@@ -228,12 +244,130 @@ export default function Accounts() {
           <table className="data-table">
             <thead><tr><th>Account</th><th>Type</th><th>Opening</th><th>In</th><th>Out</th><th>Closing</th><th>Limit</th></tr></thead>
             <tbody>
-              {(sheet?.rows || []).map((row) => <tr key={row.id}><td><strong>{row.account}</strong></td><td>{TYPES.find(([k]) => k === row.type)?.[1] || row.type}</td><td>{money(row.opening)}</td><td style={{ color: '#16a34a' }}>{money(row.money_in)}</td><td style={{ color: '#dc2626' }}>{money(row.money_out)}</td><td style={{ fontWeight: 700 }}>{money(row.closing)}</td><td>{row.limit > 0 ? <span className={row.over_limit ? 'badge badge-danger' : 'badge badge-secondary'}>{money(row.limit)}</span> : '—'}</td></tr>)}
+              {(sheet?.rows || []).map((row) => <tr key={row.id}><td><strong>{text(row.account)}</strong></td><td>{TYPES.find(([k]) => k === row.type)?.[1] || text(row.type)}</td><td>{money(row.opening)}</td><td style={{ color: '#16a34a' }}>{money(row.money_in)}</td><td style={{ color: '#dc2626' }}>{money(row.money_out)}</td><td style={{ fontWeight: 700 }}>{money(row.closing)}</td><td>{row.limit > 0 ? <span className={row.over_limit ? 'badge badge-danger' : 'badge badge-secondary'}>{money(row.limit)}</span> : '—'}</td></tr>)}
               {sheet?.summary && <tr style={{ background: '#f8fafc', fontWeight: 700 }}><td colSpan={2}>Company total</td><td>{money(sheet.summary.opening)}</td><td style={{ color: '#16a34a' }}>{money(sheet.summary.total_in)}</td><td style={{ color: '#dc2626' }}>{money(sheet.summary.total_out)}</td><td>{money(sheet.summary.closing)}</td><td>{sheet.summary.over_limit ? `${sheet.summary.over_limit} over limit` : ''}</td></tr>}
             </tbody>
           </table>
         </>)}
       </div>
+
+      {/* The same rows as cards, for anything narrower than a desktop. These
+          tables are wide — Payables alone has ten columns — so below 1025px
+          the table is put away and each row is read down instead of across. */}
+      <div className="mobile-cards-view">
+        <div className="mobile-cards-container">
+          {tab === 'accounts' && accounts.map((row) => (
+            <div key={row.id} className="data-card">
+              <div className="data-card-top">
+                <div className="data-card-avatar avatar-cyan">{text(row.name).slice(0, 1).toUpperCase()}</div>
+                <div className="data-card-info">
+                  <span className="data-card-title">{text(row.name)}</span>
+                  <span className="data-card-subtitle">{TYPES.find(([k]) => k === row.type)?.[1] || text(row.type)}</span>
+                </div>
+                <span className={`badge ${row.status === 'active' ? 'badge-success' : row.status === 'closed' ? 'badge-danger' : 'badge-warning'}`}>{label(row.status)}</span>
+              </div>
+              <div className="data-card-body">
+                <div className="data-card-row"><span className="row-icon">💰</span><span className="row-label">Balance</span><span className="row-value" style={{ color: row.current_balance < 0 ? '#dc2626' : '#0f172a', fontWeight: 700 }}>{money(row.current_balance)}</span></div>
+                <div className="data-card-row"><span className="row-icon">🚧</span><span className="row-label">Limit</span><span className="row-value">{row.limit > 0 ? <span className={row.over_limit ? 'badge badge-danger' : 'badge badge-secondary'}>{money(row.limit)}</span> : '—'}</span></div>
+                {row.description && <div className="data-card-row"><span className="row-icon">📝</span><span className="row-label">Note</span><span className="row-value">{text(row.description)}</span></div>}
+              </div>
+              <div className="data-card-footer">
+                <ActionButtons title={text(row.name)} showEdit={can('edit')} showDelete={can('delete')} onEdit={() => open('account', row)} onDelete={() => removeAccount(row)}
+                  customActions={[
+                    ...(can('transfer') ? [{ icon: <ArrowLeftRight size={16} />, title: 'Transfer from this account', onClick: () => { open('transfer'); setForm((f) => ({ ...f, fromAccountId: row.id })); } }] : []),
+                    ...(can('edit') ? [{ icon: <Pencil size={16} />, title: 'Adjust balance', className: 'btn-info', onClick: () => open('adjust', row) }] : []),
+                  ]} />
+              </div>
+            </div>
+          ))}
+
+          {tab === 'transfers' && rows.map((row) => (
+            <div key={row.id} className="data-card">
+              <div className="data-card-top">
+                <div className="data-card-avatar avatar-purple">T</div>
+                <div className="data-card-info">
+                  <span className="data-card-title">{text(row.transfer_number)}</span>
+                  <span className="data-card-subtitle">{text(row.from_account)} → {text(row.to_account)}</span>
+                </div>
+                <span className={`badge ${row.status === 'completed' ? 'badge-success' : 'badge-danger'}`}>{label(row.status)}</span>
+              </div>
+              <div className="data-card-body">
+                <div className="data-card-row"><span className="row-icon">💰</span><span className="row-label">Amount</span><span className="row-value">{money(row.amount)}</span></div>
+                <div className="data-card-row"><span className="row-icon">📅</span><span className="row-label">Date</span><span className="row-value">{asDate(row.transfer_date)}</span></div>
+                <div className="data-card-row"><span className="row-icon">🔁</span><span className="row-label">Reason</span><span className="row-value">{text(row.reason).replace(/_/g, ' ')}</span></div>
+              </div>
+            </div>
+          ))}
+
+          {tab === 'receivables' && rows.map((row) => (
+            <div key={row.id} className="data-card">
+              <div className="data-card-top">
+                <div className="data-card-avatar avatar-amber">R</div>
+                <div className="data-card-info">
+                  <span className="data-card-title">{text(row.invoice_number)}</span>
+                  <span className="data-card-subtitle">{text(row.customer)}</span>
+                </div>
+                <span className={`badge ${row.days_overdue > 0 ? 'badge-danger' : 'badge-warning'}`}>{label(row.credit_status)}</span>
+              </div>
+              <div className="data-card-body">
+                <div className="data-card-row"><span className="row-icon">💰</span><span className="row-label">Total</span><span className="row-value">{money(row.total_amount)}</span></div>
+                <div className="data-card-row"><span className="row-icon">✅</span><span className="row-label">Paid</span><span className="row-value">{money(row.paid_amount)}</span></div>
+                <div className="data-card-row"><span className="row-icon">⚖️</span><span className="row-label">Outstanding</span><span className="row-value" style={{ color: '#dc2626', fontWeight: 700 }}>{money(row.outstanding)}</span></div>
+                <div className="data-card-row"><span className="row-icon">⏰</span><span className="row-label">Due</span><span className="row-value">{asDate(row.due_date)}{row.days_overdue > 0 ? ` · ${row.days_overdue}d late` : ''}</span></div>
+              </div>
+            </div>
+          ))}
+
+          {tab === 'payables' && rows.map((row) => (
+            <div key={row.id} className="data-card">
+              <div className="data-card-top">
+                <div className="data-card-avatar avatar-rose">P</div>
+                <div className="data-card-info">
+                  <span className="data-card-title">{text(row.payable_number)}</span>
+                  <span className="data-card-subtitle">{text(row.vendor)}</span>
+                </div>
+                <span className={`badge ${row.status === 'settled' ? 'badge-success' : row.status === 'overdue' ? 'badge-danger' : row.status === 'cancelled' ? 'badge-secondary' : 'badge-warning'}`}>{label(row.status)}</span>
+              </div>
+              <div className="data-card-body">
+                {row.description && <div className="data-card-row"><span className="row-icon">📝</span><span className="row-label">For</span><span className="row-value">{text(row.description)}</span></div>}
+                <div className="data-card-row"><span className="row-icon">💰</span><span className="row-label">Amount</span><span className="row-value">{money(row.amount)}</span></div>
+                <div className="data-card-row"><span className="row-icon">✅</span><span className="row-label">Paid</span><span className="row-value">{money(row.paid_amount)}</span></div>
+                <div className="data-card-row"><span className="row-icon">⚖️</span><span className="row-label">Outstanding</span><span className="row-value" style={{ color: row.balance > 0 ? '#dc2626' : '#16a34a', fontWeight: 700 }}>{money(row.balance)}</span></div>
+                <div className="data-card-row"><span className="row-icon">⏰</span><span className="row-label">Due</span><span className="row-value">{asDate(row.due_date)}</span></div>
+              </div>
+              <div className="data-card-footer">
+                <ActionButtons title={text(row.payable_number)} showEdit={can('edit') && row.status !== 'settled'} showDelete={can('delete') && !row.paid_amount} onEdit={() => open('payable', row)} onDelete={() => removePayable(row)}
+                  customActions={can('recordPayment') && row.balance > 0 && row.status !== 'cancelled' ? [{ icon: <HandCoins size={16} />, title: 'Record payment', className: 'btn-success', onClick: () => open('pay', row) }] : []} />
+              </div>
+            </div>
+          ))}
+
+          {tab === 'sheet' && (sheet?.rows || []).map((row) => (
+            <div key={row.id} className="data-card">
+              <div className="data-card-top">
+                <div className="data-card-avatar avatar-green">{text(row.account).slice(0, 1).toUpperCase()}</div>
+                <div className="data-card-info">
+                  <span className="data-card-title">{text(row.account)}</span>
+                  <span className="data-card-subtitle">{TYPES.find(([k]) => k === row.type)?.[1] || text(row.type)}</span>
+                </div>
+              </div>
+              <div className="data-card-body">
+                <div className="data-card-row"><span className="row-icon">🏁</span><span className="row-label">Opening</span><span className="row-value">{money(row.opening)}</span></div>
+                <div className="data-card-row"><span className="row-icon">⬆️</span><span className="row-label">In</span><span className="row-value" style={{ color: '#16a34a' }}>{money(row.money_in)}</span></div>
+                <div className="data-card-row"><span className="row-icon">⬇️</span><span className="row-label">Out</span><span className="row-value" style={{ color: '#dc2626' }}>{money(row.money_out)}</span></div>
+                <div className="data-card-row"><span className="row-icon">💰</span><span className="row-label">Closing</span><span className="row-value" style={{ fontWeight: 700 }}>{money(row.closing)}</span></div>
+              </div>
+            </div>
+          ))}
+
+          {!loading && ((tab === 'accounts' && !accounts.length)
+            || (['transfers', 'receivables', 'payables'].includes(tab) && !rows.length)
+            || (tab === 'sheet' && !(sheet?.rows || []).length)) && (
+            <div className="data-card" style={{ textAlign: 'center', color: '#94a3b8' }}>Nothing to show here yet</div>
+          )}
+        </div>
+      </div>
+      </ErrorBoundary>
       {['transfers', 'payables'].includes(tab) && <ServerPagination page={pagination.page} totalPages={pagination.totalPages} total={pagination.total} limit={pagination.limit} loading={loading} onPageChange={(page) => setPagination((p) => ({ ...p, page }))} onPageSizeChange={(l) => setPagination((p) => ({ ...p, limit: l, page: 1 }))} />}
 
       {modal && (

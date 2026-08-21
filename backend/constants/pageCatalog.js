@@ -48,6 +48,9 @@ const AUDIT_ROWS = [row('Created By'), row('Created At'), row('Updated By'), row
 const CUSTOMER_PICK = dd('customer', 'Customer', 'Customer', true);
 const PAYMENT_METHOD_PICK = dd('payment_method', 'Payment method', 'PaymentMethod');
 const CUSTOMER_QC = qc('customer', '+ Customer', 'customers');
+// A delivery can bring in something never stocked before, so the gate entry can
+// raise the part itself — governed by the Parts page's own Create right.
+const PART_QC = qc('part', '+ Create Part', 'parts');
 const SERVICE_TYPE_QC = qc('service_type', '+ Create Service Type', 'service_master');
 const PAYMENT_METHOD_QC = qc('payment_method', '+ Create Payment Method', 'payment_methods');
 
@@ -387,8 +390,8 @@ const PAGE_CATALOG = {
     columns: [col('Gate Pass #'), col('Type'), col('Date'), col('R/O #'), col('C/O #'), col('Invoice #'), col('Transporter / Customer'), col('Vehicle No'), col('Engine No'), col('PBO'), col('Items'), col('Status')],
     drawer: { fields: [row('Details'), row('Items'), row('Attachments'), row('Linked Documents')], extras: [{ key: 'drawer.download_pdf', label: 'Download PDF button in drawer', match: ['Download PDF'] }] },
     forms: {
-      create: { quickCreate: [CUSTOMER_QC], dropdowns: [dd('entry_type', 'Entry type', 'static'), CUSTOMER_PICK, dd('part', 'Part (add to inventory)', 'Part', true)] },
-      edit: { quickCreate: [CUSTOMER_QC], dropdowns: [dd('entry_type', 'Entry type', 'static'), CUSTOMER_PICK, dd('part', 'Part (add to inventory)', 'Part', true)] },
+      create: { quickCreate: [CUSTOMER_QC, PART_QC], dropdowns: [dd('entry_type', 'Entry type', 'static'), CUSTOMER_PICK, dd('part', 'Part (add to inventory)', 'Part', true)] },
+      edit: { quickCreate: [CUSTOMER_QC, PART_QC], dropdowns: [dd('entry_type', 'Entry type', 'static'), CUSTOMER_PICK, dd('part', 'Part (add to inventory)', 'Part', true)] },
       filters: { dropdowns: [dd('entry_type', 'Entry type', 'static'), dd('status', 'Status', 'static')] },
     },
   },

@@ -15,7 +15,9 @@ async function sendTemplateEmail({ usageKey, context, to, cc, bcc, attachments, 
     subject: rendered.subject,
     html: rendered.html,
     text: rendered.text,
-    attachments: attachments || [],
+    // The real attachment objects go through untouched; only the log records
+    // them by name (see below).
+    attachments,
     sentBy,
     usageKey,
     usageId: rendered.usage?._id,
@@ -41,6 +43,8 @@ async function sendRawEmail({ to, cc, bcc, subject, html, text, attachments, sen
       subject,
       html,
       text,
+      // The document's PDF rides along; utils/mailer.js forwards it to nodemailer.
+      attachments: Array.isArray(attachments) ? attachments : [],
     };
 
     if (cc && cc.length > 0) mailOptions.cc = cc.join(', ');
@@ -67,7 +71,8 @@ async function sendRawEmail({ to, cc, bcc, subject, html, text, attachments, sen
     template: templateId || null,
     status,
     providerResponse,
-    attachments: attachments || [],
+    // Log what was attached by name only — a PDF buffer has no business in the log.
+    attachments: (attachments || []).map((file) => (typeof file === 'string' ? file : file?.filename || '')).filter(Boolean),
     renderedVariables: resolvedVars || {},
     executionTime,
     errorMessage,

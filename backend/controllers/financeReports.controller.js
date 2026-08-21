@@ -107,13 +107,16 @@ const getPayablesReport = async (req, res, next) => {
     const range = dateRange(req.query);
     if (range) filter.createdAt = range;
     if (req.query.status) filter.status = req.query.status;
-    const items = await Payable.find(filter).sort({ dueDate: 1 }).lean();
+    // Populate the supplier: without it `item.vendor` is a raw ObjectId, and a
+    // payable saved without a typed vendor name sent that object to the screen,
+    // where React refuses to render it and the report went blank.
+    const items = await Payable.find(filter).populate('vendor', 'name').sort({ dueDate: 1 }).lean();
     const rows = items.map((item) => {
       const daysOverdue = item.dueDate ? Math.floor((now - new Date(item.dueDate)) / (24 * 60 * 60 * 1000)) : 0;
       return {
         id: item._id,
         payable_number: item.payableNumber,
-        vendor: item.vendorName || item.vendor || '',
+        vendor: item.vendorName || item.vendor?.name || '',
         description: item.description || '',
         source_type: item.sourceType || 'manual',
         due_date: item.dueDate || null,

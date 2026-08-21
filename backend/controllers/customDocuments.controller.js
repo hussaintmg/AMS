@@ -21,6 +21,7 @@ const { invoiceSummary } = require('../models/paymentTerm.fields');
 const { resolveDocumentCustomer } = require('../utils/walkInCustomer');
 const { resolvePaymentMethod } = require('../utils/paymentMethod.util');
 const { sendCustomerDocumentEmail } = require('../services/documentEmail.service');
+const { postCustomerReceipt, reverseAllReceiptsFor } = require('../services/receipts.service');
 const logger = require('../utils/logger');
 
 const num = (value, fallback = 0) => (Number.isFinite(Number(value)) ? Number(value) : fallback);
@@ -168,6 +169,8 @@ const mapInvoice = (inv) => ({
   change_due: inv.changeDue || 0,
   payment_method_id: inv.paymentMethod || null,
   payment_method_name: inv.paymentMode || '',
+  payment_account_id: inv.paymentAccount?._id || inv.paymentAccount || null,
+  payment_account_name: inv.paymentAccount?.name || '',
 });
 const MAPPERS = { quotations: mapQuotation, bookings: mapBooking, invoices: mapInvoice };
 const POPULATE = { path: 'customer', select: 'firstName lastName companyName phone email customerCode' };
@@ -209,7 +212,10 @@ const list = async (req, res, next) => {
 const getOne = async (req, res, next) => {
   try {
     const kind = kindOf(req);
-    const doc = await kind.Model.findById(sanitizeId(req.params.id)).populate(POPULATE).lean();
+    let query = kind.Model.findById(sanitizeId(req.params.id)).populate(POPULATE);
+    // So the drawer can say which account the money went into.
+    if (kind.Model.schema.path('paymentAccount')) query = query.populate('paymentAccount', 'name type');
+    const doc = await query.lean();
     if (!doc) throw new AppError(`${kind.label} not found`, 404);
     const data = MAPPERS[req.params.kind](doc);
     if (req.params.kind === 'invoices') {
@@ -290,32 +296,49 @@ const create = async (req, res, next) => {
 
 /** Paid at the counter or issued on credit — the same rule as every invoice. */
 async function createInvoiceRecord({ base, totals, body, user }) {
+  // A credit invoice may still take money at the counter: 7,000 invoiced,
+  // 3,000 received, 4,000 left outstanding. Only a "paid" invoice must be
+  // covered in full — anything less is credit, by definition.
   const isCredit = String(body.paymentTerm || 'paid').toLowerCase() === 'credit';
-  const paymentMethod = await resolvePaymentMethod(body.paymentMethodId, { required: !isCredit });
-  const tendered = isCredit ? 0 : round2(num(body.paidAmount));
-  if (!isCredit && tendered + 0.009 < totals.totalAmount) throw new AppError('A paid invoice needs the full amount; switch to Credit to issue it unpaid', 400);
+  const paymentMethod = await resolvePaymentMethod(body.paymentMethodId, { required: false });
+  const tendered = round2(num(body.paidAmount));
+  if (!isCredit && tendered + 0.009 < totals.totalAmount) throw new AppError('A paid invoice needs the full amount; switch to Credit to issue it with a balance', 400);
   const changeDue = isCredit ? 0 : round2(Math.max(0, tendered - totals.totalAmount));
-  const paidAmount = isCredit ? 0 : totals.totalAmount;
+  const paidAmount = isCredit ? Math.min(Math.max(0, tendered), totals.totalAmount) : totals.totalAmount;
   const now = new Date();
-  const dueDate = new Date(now.getTime() + Math.max(0, num(body.dueDays, 30)) * 864e5);
-  const creditDueDate = isCredit ? (body.creditDueDate ? new Date(body.creditDueDate) : dueDate) : null;
+  // Only a credit invoice has a date by which something must be paid; a
+  // counter sale carried a meaningless "+30 days" stamp before this.
+  const creditDueDate = isCredit
+    ? (body.creditDueDate ? new Date(body.creditDueDate) : new Date(now.getTime() + Math.max(0, num(body.dueDays, 30)) * 864e5))
+    : null;
   if (isCredit && Number.isNaN(creditDueDate.getTime())) throw new AppError('Credit due date is invalid', 400);
   const invoice = await CustomInvoice.create({
     ...base,
     quotation: sanitizeId(body.quotationId), booking: sanitizeId(body.bookingId),
-    status: isCredit ? 'sent' : 'paid', invoiceDate: now, dueDate: isCredit ? creditDueDate : dueDate,
+    status: isCredit ? (paidAmount > 0 ? 'partial' : 'sent') : 'paid',
+    invoiceDate: now, dueDate: creditDueDate,
     paidAmount, balanceAmount: round2(totals.totalAmount - paidAmount),
     paymentTerm: isCredit ? 'credit' : 'paid', creditDueDate,
     amountTendered: changeDue > 0 ? tendered : 0, changeDue,
     paymentMethod: paymentMethod.id, paymentMode: paymentMethod.name,
   });
-  if (!isCredit) {
-    await Payment.create({
+  if (paidAmount > 0) {
+    const deposit = await Payment.create({
       paymentNumber: await nextDocNumber(Payment, 'paymentNumber', 'PAY'),
       invoice: invoice._id, customer: base.customer,
       methodRef: paymentMethod.id, method: { name: paymentMethod.name, code: paymentMethod.code, type: paymentMethod.type },
-      amount: totals.totalAmount, paymentDate: now, notes: `Payment in full with custom invoice ${base.invoiceNumber}`, status: 'completed', createdBy: user.id,
+      amount: paidAmount, paymentDate: now,
+      notes: isCredit ? `Deposit taken with custom invoice ${base.invoiceNumber}` : `Payment in full with custom invoice ${base.invoiceNumber}`,
+      status: 'completed', createdBy: user.id,
     });
+    // The money has to land somewhere real — the account the operator chose,
+    // else whatever the payment method settles into, else petty cash.
+    const receipt = await postCustomerReceipt({
+      amount: paidAmount, accountId: body.accountId, paymentMethod, date: now,
+      description: `Receipt against custom invoice ${base.invoiceNumber}`,
+      referenceType: 'invoice_payment', referenceId: `${base.invoiceNumber}#${deposit._id}`, userId: user.id,
+    });
+    if (receipt.account) { invoice.paymentAccount = receipt.account._id; await invoice.save(); }
   }
   return invoice;
 }
@@ -326,6 +349,14 @@ const update = async (req, res, next) => {
     const doc = await kind.Model.findById(sanitizeId(req.params.id));
     if (!doc) throw new AppError(`${kind.label} not found`, 404);
     if (['cancelled', 'converted', 'completed', 'paid'].includes(doc.status)) throw new AppError(`A ${doc.status} ${kind.label.toLowerCase()} cannot be edited`, 400);
+    // Once a quotation is approved the price is agreed, and once an invoice is
+    // issued the document has left the building — neither may be rewritten.
+    if (req.params.kind === 'quotations' && doc.approvalStatus === 'approved') {
+      throw new AppError('This quotation has been approved and can no longer be edited. Reject the approval first if the price has changed.', 400);
+    }
+    if (req.params.kind === 'invoices') {
+      throw new AppError('An issued invoice cannot be edited. Cancel it and raise a new one, or record a payment against it.', 400);
+    }
     if (req.body.lineItems || req.body.items) {
       const lines = resolveLines(req.body);
       const totals = documentTotals(req.body, lines);
@@ -376,8 +407,12 @@ const remove = async (req, res, next) => {
     if (!doc) throw new AppError(`${kind.label} not found`, 404);
     // Documents with money against them are cancelled, not erased.
     if (req.params.kind === 'invoices' && num(doc.paidAmount) > 0) {
+      // The receipts posted against this invoice have to come back out of the
+      // accounts they landed in, or the balance sheet keeps money that was
+      // never earned.
+      await reverseAllReceiptsFor(doc.invoiceNumber, req.user.id);
       doc.status = 'cancelled'; doc.cancelledAt = new Date(); doc.updatedBy = req.user.id; await doc.save();
-      return res.json({ success: true, message: 'Invoice cancelled' });
+      return res.json({ success: true, message: 'Invoice cancelled and its receipts reversed' });
     }
     await kind.Model.deleteOne({ _id: doc._id });
     return res.json({ success: true, message: `${kind.label} deleted` });
@@ -467,19 +502,30 @@ const recordPayment = async (req, res, next) => {
     if (amount <= 0) throw new AppError('Payment amount must be greater than zero', 400);
     if (amount > outstanding + 0.009) throw new AppError(`Payment exceeds the outstanding balance of ${outstanding}`, 400);
     const method = await resolvePaymentMethod(req.body.paymentMethodId, { required: true });
-    await Payment.create({
+    const payment = await Payment.create({
       paymentNumber: await nextDocNumber(Payment, 'paymentNumber', 'PAY'),
       invoice: invoice._id, customer: invoice.customer, methodRef: method.id,
       method: { name: method.name, code: method.code, type: method.type },
       amount, paymentDate: new Date(), referenceNumber: req.body.referenceNumber || '', notes: req.body.notes || '', status: 'completed', createdBy: req.user.id,
     });
+    const receipt = await postCustomerReceipt({
+      amount, accountId: req.body.accountId, paymentMethod: method,
+      description: `Payment against custom invoice ${invoice.invoiceNumber}`,
+      // The payment's own id: unique for ever, so instalments cannot collide.
+      referenceType: 'invoice_payment', referenceId: `${invoice.invoiceNumber}#${payment._id}`, userId: req.user.id,
+    });
     invoice.paidAmount = round2(num(invoice.paidAmount) + amount);
     invoice.balanceAmount = round2(num(invoice.totalAmount) - invoice.paidAmount);
     invoice.status = invoice.balanceAmount <= 0.009 ? 'paid' : 'partial';
     invoice.paymentMethod = method.id; invoice.paymentMode = method.name;
+    if (receipt.account && !invoice.paymentAccount) invoice.paymentAccount = receipt.account._id;
     invoice.updatedBy = req.user.id;
     await invoice.save();
-    res.status(201).json({ success: true, message: 'Payment recorded', data: mapInvoice(await CustomInvoice.findById(invoice._id).populate(POPULATE).lean()) });
+    res.status(201).json({
+      success: true,
+      message: receipt.account ? `Payment recorded into ${receipt.account.name}` : 'Payment recorded',
+      data: mapInvoice(await CustomInvoice.findById(invoice._id).populate(POPULATE).lean()),
+    });
   } catch (error) { next(error); }
 };
 
@@ -487,19 +533,22 @@ const recordPayment = async (req, res, next) => {
 
 /** The same customer e-mail the vehicle and parts documents send, per kind. */
 const EMAIL_DOCUMENTS = {
-  quotations: { usageKey: 'quotation_customer', documentKey: 'quotation', build: (d) => ({ number: d.quotationNumber, date: d.createdAt, validUntil: d.validUntil, amount: d.totalAmount, status: d.status }) },
-  bookings: { usageKey: 'booking_customer', documentKey: 'booking', build: (d) => ({ number: d.bookingNumber, date: d.bookingDate || d.createdAt, deliveryDate: d.expectedDeliveryDate, amount: d.bookingAmount, totalAmount: d.totalAmount, status: d.status }) },
-  invoices: { usageKey: 'invoice_customer', documentKey: 'invoice', build: (d) => ({ number: d.invoiceNumber, date: d.invoiceDate || d.createdAt, dueDate: d.dueDate, amount: d.totalAmount, paidAmount: d.paidAmount, balanceAmount: d.balanceAmount, status: d.status }) },
+  // `dueAmount` / `balanceAmount` are spelled out on every kind: a quotation
+  // has nothing paid against it, so what would fall due is the whole amount.
+  quotations: { usageKey: 'quotation_customer', documentKey: 'quotation', build: (d) => ({ number: d.quotationNumber, date: d.createdAt, validUntil: d.validUntil, amount: d.totalAmount, totalAmount: d.totalAmount, paidAmount: 0, balanceAmount: d.totalAmount, dueAmount: d.totalAmount, serviceChargesTotal: d.serviceChargesTotal || 0, serviceTaxTotal: d.serviceTaxTotal || 0, status: d.status }) },
+  bookings: { usageKey: 'booking_customer', documentKey: 'booking', build: (d) => ({ number: d.bookingNumber, date: d.bookingDate || d.createdAt, deliveryDate: d.expectedDeliveryDate, amount: d.bookingAmount, totalAmount: d.totalAmount, paidAmount: d.paidAmount || 0, balanceAmount: d.balanceAmount || 0, dueAmount: d.balanceAmount || 0, status: d.status }) },
+  invoices: { usageKey: 'invoice_customer', documentKey: 'invoice', build: (d) => ({ number: d.invoiceNumber, date: d.invoiceDate || d.createdAt, dueDate: d.dueDate, amount: d.totalAmount, totalAmount: d.totalAmount, paidAmount: d.paidAmount, balanceAmount: d.balanceAmount, dueAmount: d.balanceAmount, status: d.status }) },
 };
 
 const sendEmail = async (req, res, next) => {
   try {
     const kind = kindOf(req);
     const entry = EMAIL_DOCUMENTS[req.params.kind];
-    const { recipient } = await sendCustomerDocumentEmail({
+    const { recipient, attached } = await sendCustomerDocumentEmail({
       Model: kind.Model, id: req.params.id, usageKey: entry.usageKey, documentKey: entry.documentKey, buildDocument: entry.build, userId: req.user.id,
+      to: req.body?.to, pdfType: kind.pdfType,
     });
-    res.json({ success: true, message: `Email sent to ${recipient}` });
+    res.json({ success: true, message: `Email sent to ${recipient}${attached ? ' with the PDF attached' : ''}` });
   } catch (error) { next(error); }
 };
 

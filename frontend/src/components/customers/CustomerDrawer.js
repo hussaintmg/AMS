@@ -9,6 +9,7 @@ import {
   Phone,
   Mail,
   MapPin,
+  Car,
   Ban,
   Building2,
   Clock,
@@ -283,6 +284,27 @@ export default function CustomerDrawer({ customerId, onClose, onUpdated }) {
                 <p className="drawer-description-text">
                   {customer.description}
                 </p>
+              </div>
+            )}
+
+            {(customer.vehicles || []).length > 0 && (
+              <div className="drawer-section-group">
+                <h4 className="drawer-section-title">
+                  <Car size={16} /> Vehicles
+                </h4>
+                {customer.vehicles.map((vehicle, index) => (
+                  <div key={vehicle._id || index} style={{ marginBottom: 10 }}>
+                    <DetailRow
+                      icon={<Car size={16} />}
+                      label={[vehicle.make, vehicle.model, vehicle.year].filter(Boolean).join(" ") || `Vehicle ${index + 1}`}
+                      value={vehicle.registrationNumber || "-"}
+                    />
+                    <DetailRow label="Engine No." value={vehicle.engineNumber} />
+                    <DetailRow label="Chassis No." value={vehicle.chassisNumber} />
+                    <DetailRow label="PBO No." value={vehicle.pboNumber} />
+                    {vehicle.notes ? <DetailRow label="Notes" value={vehicle.notes} /> : null}
+                  </div>
+                ))}
               </div>
             )}
 

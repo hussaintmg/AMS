@@ -2,6 +2,7 @@ const Expense = require('../models/Expense.model');
 const ExpenseCategory = require('../models/ExpenseCategory.model');
 const Employee = require('../models/Employee.model');
 const AppError = require('../utils/AppError');
+const { nextDocNumber } = require('../utils/docNumber');
 const {
   postDoubleEntry,
   isAlreadyPosted,
@@ -30,6 +31,10 @@ async function postExpenseToLedger(item, req) {
   // account name, which then simply is not a money account and falls back).
   const accountsService = require('../services/accounts.service');
   const paidFrom = (await accountsService.resolveAccount(item.paidFromAccount || item.account)) || (await accountsService.pettyCashAccount());
+  // An expense is cash out of a drawer that has to actually contain it.
+  await accountsService.assertSufficientFunds(paidFrom, item.amount, {
+    allowNegative: req.body?.allowNegative === true, action: 'be spent',
+  });
   await postDoubleEntry({
     transactionDate: item.expenseDate,
     debitAccount: item.category || DEFAULT_EXPENSE_ACCOUNT,
@@ -127,9 +132,11 @@ exports.createExpense = async (req, res, next) => {
       throw new AppError('Category, amount, and expense date are required', 400);
     }
 
-    const year = new Date().getFullYear();
-    const count = await Expense.countDocuments({ expenseNumber: { $regex: `EXP-${year}-` } });
-    const expenseNumber = `EXP-${year}-${String(count + 1).padStart(5, '0')}`;
+    // Numbered from the highest number in use, never from a count. Counting
+    // reissues the number of anything that was deleted, and a reissued number
+    // still matches the deleted expense's ledger rows — so the new expense
+    // could never be posted, and the screen said only "Expense already posted".
+    const expenseNumber = await nextDocNumber(Expense, 'expenseNumber', 'EXP', 5);
 
     const item = await Expense.create({
       expenseNumber, category, account, employee: employee || null,

@@ -29,6 +29,7 @@ const { allowedOwnerIds } = require('../utils/roleJobs');
 const { resolvePaymentMethod } = require('../utils/paymentMethod.util');
 const { assertFullPayment } = require('../utils/fullPayment.util');
 const { realCustomerEmail } = require('../utils/customerEmail.util');
+const { postCustomerReceipt, reverseAllReceiptsFor } = require('../services/receipts.service');
 
 const sanitizeId = (id) => {
     if (id === '' || id === undefined || id === null) return null;
@@ -302,18 +303,23 @@ const createInvoice = async (req, res, next) => {
         // through Record Payment. No approval step either way (client
         // decision, 2026-08-18): a credit invoice prints and emails like any
         // other, marked CREDIT with its balance due.
+        // A credit invoice may still take a deposit at the counter, leaving the
+        // rest on the customer's account; only a "paid" invoice must be covered
+        // in full.
         const isCredit = String(req.body.paymentTerm || 'paid').toLowerCase() === 'credit';
         const paymentMethod = await resolvePaymentMethod(req.body.paymentMethodId, { required: !isCredit });
-        const tendered = isCredit ? 0 : round2(num(req.body.paidAmount));
+        const tendered = round2(num(req.body.paidAmount));
         if (tendered < 0) throw new AppError('Paid amount cannot be negative', 400);
         if (!isCredit) assertFullPayment(totalAmount, tendered);
         const changeDue = isCredit ? 0 : round2(Math.max(0, tendered - totalAmount));
+        const paidAmount = isCredit ? Math.min(Math.max(0, tendered), totalAmount) : totalAmount;
 
         const invoiceNumber = await nextDocNumber(Invoice, 'invoiceNumber', 'INV');
         const now = new Date();
-        const dueDate = new Date(now.getTime() + Math.max(0, num(dueDays, 30)) * 24 * 60 * 60 * 1000);
+        // Only a credit invoice needs a date by which money is expected; a
+        // counter sale was being stamped "due in 30 days" for nothing.
         const creditDueDate = isCredit
-            ? (req.body.creditDueDate ? new Date(req.body.creditDueDate) : dueDate)
+            ? (req.body.creditDueDate ? new Date(req.body.creditDueDate) : new Date(now.getTime() + Math.max(0, num(dueDays, 30)) * 24 * 60 * 60 * 1000))
             : null;
         if (isCredit && Number.isNaN(creditDueDate.getTime())) throw new AppError('Credit due date is invalid', 400);
 
@@ -324,15 +330,15 @@ const createInvoice = async (req, res, next) => {
             jobCard: sanitizeId(jobCardId),
             customer: customer._id,
             walkIn, walkInName, walkInPhone,
-            status: isCredit ? 'sent' : 'paid',
+            status: isCredit ? (paidAmount > 0 ? 'partial' : 'sent') : 'paid',
             invoiceDate: now,
-            dueDate: isCredit ? creditDueDate : dueDate,
+            dueDate: creditDueDate,
             subtotal,
             taxAmount,
             discountAmount: discount,
             totalAmount,
-            paidAmount: isCredit ? 0 : totalAmount,
-            balanceAmount: isCredit ? totalAmount : 0,
+            paidAmount,
+            balanceAmount: round2(totalAmount - paidAmount),
             paymentTerm: isCredit ? 'credit' : 'paid',
             creditDueDate,
             hasServiceCharges: service.rows.length > 0,
@@ -349,22 +355,30 @@ const createInvoice = async (req, res, next) => {
             createdBy: req.user.id,
         });
 
-        if (!isCredit) {
+        if (paidAmount > 0) {
             // The payment itself, so the invoice's money is traceable to a method
             // and shows up in the payments list like any other.
             const paymentNumber = await nextDocNumber(Payment, 'paymentNumber', 'PAY');
-            await Payment.create({
+            const payment = await Payment.create({
                 paymentNumber,
                 invoice: invoice._id,
                 customer: customer._id,
-                methodRef: paymentMethod.id,
-                method: { name: paymentMethod.name, code: paymentMethod.code, type: paymentMethod.type },
-                amount: totalAmount,
+                methodRef: paymentMethod ? paymentMethod.id : null,
+                method: paymentMethod ? { name: paymentMethod.name, code: paymentMethod.code, type: paymentMethod.type } : {},
+                amount: paidAmount,
                 paymentDate: now,
-                notes: `Payment in full with invoice ${invoiceNumber}`,
+                notes: isCredit ? `Deposit taken with invoice ${invoiceNumber}` : `Payment in full with invoice ${invoiceNumber}`,
                 status: 'completed',
                 createdBy: req.user.id,
             });
+            // ...and into a real money account, so the Accounts screen and the
+            // balance sheet see the same money the invoice says was taken.
+            const receipt = await postCustomerReceipt({
+                amount: paidAmount, accountId: req.body.accountId, paymentMethod, date: now,
+                description: `Receipt against invoice ${invoiceNumber}`,
+                referenceType: 'invoice_payment', referenceId: `${invoiceNumber}#${payment._id}`, userId: req.user.id,
+            });
+            if (receipt.account) { invoice.paymentAccount = receipt.account._id; await invoice.save(); }
         }
 
         await recordCustomerActivity({
@@ -376,8 +390,8 @@ const createInvoice = async (req, res, next) => {
             description: `Invoice ${invoiceNumber} (${invoiceType || 'sales'}) created${isCredit ? ' on credit' : ''}`,
             userId: req.user.id,
             spentDelta: sanitizeId(salesOrderId) ? 0 : totalAmount,
-            paidDelta: isCredit ? 0 : totalAmount,
-            outstandingDelta: isCredit ? totalAmount : 0,
+            paidDelta: paidAmount,
+            outstandingDelta: round2(totalAmount - paidAmount),
         });
 
         logger.info(`Invoice ${invoiceNumber} created${isCredit ? ' on credit' : ''} by user ${req.user.id}`);
@@ -389,7 +403,7 @@ const createInvoice = async (req, res, next) => {
                 paymentTerm: isCredit ? 'credit' : 'paid', creditDueDate,
             },
             message: isCredit
-                ? `Credit invoice created. PKR ${totalAmount.toLocaleString('en-PK')} due by ${creditDueDate.toLocaleDateString('en-GB')}`
+                ? `Credit invoice created. PKR ${round2(totalAmount - paidAmount).toLocaleString('en-PK')} due by ${creditDueDate.toLocaleDateString('en-GB')}`
                 : changeDue > 0
                     ? `Invoice created. Return change of PKR ${changeDue.toLocaleString('en-PK')}`
                     : 'Invoice created successfully',
@@ -489,6 +503,9 @@ async function cancelInvoiceRecord(invoice, userId) {
             { invoice: invoice._id, status: { $ne: 'cancelled' } },
             { $set: { status: 'cancelled', updatedBy: userId } },
         );
+        // The refunded money has to leave the accounts it landed in, or the
+        // balance sheet keeps cash the company gave back.
+        await reverseAllReceiptsFor(invoice.invoiceNumber, userId);
     }
 
     // The invoice is what took the stock, so cancelling it is what returns
@@ -617,35 +634,52 @@ const sendInvoiceEmail = async (req, res, next) => {
             .populate('customer', 'firstName lastName companyName email phone customerCode')
             .lean();
         if (!invoice) throw new AppError('Invoice not found', 404);
-        if (invoice.walkIn) {
-            throw new AppError('This is a walk-in sale — there is no customer email address to send to', 400);
+        // A typed address wins: it is the only way to reach a walk-in buyer, or
+        // a customer whose record carries the placeholder the import invented.
+        const typed = String(req.body?.to || '').trim();
+        if (!typed && invoice.walkIn) {
+            throw new AppError('This is a walk-in sale — type the address to send it to', 400);
         }
         // Imported customers carry an invented address so their record stays
         // unique; nothing is delivered there, so it counts as no address at all.
-        const recipient = realCustomerEmail(invoice.customer?.email);
+        const recipient = typed || realCustomerEmail(invoice.customer?.email);
         if (!recipient) {
             throw new AppError(
-                'The selected customer does not have an email address — add one on their record first',
+                'This customer has no email address — add one on their record, or type an address to send to',
                 400,
             );
+        }
+
+        // The invoice PDF goes on the message rather than a bare covering letter.
+        const attachments = [];
+        try {
+            const { buildDocumentPdf } = require('../services/documentPdf.service');
+            const pdf = await buildDocumentPdf('invoice', invoice._id);
+            if (pdf) attachments.push({ filename: pdf.fileName, content: pdf.buffer, contentType: 'application/pdf' });
+        } catch (error) {
+            logger.error(`[Invoice] Could not attach the PDF for ${invoice.invoiceNumber}: ${error.message}`);
         }
 
         const result = await sendTemplateEmail({
             usageKey: 'invoice_customer',
             to: recipient,
             sentBy: req.user.id,
+            attachments,
             context: { customer: { ...invoice.customer, email: recipient }, invoice: {
                 number: invoice.invoiceNumber,
                 date: invoice.invoiceDate || invoice.createdAt,
                 dueDate: invoice.dueDate,
                 amount: invoice.totalAmount,
+                totalAmount: invoice.totalAmount,
+                paidAmount: invoice.paidAmount,
+                balanceAmount: invoice.balanceAmount,
                 dueAmount: invoice.balanceAmount,
                 status: invoice.status,
             } },
         });
         if (result.status !== 'sent') throw new AppError(result.errorMessage || 'Email could not be sent', 502);
 
-        res.json({ success: true, message: `Invoice ${invoice.invoiceNumber} emailed to ${recipient}` });
+        res.json({ success: true, message: `Invoice ${invoice.invoiceNumber} emailed to ${recipient}${attachments.length ? ' with the PDF attached' : ''}` });
     } catch (error) {
         next(error);
     }
@@ -778,6 +812,14 @@ const recordPayment = async (req, res, next) => {
             status: 'completed',
             createdBy: req.user.id,
         });
+        const receipt = await postCustomerReceipt({
+            amount: paymentAmount,
+            accountId: req.body.accountId,
+            paymentMethod: { id: method._id, name: method.name, type: method.type, accountId: method.accountId },
+            description: `Payment against invoice ${invoice.invoiceNumber}`,
+            // The payment's own id: unique for ever, so instalments cannot collide.
+            referenceType: 'invoice_payment', referenceId: `${invoice.invoiceNumber}#${payment._id}`, userId: req.user.id,
+        });
 
         invoice.paidAmount = round2(num(invoice.paidAmount) + paymentAmount);
         invoice.balanceAmount = round2(num(invoice.totalAmount) - invoice.paidAmount);
@@ -786,6 +828,7 @@ const recordPayment = async (req, res, next) => {
         invoice.paymentMode = method.name;
         invoice.amountTendered = round2(num(invoice.amountTendered) + tendered);
         invoice.changeDue = changeDue;
+        if (receipt.account && !invoice.paymentAccount) invoice.paymentAccount = receipt.account._id;
         invoice.updatedBy = req.user.id;
         await invoice.save();
 

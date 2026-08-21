@@ -60,7 +60,18 @@ import NotificationSettings from "./pages/NotificationSettings";
 import SearchResults from "./pages/SearchResults";
 import { SearchProvider } from "./context/SearchContext";
 import CommandPalette from "./components/CommandPalette";
+import ErrorBoundary from "./components/ErrorBoundary";
 import { getFirstAllowedPage } from "./utils/permissions";
+
+/**
+ * Every routed page is wrapped so that one component throwing while it renders
+ * shows a message on that page instead of unmounting the whole app and leaving
+ * a white screen. `resetKey` is the path, so navigating away clears it.
+ */
+const PageBoundary = ({ children }) => {
+  const location = useLocation();
+  return <ErrorBoundary where={location.pathname} resetKey={location.pathname}>{children}</ErrorBoundary>;
+};
 
 const ProtectedPage = ({ children }) => {
   const { user, canAccess, effectivePermissions } = useAuth();
@@ -72,7 +83,7 @@ const ProtectedPage = ({ children }) => {
   if (!enabledPerms.length) {
     return <Navigate to="/no-access" replace />;
   }
-  if (canAccess(location.pathname)) return children;
+  if (canAccess(location.pathname)) return <PageBoundary>{children}</PageBoundary>;
   // Say that a permission is missing rather than quietly landing somewhere else.
   // Bouncing to whatever page happened to be first in the role's list is how a
   // missing grant came to be reported as a broken link: the operator clicks
@@ -118,6 +129,9 @@ const AppLayout = () => {
         <TableEnhancer />
         <ViewGate />
         <main className="main-content">
+          {/* Catches anything the per-page boundary cannot — an unprotected
+              route, or the routing layer itself. */}
+          <ErrorBoundary where="this page">
           <Routes>
             <Route index element={<RootRedirect />} />
             <Route path="dashboard" element={<DashboardRoute />} />
@@ -574,6 +588,7 @@ const AppLayout = () => {
               }
             />
           </Routes>
+          </ErrorBoundary>
         </main>
       </div>
     </SearchProvider>

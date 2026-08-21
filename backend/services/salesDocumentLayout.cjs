@@ -77,6 +77,7 @@ function summaryRows(type, data) {
   const rows = [];
   if (data.vehicleItems?.count) rows.push(['Total Vehicles', data.vehicleItems.subtotalText]);
   if (data.partItems?.count) rows.push(['Total Parts', data.partItems.subtotalText]);
+  if (data.otherItems?.count) rows.push(['Total Items', data.otherItems.subtotalText]);
   if (type === 'quotation') {
     if (d.discountAmount) rows.push(['Less; Discount', fmtMoney(d.discountAmount)]);
     if (d.taxAmount) rows.push(['Add; Tax', fmtMoney(d.taxAmount)]);
@@ -156,8 +157,31 @@ const PART_COLUMNS = [
   { label: 'Tax', width: 65, align: 'right', get: (r) => r.taxAmountText },
   { label: 'Total', width: 70, align: 'right', get: (r) => r.totalPriceText },
 ];
+/**
+ * A custom document's free-text lines. No chassis number, no part code — just
+ * what was sold. They used to fall through into the Vehicles table for want of
+ * a section of their own, which is why a generator quotation printed under the
+ * heading "Vehicles".
+ */
+const ITEM_COLUMNS = [
+  { label: '#', width: 24, get: (r) => r.number },
+  { label: 'Description', width: 285, get: (r) => r.description },
+  { label: 'Qty', width: 35, align: 'right', get: (r) => r.quantity },
+  { label: 'Unit Price', width: 80, align: 'right', get: (r) => r.unitPriceText },
+  { label: 'Amount', width: 121, align: 'right', get: (r) => r.totalPriceText },
+];
+/** The service-charges block the client asked to see spelled out on the page. */
+const SERVICE_COLUMNS = [
+  { label: '#', width: 24, get: (r) => r.number },
+  { label: 'Service', width: 130, get: (r) => r.name },
+  { label: 'Description', width: 155, get: (r) => r.note },
+  { label: 'Qty', width: 30, align: 'right', get: (r) => r.quantity },
+  { label: 'Rate', width: 70, align: 'right', get: (r) => r.unitPriceText },
+  { label: 'Tax', width: 60, align: 'right', get: (r) => r.taxAmountText },
+  { label: 'Total', width: 76, align: 'right', get: (r) => r.totalPriceText },
+];
 
-/** The two product tables, in printing order, each already told whether it has rows. */
+/** The product tables, in printing order, each already told whether it has rows. */
 function productSections(data) {
   return [
     {
@@ -174,12 +198,26 @@ function productSections(data) {
       totalLabel: 'Total Spare Parts Rs. :',
       totalText: data.partItems?.subtotalText || '',
     },
+    {
+      title: 'Items',
+      rows: data.otherItems || [],
+      columns: ITEM_COLUMNS,
+      totalLabel: 'Total Items Rs. :',
+      totalText: data.otherItems?.subtotalText || '',
+    },
+    {
+      title: 'Service Charges',
+      rows: data.serviceItems || [],
+      columns: SERVICE_COLUMNS,
+      totalLabel: 'Total Service Charges Rs. :',
+      totalText: data.serviceItems?.subtotalText || '',
+    },
   ].filter((section) => section.rows.length);
 }
 
 module.exports = {
   TITLES, NUMBER_LABELS, NOTE_BY_TYPE,
-  VEHICLE_COLUMNS, PART_COLUMNS,
+  VEHICLE_COLUMNS, PART_COLUMNS, ITEM_COLUMNS, SERVICE_COLUMNS,
   fmtMoney, fmtDate, clean,
   metaRows, summaryRows, billedToGrid, headerMeta, productSections,
 };

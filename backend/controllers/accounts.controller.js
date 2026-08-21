@@ -129,6 +129,11 @@ exports.adjust = async (req, res, next) => {
     const amount = round2(req.body.amount);
     if (!(amount > 0)) throw new AppError('Amount must be greater than zero', 400);
     const direction = req.body.direction === 'out' ? 'out' : 'in';
+    // Money in corrects a balance upwards and is always allowed; money out is
+    // still money leaving, and cannot take the account below zero.
+    if (direction === 'out') {
+      await accounts.assertSufficientFunds(account, amount, { allowNegative: req.body.allowNegative === true, action: 'be taken out' });
+    }
     const referenceId = await nextDocNumber(AccountTransfer, 'transferNumber', 'ADJ');
     await postDoubleEntry({
       transactionDate: req.body.date ? new Date(req.body.date) : new Date(),
@@ -322,6 +327,7 @@ exports.payPayable = async (req, res, next) => {
     if (amount > num(payable.balance) + 0.009) throw new AppError(`Payment exceeds the outstanding balance of ${num(payable.balance).toLocaleString('en-PK')}`, 400);
     const account = await accounts.resolveAccount(req.body.accountId) || await accounts.pettyCashAccount();
     if (!account) throw new AppError('Choose the account the money leaves', 400);
+    await accounts.assertSufficientFunds(account, amount, { allowNegative: req.body.allowNegative === true, action: 'be paid' });
     const paidOn = req.body.paidOn ? new Date(req.body.paidOn) : new Date();
     payable.payments.push({ amount, paidOn, account: account._id, reference: req.body.reference || '', notes: req.body.notes || '', createdBy: getUserId(req) });
     payable.paidAmount = round2(num(payable.paidAmount) + amount);

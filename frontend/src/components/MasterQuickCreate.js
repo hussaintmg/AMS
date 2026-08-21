@@ -162,6 +162,23 @@ const SPECS = {
     ],
     submit: (values) => vehicleMasterAPI.createSupplier(values),
   },
+  /**
+   * A part raised from inside another form — a delivery arrives carrying
+   * something that has never been stocked before, and the gate entry has to be
+   * able to name it there and then rather than being abandoned halfway through.
+   * The full Parts screen is still where pricing, category and warehouse are
+   * set; this only makes the record exist.
+   */
+  part: {
+    page: 'parts',
+    label: 'Part',
+    fields: [
+      { key: 'name', label: 'Part name', required: true, autoFocus: true },
+      { key: 'partNumber', label: 'Part number' },
+      { key: 'unit', label: 'Unit', placeholder: 'pcs' },
+    ],
+    submit: (values) => partsAPI.create({ ...values, currentStock: 0 }),
+  },
   source_type: {
     page: 'parts',
     label: 'Source Type',
@@ -272,6 +289,7 @@ export default function MasterQuickCreate({ type, label, onCreated, form = 'crea
                     className="form-input"
                     type={field.type || 'text'}
                     autoFocus={field.autoFocus}
+                    placeholder={field.placeholder || ''}
                     value={values[field.key] ?? ''}
                     onChange={(e) => setValue(field, e.target.value)}
                     onBlur={() => field.deriveFrom && setValues((prev) => ({ ...prev, [`${field.key}__touched`]: true }))}

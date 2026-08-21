@@ -26,6 +26,7 @@ const PartQuotation = require('../models/PartQuotation.model');
 const PartBooking = require('../models/PartBooking.model');
 const PartSalesOrder = require('../models/PartSalesOrder.model');
 const PartInvoice = require('../models/PartInvoice.model');
+const Payment = require('../models/Payment.model');
 const Customer = require('../models/Customer.model');
 const { nextDocNumber } = require('../utils/docNumber');
 const { recordCustomerActivity } = require('../utils/customerSync');
@@ -40,6 +41,7 @@ const { sendCustomerDocumentEmail } = require('../services/documentEmail.service
 const { buildEstimatePdf, buildEstimateEmailContext, defaultEstimateEmailHtml } = require('../services/estimate.service');
 const { sendTemplateEmail, sendRawEmail } = require('../services/emailSender.service');
 const { companyName } = require('../services/pdfData.service');
+const { postCustomerReceipt, reverseAllReceiptsFor } = require('../services/receipts.service');
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SHARED HELPERS
@@ -385,6 +387,13 @@ const updateQuotation = async (req, res, next) => {
         const quotation = await PartQuotation.findById(sanitizeId(req.params.id));
         if (!quotation) throw new AppError('Quotation not found', 404);
         if (quotation.status === 'converted') throw new AppError('Converted quotations cannot be edited', 400);
+        if (quotation.status === 'cancelled') throw new AppError('Cancelled quotations cannot be edited', 400);
+        // An approved quotation is the price the customer agreed to. Reopening
+        // it for edits is what let a signed-off figure change underneath the
+        // approval; withdraw the approval first if the deal has moved.
+        if (quotation.approvalStatus === 'approved') {
+            throw new AppError('This quotation has been approved and can no longer be edited. Reject the approval first if the price has changed.', 400);
+        }
 
         const sentProducts = Array.isArray(req.body.lineItems) && req.body.lineItems.length > 0;
         // An edit that does not mention products keeps the ones already on the
@@ -529,22 +538,36 @@ const convertQuotationToInvoice = async (req, res, next) => {
         if (totals.totalAmount <= 0) throw new AppError('Valid price is required', 400);
         const tendered = round2(num(body.paidAmount));
         if (tendered < 0) throw new AppError('Paid amount cannot be negative', 400);
-        const changeDue = round2(Math.max(0, tendered - totals.totalAmount));
-        const paidAmount = changeDue > 0 ? totals.totalAmount : tendered;
-        // The quotation was where the price could move; the invoice takes it in full.
-        assertFullPayment(totals.totalAmount, tendered, { document: 'invoice' });
+        // Conversion now asks how much the customer is actually handing over and
+        // into which account. Anything short of the total makes this a credit
+        // invoice carrying the balance, rather than refusing the sale outright.
+        const isCredit = String(req.body.paymentTerm || '').toLowerCase() === 'credit'
+            || tendered + 0.009 < totals.totalAmount;
+        // Leaving a balance behind is issuing credit, however it was reached.
+        if (isCredit && !canDo(req.user, 'part_invoices', 'changePaymentTerm') && !canDo(req.user, 'invoices', 'changePaymentTerm')) {
+            throw new AppError('Your role may not issue credit invoices — take the full amount, or ask someone who can.', 403);
+        }
+        const changeDue = isCredit ? 0 : round2(Math.max(0, tendered - totals.totalAmount));
+        const paidAmount = isCredit ? Math.min(tendered, totals.totalAmount) : (changeDue > 0 ? totals.totalAmount : tendered);
+        if (!isCredit) assertFullPayment(totals.totalAmount, tendered, { document: 'invoice' });
 
         const invoiceNumber = await nextDocNumber(PartInvoice, 'invoiceNumber', 'PINV');
         const now = new Date();
+        const creditDueDate = isCredit
+            ? new Date(req.body.creditDueDate || now.getTime() + Math.max(0, num(req.body.dueDays, 30)) * 24 * 60 * 60 * 1000)
+            : null;
+        if (isCredit && Number.isNaN(creditDueDate.getTime())) throw new AppError('Credit due date is invalid', 400);
         const invoice = await PartInvoice.create({
             invoiceNumber,
             quotation: quotation._id,
             customer: customer._id,
             walkIn, walkInName, walkInPhone,
             lineItems: lines,
-            status: statusForPayment(totals.totalAmount, paidAmount),
+            status: statusForPayment(totals.totalAmount, paidAmount, { credit: isCredit }),
             invoiceDate: now,
-            dueDate: new Date(now.getTime() + Math.max(0, num(req.body.dueDays, 30)) * 24 * 60 * 60 * 1000),
+            dueDate: creditDueDate,
+            paymentTerm: isCredit ? 'credit' : 'paid',
+            creditDueDate,
             subtotal: totals.subtotal,
             taxAmount: totals.taxAmount,
             discountAmount: totals.discountAmount,
@@ -577,6 +600,8 @@ const convertQuotationToInvoice = async (req, res, next) => {
             throw stockError;
         }
 
+        await bankReceipt(invoice, paidAmount, { accountId: req.body.accountId, paymentMethod, userId: req.user.id });
+
         quotation.status = 'converted';
         quotation.updatedBy = req.user.id;
         await quotation.save();
@@ -597,8 +622,10 @@ const convertQuotationToInvoice = async (req, res, next) => {
         logger.info(`Parts quotation ${quotation.quotationNumber} converted to invoice ${invoiceNumber}`);
         res.status(201).json({
             success: true,
-            data: { id: invoice._id, invoiceNumber, changeDue },
-            message: 'Quotation converted to invoice',
+            data: { id: invoice._id, invoiceNumber, changeDue, paymentTerm: invoice.paymentTerm, balanceAmount: invoice.balanceAmount },
+            message: isCredit
+                ? `Converted to credit invoice ${invoiceNumber} — PKR ${round2(totals.totalAmount - paidAmount).toLocaleString('en-PK')} outstanding`
+                : 'Quotation converted to invoice',
         });
     } catch (error) {
         logger.error('Error converting parts quotation to invoice:', error);
@@ -873,11 +900,39 @@ const mapOrder = (o, invoice = null) => ({
     invoice_status: invoice?.status || null,
 });
 
-const statusForPayment = (totalAmount, paidAmount) => {
+/**
+ * The status the numbers imply. An unpaid credit invoice reads 'sent' — it has
+ * been issued and is waiting to be collected — rather than 'draft', which is
+ * for something that never left the counter.
+ */
+const statusForPayment = (totalAmount, paidAmount, { credit = false } = {}) => {
     if (totalAmount > 0 && paidAmount >= totalAmount) return 'paid';
     if (paidAmount > 0) return 'partial';
-    return 'draft';
+    return credit ? 'sent' : 'draft';
 };
+
+/**
+ * Put what the customer actually handed over into a money account, and remember
+ * which one on the invoice. Silent when there is nothing to bank.
+ */
+async function bankReceipt(invoice, amount, { accountId = null, paymentMethod = null, userId = null } = {}) {
+    if (!(round2(amount) > 0)) return null;
+    const receipt = await postCustomerReceipt({
+        amount,
+        accountId,
+        paymentMethod,
+        date: invoice.invoiceDate || new Date(),
+        description: `Receipt against parts invoice ${invoice.invoiceNumber}`,
+        referenceType: 'invoice_payment',
+        referenceId: invoice.invoiceNumber,
+        userId,
+    });
+    if (receipt.account && !invoice.paymentAccount) {
+        invoice.paymentAccount = receipt.account._id;
+        await invoice.save();
+    }
+    return receipt;
+}
 
 /**
  * Create the invoice for a parts order. Idempotent — an order that already has
@@ -887,7 +942,7 @@ const statusForPayment = (totalAmount, paidAmount) => {
  * the stock move fails the invoice is removed again, so an order can never end
  * up with an invoice that was never paid for in stock.
  */
-async function createInvoiceForOrder(order, { userId = null, dueDays = 30 } = {}) {
+async function createInvoiceForOrder(order, { userId = null, dueDays = 30, accountId = null } = {}) {
     const existing = await PartInvoice.findOne({ salesOrder: order._id, status: { $ne: 'cancelled' } });
     if (existing) {
         if (!order.invoice || String(order.invoice) !== String(existing._id)) {
@@ -940,6 +995,14 @@ async function createInvoiceForOrder(order, { userId = null, dueDays = 30 } = {}
     }
 
     await PartSalesOrder.updateOne({ _id: order._id }, { $set: { invoice: invoice._id } });
+
+    // A counter sale takes money at the till, so it lands in an account like
+    // every other receipt does.
+    await bankReceipt(invoice, paidAmount, {
+        accountId,
+        paymentMethod: order.paymentMethod ? await resolvePaymentMethod(order.paymentMethod) : null,
+        userId,
+    });
 
     await recordCustomerActivity({
         customerId: order.customer,
@@ -1025,7 +1088,7 @@ async function createOrderInternal({ body, userId, user, bookingId = null, quota
     // the shelf changed underneath us — the order must not stand either.
     let invoice = null;
     try {
-        const result = await createInvoiceForOrder(order, { userId });
+        const result = await createInvoiceForOrder(order, { userId, accountId: body.accountId });
         invoice = result.invoice;
         order.status = 'invoiced';
         order.invoice = invoice._id;
@@ -1222,6 +1285,8 @@ const mapInvoice = (inv) => ({
     change_due: inv.changeDue || 0,
     payment_method_id: inv.paymentMethod || null,
     payment_method_name: inv.paymentMode || '',
+    payment_account_id: inv.paymentAccount?._id || inv.paymentAccount || null,
+    payment_account_name: inv.paymentAccount?.name || '',
     stock_applied: inv.stockApplied === true,
     terms_and_conditions: inv.termsAndConditions || '',
 });
@@ -1255,6 +1320,8 @@ const getInvoiceById = async (req, res, next) => {
     try {
         const invoice = await PartInvoice.findById(sanitizeId(req.params.id))
             .populate('customer', 'firstName lastName companyName phone customerCode email')
+            // So the drawer can say which account the money went into.
+            .populate('paymentAccount', 'name type')
             .lean();
         if (!invoice) throw new AppError('Invoice not found', 404);
         res.json({ success: true, data: mapInvoice(invoice) });
@@ -1276,26 +1343,38 @@ const createInvoice = async (req, res, next) => {
         // "Paid" is settled at the counter; "credit" is issued unpaid with a
         // due date and collected later through Record Payment. Stock moves at
         // the invoice either way.
+        // A credit invoice may take a deposit at the counter: 7,000 invoiced,
+        // 3,000 handed over, 4,000 left on the customer's account. That is what
+        // "credit" now means — anything short of the full amount rides here, and
+        // the balance shows up under Receivables until it is collected.
         const isCredit = String(req.body.paymentTerm || 'paid').toLowerCase() === 'credit';
-        const tendered = isCredit ? 0 : round2(num(req.body.paidAmount));
+        const tendered = round2(num(req.body.paidAmount));
         const changeDue = isCredit ? 0 : round2(Math.max(0, tendered - totals.totalAmount));
-        const paidAmount = isCredit ? 0 : (changeDue > 0 ? totals.totalAmount : tendered);
+        const paidAmount = isCredit
+            ? Math.min(round2(Math.max(0, tendered)), totals.totalAmount)
+            : (changeDue > 0 ? totals.totalAmount : tendered);
         if (!isCredit) assertFullPayment(totals.totalAmount, tendered, { document: 'invoice' });
 
         const invoiceNumber = await nextDocNumber(PartInvoice, 'invoiceNumber', 'PINV');
         const now = new Date();
-        const dueDate = new Date(now.getTime() + Math.max(0, num(req.body.dueDays, 30)) * 24 * 60 * 60 * 1000);
-        const creditDueDate = isCredit ? (req.body.creditDueDate ? new Date(req.body.creditDueDate) : dueDate) : null;
+        // A due date is only meaningful when something is still owed. An invoice
+        // settled at the counter used to be stamped "due in 30 days" for no
+        // reason at all, which is what the client was asking about.
+        const dueDays = Math.max(0, num(req.body.dueDays, 30));
+        const creditDueDate = isCredit
+            ? (req.body.creditDueDate ? new Date(req.body.creditDueDate) : new Date(now.getTime() + dueDays * 24 * 60 * 60 * 1000))
+            : null;
         if (isCredit && Number.isNaN(creditDueDate.getTime())) throw new AppError('Credit due date is invalid', 400);
+        const paymentMethod = await resolvePaymentMethod(req.body.paymentMethodId, { required: false });
 
         const invoice = await PartInvoice.create({
             invoiceNumber,
             customer: customer._id,
             walkIn, walkInName, walkInPhone,
             lineItems: lines,
-            status: isCredit ? 'sent' : statusForPayment(totals.totalAmount, paidAmount),
+            status: statusForPayment(totals.totalAmount, paidAmount, { credit: isCredit }),
             invoiceDate: now,
-            dueDate: isCredit ? creditDueDate : dueDate,
+            dueDate: creditDueDate,
             subtotal: totals.subtotal,
             taxAmount: totals.taxAmount,
             discountAmount: totals.discountAmount,
@@ -1308,6 +1387,8 @@ const createInvoice = async (req, res, next) => {
             creditDueDate,
             amountTendered: changeDue > 0 ? tendered : 0,
             changeDue,
+            paymentMethod: paymentMethod.id,
+            paymentMode: paymentMethod.name,
             notes: req.body.notes,
             termsAndConditions: req.body.termsAndConditions,
             salePerson: [req.user.firstName, req.user.lastName].filter(Boolean).join(' '),
@@ -1327,6 +1408,8 @@ const createInvoice = async (req, res, next) => {
             throw stockError;
         }
 
+        await bankReceipt(invoice, paidAmount, { accountId: req.body.accountId, paymentMethod, userId: req.user.id });
+
         await recordCustomerActivity({
             customerId: customer._id,
             docType: 'invoice',
@@ -1345,7 +1428,7 @@ const createInvoice = async (req, res, next) => {
             success: true,
             data: { id: invoice._id, invoiceNumber, changeDue, paymentTerm: isCredit ? 'credit' : 'paid', creditDueDate },
             message: isCredit
-                ? `Credit invoice created. PKR ${totals.totalAmount.toLocaleString('en-PK')} due by ${creditDueDate.toLocaleDateString('en-GB')}`
+                ? `Credit invoice created. PKR ${round2(totals.totalAmount - paidAmount).toLocaleString('en-PK')} due by ${creditDueDate.toLocaleDateString('en-GB')}`
                 : 'Invoice created successfully',
         });
     } catch (error) {
@@ -1358,6 +1441,7 @@ const updateInvoiceStatus = async (req, res, next) => {
     try {
         const invoice = await PartInvoice.findById(sanitizeId(req.params.id));
         if (!invoice) throw new AppError('Invoice not found', 404);
+        if (invoice.status === 'cancelled') throw new AppError('A cancelled invoice cannot be changed', 400);
         const status = String(req.body.status || '');
         if (!status) throw new AppError('Status is required', 400);
         if (status === 'cancelled') throw new AppError('Use delete to cancel an invoice so the stock is returned', 400);
@@ -1393,6 +1477,10 @@ const deleteInvoice = async (req, res, next) => {
         if (invoice.status === 'cancelled') throw new AppError('This invoice is already cancelled', 400);
 
         await revertInvoiceStock(invoice);
+        // The cash came in against this invoice; cancelling it has to take the
+        // same money back out of the accounts it landed in — every receipt,
+        // however many there were.
+        await reverseAllReceiptsFor(invoice.invoiceNumber, req.user.id);
         invoice.stockApplied = false;
         invoice.status = 'cancelled';
         invoice.cancelledAt = new Date();
@@ -1433,16 +1521,37 @@ const recordPayment = async (req, res, next) => {
             throw new AppError(`Payment exceeds the outstanding balance of ${num(invoice.balanceAmount)}`, 400);
         }
 
+        const paymentMethod = req.body.paymentMethodId ? await resolvePaymentMethod(req.body.paymentMethodId) : null;
         invoice.paidAmount = round2(num(invoice.paidAmount) + amount);
         invoice.balanceAmount = round2(num(invoice.totalAmount) - invoice.paidAmount);
-        invoice.status = statusForPayment(num(invoice.totalAmount), invoice.paidAmount);
-        if (req.body.paymentMethodId) {
-            const paymentMethod = await resolvePaymentMethod(req.body.paymentMethodId);
+        invoice.status = statusForPayment(num(invoice.totalAmount), invoice.paidAmount, { credit: invoice.paymentTerm === 'credit' });
+        if (paymentMethod) {
             invoice.paymentMethod = paymentMethod.id;
             invoice.paymentMode = paymentMethod.name;
         }
         invoice.updatedBy = req.user.id;
         await invoice.save();
+
+        const payment = await Payment.create({
+            paymentNumber: await nextDocNumber(Payment, 'paymentNumber', 'PAY'),
+            invoice: invoice._id, customer: invoice.customer,
+            methodRef: paymentMethod?.id || null,
+            method: paymentMethod ? { name: paymentMethod.name, code: paymentMethod.code, type: paymentMethod.type } : {},
+            amount, paymentDate: new Date(), referenceNumber: req.body.referenceNumber || '',
+            notes: req.body.notes || '', status: 'completed', createdBy: req.user.id,
+        });
+        // The payment's own id is the ledger reference: unique for ever, so a
+        // second instalment can never land on the first one's reference and be
+        // skipped as "already posted" — which would have banked no money at all.
+        const receipt = await postCustomerReceipt({
+            amount,
+            accountId: req.body.accountId,
+            paymentMethod,
+            description: `Payment against parts invoice ${invoice.invoiceNumber}`,
+            referenceType: 'invoice_payment',
+            referenceId: `${invoice.invoiceNumber}#${payment._id}`,
+            userId: req.user.id,
+        });
 
         if (invoice.salesOrder) {
             await PartSalesOrder.updateOne(
@@ -1464,7 +1573,11 @@ const recordPayment = async (req, res, next) => {
             outstandingDelta: -amount,
         });
 
-        res.json({ success: true, message: 'Payment recorded', data: { balance: invoice.balanceAmount } });
+        res.json({
+            success: true,
+            message: receipt.account ? `Payment recorded into ${receipt.account.name}` : 'Payment recorded',
+            data: { balance: invoice.balanceAmount, account: receipt.account?.name || '' },
+        });
     } catch (error) { next(error); }
 };
 
@@ -1486,9 +1599,15 @@ const EMAIL_DOCUMENTS = {
         usageKey: 'quotation_customer',
         documentKey: 'quotation',
         number: 'quotationNumber',
+        pdfType: 'quotation',
         build: (d) => ({
             number: d.quotationNumber, date: d.createdAt, validUntil: d.validUntil,
             amount: d.totalAmount, status: d.status,
+            // Nothing has been paid on a quotation, so what would fall due is
+            // the whole amount. Templates that print a "balance due" were
+            // resolving it to nothing at all.
+            totalAmount: d.totalAmount, paidAmount: 0, balanceAmount: d.totalAmount, dueAmount: d.totalAmount,
+            serviceChargesTotal: d.serviceChargesTotal || 0, serviceTaxTotal: d.serviceTaxTotal || 0,
         }),
     },
     booking: {
@@ -1496,9 +1615,11 @@ const EMAIL_DOCUMENTS = {
         usageKey: 'booking_customer',
         documentKey: 'booking',
         number: 'bookingNumber',
+        pdfType: 'booking',
         build: (d) => ({
             number: d.bookingNumber, date: d.bookingDate || d.createdAt, deliveryDate: d.deliveryDate,
             amount: d.bookingAmount, totalAmount: d.totalAmount, status: d.status,
+            paidAmount: d.paidAmount || 0, balanceAmount: d.balanceAmount || 0, dueAmount: d.balanceAmount || 0,
         }),
     },
     order: {
@@ -1506,6 +1627,7 @@ const EMAIL_DOCUMENTS = {
         usageKey: 'sales_order_customer',
         documentKey: 'order',
         number: 'orderNumber',
+        pdfType: 'order',
         build: (d) => ({
             number: d.orderNumber, date: d.orderDate || d.createdAt, deliveryDate: d.deliveryDate,
             amount: d.totalAmount, status: d.status,
@@ -1516,9 +1638,11 @@ const EMAIL_DOCUMENTS = {
         usageKey: 'invoice_customer',
         documentKey: 'invoice',
         number: 'invoiceNumber',
+        pdfType: 'invoice',
         build: (d) => ({
             number: d.invoiceNumber, date: d.invoiceDate || d.createdAt, dueDate: d.dueDate,
-            amount: d.totalAmount, paidAmount: d.paidAmount, balanceAmount: d.balanceAmount, status: d.status,
+            amount: d.totalAmount, totalAmount: d.totalAmount,
+            paidAmount: d.paidAmount, balanceAmount: d.balanceAmount, dueAmount: d.balanceAmount, status: d.status,
         }),
     },
 };
@@ -1526,15 +1650,17 @@ const EMAIL_DOCUMENTS = {
 const sendDocumentEmail = (type) => async (req, res, next) => {
     try {
         const entry = EMAIL_DOCUMENTS[type];
-        const { recipient } = await sendCustomerDocumentEmail({
+        const { recipient, attached } = await sendCustomerDocumentEmail({
             Model: entry.Model,
             id: req.params.id,
             usageKey: entry.usageKey,
             documentKey: entry.documentKey,
             buildDocument: entry.build,
             userId: req.user.id,
+            to: req.body?.to,
+            pdfType: entry.pdfType,
         });
-        res.json({ success: true, message: `Email sent to ${recipient}` });
+        res.json({ success: true, message: `Email sent to ${recipient}${attached ? ' with the PDF attached' : ''}` });
     } catch (error) { next(error); }
 };
 

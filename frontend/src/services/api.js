@@ -313,7 +313,7 @@ export const partsSalesAPI = {
     approveQuotation: (id, decision = 'approved', notes = '') => api.post(`/parts-sales/quotations/${id}/approve`, { decision, notes }),
     convertQuotation: (id, data) => api.post(`/parts-sales/quotations/${id}/convert`, data),
     // Email and estimates run on the same templates as the vehicle documents.
-    sendQuotationEmail: (id) => api.post(`/parts-sales/quotations/${id}/send-email`),
+    sendQuotationEmail: (id, data) => api.post(`/parts-sales/quotations/${id}/send-email`, data),
     downloadEstimate: (id) => api.get(`/parts-sales/quotations/${id}/estimate/pdf`, { responseType: 'blob' }),
     emailEstimate: (id, to) => api.post(`/parts-sales/quotations/${id}/estimate/email`, to ? { to } : {}),
     bulkQuotations: (operation, ids) => api.post('/parts-sales/bulk/quotation', { operation, ids }),
@@ -356,7 +356,7 @@ export const partsInvoiceAPI = {
     // Cancelling is what returns the stock to the shelf.
     delete: (id, data) => api.delete(`/parts-sales/invoices/${id}`, { data }),
     recordPayment: (id, data) => api.post(`/parts-sales/invoices/${id}/payments`, data),
-    sendEmail: (id) => api.post(`/parts-sales/invoices/${id}/send-email`),
+    sendEmail: (id, data) => api.post(`/parts-sales/invoices/${id}/send-email`, data),
     bulk: (operation, ids) => api.post('/parts-sales/bulk/invoice', { operation, ids }),
     getStats: () => api.get('/parts-sales/stats'),
     // Payment methods are configured once for the whole ERP, not per document type.
@@ -401,7 +401,7 @@ export const salesAPI = {
     deleteQuotation: (id) => api.delete(`/quotations/${id}`),
     updateQuotationStatus: (id, status) => api.patch(`/quotations/${id}/status`, { status }),
     convertQuotation: (id, data) => api.post(`/quotations/${id}/convert`, data),
-    sendQuotationEmail: (id) => api.post(`/quotations/${id}/send-email`),
+    sendQuotationEmail: (id, data) => api.post(`/quotations/${id}/send-email`, data),
     approveQuotation: (id, decision = 'approved', notes = '') => api.post(`/quotations/${id}/approve`, { decision, notes }),
     // Estimate: a customer-facing PDF listing every product on the quotation.
     downloadEstimate: (id) => api.get(`/quotations/${id}/estimate/pdf`, { responseType: 'blob' }),
@@ -500,7 +500,7 @@ export const invoiceAPI = {
     updateStatus: (id, status) => api.put(`/invoices/${id}/status`, { status }),
     updatePaymentMethod: (id, paymentMethodId) => api.put(`/invoices/${id}/payment-method`, { paymentMethodId }),
     send: (id) => api.post(`/invoices/${id}/send`),
-    sendEmail: (id) => api.post(`/invoices/${id}/send-email`),
+    sendEmail: (id, data) => api.post(`/invoices/${id}/send-email`, data),
     bulk: (operation, ids) => api.post('/invoices/bulk', { operation, ids }),
     getHistory: (id) => api.get(`/invoices/${id}/history`),
     // Items
@@ -1033,6 +1033,11 @@ export default api;
 // transfers between them, payables and the balance sheet.
 export const accountsAPI = {
     getAll: (params) => api.get('/accounts', { params }),
+    // The money accounts a payment can be taken into, for the sales screens'
+    // "which account?" pickers. Never fatal: a role without the Accounts page
+    // simply gets nothing back and the server falls back to petty cash.
+    getForPayments: () => api.get('/accounts', { params: { status: 'active', is_active: true } })
+        .then((res) => res.data?.data || []).catch(() => []),
     getById: (id) => api.get(`/accounts/${id}`),
     create: (data) => api.post('/accounts', data),
     update: (id, data) => api.put(`/accounts/${id}`, data),

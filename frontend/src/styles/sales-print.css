@@ -22,6 +22,16 @@
     .sales-page .mobile-cards-view { display: none; }
 }
 
+/*
+ * Every screen using `.sales-page` must provide BOTH halves: a `.desktop-table`
+ * and a `.mobile-cards-view`. The rules above swap between them at 1025px, so a
+ * screen that supplies only the table shows a row count with no rows beneath it
+ * on any narrower window — which reads as the records having disappeared, not as
+ * a layout problem. Custom Documents, Accounts & Petty Cash and Gate Pass were
+ * all missing their card half until 2026-08-21.
+ */
+
+
 .sales-page .mobile-cards-container {
     display: flex;
     flex-direction: column;

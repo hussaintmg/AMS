@@ -1,4 +1,5 @@
 const Employee = require('../models/Employee.model');
+const { nextDocNumber } = require('../utils/docNumber');
 const Department = require('../models/Department.model');
 const SystemSetting = require('../models/SystemSetting.model');
 const AppError = require('../utils/AppError');
@@ -84,9 +85,9 @@ exports.createEmployee = async (req, res, next) => {
     const { firstName, lastName, email, phone, cnic, department, designation, joiningDate, salary, status } = req.body;
     if (!firstName || !lastName) throw new AppError('First name and last name are required', 400);
 
-    const year = new Date().getFullYear();
-    const count = await Employee.countDocuments({ employeeCode: { $regex: `EMP-${year}-` } });
-    const employeeCode = `EMP-${year}-${String(count + 1).padStart(5, '0')}`;
+    // From the highest code in use, not a count — counting hands a deleted
+    // employee's code to the next one hired.
+    const employeeCode = await nextDocNumber(Employee, 'employeeCode', 'EMP', 5);
 
     const sanitize = (v) => (v === '' || v === undefined ? undefined : v);
 
