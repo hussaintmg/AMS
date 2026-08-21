@@ -2,10 +2,10 @@
  * Payroll periods & posting
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
-import { payrollAPI, salaryAdvanceAPI, employeeAPI } from '../services/api';
+import { payrollAPI, salaryAdvanceAPI, employeeAPI, accountsAPI } from '../services/api';
 import SearchableSelect from '../components/SearchableSelect';
 import ConfirmModal from '../components/ConfirmModal';
 import { fieldAccessor, pageActions } from '../utils/roleJobs';
@@ -71,7 +71,17 @@ const Payroll = () => {
     const [employees, setEmployees] = useState([]);
     const [showAdvance, setShowAdvance] = useState(false);
     const [savingAdvance, setSavingAdvance] = useState(false);
-    const [advanceForm, setAdvanceForm] = useState({ employee_id: '', amount: '', issued_on: '', reason: '' });
+    // The money accounts an advance or a salary can be paid out of (Accounts &
+    // Petty Cash). Petty cash is the default: the client's rule is that
+    // advances and expenses come out of it.
+    const [accounts, setAccounts] = useState([]);
+    useEffect(() => { accountsAPI.getForPayments().then(setAccounts); }, []);
+    const defaultAccountId = useMemo(() => {
+        const petty = accounts.find((a) => a.type === 'petty_cash') || accounts[0];
+        return petty ? String(petty.id || petty._id) : '';
+    }, [accounts]);
+
+    const [advanceForm, setAdvanceForm] = useState({ employee_id: '', amount: '', issued_on: '', reason: '', accountId: '' });
 
     /**
      * Editing one line of a draft period.
@@ -88,7 +98,7 @@ const Payroll = () => {
     // ── paying salaries out ──
     const [payLine, setPayLine] = useState(null);
     const [paying, setPaying] = useState(false);
-    const [payForm, setPayForm] = useState({ amount: '', paid_on: '', method: 'cash', reference: '', notes: '' });
+    const [payForm, setPayForm] = useState({ amount: '', paid_on: '', method: 'cash', reference: '', notes: '', accountId: '' });
 
     // ── one employee's month-by-month record ──
     const [historyId, setHistoryId] = useState('');
@@ -286,6 +296,7 @@ const Payroll = () => {
             const res = await payrollAPI.payLine(payLine.id, {
                 ...payForm,
                 amount: Number(payForm.amount),
+                accountId: payForm.accountId || defaultAccountId || undefined,
                 paid_on: payForm.paid_on || undefined,
             });
             toast.success(res?.data?.message || 'Payment recorded');
@@ -339,6 +350,7 @@ const Payroll = () => {
             await salaryAdvanceAPI.create({
                 ...advanceForm,
                 amount: Number(advanceForm.amount),
+                accountId: advanceForm.accountId || defaultAccountId || undefined,
                 issued_on: advanceForm.issued_on || undefined,
             });
             toast.success('Advance issued');
@@ -1055,6 +1067,19 @@ const Payroll = () => {
                                             <option value="cheque">Cheque</option>
                                         </select>
                                     </div>
+                                    {accounts.length > 0 && (
+                                        <div className="form-group">
+                                            <label htmlFor="pay-account">Paid from</label>
+                                            <select
+                                                id="pay-account"
+                                                className="form-control"
+                                                value={payForm.accountId || defaultAccountId}
+                                                onChange={(ev) => setPayForm({ ...payForm, accountId: ev.target.value })}
+                                            >
+                                                {accounts.map((a) => <option key={a.id || a._id} value={String(a.id || a._id)}>{a.name}</option>)}
+                                            </select>
+                                        </div>
+                                    )}
                                     <div className="form-group">
                                         <label htmlFor="pay-ref">Reference</label>
                                         <input
@@ -1151,6 +1176,19 @@ const Payroll = () => {
                                         placeholder="Medical, festival, emergency…"
                                     />
                                 </div>
+                                {accounts.length > 0 && (
+                                    <div className="form-group">
+                                        <label htmlFor="adv-account">Paid from</label>
+                                        <select
+                                            id="adv-account"
+                                            className="form-control"
+                                            value={advanceForm.accountId || defaultAccountId}
+                                            onChange={(ev) => setAdvanceForm({ ...advanceForm, accountId: ev.target.value })}
+                                        >
+                                            {accounts.map((a) => <option key={a.id || a._id} value={String(a.id || a._id)}>{a.name}</option>)}
+                                        </select>
+                                    </div>
+                                )}
                                 <p className="adv-note">
                                     The next payroll run holds this back from the employee&apos;s salary. Anything it
                                     cannot cover stays on their balance for the run after.

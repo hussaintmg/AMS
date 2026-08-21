@@ -3,7 +3,10 @@ const searchPlugin = require('../plugins/searchPlugin');
 
 const ledgerEntrySchema = new mongoose.Schema({
   transactionDate: { type: Date },
-  referenceType: { type: String, enum: ['expense', 'leave', 'salary', 'manual', 'advance', 'transfer', 'payable', 'invoice_payment', 'account_adjust'], trim: true },
+  // 'booking_deposit' is the money taken when a booking is raised, kept apart
+  // from 'invoice_payment' so converting the booking can carry it across
+  // without banking it twice.
+  referenceType: { type: String, enum: ['expense', 'leave', 'salary', 'manual', 'advance', 'transfer', 'payable', 'invoice_payment', 'booking_deposit', 'account_adjust'], trim: true },
   referenceId: { type: String, trim: true },
   // The account name as posted (kept: reports and the journal screen read it),
   // and, since 2026-08-18, the money account it belongs to. Rows written

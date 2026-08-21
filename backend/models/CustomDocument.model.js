@@ -76,6 +76,8 @@ const customBookingSchema = new mongoose.Schema({
   bookingAmount: { type: Number, default: 0 },
   paidAmount: { type: Number, default: 0 },
   balanceAmount: { type: Number, default: 0 },
+  // Which money account the deposit was taken into.
+  paymentAccount: { type: mongoose.Schema.Types.ObjectId, ref: 'Account', default: null },
   bookingDate: { type: Date, default: Date.now },
   expectedDeliveryDate: { type: Date, default: null },
   // A custom booking converts into a custom invoice (client decision).

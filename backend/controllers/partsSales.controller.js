@@ -41,7 +41,7 @@ const { sendCustomerDocumentEmail } = require('../services/documentEmail.service
 const { buildEstimatePdf, buildEstimateEmailContext, defaultEstimateEmailHtml } = require('../services/estimate.service');
 const { sendTemplateEmail, sendRawEmail } = require('../services/emailSender.service');
 const { companyName } = require('../services/pdfData.service');
-const { postCustomerReceipt, reverseAllReceiptsFor } = require('../services/receipts.service');
+const { postCustomerReceipt, postBookingDeposit, reverseAllReceiptsFor } = require('../services/receipts.service');
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SHARED HELPERS
@@ -789,6 +789,19 @@ const createBooking = async (req, res, next) => {
             createdBy: req.user.id,
         });
 
+        // The deposit is money over the counter; it lands in an account now.
+        const depositReceipt = await postBookingDeposit({
+            bookingNumber,
+            amount: num(booking.bookingAmount),
+            accountId: req.body.accountId,
+            paymentMethod: await resolvePaymentMethod(req.body.paymentMethodId),
+            userId: req.user.id,
+        });
+        if (depositReceipt.account) {
+            booking.paymentAccount = depositReceipt.account._id;
+            await booking.save();
+        }
+
         await recordCustomerActivity({
             customerId: customer._id,
             docType: 'booking',
@@ -942,7 +955,7 @@ async function bankReceipt(invoice, amount, { accountId = null, paymentMethod = 
  * the stock move fails the invoice is removed again, so an order can never end
  * up with an invoice that was never paid for in stock.
  */
-async function createInvoiceForOrder(order, { userId = null, dueDays = 30, accountId = null } = {}) {
+async function createInvoiceForOrder(order, { userId = null, dueDays = 30, accountId = null, alreadyBanked = 0 } = {}) {
     const existing = await PartInvoice.findOne({ salesOrder: order._id, status: { $ne: 'cancelled' } });
     if (existing) {
         if (!order.invoice || String(order.invoice) !== String(existing._id)) {
@@ -997,8 +1010,9 @@ async function createInvoiceForOrder(order, { userId = null, dueDays = 30, accou
     await PartSalesOrder.updateOne({ _id: order._id }, { $set: { invoice: invoice._id } });
 
     // A counter sale takes money at the till, so it lands in an account like
-    // every other receipt does.
-    await bankReceipt(invoice, paidAmount, {
+    // every other receipt does — minus anything a booking deposit already put
+    // there, which would otherwise show the same money twice.
+    await bankReceipt(invoice, round2(paidAmount - round2(alreadyBanked)), {
         accountId,
         paymentMethod: order.paymentMethod ? await resolvePaymentMethod(order.paymentMethod) : null,
         userId,
@@ -1024,7 +1038,11 @@ async function createInvoiceForOrder(order, { userId = null, dueDays = 30, accou
  * Availability is re-checked here so an order cannot promise stock that has
  * gone since the booking; the invoice below is what consumes it.
  */
-async function createOrderInternal({ body, userId, user, bookingId = null, quotationId = null }) {
+/**
+ * @param {number} [alreadyBanked] part of `body.paidAmount` that has already
+ *   reached an account — a booking's deposit, banked when it was taken.
+ */
+async function createOrderInternal({ body, userId, user, bookingId = null, quotationId = null, alreadyBanked = 0 }) {
     const lines = await resolvePartLines(body, { checkStock: true });
     const { customer, walkIn, walkInName, walkInPhone } = await resolveDocumentCustomer(body, requireCustomer);
     const paymentMethod = await resolvePaymentMethod(body.paymentMethodId);
@@ -1088,7 +1106,7 @@ async function createOrderInternal({ body, userId, user, bookingId = null, quota
     // the shelf changed underneath us — the order must not stand either.
     let invoice = null;
     try {
-        const result = await createInvoiceForOrder(order, { userId, accountId: body.accountId });
+        const result = await createInvoiceForOrder(order, { userId, accountId: body.accountId, alreadyBanked });
         invoice = result.invoice;
         order.status = 'invoiced';
         order.invoice = invoice._id;
@@ -1188,11 +1206,14 @@ const convertBookingToOrder = async (req, res, next) => {
                 serviceCharges: (booking.serviceCharges || []).map((row) => ({ serviceTypeId: row.serviceType ? String(row.serviceType._id || row.serviceType) : null, name: row.name, description: row.description, quantity: row.quantity, amount: row.amount, taxPercent: row.taxPercent })),
                 // Whatever was taken at booking counts as already paid.
                 paidAmount: num(req.body.paidAmount) + num(booking.paidAmount),
+
             },
             userId: req.user.id,
             user: req.user,
             bookingId: booking._id,
             quotationId: booking.quotation,
+            // The booking's deposit already reached an account when it was taken.
+            alreadyBanked: num(booking.paidAmount),
         });
 
         booking.status = 'completed';

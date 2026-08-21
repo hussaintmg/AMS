@@ -29,6 +29,8 @@ const partBookingSchema = new mongoose.Schema({
   bookingAmount: { type: Number, default: 0 },
   subsequentPayments: { type: Number, default: 0 },
   paidAmount: { type: Number, default: 0 },
+  // Which money account the deposit was taken into (Accounts & Petty Cash).
+  paymentAccount: { type: mongoose.Schema.Types.ObjectId, ref: 'Account', default: null },
   balanceAmount: { type: Number, default: 0 },
   subtotal: { type: Number, default: 0 },
   discountAmount: { type: Number, default: 0 },

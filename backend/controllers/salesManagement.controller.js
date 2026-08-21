@@ -861,6 +861,21 @@ const createBooking = async (req, res, next) => {
             throw error;
         }
 
+        // The deposit is money over the counter, so it lands in an account now
+        // — not only if and when the booking becomes an invoice.
+        const { postBookingDeposit } = require('../services/receipts.service');
+        const depositReceipt = await postBookingDeposit({
+            bookingNumber,
+            amount: num(bookingAmount),
+            accountId: req.body.accountId,
+            paymentMethod: await resolvePaymentMethod(req.body.paymentMethodId),
+            userId: req.user.id,
+        });
+        if (depositReceipt.account) {
+            booking.paymentAccount = depositReceipt.account._id;
+            await booking.save();
+        }
+
         await recordCustomerActivity({
             customerId: customer._id,
             docType: 'booking',
@@ -1283,6 +1298,10 @@ async function createOrderInternal({
     sellerId = userId,
     sellerEmployeeId = null,
     salePerson = '',
+    // Part of `body.paidAmount` that already reached an account — a booking's
+    // deposit, banked when the booking was raised. Banking it again here would
+    // show the same money twice.
+    alreadyBanked = 0,
 }) {
     const {
         financeCompany, financeAmount, exchangeVehicleDetails,
@@ -1405,7 +1424,7 @@ async function createOrderInternal({
             // Accounts screen agrees with the counter.
             const { postCustomerReceipt } = require('../services/receipts.service');
             const receipt = await postCustomerReceipt({
-                amount: totals.paidAmount,
+                amount: round2(totals.paidAmount - num(alreadyBanked)),
                 accountId: body.accountId,
                 paymentMethod: method,
                 date: now,
@@ -1541,6 +1560,8 @@ const convertBookingToOrder = async (req, res, next) => {
             sellerId: booking.seller || req.user.id,
             sellerEmployeeId: booking.sellerEmployee || null,
             salePerson: booking.salePerson || [req.user.firstName, req.user.lastName].filter(Boolean).join(' '),
+            // The booking's deposit already reached an account when it was taken.
+            alreadyBanked: num(booking.bookingAmount),
         });
 
         if (fallbackVehicleId && !booking.vehicle) booking.vehicle = fallbackVehicleId;

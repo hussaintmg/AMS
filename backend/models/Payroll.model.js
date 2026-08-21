@@ -9,6 +9,8 @@ const salaryPaymentSchema = new mongoose.Schema({
   amount: { type: Number, required: true, min: [0.01, 'Payment must be greater than zero'] },
   paidOn: { type: Date, default: Date.now },
   method: { type: String, trim: true, default: 'cash' },
+  // Which money account the salary left (Accounts & Petty Cash).
+  account: { type: mongoose.Schema.Types.ObjectId, ref: 'Account', default: null },
   reference: { type: String, trim: true, default: '' },
   notes: { type: String, trim: true, default: '' },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },

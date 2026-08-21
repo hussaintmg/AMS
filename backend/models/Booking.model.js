@@ -34,6 +34,8 @@ const bookingSchema = new mongoose.Schema({
   bookingAmount: { type: Number, default: 0 },
   subsequentPayments: { type: Number, default: 0 },
   paidAmount: { type: Number, default: 0 },
+  // Which money account the deposit was taken into (Accounts & Petty Cash).
+  paymentAccount: { type: mongoose.Schema.Types.ObjectId, ref: 'Account', default: null },
   balanceAmount: { type: Number, default: 0 },
   totalAmount: { type: Number, default: 0 },
   // Optional service charges block (models/serviceCharges.fields.js).

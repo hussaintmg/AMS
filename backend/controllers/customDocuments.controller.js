@@ -21,7 +21,7 @@ const { invoiceSummary } = require('../models/paymentTerm.fields');
 const { resolveDocumentCustomer } = require('../utils/walkInCustomer');
 const { resolvePaymentMethod } = require('../utils/paymentMethod.util');
 const { sendCustomerDocumentEmail } = require('../services/documentEmail.service');
-const { postCustomerReceipt, reverseAllReceiptsFor } = require('../services/receipts.service');
+const { postCustomerReceipt, postBookingDeposit, reverseAllReceiptsFor } = require('../services/receipts.service');
 const logger = require('../utils/logger');
 
 const num = (value, fallback = 0) => (Number.isFinite(Number(value)) ? Number(value) : fallback);
@@ -286,6 +286,15 @@ const create = async (req, res, next) => {
         bookingAmount, paidAmount: bookingAmount, balanceAmount: round2(totals.totalAmount - bookingAmount),
         expectedDeliveryDate: req.body.expectedDeliveryDate ? new Date(req.body.expectedDeliveryDate) : null,
       });
+      // The deposit is money over the counter; it lands in an account now.
+      const deposit = await postBookingDeposit({
+        bookingNumber: number,
+        amount: bookingAmount,
+        accountId: req.body.accountId,
+        paymentMethod: await resolvePaymentMethod(req.body.paymentMethodId),
+        userId: req.user.id,
+      });
+      if (deposit.account) { doc.paymentAccount = deposit.account._id; await doc.save(); }
     } else {
       doc = await createInvoiceRecord({ base, totals, body: req.body, user: req.user });
     }
@@ -295,7 +304,13 @@ const create = async (req, res, next) => {
 };
 
 /** Paid at the counter or issued on credit — the same rule as every invoice. */
-async function createInvoiceRecord({ base, totals, body, user }) {
+/**
+ * @param {number} [alreadyBanked] money counted in `paidAmount` that has already
+ *   reached an account — a booking's deposit, banked when the booking was
+ *   raised. Carrying it into the invoice keeps the customer's paid total right;
+ *   banking it again would show the money twice.
+ */
+async function createInvoiceRecord({ base, totals, body, user, alreadyBanked = 0 }) {
   // A credit invoice may still take money at the counter: 7,000 invoiced,
   // 3,000 received, 4,000 left outstanding. Only a "paid" invoice must be
   // covered in full — anything less is credit, by definition.
@@ -332,12 +347,15 @@ async function createInvoiceRecord({ base, totals, body, user }) {
       status: 'completed', createdBy: user.id,
     });
     // The money has to land somewhere real — the account the operator chose,
-    // else whatever the payment method settles into, else petty cash.
-    const receipt = await postCustomerReceipt({
-      amount: paidAmount, accountId: body.accountId, paymentMethod, date: now,
+    // else whatever the payment method settles into, else petty cash. Only what
+    // has not already been banked: a booking's deposit reached its account when
+    // the booking was raised.
+    const toBank = round2(paidAmount - round2(alreadyBanked));
+    const receipt = toBank > 0 ? await postCustomerReceipt({
+      amount: toBank, accountId: body.accountId, paymentMethod, date: now,
       description: `Receipt against custom invoice ${base.invoiceNumber}`,
       referenceType: 'invoice_payment', referenceId: `${base.invoiceNumber}#${deposit._id}`, userId: user.id,
-    });
+    }) : { account: null };
     if (receipt.account) { invoice.paymentAccount = receipt.account._id; await invoice.save(); }
   }
   return invoice;
@@ -455,9 +473,16 @@ const convert = async (req, res, next) => {
     // behind it is closed, so a quotation converts straight into an invoice
     // rather than into a document nobody can open.
     const { moduleFlags } = require('../utils/moduleFlags');
-    const bookingsOn = (await moduleFlags()).custom_bookings === true;
+    const flags = await moduleFlags();
+    const bookingsOn = flags.custom_bookings === true;
     const asked = req.body.to === 'invoice' || req.query.to === 'invoice' ? 'invoice' : 'booking';
     const target = req.params.kind === 'bookings' || !bookingsOn ? 'invoice' : asked;
+    // The document has to land somewhere the operator can actually open. With
+    // invoices switched off there is nowhere for this to go at all — say so
+    // rather than filing it on a screen nobody can reach.
+    if (target === 'invoice' && flags.custom_invoices !== true) {
+      throw new AppError('Custom invoices are switched off, so there is nothing to convert this into. Turn them on in Server Management → Custom.', 400);
+    }
 
     const body = {
       ...req.body,
@@ -485,8 +510,14 @@ const convert = async (req, res, next) => {
     if (target === 'invoice') {
       const paidBefore = req.params.kind === 'bookings' ? num(source.paidAmount) : 0;
       // What was taken at booking counts as already paid.
-      created = await createInvoiceRecord({ base: { ...base, quotation: source.quotation || (req.params.kind === 'quotations' ? source._id : null), booking: req.params.kind === 'bookings' ? source._id : null }, totals, body: { ...body, paidAmount: num(body.paidAmount) + paidBefore }, user: req.user });
-      if (paidBefore > 0 && created.paymentTerm !== 'credit') { /* already recorded on the booking */ }
+      created = await createInvoiceRecord({
+        base: { ...base, quotation: source.quotation || (req.params.kind === 'quotations' ? source._id : null), booking: req.params.kind === 'bookings' ? source._id : null },
+        totals,
+        body: { ...body, paidAmount: num(body.paidAmount) + paidBefore },
+        user: req.user,
+        // What the booking already took is already in an account.
+        alreadyBanked: paidBefore,
+      });
     } else {
       const bookingAmount = round2(num(body.bookingAmount));
       created = await CustomBooking.create({ ...base, quotation: source._id, status: 'pending', priority: body.priority || 'normal', bookingAmount, paidAmount: bookingAmount, balanceAmount: round2(totals.totalAmount - bookingAmount), expectedDeliveryDate: body.expectedDeliveryDate ? new Date(body.expectedDeliveryDate) : null });

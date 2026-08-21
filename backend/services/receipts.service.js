@@ -122,6 +122,28 @@ async function postCustomerReceipt({
   }
 }
 
+/**
+ * The deposit taken when a booking is raised.
+ *
+ * A booking deposit is money over the counter like any other, so it belongs in
+ * an account the moment it is taken — not only later, if and when the booking
+ * becomes an invoice. It gets its own reference type so it can be told apart
+ * from the invoice receipts, and so converting the booking can carry it across
+ * without banking it a second time (see `alreadyBanked` at the invoice end).
+ */
+async function postBookingDeposit({ bookingNumber, amount, accountId = null, paymentMethod = null, date = null, userId = null }) {
+  return postCustomerReceipt({
+    amount,
+    accountId,
+    paymentMethod,
+    date,
+    description: `Deposit taken with booking ${bookingNumber}`,
+    referenceType: 'booking_deposit',
+    referenceId: bookingNumber,
+    userId,
+  });
+}
+
 /** Undo the ledger rows for one receipt — used when an invoice is cancelled. */
 async function reverseCustomerReceipt(referenceType, referenceId, userId = null) {
   try {
@@ -163,6 +185,7 @@ module.exports = {
   TYPE_TO_ACCOUNT,
   accountForPayment,
   postCustomerReceipt,
+  postBookingDeposit,
   reverseCustomerReceipt,
   reverseAllReceiptsFor,
 };

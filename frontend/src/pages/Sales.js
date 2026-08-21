@@ -630,6 +630,8 @@ function Quotations({ category = 'vehicle' }) {
                 taxAmount: Number(formData.taxAmount) > 0 || !salesTax
                     ? Number(formData.taxAmount || 0)
                     : calculateConfiguredTax(baseAmount, salesTax),
+                // Which money account the deposit is taken into.
+                accountId: Number(formData.bookingAmount) > 0 ? (formData.accountId || defaultAccountId || undefined) : undefined,
                 ...svc.payload(),
             };
             if (modalMode === 'create') {
@@ -1233,6 +1235,7 @@ function Quotations({ category = 'vehicle' }) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 function Bookings({ category = 'vehicle' }) {
+    const { accounts, defaultAccountId } = usePaymentAccounts();
     const config = categoryConfig(category);
     const docApi = config.sales;
     const isParts = config.key === 'parts';
@@ -1258,7 +1261,7 @@ function Bookings({ category = 'vehicle' }) {
     // Optional service charges block (tick box on the form).
     const svc = useServiceCharges();
     const [formData, setFormData] = useState({
-        customerId: '', walkIn: false, walkInName: '', walkInPhone: '', bookingAmount: '',
+        customerId: '', walkIn: false, walkInName: '', walkInPhone: '', bookingAmount: '', accountId: '',
         totalAmount: '', taxAmount: '0', expectedDeliveryDate: '', priority: 'normal', notes: ''
     });
 
@@ -1420,7 +1423,7 @@ function Bookings({ category = 'vehicle' }) {
         } else {
             setBookingLines([]);
             setFormData({
-                customerId: '', walkIn: false, walkInName: '', walkInPhone: '', bookingAmount: '',
+                customerId: '', walkIn: false, walkInName: '', walkInPhone: '', bookingAmount: '', accountId: '',
                 totalAmount: '', taxAmount: '0', expectedDeliveryDate: '', priority: 'normal', notes: ''
             });
         }
@@ -1767,6 +1770,21 @@ function Bookings({ category = 'vehicle' }) {
                                         <label>Booking Amount ({currency.code}) *</label>
                                         <input type="number" name="bookingAmount" value={formData.bookingAmount} onChange={handleChange} required />
                                     </div>
+                                    {/* Where the deposit lands. Petty cash unless the
+                                        operator says otherwise. */}
+                                    {accounts.length > 0 && Number(formData.bookingAmount) > 0 && (
+                                        <div className="form-group">
+                                            <label>Into Account *</label>
+                                            <SearchableSelect
+                                                name="accountId"
+                                                value={formData.accountId || defaultAccountId}
+                                                onChange={handleChange}
+                                                options={accounts.map((a) => ({ label: a.name, value: String(a.id || a._id) }))}
+                                                labelField="label"
+                                                valueField="value"
+                                            />
+                                        </div>
+                                    )}
                                     <div className="form-group">
                                         <label>Total Amount ({currency.code})</label>
                                         {/* Follows the products above once there are any; only a
@@ -1845,6 +1863,7 @@ function Bookings({ category = 'vehicle' }) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 function SalesOrders({ category = 'vehicle' }) {
+    const { accounts, defaultAccountId } = usePaymentAccounts();
     const config = categoryConfig(category);
     const docApi = config.sales;
     const invApi = config.invoices;
@@ -2068,7 +2087,7 @@ function SalesOrders({ category = 'vehicle' }) {
                 customerId: '', walkIn: false, walkInName: '', walkInPhone: '',
                 vehiclePrice: '', accessoriesTotal: '0',
                 discountAmount: '0', taxAmount: '0', registrationCharges: '0', insuranceCharges: '0',
-                otherCharges: '0', paidAmount: '0', paymentMode: '', financeCompany: '',
+                otherCharges: '0', paidAmount: '0', accountId: '', paymentMode: '', financeCompany: '',
                 financeAmount: '', exchangeVehicleDetails: '', exchangeValue: '0',
                 expectedDeliveryDate: '', notes: ''
             });
@@ -2144,6 +2163,8 @@ function SalesOrders({ category = 'vehicle' }) {
                 taxAmount: Number(formData.taxAmount) > 0 || !salesTax
                     ? Number(formData.taxAmount || 0)
                     : calculateConfiguredTax(orderSubtotal || Number(formData.vehiclePrice || 0), salesTax),
+                // Which money account the counter took it into.
+                accountId: Number(formData.paidAmount) > 0 ? (formData.accountId || defaultAccountId || undefined) : undefined,
                 ...svc.payload(),
             };
             if (modalMode === 'create') {
@@ -2608,6 +2629,20 @@ function SalesOrders({ category = 'vehicle' }) {
                                 <div className="form-group">
                                     <label>Amount Received *</label>
                                     <input type="number" name="paidAmount" value={formData.paidAmount} onChange={handleChange} min="0" placeholder="What the customer handed over" />
+                                    {/* Where the money lands. */}
+                                    {accounts.length > 0 && Number(formData.paidAmount) > 0 && (
+                                        <div style={{ marginTop: '0.5rem' }}>
+                                            <label style={{ display: 'block', marginBottom: 4 }}>Into Account *</label>
+                                            <SearchableSelect
+                                                name="accountId"
+                                                value={formData.accountId || defaultAccountId}
+                                                onChange={handleChange}
+                                                options={accounts.map((a) => ({ label: a.name, value: String(a.id || a._id) }))}
+                                                labelField="label"
+                                                valueField="value"
+                                            />
+                                        </div>
+                                    )}
                                     <button
                                         type="button"
                                         className="btn btn-secondary btn-sm"
@@ -2764,7 +2799,7 @@ function Invoices({ category = 'vehicle' }) {
     const [showPaymentModal, setShowPaymentModal] = useState(false);
     const [showPaymentMethodModal, setShowPaymentMethodModal] = useState(false);
     const [updatingPaymentMethod, setUpdatingPaymentMethod] = useState(false);
-    const [paymentData, setPaymentData] = useState({ amount: '', paymentMethodId: '', referenceNumber: '', notes: '' });
+    const [paymentData, setPaymentData] = useState({ amount: '', paymentMethodId: '', accountId: '', referenceNumber: '', notes: '' });
     const [paymentMethods, setPaymentMethods] = useState([]);
     const [serviceTypes, setServiceTypes] = useState([]);
 
@@ -3237,7 +3272,7 @@ function Invoices({ category = 'vehicle' }) {
         setRecordingPayment(true);
         try {
             const invoiceId = selectedItem.id;
-            await docApi.recordPayment(invoiceId, paymentData);
+            await docApi.recordPayment(invoiceId, { ...paymentData, accountId: paymentData.accountId || defaultAccountId || undefined });
             toast.success('Payment recorded successfully');
             setShowPaymentModal(false);
             setPaymentData({ amount: '', paymentMethodId: '', referenceNumber: '', notes: '' });
@@ -3830,6 +3865,22 @@ function Invoices({ category = 'vehicle' }) {
                                 ))}
                             </SearchableSelect>
                         </div>
+
+                        {/* Where the money actually lands. Petty cash unless the
+                            operator says otherwise — the client's stated default. */}
+                        {accounts.length > 0 && (
+                            <div className="form-group">
+                                <label>Into Account *</label>
+                                <SearchableSelect
+                                    name="accountId"
+                                    value={paymentData.accountId || defaultAccountId}
+                                    onChange={handlePaymentChange}
+                                    options={accounts.map((a) => ({ label: a.name, value: String(a.id || a._id) }))}
+                                    labelField="label"
+                                    valueField="value"
+                                />
+                            </div>
+                        )}
 
                         <div className="form-group">
                             <label>Reference Number</label>

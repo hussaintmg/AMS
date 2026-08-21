@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import BalanceSheet from '../components/reports/BalanceSheet';
 import { reportAPI, partsSalesAPI, partsInvoiceAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
@@ -103,13 +104,9 @@ const TAB_CARDS = {
     { key: 'count', label: 'Payables', default: '—' },
     { key: 'vendors', label: 'Vendors', default: '—' },
   ],
-  accounts: [
-    { key: 'opening', label: 'Opening', default: '—', prefix: 'PKR ' },
-    { key: 'totalIn', label: 'Money In', default: '—', prefix: 'PKR ' },
-    { key: 'totalOut', label: 'Money Out', default: '—', prefix: 'PKR ' },
-    { key: 'closing', label: 'Closing', default: '—', prefix: 'PKR ' },
-    { key: 'overLimit', label: 'Accounts Over Limit', default: '—' },
-  ],
+  // The balance sheet states these four itself, with the reconciliation check
+  // beside them, so the generic card strip would only repeat it.
+  accounts: [],
   gatepass: [
     { key: 'inToday', label: 'In Today', default: '—' },
     { key: 'outToday', label: 'Out Today', default: '—' },
@@ -379,7 +376,11 @@ const TAB_FETCHERS = {
     const { summary = {}, rows = [] } = res.data?.data || {};
     return {
       cards: { opening: summary.opening, totalIn: summary.total_in, totalOut: summary.total_out, closing: summary.closing, overLimit: summary.over_limit },
-      sections: [{ key: 'accounts', title: 'Balance sheet by account', rows }],
+      // Drawn by components/reports/BalanceSheet.js rather than the generic
+      // table: five rows of figures gave no sense of where the money sits or
+      // what moved. `summary` rides along so the sheet can state whether
+      // opening + in − out actually equals closing.
+      sections: [{ key: 'accounts', title: 'Balance sheet by account', rows, render: 'balance-sheet', summary }],
       errors: [],
     };
   },
@@ -683,8 +684,14 @@ function Reports() {
             </div>
             {populatedSections.length > 0 ? (
               <div className="report-sections">
-                {sections.map((section) => (
-                  <ReportSection key={section.key} title={section.title} rows={section.rows} />
+                {sections.map((section) => (section.render === 'balance-sheet'
+                  ? <BalanceSheet
+                      key={section.key}
+                      rows={section.rows}
+                      summary={section.summary}
+                      period={dateFrom || dateTo ? `${dateFrom || 'the beginning'} → ${dateTo || 'today'}` : 'All time'}
+                    />
+                  : <ReportSection key={section.key} title={section.title} rows={section.rows} />
                 ))}
               </div>
             ) : (

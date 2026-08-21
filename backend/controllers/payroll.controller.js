@@ -602,18 +602,30 @@ async function findPostedLineOr404(lineId) {
 /**
  * Write the cash movement for one salary payment: the debt raised at posting is
  * cleared and the money leaves.
+ *
+ * It leaves a named money account. Until 2026-08-22 this credited the bare
+ * string "Cash" with no `accountRef`, so a salary payment touched no account at
+ * all — the Accounts screen and the balance sheet never saw the money go out,
+ * even though every other payment path had been wired to them. The account is
+ * whatever the operator chose, else petty cash, and it cannot be overdrawn.
  */
-async function postPaymentToLedger({ period, line, payment, employeeLabel, userId }) {
+async function postPaymentToLedger({ period, line, payment, employeeLabel, userId, accountId = null }) {
+    const accountsService = require('../services/accounts.service');
+    const paidFrom = (await accountsService.resolveAccount(accountId)) || (await accountsService.pettyCashAccount());
+    await accountsService.assertSufficientFunds(paidFrom, payment.amount, { action: 'be paid out as salary' });
     await postDoubleEntry({
         transactionDate: payment.paidOn,
         debitAccount: SALARY_PAYABLE_ACCOUNT,
-        creditAccount: DEFAULT_CREDIT_ACCOUNT,
+        creditAccount: paidFrom ? paidFrom.name : DEFAULT_CREDIT_ACCOUNT,
+        creditAccountRef: paidFrom ? paidFrom._id : null,
         amount: payment.amount,
         description: `Salary paid to ${employeeLabel} — ${period.label}`,
         referenceType: 'salary',
         referenceId: `PRPAY-${line._id}-${payment._id}`,
         userId,
     });
+    if (paidFrom) await accountsService.syncBalance(paidFrom._id);
+    return paidFrom;
 }
 
 /**
@@ -639,12 +651,21 @@ const payLine = async (req, res, next) => {
             throw new AppError(`Payment cannot exceed the remaining ${remaining}`, 400);
         }
 
+        // Asked before the payment is written, so a drawer that cannot cover it
+        // leaves no half-recorded salary behind.
+        const accountsService = require('../services/accounts.service');
+        const payFrom = (await accountsService.resolveAccount(req.body?.accountId)) || (await accountsService.pettyCashAccount());
+        await accountsService.assertSufficientFunds(payFrom, amount, {
+            allowNegative: req.body?.allowNegative === true, action: 'be paid out as salary',
+        });
+
         line.payments.push({
             amount,
             paidOn: req.body?.paid_on ? new Date(req.body.paid_on) : new Date(),
             method: String(req.body?.method || 'cash').trim(),
             reference: String(req.body?.reference || '').trim(),
             notes: String(req.body?.notes || '').trim(),
+            account: payFrom ? payFrom._id : null,
             createdBy: getUserId(req),
         });
         line.paidAmount = round2(line.paidAmount + amount);
@@ -658,6 +679,7 @@ const payLine = async (req, res, next) => {
             payment: line.payments[line.payments.length - 1],
             employeeLabel: [employee?.firstName, employee?.lastName].filter(Boolean).join(' ') || 'employee',
             userId: getUserId(req),
+            accountId: payFrom ? payFrom._id : null,
         });
 
         const populated = await findPeriodOr404(period._id, true);

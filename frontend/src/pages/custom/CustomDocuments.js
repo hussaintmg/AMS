@@ -63,10 +63,13 @@ export default function CustomDocuments({ kind = 'quotations' }) {
   const showField = fieldAccessor(user, config.page);
   const { currency, salesTax } = useErpDocumentSettings();
   const currencyCode = currency?.code || 'PKR';
-  // With bookings switched off there is no booking screen to convert into, so
-  // an approved quotation goes straight to an invoice. The server applies the
-  // same rule, so this only decides which button is worth drawing.
+  // A convert button must never point at a module that is switched off: that
+  // screen is not in the menu and its API answers 404, so the document it made
+  // could not be opened. With bookings off an approved quotation goes straight
+  // to an invoice; with invoices off nothing offers to raise one. The server
+  // applies the same rules, so these only decide which button is worth drawing.
   const bookingsOn = moduleOn(user, 'custom_bookings');
+  const invoicesOn = moduleOn(user, 'custom_invoices');
 
   // ── list state ──
   const [rows, setRows] = useState([]);
@@ -402,9 +405,9 @@ export default function CustomDocuments({ kind = 'quotations' }) {
         ...(isQuotation && can('approve') && row.approval_status !== 'approved' && row.status !== 'converted' ? [{ icon: <CheckCircle size={16} />, title: 'Approve quotation', className: 'btn-success', onClick: () => doApprove(row) }] : []),
         ...(isQuotation && can('convert') && row.approval_status === 'approved' && row.status !== 'converted' ? [
           ...(bookingsOn ? [{ icon: <ArrowRightLeft size={16} />, title: 'Convert to booking', className: 'btn-info', onClick: () => doConvert(row, 'booking') }] : []),
-          { icon: <DollarSign size={16} />, title: bookingsOn ? 'Convert to invoice' : 'Convert to invoice (bookings are switched off)', className: 'btn-info', onClick: () => doConvert(row, 'invoice') },
+          ...(invoicesOn ? [{ icon: <DollarSign size={16} />, title: bookingsOn ? 'Convert to invoice' : 'Convert to invoice (bookings are switched off)', className: 'btn-info', onClick: () => doConvert(row, 'invoice') }] : []),
         ] : []),
-        ...(isBooking && can('convert') && !row.invoice_id && row.status !== 'cancelled' ? [{ icon: <DollarSign size={16} />, title: 'Convert to invoice', className: 'btn-info', onClick: () => doConvert(row, 'invoice') }] : []),
+        ...(isBooking && invoicesOn && can('convert') && !row.invoice_id && row.status !== 'cancelled' ? [{ icon: <DollarSign size={16} />, title: 'Convert to invoice', className: 'btn-info', onClick: () => doConvert(row, 'invoice') }] : []),
       ]}
     />
   );

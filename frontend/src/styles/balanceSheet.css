@@ -1,0 +1,79 @@
+/*
+ * The balance sheet report.
+ *
+ * One light theme, like the rest of the app — no prefers-color-scheme block.
+ */
+
+.bs { display: flex; flex-direction: column; gap: 16px; }
+
+.bs-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.bs-head h3 { margin: 0; font-size: 18px; color: #0f172a; }
+.bs-head p { margin: 2px 0 0; font-size: 12px; color: #64748b; }
+
+.bs-reconcile { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 600; padding: 6px 10px; border-radius: 999px; }
+.bs-reconcile.ok { color: #15803d; background: #dcfce7; }
+.bs-reconcile.bad { color: #b91c1c; background: #fee2e2; }
+
+.bs-banner { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border: 1px solid #fed7aa; background: #fff7ed; color: #9a3412; border-radius: 8px; font-size: 12.5px; }
+
+/* ── The four company figures ───────────────────────────────────────────── */
+.bs-totals { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.bs-total { display: flex; align-items: center; gap: 11px; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 13px 15px; }
+.bs-total.strong { border-color: #bfdbfe; background: #f8fbff; }
+.bs-total-icon { width: 38px; height: 38px; border-radius: 9px; display: grid; place-items: center; flex: none; }
+.bs-total small { display: block; font-size: 11px; color: #64748b; margin-bottom: 3px; }
+.bs-total strong { font-size: 16px; color: #0f172a; white-space: nowrap; }
+
+/* ── Charts ─────────────────────────────────────────────────────────────── */
+.bs-charts { display: grid; grid-template-columns: 1fr 1.4fr; gap: 12px; }
+.bs-chart { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px 16px; min-width: 0; }
+.bs-chart h4 { margin: 0 0 10px; font-size: 13px; color: #334155; }
+.bs-chart-canvas { height: 240px; position: relative; }
+
+/* ── One card per account ───────────────────────────────────────────────── */
+.bs-accounts { display: grid; grid-template-columns: repeat(auto-fill, minmax(310px, 1fr)); gap: 12px; }
+.bs-account { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px 15px; display: flex; flex-direction: column; gap: 11px; }
+.bs-account.over { border-color: #fecaca; background: #fffbfb; }
+
+.bs-account header { display: flex; align-items: center; gap: 11px; }
+.bs-account-icon { width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; flex: none; }
+.bs-account-name { min-width: 0; flex: 1; }
+.bs-account-name strong { display: block; font-size: 14px; color: #0f172a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bs-account-name small { font-size: 11px; color: #64748b; }
+.bs-account-closing { text-align: right; flex: none; }
+.bs-account-closing small { display: block; font-size: 10.5px; color: #94a3b8; }
+.bs-account-closing strong { font-size: 15px; white-space: nowrap; }
+
+/* Balance against the largest account, so proportion is visible without maths. */
+.bs-bar { height: 6px; background: #f1f5f9; border-radius: 999px; overflow: hidden; }
+.bs-bar span { display: block; height: 100%; border-radius: 999px; }
+
+.bs-account-figures { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 0; }
+.bs-account-figures div { min-width: 0; }
+.bs-account-figures dt { font-size: 10.5px; color: #94a3b8; margin-bottom: 2px; }
+.bs-account-figures dd { margin: 0; font-size: 12px; font-weight: 600; color: #0f172a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* In against out for the period, as one bar. */
+.bs-flow { display: flex; height: 8px; border-radius: 999px; overflow: hidden; background: #f1f5f9; }
+.bs-flow .in { background: #16a34a; }
+.bs-flow .out { background: #dc2626; }
+
+.bs-account-warn { display: flex; align-items: center; gap: 5px; margin: 0; font-size: 11.5px; color: #b91c1c; }
+
+.bs-empty { color: #94a3b8; font-size: 13px; margin: 0; padding: 18px 0; text-align: center; }
+
+@media (max-width: 1024px) {
+  .bs-totals { grid-template-columns: repeat(2, 1fr); }
+  .bs-charts { grid-template-columns: 1fr; }
+}
+@media (max-width: 560px) {
+  .bs-totals { grid-template-columns: 1fr; }
+  .bs-account-figures { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* The report prints from the same markup; charts do not survive a print, so
+   the figures have to stand on their own. */
+@media print {
+  .bs-charts { display: none; }
+  .bs-account { break-inside: avoid; }
+}
