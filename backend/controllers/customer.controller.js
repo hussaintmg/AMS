@@ -155,10 +155,15 @@ exports.getCustomers = async (req, res, next) => {
 
     if (customerType) filter.customerType = customerType;
     if (city) filter.city = { $regex: city, $options: 'i' };
-    if (source) filter.source = new mongoose.Types.ObjectId(source);
-    if (type) filter.type = new mongoose.Types.ObjectId(type);
+    // An id filter that is not an id is a stale bookmark or a typed URL, not a
+    // reason to fail the whole list: `new ObjectId('abc')` throws a BSONError
+    // and the screen went blank with a 500. Ignored the way `assignedTo` below
+    // has always ignored it.
+    const asId = (value) => (mongoose.Types.ObjectId.isValid(value) ? new mongoose.Types.ObjectId(value) : null);
+    if (asId(source)) filter.source = asId(source);
+    if (asId(type)) filter.type = asId(type);
     if (status) filter.status = status;
-    if (department) filter.department = new mongoose.Types.ObjectId(department);
+    if (asId(department)) filter.department = asId(department);
     if (assignedTo === 'unassigned') filter.assignedTo = null;
     else if (assignedTo && mongoose.Types.ObjectId.isValid(assignedTo)) filter.assignedTo = new mongoose.Types.ObjectId(assignedTo);
 

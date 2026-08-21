@@ -190,23 +190,50 @@ const getAllParts = async (req, res, next) => {
             filter['supplier.code'] = supplierId;
         }
 
-        let parts = await Part.find(filter)
-            .sort({ createdAt: -1 })
-            .skip(skip)
-            .limit(limitNum)
-            .lean();
+        /**
+         * Stock status has to be part of the query, not a pass over the page.
+         *
+         * It used to filter `parts` *after* skip/limit, so "Out of stock"
+         * showed only the out-of-stock rows that happened to fall on the page
+         * being viewed — page 1 came back empty while the three matches sat on
+         * page 2 — and `total` counted every part regardless, so the pager read
+         * "1-0 of 21". Whoever looked concluded nothing was out of stock.
+         *
+         * The threshold is `reorderLevel || minStock || 0` with the same
+         * falsy-zero meaning the mapper below uses, so a part reads the same
+         * way whether it is being filtered or displayed.
+         */
+        // "Low stock" and "normal" compare one field against another
+        // (`currentStock` against the part's own reorder level), which `find()`
+        // cannot express: Mongoose casts `$expr` by looking a schema path up on
+        // one side of the comparison and throws when both sides are
+        // expressions. `$match` inside an aggregation does no casting, so the
+        // comparison goes through untouched — and, being part of the query, it
+        // pages and counts like every other filter.
+        const threshold = {
+            $cond: [{ $gt: ['$reorderLevel', 0] }, '$reorderLevel',
+                { $cond: [{ $gt: ['$minStock', 0] }, '$minStock', 0] }],
+        };
+        const stock = { $ifNull: ['$currentStock', 0] };
+        const STOCK_EXPR = {
+            out_of_stock: { $eq: [stock, 0] },
+            low_stock: { $and: [{ $gt: [stock, 0] }, { $lte: [stock, threshold] }] },
+            normal: { $gt: [stock, threshold] },
+        };
+        const match = { ...filter, ...(STOCK_EXPR[stockStatus] ? { $expr: STOCK_EXPR[stockStatus] } : {}) };
 
-        if (stockStatus) {
-            parts = parts.filter((p) => {
-                const threshold = p.reorderLevel || p.minStock || 0;
-                if (stockStatus === 'out_of_stock') return p.currentStock === 0;
-                if (stockStatus === 'low_stock') return p.currentStock > 0 && p.currentStock <= threshold;
-                if (stockStatus === 'normal') return p.currentStock > threshold;
-                return true;
-            });
-        }
-
-        const total = await Part.countDocuments(filter);
+        const [parts, counted] = await Promise.all([
+            Part.aggregate([
+                { $match: match },
+                { $sort: { createdAt: -1 } },
+                { $skip: skip },
+                { $limit: limitNum },
+            ]),
+            Part.aggregate([{ $match: match }, { $count: 'total' }]),
+        ]);
+        // Counted against the same match the rows came from, so the pager can
+        // never advertise more records than the filter admits.
+        const total = counted[0]?.total || 0;
 
         const showPurchasePrice = canSeePurchasePrice(req);
         const mapped = parts.map((p) => {

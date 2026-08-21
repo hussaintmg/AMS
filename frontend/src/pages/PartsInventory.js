@@ -938,9 +938,13 @@ const PartsInventory = () => {
           }}
           className="filter-select"
         >
+          {/* These values go straight to the API as `stockStatus`, so they are
+              its vocabulary — the same words it returns in `stock_status` on
+              every row. "low" and "out" matched no branch there, so those two
+              options quietly filtered nothing and showed the whole list. */}
           <option value="">All Stock</option>
-          <option value="low">Low Stock</option>
-          <option value="out">Out of Stock</option>
+          <option value="low_stock">Low Stock</option>
+          <option value="out_of_stock">Out of Stock</option>
           <option value="normal">Normal</option>
         </SearchableSelect></div>
 
