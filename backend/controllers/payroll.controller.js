@@ -606,18 +606,18 @@ async function findPostedLineOr404(lineId) {
  * It leaves a named money account. Until 2026-08-22 this credited the bare
  * string "Cash" with no `accountRef`, so a salary payment touched no account at
  * all — the Accounts screen and the balance sheet never saw the money go out,
- * even though every other payment path had been wired to them. The account is
- * whatever the operator chose, else petty cash, and it cannot be overdrawn.
+ * even though every other payment path had been wired to them. The operator
+ * has to name the account, and it cannot be overdrawn.
  */
 async function postPaymentToLedger({ period, line, payment, employeeLabel, userId, accountId = null }) {
     const accountsService = require('../services/accounts.service');
-    const paidFrom = (await accountsService.resolveAccount(accountId)) || (await accountsService.pettyCashAccount());
+    const paidFrom = await accountsService.requireAccount(accountId, { action: 'salary is paid from' });
     await accountsService.assertSufficientFunds(paidFrom, payment.amount, { action: 'be paid out as salary' });
     await postDoubleEntry({
         transactionDate: payment.paidOn,
         debitAccount: SALARY_PAYABLE_ACCOUNT,
-        creditAccount: paidFrom ? paidFrom.name : DEFAULT_CREDIT_ACCOUNT,
-        creditAccountRef: paidFrom ? paidFrom._id : null,
+        creditAccount: paidFrom.name,
+        creditAccountRef: paidFrom._id,
         amount: payment.amount,
         description: `Salary paid to ${employeeLabel} — ${period.label}`,
         referenceType: 'salary',
@@ -654,7 +654,7 @@ const payLine = async (req, res, next) => {
         // Asked before the payment is written, so a drawer that cannot cover it
         // leaves no half-recorded salary behind.
         const accountsService = require('../services/accounts.service');
-        const payFrom = (await accountsService.resolveAccount(req.body?.accountId)) || (await accountsService.pettyCashAccount());
+        const payFrom = await accountsService.requireAccount(req.body?.accountId, { action: 'salary is paid from' });
         await accountsService.assertSufficientFunds(payFrom, amount, {
             allowNegative: req.body?.allowNegative === true, action: 'be paid out as salary',
         });

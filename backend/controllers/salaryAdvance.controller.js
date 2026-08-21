@@ -186,12 +186,11 @@ const create = async (req, res, next) => {
       createdBy: getUserId(req),
     });
 
-    // The cash leaves a named money account — petty cash unless the form said
-    // otherwise — so the account balances and the balance sheet reflect it.
+    // The cash leaves a money account the form has to name, so the account
+    // balances and the balance sheet reflect where it actually went.
     const accountsService = require('../services/accounts.service');
-    const paidFrom = (await accountsService.resolveAccount(req.body.accountId || req.body.account)) || (await accountsService.pettyCashAccount());
-    // The client's rule: advances come out of petty cash. They cannot come out
-    // of a petty cash that does not hold them.
+    const paidFrom = await accountsService.requireAccount(req.body.accountId || req.body.account, { action: 'advance is paid from' });
+    // An advance cannot come out of a drawer that does not hold it.
     await accountsService.assertSufficientFunds(paidFrom, value, {
       allowNegative: req.body.allowNegative === true, action: 'be advanced',
     });
@@ -240,11 +239,11 @@ const repay = async (req, res, next) => {
 
     // Cash comes back in (to a named account), the receivable shrinks.
     const accountsService = require('../services/accounts.service');
-    const paidInto = (await accountsService.resolveAccount(req.body.accountId || req.body.account)) || (await accountsService.pettyCashAccount());
+    const paidInto = await accountsService.requireAccount(req.body.accountId || req.body.account, { action: 'repayment goes into' });
     await postDoubleEntry({
       transactionDate: new Date(),
-      debitAccount: paidInto ? paidInto.name : DEFAULT_CREDIT_ACCOUNT,
-      debitAccountRef: paidInto ? paidInto._id : null,
+      debitAccount: paidInto.name,
+      debitAccountRef: paidInto._id,
       creditAccount: ADVANCE_ACCOUNT,
       amount: value,
       description: `Salary advance repayment (advance ${advance._id})`,

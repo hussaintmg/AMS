@@ -7,6 +7,7 @@ import ErrorPopup from "../components/ErrorPopup";
 import ConfirmModal from "../components/ConfirmModal";
 import ActionButtons from "../components/ActionButtons";
 import ExpenseFormModal from "./ExpenseFormModal";
+import { accountsAPI } from "../services/api";
 import CategoryFormModal from "./CategoryFormModal";
 import ExpenseDrawer from "./ExpenseDrawer";
 import CategoryDrawer from "./CategoryDrawer";
@@ -64,6 +65,11 @@ const Expenses = () => {
   const [statusFilter, setStatusFilter] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
   const [tab, setTab] = useState("expenses");
+
+  // The money accounts an expense can be paid from. Posting refuses an
+  // expense that names none, so the form has to offer them.
+  const [accounts, setAccounts] = useState([]);
+  useEffect(() => { accountsAPI.getForPayments().then(setAccounts); }, []);
 
   const [showExpModal, setShowExpModal] = useState(false);
   const [expModalMode, setExpModalMode] = useState("create");
@@ -654,6 +660,7 @@ const Expenses = () => {
             initialData={selectedExpense}
             categories={categories}
             employees={employees}
+            accounts={accounts}
             onClose={closeExpModal}
             onSubmit={
               expModalMode === "create"

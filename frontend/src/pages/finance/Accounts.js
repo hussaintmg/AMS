@@ -423,7 +423,7 @@ export default function Accounts() {
                 <p className="sm-role-job-note">Outstanding on {modal.item?.payable_number}: <strong>{money(modal.item?.balance)}</strong> to {modal.item?.vendor}</p>
                 <div className="form-row">
                   <div className="form-group"><label>Amount *</label><input type="number" min="0" step="0.01" value={form.amount} onChange={(e) => set('amount', e.target.value)} autoFocus /></div>
-                  <div className="form-group"><label>Paid from *</label><SearchableSelect value={form.accountId} onChange={(e) => set('accountId', e.target.value)} options={accounts.map((a) => ({ value: a.id, label: `${a.name} — ${money(a.current_balance)}` }))} labelField="label" valueField="value" /></div>
+                  <div className="form-group"><label>Paid from *</label><SearchableSelect value={form.accountId} onChange={(e) => set('accountId', e.target.value)} options={accounts.map((a) => ({ value: a.id, label: `${a.name} — ${money(a.current_balance)}` }))} labelField="label" valueField="value" required /></div>
                 </div>
                 <div className="form-group"><label>Reference</label><input type="text" value={form.reference} onChange={(e) => set('reference', e.target.value)} /></div>
                 <div className="form-group"><label>Notes</label><input type="text" value={form.notes} onChange={(e) => set('notes', e.target.value)} /></div>

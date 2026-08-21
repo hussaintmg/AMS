@@ -25,12 +25,13 @@ async function postExpenseToLedger(item, req) {
     throw new AppError('Cannot post an expense with a zero or negative amount', 400);
   }
 
-  // Debit the expense category; credit the money account it was paid from —
-  // petty cash unless the expense named another (`account` holds the money
-  // account's name or id since 2026-08-18; older rows may hold an expense
-  // account name, which then simply is not a money account and falls back).
+  // Debit the expense category; credit the money account it was paid from.
+  // The account is required: posting used to fall back to petty cash, which
+  // spent money out of a drawer nobody had named. (`account` holds the money
+  // account's name or id since 2026-08-18; an older row holding an expense
+  // account name resolves to nothing and is refused rather than guessed.)
   const accountsService = require('../services/accounts.service');
-  const paidFrom = (await accountsService.resolveAccount(item.paidFromAccount || item.account)) || (await accountsService.pettyCashAccount());
+  const paidFrom = await accountsService.requireAccount(item.paidFromAccount || item.account, { action: 'expense is paid from' });
   // An expense is cash out of a drawer that has to actually contain it.
   await accountsService.assertSufficientFunds(paidFrom, item.amount, {
     allowNegative: req.body?.allowNegative === true, action: 'be spent',
@@ -38,8 +39,8 @@ async function postExpenseToLedger(item, req) {
   await postDoubleEntry({
     transactionDate: item.expenseDate,
     debitAccount: item.category || DEFAULT_EXPENSE_ACCOUNT,
-    creditAccount: paidFrom ? paidFrom.name : DEFAULT_CREDIT_ACCOUNT,
-    creditAccountRef: paidFrom ? paidFrom._id : null,
+    creditAccount: paidFrom.name,
+    creditAccountRef: paidFrom._id,
     amount: item.amount,
     description: item.description || `Expense ${item.expenseNumber}`,
     referenceType: 'expense',

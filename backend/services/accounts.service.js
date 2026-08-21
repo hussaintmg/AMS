@@ -134,6 +134,25 @@ async function resolveAccount(idOrName) {
 }
 
 /**
+ * The account a payment names, or a refusal.
+ *
+ * Every money-out path used to read `resolveAccount(...) || pettyCashAccount()`,
+ * so leaving the account blank quietly took the money out of petty cash and the
+ * ledger grew a petty cash row nobody had asked for. Callers now have to say
+ * which drawer the money moves through.
+ *
+ * @param {string} idOrName        what the form sent
+ * @param {object} [options]
+ * @param {string} [options.action] finishes "Choose the account this ..."
+ */
+async function requireAccount(idOrName, { action = 'payment comes from' } = {}) {
+  const account = await resolveAccount(idOrName);
+  if (!account) throw new AppError(`Choose the account this ${action}`, 400);
+  if (account.isActive === false) throw new AppError(`${account.name} is not an active account`, 400);
+  return account;
+}
+
+/**
  * Move money between two accounts: one balanced ledger pair, one transfer row.
  * Refuses to overdraw the giving account unless `allowNegative`.
  */
@@ -206,4 +225,4 @@ async function sweep({ accountId = null, amount = null, userId }) {
   });
 }
 
-module.exports = { movement, balanceOf, syncBalance, balanceSheet, pettyCashAccount, resolveAccount, assertSufficientFunds, transfer, reverseTransfer, limitStatus, sweep, rowsOf };
+module.exports = { movement, balanceOf, syncBalance, balanceSheet, pettyCashAccount, resolveAccount, requireAccount, assertSufficientFunds, transfer, reverseTransfer, limitStatus, sweep, rowsOf };

@@ -325,8 +325,7 @@ exports.payPayable = async (req, res, next) => {
     const amount = round2(req.body.amount);
     if (!(amount > 0)) throw new AppError('Amount must be greater than zero', 400);
     if (amount > num(payable.balance) + 0.009) throw new AppError(`Payment exceeds the outstanding balance of ${num(payable.balance).toLocaleString('en-PK')}`, 400);
-    const account = await accounts.resolveAccount(req.body.accountId) || await accounts.pettyCashAccount();
-    if (!account) throw new AppError('Choose the account the money leaves', 400);
+    const account = await accounts.requireAccount(req.body.accountId, { action: 'payment leaves' });
     await accounts.assertSufficientFunds(account, amount, { allowNegative: req.body.allowNegative === true, action: 'be paid' });
     const paidOn = req.body.paidOn ? new Date(req.body.paidOn) : new Date();
     payable.payments.push({ amount, paidOn, account: account._id, reference: req.body.reference || '', notes: req.body.notes || '', createdBy: getUserId(req) });

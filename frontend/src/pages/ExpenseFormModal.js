@@ -3,10 +3,10 @@ import SearchableSelect from '../components/SearchableSelect';
 import useModalKeyboard from '../hooks/useModalKeyboard';
 import MasterQuickCreate from '../components/MasterQuickCreate';
 
-function ExpenseFormModal({ isOpen, mode, initialData, categories, employees, onClose, onSubmit, loading, onCategoryCreated }) {
+function ExpenseFormModal({ isOpen, mode, initialData, categories, employees, accounts = [], onClose, onSubmit, loading, onCategoryCreated }) {
   const [formData, setFormData] = useState({
     category: '', amount: '', expenseDate: new Date().toISOString().slice(0, 10),
-    description: '', vendor: '', employee: '', status: 'draft',
+    description: '', vendor: '', employee: '', status: 'draft', paidFromAccount: '',
   });
   const [errors, setErrors] = useState({});
 
@@ -14,7 +14,7 @@ function ExpenseFormModal({ isOpen, mode, initialData, categories, employees, on
     if (!isOpen) return;
     if (mode === 'create') {
       setFormData({ category: '', amount: '', expenseDate: new Date().toISOString().slice(0, 10),
-        description: '', vendor: '', employee: '', status: 'draft' });
+        description: '', vendor: '', employee: '', status: 'draft', paidFromAccount: '' });
     } else if (initialData) {
       setFormData({
         category: initialData.category || '',
@@ -24,6 +24,7 @@ function ExpenseFormModal({ isOpen, mode, initialData, categories, employees, on
         vendor: initialData.vendor || '',
         employee: initialData.employee?._id || initialData.employee || '',
         status: initialData.status || 'draft',
+        paidFromAccount: initialData.paidFromAccount?._id || initialData.paidFromAccount || '',
       });
     }
     setErrors({});
@@ -34,6 +35,8 @@ function ExpenseFormModal({ isOpen, mode, initialData, categories, employees, on
     if (!formData.category) errs.category = 'Category is required';
     if (!formData.amount || Number(formData.amount) <= 0) errs.amount = 'Valid amount is required';
     if (!formData.expenseDate) errs.expenseDate = 'Expense date is required';
+    // Without it, posting used to take the money out of petty cash unasked.
+    if (!formData.paidFromAccount) errs.paidFromAccount = 'Choose the account this expense is paid from';
     setErrors(errs); return Object.keys(errs).length === 0;
   };
 
@@ -45,6 +48,7 @@ function ExpenseFormModal({ isOpen, mode, initialData, categories, employees, on
   if (!isOpen) return null;
 
   const catOptions = (categories || []).map(c => ({ id: c.name || c._id, name: `${c.name || c}${c.categoryGroup ? ` (${c.categoryGroup})` : ''}` }));
+  const acctOptions = (accounts || []).map(a => ({ id: a.id || a._id, name: `${a.name}${a.current_balance != null ? ` — ${Number(a.current_balance).toLocaleString('en-PK')}` : ''}` }));
   const empOptions = employees.map(e => ({ id: e._id || e.id, name: `${e.firstName || e.first_name || ''} ${e.lastName || e.last_name || ''}`.trim() || '-' }));
 
   return (
@@ -86,6 +90,12 @@ function ExpenseFormModal({ isOpen, mode, initialData, categories, employees, on
                 <label>Expense Date *</label>
                 <input type="date" className="form-control" name="expenseDate" value={formData.expenseDate} onChange={handleChange} required />
                 {errors.expenseDate && <span className="field-error">{errors.expenseDate}</span>}
+              </div>
+              <div className="form-group">
+                <label>Paid from *</label>
+                <SearchableSelect options={acctOptions} value={formData.paidFromAccount}
+                  onChange={e => setFormData(p => ({ ...p, paidFromAccount: e.target.value }))} required />
+                {errors.paidFromAccount && <span className="field-error">{errors.paidFromAccount}</span>}
               </div>
               <div className="form-group">
                 <label>Status</label>

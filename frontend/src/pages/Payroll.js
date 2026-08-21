@@ -2,7 +2,7 @@
  * Payroll periods & posting
  */
 
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import { payrollAPI, salaryAdvanceAPI, employeeAPI, accountsAPI } from '../services/api';
@@ -76,10 +76,6 @@ const Payroll = () => {
     // advances and expenses come out of it.
     const [accounts, setAccounts] = useState([]);
     useEffect(() => { accountsAPI.getForPayments().then(setAccounts); }, []);
-    const defaultAccountId = useMemo(() => {
-        const petty = accounts.find((a) => a.type === 'petty_cash') || accounts[0];
-        return petty ? String(petty.id || petty._id) : '';
-    }, [accounts]);
 
     const [advanceForm, setAdvanceForm] = useState({ employee_id: '', amount: '', issued_on: '', reason: '', accountId: '' });
 
@@ -296,7 +292,7 @@ const Payroll = () => {
             const res = await payrollAPI.payLine(payLine.id, {
                 ...payForm,
                 amount: Number(payForm.amount),
-                accountId: payForm.accountId || defaultAccountId || undefined,
+                accountId: payForm.accountId || undefined,
                 paid_on: payForm.paid_on || undefined,
             });
             toast.success(res?.data?.message || 'Payment recorded');
@@ -350,7 +346,7 @@ const Payroll = () => {
             await salaryAdvanceAPI.create({
                 ...advanceForm,
                 amount: Number(advanceForm.amount),
-                accountId: advanceForm.accountId || defaultAccountId || undefined,
+                accountId: advanceForm.accountId || undefined,
                 issued_on: advanceForm.issued_on || undefined,
             });
             toast.success('Advance issued');
@@ -1069,13 +1065,15 @@ const Payroll = () => {
                                     </div>
                                     {accounts.length > 0 && (
                                         <div className="form-group">
-                                            <label htmlFor="pay-account">Paid from</label>
+                                            <label htmlFor="pay-account">Paid from *</label>
                                             <select
                                                 id="pay-account"
                                                 className="form-control"
-                                                value={payForm.accountId || defaultAccountId}
+                                                value={payForm.accountId}
                                                 onChange={(ev) => setPayForm({ ...payForm, accountId: ev.target.value })}
+                                                required
                                             >
+                                                <option value="">Select account</option>
                                                 {accounts.map((a) => <option key={a.id || a._id} value={String(a.id || a._id)}>{a.name}</option>)}
                                             </select>
                                         </div>
@@ -1178,13 +1176,15 @@ const Payroll = () => {
                                 </div>
                                 {accounts.length > 0 && (
                                     <div className="form-group">
-                                        <label htmlFor="adv-account">Paid from</label>
+                                        <label htmlFor="adv-account">Paid from *</label>
                                         <select
                                             id="adv-account"
                                             className="form-control"
-                                            value={advanceForm.accountId || defaultAccountId}
+                                            value={advanceForm.accountId}
                                             onChange={(ev) => setAdvanceForm({ ...advanceForm, accountId: ev.target.value })}
+                                            required
                                         >
+                                            <option value="">Select account</option>
                                             {accounts.map((a) => <option key={a.id || a._id} value={String(a.id || a._id)}>{a.name}</option>)}
                                         </select>
                                     </div>
