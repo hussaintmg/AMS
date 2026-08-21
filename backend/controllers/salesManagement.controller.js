@@ -324,8 +324,15 @@ const sendQuotationEstimateEmail = async (req, res, next) => {
         const { buffer, fileName, quotation } = await buildEstimatePdf(quotationId);
         // A typed-in address wins; the customer's own only counts when it is a
         // real one, not the placeholder the import invents (customerEmail.util).
-        const recipient = String(req.body?.to || '').trim() || realCustomerEmail(quotation.customer?.email);
-        if (!recipient) throw new AppError('This customer has no email address; add one first', 400);
+        // A walk-in sale is booked against the shared counter record, whose
+        // address would belong to nobody in particular; the other eleven send
+        // paths already refuse it, and this one must too.
+        const typed = String(req.body?.to || '').trim();
+        if (!typed && quotation.walkIn) {
+            throw new AppError('This is a walk-in sale — type the address to send it to', 400);
+        }
+        const recipient = typed || realCustomerEmail(quotation.customer?.email);
+        if (!recipient) throw new AppError('This customer has no email address — add one on their record, or type an address to send to', 400);
 
         const context = buildEstimateEmailContext(quotation, { companyName: await companyName() });
         const attachments = [{ filename: fileName, content: buffer, contentType: 'application/pdf' }];
