@@ -185,9 +185,25 @@ async function fixtures() {
   };
 }
 
+/**
+ * Put the database back.
+ *
+ * Creating a customer also creates a login for them, so a run that only removed
+ * its two test users left a customer *and* a user behind every time — and the
+ * "selected users" picker in Role Jobs fills up with them until it is unusable.
+ * The customers are retired rather than deleted: the quotations raised against
+ * them still point there.
+ */
 async function cleanup() {
-  const { Role, User } = require('../models');
+  const { Role, User, Customer } = require('../models');
+  const Lead = require('../models/Lead.model');
   await User.deleteMany({ email: { $in: [VIEWER_EMAIL, OWNER_EMAIL] } });
+  await User.deleteMany({ email: /^scope\.(cust|lead)\.\d+@example\.com$/i });
+  await Customer.updateMany(
+    { firstName: 'Scope', email: /@example\.com$/i, deletedAt: null },
+    { $set: { deletedAt: new Date(), isActive: false } },
+  );
+  await Lead.deleteMany({ email: /^scope\.lead\.\d+@example\.com$/i });
   const role = await Role.findOne({ name: ROLE_NAME });
   if (role) await Role.deleteOne({ _id: role._id });
 }

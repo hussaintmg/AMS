@@ -316,6 +316,61 @@ function IconPicker({ value, onChange }) {
   );
 }
 
+
+/**
+ * The "own + selected users / roles" list.
+ *
+ * A dealership's user list is mostly customer logins, so on a real install this
+ * ran to hundreds of rows with the three colleagues you actually wanted buried
+ * among them — and the box scrolls inside a card, so they were easy to miss
+ * entirely. A search narrows it, the count says how much is hidden, and the
+ * email is printed under the name because three people called "Jhon Smith"
+ * cannot otherwise be told apart.
+ */
+function ScopeMemberPicker({ options, selected, onToggle, labelOf, subLabelOf, className = '' }) {
+  const [query, setQuery] = useState('');
+  const needle = query.trim().toLowerCase();
+  const shown = needle
+    ? options.filter((option) => `${labelOf(option)} ${subLabelOf ? subLabelOf(option) : ''}`.toLowerCase().includes(needle))
+    : options;
+  const chosen = options.filter((option) => selected.includes(String(option._id || option.id)));
+
+  return (
+    <div className="sm-scope-picker">
+      {options.length > 8 && (
+        <input
+          className="form-input sm-scope-search"
+          type="search"
+          value={query}
+          placeholder={`Search ${options.length}…`}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+      )}
+      <div className={`sm-scope-options ${className}`.trim()}>
+        {shown.map((option) => {
+          const id = String(option._id || option.id);
+          const sub = subLabelOf ? subLabelOf(option) : '';
+          return (
+            <label key={id} title={sub || undefined}>
+              <input type="checkbox" checked={selected.includes(id)} onChange={() => onToggle(id)} />
+              <span>
+                {labelOf(option)}
+                {sub ? <small>{sub}</small> : null}
+              </span>
+            </label>
+          );
+        })}
+        {!shown.length && <p className="sm-scope-empty">Nothing matches “{query}”.</p>}
+      </div>
+      {needle && (
+        <p className="sm-scope-count">
+          {shown.length} of {options.length} shown{chosen.length ? ` · ${chosen.length} selected` : ''}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function ServerManagement() {
   const {
     pages: pageList,
@@ -2606,32 +2661,23 @@ function ServerManagement() {
                             {modes.map((mode) => <option key={mode} value={mode}>{dropdownModeLabels[mode] || mode}</option>)}
                           </select>
                           {rule.mode === 'selected_roles' && (
-                            <div className="sm-scope-options sm-dropdown-members">
-                              {scopeRoleOptions
-                                .filter((role) => String(getRoleId(role)) !== String(selectedJobRoleId))
-                                .map((role) => {
-                                  const id = String(getRoleId(role));
-                                  return (
-                                    <label key={id}>
-                                      <input type="checkbox" checked={(rule.roles || []).includes(id)} onChange={() => toggleDropdownMember(job.pageKey, form, entry.key, 'roles', id)} />
-                                      {role.displayName || role.name}
-                                    </label>
-                                  );
-                                })}
-                            </div>
+                            <ScopeMemberPicker
+                              className="sm-dropdown-members"
+                              options={scopeRoleOptions.filter((role) => String(getRoleId(role)) !== String(selectedJobRoleId))}
+                              selected={rule.roles || []}
+                              onToggle={(id) => toggleDropdownMember(job.pageKey, form, entry.key, 'roles', id)}
+                              labelOf={(role) => role.displayName || role.name}
+                            />
                           )}
                           {rule.mode === 'selected_users' && (
-                            <div className="sm-scope-options sm-dropdown-members">
-                              {scopeUserOptions.map((person) => {
-                                const id = String(person._id || person.id);
-                                return (
-                                  <label key={id}>
-                                    <input type="checkbox" checked={(rule.users || []).includes(id)} onChange={() => toggleDropdownMember(job.pageKey, form, entry.key, 'users', id)} />
-                                    {person.firstName} {person.lastName}
-                                  </label>
-                                );
-                              })}
-                            </div>
+                            <ScopeMemberPicker
+                              className="sm-dropdown-members"
+                              options={scopeUserOptions}
+                              selected={rule.users || []}
+                              onToggle={(id) => toggleDropdownMember(job.pageKey, form, entry.key, 'users', id)}
+                              labelOf={(person) => `${person.firstName || ''} ${person.lastName || ''}`.trim() || person.email}
+                              subLabelOf={(person) => person.email || ''}
+                            />
                           )}
                         </div>
                       );
@@ -2770,32 +2816,21 @@ function ServerManagement() {
               <option value="all">All data</option>
             </select>
             {job.dataScope.mode === 'selected_roles' && (
-              <div className="sm-scope-options">
-                {scopeRoleOptions
-                  .filter((role) => String(getRoleId(role)) !== String(selectedJobRoleId))
-                  .map((role) => {
-                    const id = String(getRoleId(role));
-                    return (
-                      <label key={id}>
-                        <input type="checkbox" checked={job.dataScope.roles.includes(id)} onChange={() => toggleScopeMember('roles', id)} />
-                        {role.displayName || role.name}
-                      </label>
-                    );
-                  })}
-              </div>
+              <ScopeMemberPicker
+                options={scopeRoleOptions.filter((role) => String(getRoleId(role)) !== String(selectedJobRoleId))}
+                selected={job.dataScope.roles}
+                onToggle={(id) => toggleScopeMember('roles', id)}
+                labelOf={(role) => role.displayName || role.name}
+              />
             )}
             {job.dataScope.mode === 'selected_users' && (
-              <div className="sm-scope-options">
-                {scopeUserOptions.map((person) => {
-                  const id = String(person._id || person.id);
-                  return (
-                    <label key={id}>
-                      <input type="checkbox" checked={job.dataScope.users.includes(id)} onChange={() => toggleScopeMember('users', id)} />
-                      {person.firstName} {person.lastName}
-                    </label>
-                  );
-                })}
-              </div>
+              <ScopeMemberPicker
+                options={scopeUserOptions}
+                selected={job.dataScope.users}
+                onToggle={(id) => toggleScopeMember('users', id)}
+                labelOf={(person) => `${person.firstName || ''} ${person.lastName || ''}`.trim() || person.email}
+                subLabelOf={(person) => person.email || ''}
+              />
             )}
           </div>
         )}
