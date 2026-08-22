@@ -5,7 +5,7 @@ const { fieldMask } = require('../utils/fieldPermissions');
 // Withhold the columns this role may not read, whatever the endpoint returns.
 router.use(fieldMask('customers'));
 const controller = require('../controllers/customer.controller');
-const { authenticate, authorizeAction } = require('../middleware/auth');
+const { authenticate, authorizeAction, authorizePicker } = require('../middleware/auth');
 
 
 // Page/action guards: a role without the Customers page must not be able to
@@ -242,7 +242,11 @@ const canDelete = [authenticate, authorizeAction('customers', 'delete')];
 
 router.get('/stats', canView, controller.getCustomerStats);
 router.get('/cities', canView, controller.getCustomerCities);
-router.get('/all', canView, controller.getAllForDropdown);
+// The customer picker every sales document is built from: the Customers page
+// opens it, and so does any page whose catalog says its form needs this list.
+// Written out rather than behind a const — scripts/audit_page_operations.js
+// reads the route line to know an endpoint is guarded.
+router.get('/all', authenticate, authorizePicker('customers', 'Customer'), controller.getAllForDropdown);
 router.get('/meta', canView, controller.getCustomerMeta);
 router.get('/', canView, controller.getCustomers);
 router.post('/', canCreate, controller.createCustomer);

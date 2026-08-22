@@ -13,7 +13,7 @@ const { fieldMask } = require('../utils/fieldPermissions');
 
 // Withhold the columns this role may not read, whatever the endpoint returns.
 router.use(fieldMask('vehicles'));
-const { authenticate, authorizeAction } = require('../middleware/auth');
+const { authenticate, authorizeAction, authorizePicker } = require('../middleware/auth');
 const vehicleController = require('../controllers/vehicleInventory.controller');
 const { query } = require('../config/database');
 
@@ -34,7 +34,8 @@ router.get('/variants/list', authenticate, canView, vehicleController.getVariant
 router.get('/colors/list', authenticate, canView, vehicleController.getColorsList);
 
 // CRUD routes
-router.get('/', authenticate, canView, vehicleController.getAllVehicles);
+// Also readable from any page whose form picks a vehicle (see authorizePicker).
+router.get('/', authenticate, authorizePicker('vehicles', 'Vehicle'), vehicleController.getAllVehicles);
 router.get('/:id', authenticate, canView, vehicleController.getVehicleById);
 router.post('/', authenticate, canCreate, vehicleController.createVehicle);
 router.put('/:id', authenticate, canEdit, vehicleController.updateVehicle);

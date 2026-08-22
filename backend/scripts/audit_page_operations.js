@@ -171,6 +171,11 @@ function guardResolver(source) {
       m = argsText.match(/\bcan\(\s*["']([\w-]+)["']\s*,\s*["'](\w+)["']/);
       if (m) return { pages: cleanPage(`'${m[1]}'`, m[2]), action: m[2] };
     }
+    // `authorizePicker('customers', 'Customer')` — the owning page, or any page
+    // whose catalog says its form is filled from that list. Read-only, so the
+    // action it grants is always view.
+    m = argsText.match(/authorizePicker\(\s*["']([\w-]+)["']/);
+    if (m) return { pages: [m[1]], action: 'view' };
     m = argsText.match(/authorizePage\(\s*["']([\w-]+)["']/);
     if (m) return { pages: [m[1]], action: 'view' };
     m = argsText.match(/bulkPermission\(\s*["']([\w-]+)["']/);

@@ -17,7 +17,7 @@ const { fieldMask } = require('../utils/fieldPermissions');
 
 // Withhold the columns this role may not read, whatever the endpoint returns.
 router.use(fieldMask('parts'));
-const { authenticate, authorizeAction } = require('../middleware/auth');
+const { authenticate, authorizeAction, authorizePicker } = require('../middleware/auth');
 const partsController = require('../controllers/partsInventory.controller');
 
 const canView = authorizeAction('parts', 'view');
@@ -45,7 +45,8 @@ router.put('/source-types/:id', authenticate, canEdit, partsController.updateSou
 router.delete('/source-types/:id', authenticate, canDelete, partsController.deleteSourceType);
 
 // CRUD routes
-router.get('/', authenticate, canView, partsController.getAllParts);
+// Also readable from any page whose form picks a part (see authorizePicker).
+router.get('/', authenticate, authorizePicker('parts', 'Part'), partsController.getAllParts);
 router.get('/:id', authenticate, canView, partsController.getPartById);
 router.post('/', authenticate, canCreate, partsController.createPart);
 router.put('/:id', authenticate, canEdit, partsController.updatePart);

@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const leadMasterController = require('../controllers/leadMaster.controller');
-const { authenticate, authorizeAction } = require('../middleware/auth');
+const { authenticate, authorizeAction, authorizePicker } = require('../middleware/auth');
 
 /**
  * @swagger
@@ -119,7 +119,9 @@ const { authenticate, authorizeAction } = require('../middleware/auth');
  */
 
 router.get('/stats', authenticate, authorizeAction('lead_master', 'view'), leadMasterController.getStats);
-router.get('/:type', authenticate, authorizeAction('lead_master', 'view'), leadMasterController.getAll);
+// The city / source / type / priority pickers on the Leads and Customers
+// forms read this, so holding either page is enough to list them.
+router.get('/:type', authenticate, authorizePicker('lead_master', ['LeadCity', 'LeadSource', 'LeadType', 'LeadPriority']), leadMasterController.getAll);
 router.post('/:type', authenticate, authorizeAction('lead_master', 'create'), leadMasterController.create);
 router.put('/:type/:id', authenticate, authorizeAction('lead_master', 'edit'), leadMasterController.update);
 router.delete('/:type/:id', authenticate, authorizeAction('lead_master', 'delete'), leadMasterController.remove);

@@ -243,6 +243,51 @@ const authorizeAction = (pageKey, action = 'view') => {
 };
 
 /**
+ * Reading a master list because a page you hold is filled from it.
+ *
+ * constants/pageCatalog.js already records which lists each screen's forms draw
+ * on — Parts Quotations needs Customers and Parts, Leads needs the lead master
+ * lists. Those endpoints were guarded by their *owning* page alone, so a role
+ * given Parts Quotations with every action ticked opened the screen to an empty
+ * customer picker and an empty part picker, and could create nothing. Granting
+ * a page has to carry the lists that page is filled from, or the grant means
+ * nothing.
+ *
+ * Read-only, and only for the picker endpoints: this says "you may list these
+ * to choose one", never "you may manage them".
+ */
+const pagesNeedingModel = (models) => {
+  const { PAGE_CATALOG } = require('../constants/pageCatalog');
+  const wanted = new Set(Array.isArray(models) ? models : [models]);
+  const pages = new Set();
+  for (const [pageKey, entry] of Object.entries(PAGE_CATALOG)) {
+    for (const which of ['create', 'edit', 'filters']) {
+      for (const dropdown of entry?.forms?.[which]?.dropdowns || []) {
+        if (String(dropdown.model || '').split('|').some((m) => wanted.has(m))) pages.add(pageKey);
+      }
+    }
+  }
+  return [...pages];
+};
+
+// `model` may be several: one endpoint serves the lead cities, sources, types
+// and priorities, and a page needing any of them needs that endpoint.
+const authorizePicker = (ownerPage, model) => {
+  const owner = authorizeAction(ownerPage, 'view');
+  let readers = null;                       // resolved once, on first request
+  return (req, res, next) => {
+    owner(req, res, (error) => {
+      if (!error) return next();
+      if (!readers) readers = pagesNeedingModel(model);
+      const target = (key) => ({ pageKey: key, path: pathFor(key) || key, module: key });
+      const allowed = readers.some((key) => canAccessTarget(req.user, target(key)) && canDo(req.user, key, 'view'));
+      if (allowed) return next();
+      return next(error);
+    });
+  };
+};
+
+/**
  * Pass if ANY of these guards passes.
  *
  * `authorizeAction` ORs several *pages* for one action, but converting is a
@@ -317,6 +362,7 @@ module.exports = {
   authorize,
   authorizeAction,
   authorizeAny,
+  authorizePicker,
   authorizeRouter,
   authorizePage,
   checkPermission,

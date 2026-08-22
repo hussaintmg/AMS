@@ -20,7 +20,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { authenticate, authorizeAction } = require('../middleware/auth');
+const { authenticate, authorizeAction, authorizePicker } = require('../middleware/auth');
 
 // Import Controllers
 const userController = require('../controllers/userManagement.controller');
@@ -57,7 +57,7 @@ router.get('/permissions/modules', authenticate, authorizeAction('role_managemen
 
 // ── Department Management ──
 router.get('/departments/stats', authenticate, authorizeAction('department_management', 'view'), departmentController.getDepartmentStats);
-router.get('/departments', authenticate, authorizeAction('department_management', 'view'), departmentController.getAllDepartments);
+router.get('/departments', authenticate, authorizePicker('department_management', 'Department'), departmentController.getAllDepartments);
 router.get('/departments/:id', authenticate, authorizeAction('department_management', 'view'), departmentController.getDepartmentById);
 router.post('/departments', authenticate, authorizeAction('department_management', 'create'), departmentController.createDepartment);
 router.put('/departments/:id', authenticate, authorizeAction('department_management', 'edit'), departmentController.updateDepartment);
@@ -68,7 +68,7 @@ router.patch('/departments/:id/manager', authenticate, authorizeAction('departme
 // ── Status Management ──
 // New collection-based endpoints
 router.get('/status-collections/stats', authenticate, authorizeAction('status_management', 'view'), statusController.getCollectionStats);
-router.get('/status-collections', authenticate, authorizeAction('status_management', 'view'), statusController.getAllCollections);
+router.get('/status-collections', authenticate, authorizePicker('status_management', 'StatusItem'), statusController.getAllCollections);
 router.get('/status-collections/:id', authenticate, authorizeAction('status_management', 'view'), statusController.getCollectionById);
 router.post('/status-collections', authenticate, authorizeAction('status_management', 'create'), statusController.createCollection);
 router.put('/status-collections/:id', authenticate, authorizeAction('status_management', 'edit'), statusController.updateCollection);
