@@ -18,7 +18,7 @@ const { fieldMask } = require('../utils/fieldPermissions');
 
 // Withhold the columns this role may not read, whatever the endpoint returns.
 router.use(fieldMask('quotations'));
-const { authenticate, authorizeAction } = require('../middleware/auth');
+const { authenticate, authorizeAction, authorizeAny } = require('../middleware/auth');
 
 /**
  * Reading a quotation needs the page too.
@@ -184,6 +184,8 @@ router.post('/:id/estimate/email', authenticate, authorizeAction('quotations', '
  *     summary: Convert an approved quotation to a booking
  *     security: [{ bearerAuth: [] }]
  */
-router.post('/:id/convert', authenticate, authorizeAction('quotations', 'edit'), salesController.convertQuotationToBooking);
+// Convert is its own right now that the checkbox exists; edit still counts, so
+// a role that has been converting all along does not lose it overnight.
+router.post('/:id/convert', authenticate, authorizeAny(authorizeAction('quotations', 'convert'), authorizeAction('quotations', 'edit')), salesController.convertQuotationToBooking);
 
 module.exports = router;

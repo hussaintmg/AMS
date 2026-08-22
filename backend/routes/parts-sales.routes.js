@@ -15,7 +15,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { authenticate, authorizeAction } = require('../middleware/auth');
+const { authenticate, authorizeAction, authorizeAny } = require('../middleware/auth');
 const controller = require('../controllers/partsSales.controller');
 
 router.use(authenticate);
@@ -80,13 +80,20 @@ router.put('/quotations/:id', can('quotations', 'edit'), controller.updateQuotat
 router.delete('/quotations/:id', can('quotations', 'delete'), controller.deleteQuotation);
 router.patch('/quotations/:id/status', can('quotations', 'edit'), controller.updateQuotationStatus);
 router.post('/quotations/:id/approve', can('quotations', 'approve'), controller.approveQuotation);
-// The parts flow is quotation → invoice directly; the invoice moves the stock,
-// so converting needs create on invoices.
-// Converting can now leave a balance behind, which makes the result a credit
+// The parts flow is quotation → invoice directly, and the invoice moves the
+// stock — so either grant allows it: Convert on the quotation you are
+// converting, or Create on the invoice it becomes. Only the second used to
+// count, so a counter role with "Convert" ticked on Parts Quotations was told
+// it "cannot create part_invoices" — a page it had never been given and had no
+// reason to want.
+// Converting can also leave a balance behind, which makes the result a credit
 // invoice — the same extra grant the direct credit invoice needs.
+// Written out on the route rather than hidden behind a named const: the guard
+// is what scripts/audit_page_operations.js reads to tell a checkbox that does
+// something from one that does not.
 const whenConvertCredit = (req, res, next) => (String(req.body?.paymentTerm || '').toLowerCase() === 'credit' ? next() : next('route'));
-router.post('/quotations/:id/convert', whenConvertCredit, can('invoices', 'changePaymentTerm'), can('invoices', 'create'), controller.convertQuotationToInvoice);
-router.post('/quotations/:id/convert', can('invoices', 'create'), controller.convertQuotationToInvoice);
+router.post('/quotations/:id/convert', whenConvertCredit, can('invoices', 'changePaymentTerm'), authorizeAny(can('quotations', 'convert'), can('invoices', 'create')), controller.convertQuotationToInvoice);
+router.post('/quotations/:id/convert', authorizeAny(can('quotations', 'convert'), can('invoices', 'create')), controller.convertQuotationToInvoice);
 // Email and PDF reuse the vehicle documents' templates — see the controller.
 router.post('/quotations/:id/send-email', can('quotations', 'sendEmail'), controller.sendQuotationEmail);
 router.get('/quotations/:id/estimate/pdf', can('quotations', 'downloadPdf'), controller.downloadQuotationEstimate);

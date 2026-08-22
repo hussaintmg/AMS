@@ -243,6 +243,31 @@ const authorizeAction = (pageKey, action = 'view') => {
 };
 
 /**
+ * Pass if ANY of these guards passes.
+ *
+ * `authorizeAction` ORs several *pages* for one action, but converting is a
+ * case where two different actions both legitimately allow it: the source
+ * document's Convert right, or Create on whatever the conversion produces.
+ * Written as two guards in a row they would AND, which is how ticking
+ * "Convert" on Parts Quotations still ended in "cannot create part_invoices".
+ *
+ * The first refusal is what the caller is told, so put the grant a user is
+ * most likely to be missing first.
+ */
+const authorizeAny = (...guards) => (req, res, next) => {
+  let firstError = null;
+  const attempt = (index) => {
+    if (index >= guards.length) return next(firstError);
+    guards[index](req, res, (error) => {
+      if (!error) return next();
+      if (!firstError) firstError = error;
+      return attempt(index + 1);
+    });
+  };
+  attempt(0);
+};
+
+/**
  * Say enough about a refusal to settle it without a debugger.
  *
  * "Permission denied: cannot create part_scan" on its own cannot distinguish a
@@ -291,6 +316,7 @@ module.exports = {
   authenticate,
   authorize,
   authorizeAction,
+  authorizeAny,
   authorizeRouter,
   authorizePage,
   checkPermission,

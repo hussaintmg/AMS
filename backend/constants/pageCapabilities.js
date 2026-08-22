@@ -77,7 +77,7 @@ const PAGE_CAPABILITIES = {
   // `downloadPdf` on bookings, orders and invoices has no endpoint of its own —
   // those documents are rendered from templates in the browser — but the button
   // is gated on it, so the checkbox does something and belongs here.
-  quotations: { actions: ['create', 'edit', 'delete', 'approve', 'sendEmail', 'downloadPdf'], dataScope: true },
+  quotations: { actions: ['create', 'edit', 'delete', 'approve', 'sendEmail', 'downloadPdf', 'convert'], dataScope: true },
   bookings: { actions: ['create', 'edit', 'delete', 'sendEmail', 'downloadPdf', 'convert'], dataScope: true },
   sales_orders: { actions: ['create', 'edit', 'delete', 'sendEmail', 'downloadPdf', 'markDelivered', 'import'], dataScope: true },
   invoices: { actions: ['create', 'edit', 'delete', 'sendEmail', 'downloadPdf', 'recordPayment', 'changePaymentTerm'], dataScope: true },
@@ -85,7 +85,7 @@ const PAGE_CAPABILITIES = {
   vehicle_scan: { actions: ['create'], dataScope: false },
 
   // ── Parts sales ──────────────────────────────────────────────────────────
-  part_quotations: { actions: ['create', 'edit', 'delete', 'approve', 'sendEmail', 'downloadPdf'], dataScope: true },
+  part_quotations: { actions: ['create', 'edit', 'delete', 'approve', 'sendEmail', 'downloadPdf', 'convert'], dataScope: true },
   // Restored 2026-08-18 (on the client's live sidebar): converts to an order + invoice.
   part_bookings: { actions: ['create', 'edit', 'delete', 'sendEmail', 'downloadPdf', 'convert'], dataScope: true },
   part_invoices: { actions: ['create', 'edit', 'delete', 'sendEmail', 'downloadPdf', 'recordPayment', 'changePaymentTerm'], dataScope: true },
