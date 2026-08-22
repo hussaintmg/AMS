@@ -288,7 +288,7 @@ const mapQuotation = (q) => ({
 
 const getAllQuotations = listHandler({
     Model: PartQuotation,
-    permissionKey: 'quotations',
+    permissionKey: ['part_quotations', 'quotations'],
     numberField: 'quotations',
     sortMap: {
         created_at: 'createdAt', total_amount: 'totalAmount',
@@ -301,7 +301,7 @@ const getAllQuotations = listHandler({
 /** Card figures for the parts quotations screen: total / draft / sent / approved / expired. */
 const getQuotationStats = async (req, res, next) => {
     try {
-        const ownerIds = await allowedOwnerIds(req.user, 'part_quotations');
+        const ownerIds = await allowedOwnerIds(req.user, ['part_quotations', 'quotations']);
         const match = { status: { $ne: 'cancelled' } };
         if (ownerIds !== null) match.createdBy = { $in: ownerIds.map((id) => new mongoose.Types.ObjectId(id)) };
         const [result] = await PartQuotation.aggregate([
@@ -722,7 +722,7 @@ const mapBooking = (b, order = null) => ({
  */
 const getAllBookings = listHandler({
     Model: PartBooking,
-    permissionKey: 'bookings',
+    permissionKey: ['part_bookings', 'bookings'],
     numberField: 'bookings',
     sortMap: {
         created_at: 'createdAt', booking_amount: 'bookingAmount', total_amount: 'totalAmount',
@@ -1317,7 +1317,7 @@ const getInvoiceSummary = async (req, res, next) => {
     try {
         const { invoiceSummary } = require('../models/paymentTerm.fields');
         const filter = {};
-        const ownerIds = await allowedOwnerIds(req.user, 'part_invoices');
+        const ownerIds = await allowedOwnerIds(req.user, ['part_invoices', 'invoices']);
         if (ownerIds !== null) filter.createdBy = { $in: ownerIds };
         const range = dateRangeFilter(req.query.dateFrom, req.query.dateTo);
         if (range) filter.createdAt = range;
@@ -1327,7 +1327,7 @@ const getInvoiceSummary = async (req, res, next) => {
 
 const getAllInvoices = listHandler({
     Model: PartInvoice,
-    permissionKey: 'invoices',
+    permissionKey: ['part_invoices', 'invoices'],
     numberField: 'invoices',
     sortMap: {
         created_at: 'createdAt', total_amount: 'totalAmount', paid_amount: 'paidAmount',

@@ -54,17 +54,29 @@ async function superAdminIds() {
  * `null` means no restriction (super admin, or dataScope "all").
  * Otherwise it is always own data plus whatever the scope adds — and never a
  * super admin's data, whatever the scope says.
+ *
+ * `pageKey` may be several keys, because a screen can be reachable through more
+ * than one of them: the parts routes admit either `part_quotations` or
+ * `quotations` (routes/parts-sales.routes.js PARTS_PAGES), so the scope has to
+ * read both. Reading only one meant a parts-only role set to "All data" was
+ * still shown its own rows alone — the guard let it in on the parts row while
+ * the list asked the vehicle row, which the role did not have. The widest
+ * answer across the keys wins, so a screen is never narrower than the grant
+ * that opened it.
  */
 async function allowedOwnerIds(user, pageKey) {
   const ownId = String(user?.id || user?._id || '');
-  const job = getJob(user, pageKey);
-  if (job?.superAdmin || job?.dataScope?.mode === 'all') return null;
+  const keys = (Array.isArray(pageKey) ? pageKey : [pageKey]).filter(Boolean);
+  const jobs = keys.map((key) => getJob(user, key)).filter(Boolean);
+  if (jobs.some((job) => job.superAdmin || job.dataScope?.mode === 'all')) return null;
   const ids = new Set(ownId ? [ownId] : []);
-  if (job?.dataScope?.mode === 'selected_users') (job.dataScope.users || []).forEach((id) => ids.add(String(id?._id || id)));
-  if (job?.dataScope?.mode === 'selected_roles') {
-    const roleIds = (job.dataScope.roles || []).map((id) => id?._id || id);
-    const users = await User.find({ role: { $in: roleIds }, isActive: true }).select('_id').lean();
-    users.forEach((item) => ids.add(String(item._id)));
+  for (const job of jobs) {
+    if (job.dataScope?.mode === 'selected_users') (job.dataScope.users || []).forEach((id) => ids.add(String(id?._id || id)));
+    if (job.dataScope?.mode === 'selected_roles') {
+      const roleIds = (job.dataScope.roles || []).map((id) => id?._id || id);
+      const users = await User.find({ role: { $in: roleIds }, isActive: true }).select('_id').lean();
+      users.forEach((item) => ids.add(String(item._id)));
+    }
   }
   if (ids.size > (ownId ? 1 : 0)) {
     // Enforced here, not only hidden in the picker: a scope must never reach a
