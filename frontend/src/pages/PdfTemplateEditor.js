@@ -28,7 +28,7 @@ const SAMPLE_PART_ITEMS = [
 ];
 const withGroupMeta = rows => Object.assign(rows.slice(), {
   count: rows.length,
-  subtotalText: `PKR ${rows.reduce((s, r) => s + Number(String(r.totalPriceText).replace(/[^\d.]/g, '')), 0).toLocaleString('en-PK')}`,
+  subtotalText: `PKR ${rows.reduce((s, r) => s + Number(String(r.totalPriceText).replace(/[^\d.]/g, '')), 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
 });
 const sample = {
   document: { title: 'QUOTATION', number: 'QT-2026-000001', status: 'draft', date: '15/07/2026', totalAmount: 'PKR 5,250,000', taxAmount: 'PKR 250,000', subtotal: 'PKR 5,000,000', discountAmount: 'PKR 20,000', discountPercentage: '5', additionalCharges: 'PKR 0', vehiclePrice: 'PKR 5,000,000', validUntil: '22/07/2026', validityDays: '7', bookingDate: '15/07/2026', bookingAmount: 'PKR 500,000', deliveryDate: '30/07/2026', priority: 'high', orderDate: '15/07/2026', paymentMode: 'cash', invoiceDate: '15/07/2026', dueDate: '14/08/2026', paidAmount: 'PKR 2,000,000', balanceAmount: 'PKR 3,250,000', amountTendered: 'PKR 2,000,000', changeDue: '', salePerson: 'Hussain Admin', notes: 'Thank you for your business.', termsAndConditions: 'Payment within 30 days of delivery.', itemName: 'Toyota Corolla XLI', totalInWords: 'RUPEES FIFTY TWO LAKH FIFTY THOUSAND ONLY' },

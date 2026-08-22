@@ -12,7 +12,7 @@ import { fieldAccessor, pageActions } from '../utils/roleJobs';
 import '../styles/userManagement.css';
 import '../styles/salaryAdvances.css';
 
-const money = (value) => Number(value || 0).toLocaleString('en-PK');
+const money = (value) => Number(value || 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 /**
  * Where a salary stands. A month that has not been posted yet is not owed to
@@ -815,12 +815,12 @@ const Payroll = () => {
                                         <div className="data-card-row">
                                             <span className="row-icon">💰</span>
                                             <span className="row-label">Gross</span>
-                                            <span className="row-value">{Number(ln.gross_amount).toLocaleString()}</span>
+                                            <span className="row-value">{Number(ln.gross_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                         </div>
                                         <div className="data-card-row">
                                             <span className="row-icon">📉</span>
                                             <span className="row-label">Deduct</span>
-                                            <span className="row-value">{Number(ln.deductions).toLocaleString()}</span>
+                                            <span className="row-value">{Number(ln.deductions).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                         </div>
                                         {Number(ln.advance_deduction) > 0 && (
                                             <div className="data-card-row">

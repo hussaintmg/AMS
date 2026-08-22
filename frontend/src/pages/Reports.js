@@ -434,7 +434,7 @@ const displayCell = (key, value) => {
     if (value.name || value.label || value.title) return value.name || value.label || value.title;
     return JSON.stringify(value).replace(/["{}]/g, '').replace(/,/g, ', ');
   }
-  if (isMoneyColumn(key)) return `PKR ${Number(value || 0).toLocaleString()}`;
+  if (isMoneyColumn(key)) return `PKR ${Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   if (isDateColumn(key)) {
     const date = new Date(value);
     return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString();

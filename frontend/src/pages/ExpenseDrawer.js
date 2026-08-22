@@ -44,7 +44,7 @@ export default function ExpenseDrawer({ isOpen, onClose, expense }) {
               </div>
               <div className="email-drawer-row">
                 <span className="email-drawer-label">Amount</span>
-                <span className="email-drawer-value">{expense?.amount != null ? Number(expense.amount).toLocaleString() : '-'}</span>
+                <span className="email-drawer-value">{expense?.amount != null ? Number(expense.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}</span>
               </div>
               <div className="email-drawer-row">
                 <span className="email-drawer-label">Expense Date</span>

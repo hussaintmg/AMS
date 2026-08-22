@@ -569,7 +569,7 @@ const PartsInventory = () => {
 
   // Format currency
   const formatCurrency = (amount) => {
-    return `PKR ${Number(amount).toLocaleString()}`;
+    return `PKR ${Number(amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
   const showHelp = (message) => {
@@ -1214,7 +1214,7 @@ const PartsInventory = () => {
                           />
                         </label>
                         <input
-                          type="number"
+                          type="number" step="0.01"
                           name="purchasePrice"
                           className="form-input"
                           value={formData.purchasePrice}
@@ -1231,7 +1231,7 @@ const PartsInventory = () => {
                         />
                       </label>
                       <input
-                        type="number"
+                        type="number" step="0.01"
                         name="sellingPrice"
                         className="form-input"
                         value={formData.sellingPrice}

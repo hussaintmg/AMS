@@ -14,7 +14,7 @@ import '../styles/userManagement.css';
 import '../styles/ledger.css';
 
 const emptyEntry = () => ({ transactionDate: new Date().toISOString().slice(0, 10), debitAccount: '', creditAccount: '', amount: '', description: '' });
-const money = (value) => `PKR ${Number(value || 0).toLocaleString()}`;
+const money = (value) => `PKR ${Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export default function Ledger() {
   const { user } = useAuth();

@@ -226,7 +226,7 @@ function DepartmentFormModal({
               <div className="form-group">
                 <label>Budget</label>
                 <input
-                  type="number"
+                  type="number" step="0.01"
                   name="budget"
                   value={formData.budget}
                   onChange={handleInputChange}

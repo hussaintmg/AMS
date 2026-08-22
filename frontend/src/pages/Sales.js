@@ -1060,7 +1060,7 @@ function Quotations({ category = 'vehicle' }) {
                                 <td>{new Date(q.created_at).toLocaleDateString()}</td>
                                 {showField('customer') && <td>{q.customer_name}</td>}
                                 {showField('products') && <td><ProductCell items={categoryLines(q.line_items, config.key)} fallback={q.item_name || q.vehicle_full_name || 'Parts/Services'} /></td>}
-                                {showField('amounts') && <td>PKR {Number(q.total_amount).toLocaleString()}</td>}
+                                {showField('amounts') && <td>PKR {Number(q.total_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>}
                                 <td>{getStatusBadge(q.status)}</td>
                                 <td onClick={e=>e.stopPropagation()}>
                                     <ActionButtons
@@ -1099,7 +1099,7 @@ function Quotations({ category = 'vehicle' }) {
                                 </div>
                                 <div className="data-card-body">
                                     {showField('products') && <div className="data-card-row"><span className="row-icon">📦</span><span className="row-label">{config.key === 'parts' ? 'Parts' : 'Vehicles'}</span><span className="row-value"><ProductCell items={categoryLines(q.line_items, config.key)} fallback={q.item_name || q.vehicle_full_name || 'Parts/Services'} /></span></div>}
-                                    {showField('amounts') && <div className="data-card-row"><span className="row-icon">💰</span><span className="row-label">Total</span><span className="row-value">PKR {Number(q.total_amount).toLocaleString()}</span></div>}
+                                    {showField('amounts') && <div className="data-card-row"><span className="row-icon">💰</span><span className="row-label">Total</span><span className="row-value">PKR {Number(q.total_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>}
                                     <div className="data-card-row"><span className="row-icon">📅</span><span className="row-label">Date</span><span className="row-value">{new Date(q.created_at).toLocaleDateString()}</span></div>
                                 </div>
                                 <div className="data-card-footer">
@@ -1163,17 +1163,17 @@ function Quotations({ category = 'vehicle' }) {
                             <div className="form-row">
                                 <div className="form-group">
                                     <label>Subtotal ({currency.code})</label>
-                                    <input type="number" value={lineSubtotal} readOnly title="Sum of every product line" />
+                                    <input type="number" step="0.01" value={lineSubtotal} readOnly title="Sum of every product line" />
                                 </div>
                                 <div className="form-group">
                                     <label>Discount</label>
-                                    <input type="number" name="discountAmount" value={formData.discountAmount} onChange={handleChange} />
+                                    <input type="number" step="0.01" name="discountAmount" value={formData.discountAmount} onChange={handleChange} />
                                 </div>
                             </div>
                             <div className="form-row">
                                 <div className="form-group">
                                     <label>Tax {salesTax ? `(${salesTax.tax_name} ${salesTax.tax_rate}%)` : ''}</label>
-                                    <input type="number" name="taxAmount" value={formData.taxAmount} onChange={handleChange} />
+                                    <input type="number" step="0.01" name="taxAmount" value={formData.taxAmount} onChange={handleChange} />
                                 </div>
                                 <div className="form-group">
                                     <label>Validity (Days)</label>
@@ -1191,7 +1191,7 @@ function Quotations({ category = 'vehicle' }) {
                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.2em' }}>
                                     <strong>Total:</strong>
                                     <strong style={{ color: '#2563eb' }}>
-                                        {currency.code} {quotationTotal.toLocaleString()}
+                                        {currency.code} {quotationTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                     </strong>
                                 </div>
                             </div>
@@ -1214,7 +1214,7 @@ function Quotations({ category = 'vehicle' }) {
                     { label: 'Date', value: drawerItem?.created_at ? new Date(drawerItem.created_at).toLocaleDateString('en-GB') : '-' },
                     { label: 'Customer', value: drawerItem?.customer_name },
                     { label: 'Item', value: drawerItem?.item_name || drawerItem?.vehicle_full_name || drawerItem?.chassis_number || drawerItem?.engine_number || '—' },
-                    { label: 'Total', value: drawerItem?.total_amount != null ? `PKR ${Number(drawerItem.total_amount).toLocaleString()}` : '-' },
+                    { label: 'Total', value: drawerItem?.total_amount != null ? `PKR ${Number(drawerItem.total_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-' },
                     { label: 'Valid Until', value: drawerItem?.valid_until ? new Date(drawerItem.valid_until).toLocaleDateString('en-GB') : '-' },
                     { label: 'Notes', value: drawerItem?.notes, full: true },
                 ]}
@@ -1671,7 +1671,7 @@ function Bookings({ category = 'vehicle' }) {
                                     {showField('sales_person') && b.sale_person && <div className="text-muted small">{b.sale_person}</div>}
                                 </td>}
                                 {showField('products') && <td><ProductCell items={categoryLines(b.line_items, config.key)} fallback={b.item_name || b.vehicle_full_name || 'Parts/Services'} /></td>}
-                                {showField('amounts') && <td>PKR {Number(b.booking_amount).toLocaleString()}</td>}
+                                {showField('amounts') && <td>PKR {Number(b.booking_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>}
                                 <td>{b.expected_delivery_date ? new Date(b.expected_delivery_date).toLocaleDateString() : '-'}</td>
                                 <td>{getStatusBadge(b.status)}</td>
                                 <td onClick={e=>e.stopPropagation()}>
@@ -1705,7 +1705,7 @@ function Bookings({ category = 'vehicle' }) {
                                 </div>
                                 <div className="data-card-body">
                                     {showField('products') && <div className="data-card-row"><span className="row-icon">🚗</span><span className="row-label">{config.key === 'parts' ? 'Parts' : 'Vehicles'}</span><span className="row-value"><ProductCell items={categoryLines(b.line_items, config.key)} fallback={b.item_name || b.vehicle_full_name || 'Parts/Services'} /></span></div>}
-                                    {showField('amounts') && <div className="data-card-row"><span className="row-icon">💰</span><span className="row-label">Paid</span><span className="row-value">PKR {Number(b.booking_amount).toLocaleString()}</span></div>}
+                                    {showField('amounts') && <div className="data-card-row"><span className="row-icon">💰</span><span className="row-label">Paid</span><span className="row-value">PKR {Number(b.booking_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>}
                                     <div className="data-card-row"><span className="row-icon">📅</span><span className="row-label">Expected</span><span className="row-value">{b.expected_delivery_date ? new Date(b.expected_delivery_date).toLocaleDateString() : '-'}</span></div>
                                 </div>
                                 <div className="data-card-footer">
@@ -1768,7 +1768,7 @@ function Bookings({ category = 'vehicle' }) {
                                 <div className="form-row">
                                     <div className="form-group">
                                         <label>Booking Amount ({currency.code}) *</label>
-                                        <input type="number" name="bookingAmount" value={formData.bookingAmount} onChange={handleChange} required />
+                                        <input type="number" step="0.01" name="bookingAmount" value={formData.bookingAmount} onChange={handleChange} required />
                                     </div>
                                     {/* Where the deposit lands. Petty cash unless the
                                         operator says otherwise. */}
@@ -1790,7 +1790,7 @@ function Bookings({ category = 'vehicle' }) {
                                         {/* Follows the products above once there are any; only a
                                             booking with no lines yet is typed in by hand. */}
                                         <input
-                                            type="number"
+                                            type="number" step="0.01"
                                             name="totalAmount"
                                             value={bookingLines.length ? bookingLineTotal : formData.totalAmount}
                                             onChange={handleChange}
@@ -1801,7 +1801,7 @@ function Bookings({ category = 'vehicle' }) {
                                 </div>
                                 <div className="form-group">
                                     <label>Tax Amount {salesTax ? `(${salesTax.tax_name} ${salesTax.tax_rate}%)` : ''}</label>
-                                    <input type="number" name="taxAmount" value={formData.taxAmount} onChange={handleChange} min="0" />
+                                    <input type="number" step="0.01" name="taxAmount" value={formData.taxAmount} onChange={handleChange} min="0" />
                                 </div>
                                 <div className="form-row">
                                     <div className="form-group">
@@ -1842,7 +1842,7 @@ function Bookings({ category = 'vehicle' }) {
                     { label: 'Sales Order', value: drawerItem?.sales_order_number },
                     { label: 'Salesman', value: drawerItem?.sale_person },
                     { label: 'Item', value: drawerItem?.item_name || drawerItem?.vehicle_full_name || drawerItem?.chassis_number || drawerItem?.engine_number || '—' },
-                    { label: 'Booking Amount', value: drawerItem?.booking_amount != null ? `PKR ${Number(drawerItem.booking_amount).toLocaleString()}` : '-' },
+                    { label: 'Booking Amount', value: drawerItem?.booking_amount != null ? `PKR ${Number(drawerItem.booking_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-' },
                     { label: 'Expected Delivery', value: drawerItem?.expected_delivery_date ? new Date(drawerItem.expected_delivery_date).toLocaleDateString('en-GB') : '-' },
                     { label: 'Notes', value: drawerItem?.notes, full: true },
                 ]}
@@ -2143,7 +2143,7 @@ function SalesOrders({ category = 'vehicle' }) {
             if (modalMode === 'create' && orderShortfall > 0) {
                 toast.error(
                     `This order invoices immediately, so it must be paid in full — ${currency.code} `
-                    + `${orderShortfall.toLocaleString()} is still outstanding.`,
+                    + `${orderShortfall.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} is still outstanding.`,
                 );
                 return;
             }
@@ -2372,8 +2372,8 @@ function SalesOrders({ category = 'vehicle' }) {
                                 </td>}
                                 {showField('products') && <td><span className={`badge badge-${o.sale_type === 'parts' ? 'secondary' : o.sale_type === 'service' ? 'info' : 'primary'}`} style={{ fontSize: '0.8em' }}>{(o.sale_type || 'vehicle').toUpperCase()}</span></td>}
                                 {showField('products') && <td><ProductCell items={categoryLines(o.line_items, config.key)} fallback={o.item_name || `${o.make_name || ''} ${o.model_name || ''} ${o.variant_name || ''}`.trim() || 'Parts/Services'} /></td>}
-                                {showField('amounts') && <td>PKR {Number(o.grand_total).toLocaleString()}</td>}
-                                {showField('payments') && <td>PKR {Number(o.paid_amount).toLocaleString()}</td>}
+                                {showField('amounts') && <td>PKR {Number(o.grand_total).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>}
+                                {showField('payments') && <td>PKR {Number(o.paid_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>}
                                 <td>
                                     {o.invoice_number ? (
                                         <span className="badge badge-success" title={`Status: ${o.invoice_status}`}>
@@ -2451,8 +2451,8 @@ function SalesOrders({ category = 'vehicle' }) {
                                 </div>
                                 <div className="data-card-body">
                                     {showField('products') && <div className="data-card-row"><span className="row-icon">📦</span><span className="row-label">{config.key === 'parts' ? 'Parts' : 'Vehicles'}</span><span className="row-value"><ProductCell items={categoryLines(o.line_items, config.key)} fallback={o.item_name || `${o.make_name || ''} ${o.model_name || ''} ${o.variant_name || ''}`.trim() || 'Parts/Services'} /></span></div>}
-                                    {showField('amounts') && <div className="data-card-row"><span className="row-icon">💰</span><span className="row-label">Total</span><span className="row-value">PKR {Number(o.grand_total).toLocaleString()}</span></div>}
-                                    {showField('payments') && <div className="data-card-row"><span className="row-icon">✅</span><span className="row-label">Paid</span><span className="row-value">PKR {Number(o.paid_amount).toLocaleString()}</span></div>}
+                                    {showField('amounts') && <div className="data-card-row"><span className="row-icon">💰</span><span className="row-label">Total</span><span className="row-value">PKR {Number(o.grand_total).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>}
+                                    {showField('payments') && <div className="data-card-row"><span className="row-icon">✅</span><span className="row-label">Paid</span><span className="row-value">PKR {Number(o.paid_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>}
                                     <div className="data-card-row"><span className="row-icon">📄</span><span className="row-label">Invoice</span><span className="row-value">{o.invoice_number ? <span className="badge-pill status-active">{o.invoice_number}</span> : <span style={{ color: '#94a3b8' }}>Not Generated</span>}</span></div>
                                 </div>
                                 <div className="data-card-footer">
@@ -2559,37 +2559,37 @@ function SalesOrders({ category = 'vehicle' }) {
                             <div className="form-row">
                                 <div className="form-group">
                                     <label>Products subtotal ({currency.code})</label>
-                                    <input type="number" value={modalMode === 'create' ? orderSubtotal : formData.vehiclePrice} readOnly title="Sum of every product line" />
+                                    <input type="number" step="0.01" value={modalMode === 'create' ? orderSubtotal : formData.vehiclePrice} readOnly title="Sum of every product line" />
                                 </div>
                                 <div className="form-group">
                                     <label>Accessories Total</label>
-                                    <input type="number" name="accessoriesTotal" value={formData.accessoriesTotal} onChange={handleChange} min="0" />
+                                    <input type="number" step="0.01" name="accessoriesTotal" value={formData.accessoriesTotal} onChange={handleChange} min="0" />
                                 </div>
                             </div>
                             <div className="form-row">
                                 <div className="form-group">
                                     <label>Discount Amount</label>
-                                    <input type="number" name="discountAmount" value={formData.discountAmount} onChange={handleChange} min="0" />
+                                    <input type="number" step="0.01" name="discountAmount" value={formData.discountAmount} onChange={handleChange} min="0" />
                                 </div>
                                 <div className="form-group">
                                     <label>Tax Amount {salesTax ? `(${salesTax.tax_name} ${salesTax.tax_rate}%)` : ''}</label>
-                                    <input type="number" name="taxAmount" value={formData.taxAmount} onChange={handleChange} min="0" />
+                                    <input type="number" step="0.01" name="taxAmount" value={formData.taxAmount} onChange={handleChange} min="0" />
                                 </div>
                             </div>
                             <div className="form-row">
                                 <div className="form-group">
                                     <label>Registration Charges</label>
-                                    <input type="number" name="registrationCharges" value={formData.registrationCharges} onChange={handleChange} min="0" />
+                                    <input type="number" step="0.01" name="registrationCharges" value={formData.registrationCharges} onChange={handleChange} min="0" />
                                 </div>
                                 <div className="form-group">
                                     <label>Insurance Charges</label>
-                                    <input type="number" name="insuranceCharges" value={formData.insuranceCharges} onChange={handleChange} min="0" />
+                                    <input type="number" step="0.01" name="insuranceCharges" value={formData.insuranceCharges} onChange={handleChange} min="0" />
                                 </div>
                             </div>
                             <div className="form-row">
                                 <div className="form-group">
                                     <label>Other Charges</label>
-                                    <input type="number" name="otherCharges" value={formData.otherCharges} onChange={handleChange} min="0" />
+                                    <input type="number" step="0.01" name="otherCharges" value={formData.otherCharges} onChange={handleChange} min="0" />
                                 </div>
                                 <div className="form-group">
                                     <label>Payment Mode</label>
@@ -2609,7 +2609,7 @@ function SalesOrders({ category = 'vehicle' }) {
                                     </div>
                                     <div className="form-group">
                                         <label>Finance Amount</label>
-                                        <input type="number" name="financeAmount" value={formData.financeAmount} onChange={handleChange} min="0" />
+                                        <input type="number" step="0.01" name="financeAmount" value={formData.financeAmount} onChange={handleChange} min="0" />
                                     </div>
                                 </div>
                             )}
@@ -2621,14 +2621,14 @@ function SalesOrders({ category = 'vehicle' }) {
                                     </div>
                                     <div className="form-group">
                                         <label>Exchange Value</label>
-                                        <input type="number" name="exchangeValue" value={formData.exchangeValue} onChange={handleChange} min="0" />
+                                        <input type="number" step="0.01" name="exchangeValue" value={formData.exchangeValue} onChange={handleChange} min="0" />
                                     </div>
                                 </div>
                             )}
                             <div className="form-row">
                                 <div className="form-group">
                                     <label>Amount Received *</label>
-                                    <input type="number" name="paidAmount" value={formData.paidAmount} onChange={handleChange} min="0" placeholder="What the customer handed over" />
+                                    <input type="number" step="0.01" name="paidAmount" value={formData.paidAmount} onChange={handleChange} min="0" placeholder="What the customer handed over" />
                                     {/* Where the money lands. */}
                                     {accounts.length > 0 && Number(formData.paidAmount) > 0 && (
                                         <div style={{ marginTop: '0.5rem' }}>
@@ -2649,11 +2649,11 @@ function SalesOrders({ category = 'vehicle' }) {
                                         style={{ marginTop: '0.4rem' }}
                                         onClick={() => setFormData(prev => ({ ...prev, paidAmount: String(orderGrandTotal) }))}
                                     >
-                                        Paid in full ({currency.code} {orderGrandTotal.toLocaleString()})
+                                        Paid in full ({currency.code} {orderGrandTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
                                     </button>
                                     {orderShortfall > 0 ? (
                                         <small style={{ color: '#dc2626', fontWeight: 600, display: 'block', marginTop: '0.4rem' }}>
-                                            {currency.code} {orderShortfall.toLocaleString()} still outstanding — confirming this
+                                            {currency.code} {orderShortfall.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} still outstanding — confirming this
                                             order raises its invoice, and an invoice cannot carry a balance.
                                         </small>
                                     ) : orderChangeDue > 0 ? (
@@ -2675,18 +2675,18 @@ function SalesOrders({ category = 'vehicle' }) {
                             <div style={{ background: '#f8f9fa', padding: '1rem', borderRadius: '8px', marginTop: '1rem' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.2em' }}>
                                     <strong>Grand Total:</strong>
-                                    <strong style={{ color: '#2563eb' }}>PKR {calculateGrandTotal().toLocaleString()}</strong>
+                                    <strong style={{ color: '#2563eb' }}>PKR {calculateGrandTotal().toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
                                 </div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem' }}>
                                     <span>Balance Due:</span>
                                     <span style={{ color: orderShortfall > 0 ? '#dc2626' : '#16a34a' }}>
-                                        PKR {orderShortfall.toLocaleString()}
+                                        PKR {orderShortfall.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                     </span>
                                 </div>
                                 {orderChangeDue > 0 && (
                                     <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem' }}>
                                         <span>Change to return:</span>
-                                        <strong style={{ color: '#b45309' }}>PKR {orderChangeDue.toLocaleString()}</strong>
+                                        <strong style={{ color: '#b45309' }}>PKR {orderChangeDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
                                     </div>
                                 )}
                             </div>
@@ -3137,7 +3137,7 @@ function Invoices({ category = 'vehicle' }) {
                     if (tendered + 0.009 < invoiceTotal) {
                         toast.error(
                             `A paid invoice can only be created once it is paid in full — ${currency.code} `
-                            + `${(invoiceTotal - tendered).toLocaleString()} is still outstanding. Switch to Credit to take part of it now.`,
+                            + `${(invoiceTotal - tendered).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} is still outstanding. Switch to Credit to take part of it now.`,
                         );
                         return;
                     }
@@ -3403,10 +3403,10 @@ function Invoices({ category = 'vehicle' }) {
                                 </td>}
                                 {showField('products') && <td><span className="badge badge-info">{inv.invoice_type?.toUpperCase()}</span></td>}
                                 {showField('products') && <td><ProductCell items={categoryLines(inv.line_items, config.key)} fallback={inv.item_name || 'Parts/Services'} /></td>}
-                                {showField('amounts') && <td>PKR {Number(inv.total_amount).toLocaleString()}</td>}
-                                {showField('payments') && <td>PKR {Number(inv.paid_amount || 0).toLocaleString()}</td>}
+                                {showField('amounts') && <td>PKR {Number(inv.total_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>}
+                                {showField('payments') && <td>PKR {Number(inv.paid_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>}
                                 {showField('payments') && <td style={{ color: inv.balance_amount > 0 ? '#dc2626' : '#16a34a' }}>
-                                    PKR {Number(inv.balance_amount).toLocaleString()}
+                                    PKR {Number(inv.balance_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </td>}
                                 {showField('payments') && <td>
                                     {inv.payment_term === 'credit'
@@ -3467,11 +3467,11 @@ function Invoices({ category = 'vehicle' }) {
                                     {getStatusBadge(inv.status)}
                                 </div>
                                 <div className="data-card-body">
-                                    {showField('amounts') && <div className="data-card-row"><span className="row-icon">💰</span><span className="row-label">Total</span><span className="row-value">PKR {Number(inv.total_amount).toLocaleString()}</span></div>}
-                                    {showField('payments') && <div className="data-card-row"><span className="row-icon">✅</span><span className="row-label">Paid</span><span className="row-value">PKR {Number(inv.paid_amount || 0).toLocaleString()}</span></div>}
+                                    {showField('amounts') && <div className="data-card-row"><span className="row-icon">💰</span><span className="row-label">Total</span><span className="row-value">PKR {Number(inv.total_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>}
+                                    {showField('payments') && <div className="data-card-row"><span className="row-icon">✅</span><span className="row-label">Paid</span><span className="row-value">PKR {Number(inv.paid_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>}
                                     {showField('payments') && <div className="data-card-row">
                                         <span className="row-icon">⚖️</span><span className="row-label">Balance</span>
-                                        <span className="row-value" style={{ color: inv.balance_amount > 0 ? '#dc2626' : '#16a34a' }}>PKR {Number(inv.balance_amount).toLocaleString()}</span>
+                                        <span className="row-value" style={{ color: inv.balance_amount > 0 ? '#dc2626' : '#16a34a' }}>PKR {Number(inv.balance_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                     </div>}
                                 </div>
                                 <div className="data-card-footer">
@@ -3637,7 +3637,7 @@ function Invoices({ category = 'vehicle' }) {
                                                                 required
                                                             >
                                                                 <option value="">Select Service</option>
-                                                                {serviceTypes.map(service => <option key={service._id || service.id} value={service._id || service.id}>{service.name} {service.basePrice ? `(PKR ${Number(service.basePrice).toLocaleString()})` : ''}</option>)}
+                                                                {serviceTypes.map(service => <option key={service._id || service.id} value={service._id || service.id}>{service.name} {service.basePrice ? `(PKR ${Number(service.basePrice).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})` : ''}</option>)}
                                                             </SearchableSelect>
                                                         ) : (
                                                             <input type="text" value={item.description} onChange={(e) => handleItemChange(index, 'description', e.target.value)} required placeholder="Item Name / Service" />
@@ -3649,11 +3649,11 @@ function Invoices({ category = 'vehicle' }) {
                                                     </div>
                                                     <div className="invoice-line-item-price">
                                                         <label style={{ fontSize: '0.75rem' }}>Price</label>
-                                                        <input type="number" value={item.unitPrice} onChange={(e) => handleItemChange(index, 'unitPrice', e.target.value)} required min="0" />
+                                                        <input type="number" step="0.01" value={item.unitPrice} onChange={(e) => handleItemChange(index, 'unitPrice', e.target.value)} required min="0" />
                                                     </div>
                                                     <div className="invoice-line-item-tax">
                                                         <label style={{ fontSize: '0.75rem' }}>Tax {((formData.invoiceType === 'service' ? serviceTax : salesTax) ? `(${(formData.invoiceType === 'service' ? serviceTax : salesTax).tax_name} ${(formData.invoiceType === 'service' ? serviceTax : salesTax).tax_rate}%)` : '')}</label>
-                                                        <input type="number" value={item.taxAmount} onChange={(e) => handleItemChange(index, 'taxAmount', e.target.value)} min="0" />
+                                                        <input type="number" step="0.01" value={item.taxAmount} onChange={(e) => handleItemChange(index, 'taxAmount', e.target.value)} min="0" />
                                                     </div>
                                                     <div className="invoice-line-item-actions">
                                                         {formData.items.length > 1 && (
@@ -3723,7 +3723,7 @@ function Invoices({ category = 'vehicle' }) {
                                                 min={new Date().toISOString().slice(0, 10)}
                                             />
                                             <small style={{ color: '#b45309', fontWeight: 600, display: 'block', marginTop: '0.4rem' }}>
-                                                {currency.code} {Math.max(0, calculateInvoiceTotal() - (Number(formData.paidAmount) || 0)).toLocaleString()} will
+                                                {currency.code} {Math.max(0, calculateInvoiceTotal() - (Number(formData.paidAmount) || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} will
                                                 show as outstanding until it is collected.
                                             </small>
                                         </div>
@@ -3757,11 +3757,11 @@ function Invoices({ category = 'vehicle' }) {
                                             style={{ marginTop: '0.4rem', width: '100%' }}
                                             onClick={() => setFormData(prev => ({ ...prev, paidAmount: String(calculateInvoiceTotal()) }))}
                                         >
-                                            Paid in full ({currency.symbol} {calculateInvoiceTotal().toLocaleString()})
+                                            Paid in full ({currency.symbol} {calculateInvoiceTotal().toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
                                         </button>
                                         {invoiceShortfall > 0 ? (
                                             <small style={{ color: formData.paymentTerm === 'credit' ? '#b45309' : '#dc2626', fontWeight: 600, display: 'block', marginTop: '0.4rem' }}>
-                                                {currency.code} {invoiceShortfall.toLocaleString()} still outstanding
+                                                {currency.code} {invoiceShortfall.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} still outstanding
                                                 {formData.paymentTerm === 'credit'
                                                     ? ' — it stays on the customer account until collected.'
                                                     : ' — switch to Credit to take part of it now.'}
@@ -3790,21 +3790,21 @@ function Invoices({ category = 'vehicle' }) {
                                     <div style={{ borderTop: '2px solid #e5e7eb', marginTop: '1.5rem', paddingTop: '1.5rem' }}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
                                             <span style={{ color: '#6b7280' }}>Subtotal</span>
-                                            <strong>{calculateSubtotal().toLocaleString()}</strong>
+                                            <strong>{calculateSubtotal().toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
                                         </div>
                                         {calculateTotalDiscount() > 0 && (
                                             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
                                                 <span style={{ color: '#6b7280' }}>Discount</span>
-                                                <strong>- {calculateTotalDiscount().toLocaleString()}</strong>
+                                                <strong>- {calculateTotalDiscount().toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
                                             </div>
                                         )}
                                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
                                             <span style={{ color: '#6b7280' }}>Tax</span>
-                                            <strong>{calculateTotalTax().toLocaleString()}</strong>
+                                            <strong>{calculateTotalTax().toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
                                         </div>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.25rem', marginTop: '1rem', color: '#2563eb' }}>
                                             <strong>Total</strong>
-                                            <strong>{currency.symbol} {calculateInvoiceTotal().toLocaleString()}</strong>
+                                            <strong>{currency.symbol} {calculateInvoiceTotal().toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
                                         </div>
                                     </div>
 
@@ -3834,11 +3834,11 @@ function Invoices({ category = 'vehicle' }) {
                         <div style={{ background: '#dbeafe', padding: '1rem', borderRadius: '8px', marginBottom: '1rem', color: '#1e40af' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                                 <span>Invoice Total:</span>
-                                <strong>PKR {Number(selectedItem.total_amount).toLocaleString()}</strong>
+                                <strong>PKR {Number(selectedItem.total_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.25rem' }}>
                                 <span>Outstanding Balance:</span>
-                                <strong style={{ color: '#dc2626' }}>PKR {Number(selectedItem.balance_amount).toLocaleString()}</strong>
+                                <strong style={{ color: '#dc2626' }}>PKR {Number(selectedItem.balance_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
                             </div>
                         </div>
 

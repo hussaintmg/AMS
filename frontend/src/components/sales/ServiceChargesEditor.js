@@ -40,7 +40,7 @@ export default function ServiceChargesEditor({
 }) {
   const typeOptions = useMemo(() => (serviceTypes || []).map((type) => ({
     value: String(type.id || type._id),
-    label: type.basePrice ? `${type.name} — ${currencyCode} ${Number(type.basePrice).toLocaleString()}` : type.name,
+    label: type.basePrice ? `${type.name} — ${currencyCode} ${Number(type.basePrice).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : type.name,
   })), [serviceTypes, currencyCode]);
 
   const update = (index, patch) => onChange(rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
@@ -74,7 +74,7 @@ export default function ServiceChargesEditor({
         />
         <span>Add service charges</span>
         {enabled && totals.grand > 0 && (
-          <span className="service-charges-pill">{currencyCode} {totals.grand.toLocaleString()}</span>
+          <span className="service-charges-pill">{currencyCode} {totals.grand.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
         )}
       </label>
 
@@ -130,7 +130,7 @@ export default function ServiceChargesEditor({
               </div>
               <div className="service-charge-line-total">
                 <label>Line total</label>
-                <strong>{currencyCode} {(((Number(row.quantity) || 0) * (Number(row.amount) || 0)) * (1 + (Number(row.taxPercent) || 0) / 100)).toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong>
+                <strong>{currencyCode} {(((Number(row.quantity) || 0) * (Number(row.amount) || 0)) * (1 + (Number(row.taxPercent) || 0) / 100)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
               </div>
               {!disabled && (
                 <button type="button" className="btn-action btn-delete service-charge-remove" title="Remove service charge" onClick={() => remove(index)}>
@@ -144,7 +144,7 @@ export default function ServiceChargesEditor({
               <button type="button" className="btn btn-secondary btn-sm" onClick={add}><Plus size={14} /> Add another service</button>
             )}
             <span className="service-charges-summary">
-              Services {currencyCode} {totals.net.toLocaleString()} · Tax {currencyCode} {totals.tax.toLocaleString(undefined, { maximumFractionDigits: 2 })} · <strong>Total {currencyCode} {totals.grand.toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong>
+              Services {currencyCode} {totals.net.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} · Tax {currencyCode} {totals.tax.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} · <strong>Total {currencyCode} {totals.grand.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
             </span>
           </div>
         </div>

@@ -172,7 +172,7 @@ export default function CustomDocuments({ kind = 'quotations' }) {
     if (isInvoice && modal.mode === 'create') {
       if (isCredit && !form.creditDueDate) { toast.error('Give the credit invoice a due date'); return; }
       if (!isCredit && !form.paymentMethodId) { toast.error('Select how the customer is paying'); return; }
-      if (!isCredit && (Number(form.paidAmount) || 0) + 0.009 < grandTotal) { toast.error(`A paid invoice needs the full amount (${currencyCode} ${grandTotal.toLocaleString()}). Switch to Credit to take part of it now.`); return; }
+      if (!isCredit && (Number(form.paidAmount) || 0) + 0.009 < grandTotal) { toast.error(`A paid invoice needs the full amount (${currencyCode} ${grandTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}). Switch to Credit to take part of it now.`); return; }
       // A deposit on a credit invoice still has to be paid by some means.
       if (isCredit && (Number(form.paidAmount) || 0) > 0 && !form.paymentMethodId) { toast.error('Select how the deposit is being paid'); return; }
       if (isCredit && (Number(form.paidAmount) || 0) > grandTotal + 0.009) { toast.error('The deposit cannot be more than the invoice total'); return; }
@@ -284,7 +284,7 @@ export default function CustomDocuments({ kind = 'quotations' }) {
     if (!payModal || payModal.saving) return;
     const amount = Number(payModal.amount) || 0;
     if (!(amount > 0)) { toast.error('Enter the amount received'); return; }
-    if (amount > payModal.outstanding + 0.009) { toast.error(`That is more than the ${currencyCode} ${payModal.outstanding.toLocaleString()} outstanding`); return; }
+    if (amount > payModal.outstanding + 0.009) { toast.error(`That is more than the ${currencyCode} ${payModal.outstanding.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} outstanding`); return; }
     if (!payModal.paymentMethodId) { toast.error('Select how the customer is paying'); return; }
     setPayModal((prev) => ({ ...prev, saving: true }));
     try {
@@ -417,7 +417,7 @@ export default function CustomDocuments({ kind = 'quotations' }) {
     ? <span className={`badge ${row.credit_status === 'overdue' ? 'badge-danger' : row.credit_status === 'settled' ? 'badge-success' : 'badge-warning'}`}>CREDIT{row.credit_status && row.credit_status !== 'open' ? ` · ${String(row.credit_status).toUpperCase()}` : ''}</span>
     : <span className="badge badge-success">PAID</span>);
 
-  const money = (value) => `${currencyCode} ${Number(value || 0).toLocaleString()}`;
+  const money = (value) => `${currencyCode} ${Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   const badge = (status) => {
     const colors = { draft: 'secondary', sent: 'info', pending: 'warning', confirmed: 'info', accepted: 'success', approved: 'success', partial: 'warning', paid: 'success', completed: 'success', converted: 'success', rejected: 'danger', overdue: 'danger', expired: 'danger', cancelled: 'danger' };
@@ -479,13 +479,13 @@ export default function CustomDocuments({ kind = 'quotations' }) {
                   {isInvoice && <td>{row.due_date ? new Date(row.due_date).toLocaleDateString('en-GB') : '-'}</td>}
                   {showField('customer') && <td>{row.customer_name}{row.sale_person && <div className="text-muted small">{row.sale_person}</div>}</td>}
                   <td title={row.item_name}>{row.item_count} line{row.item_count === 1 ? '' : 's'}<div className="text-muted small">{row.item_name}</div></td>
-                  {showField('amounts') && <td>{currencyCode} {Number(row.total_amount).toLocaleString()}</td>}
-                  {isBooking && showField('payments') && <td>{currencyCode} {Number(row.paid_amount || 0).toLocaleString()}</td>}
+                  {showField('amounts') && <td>{currencyCode} {Number(row.total_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>}
+                  {isBooking && showField('payments') && <td>{currencyCode} {Number(row.paid_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>}
                   {isBooking && <td>{row.expected_delivery_date ? new Date(row.expected_delivery_date).toLocaleDateString('en-GB') : '-'}</td>}
-                  {isInvoice && showField('payments') && <td>{currencyCode} {Number(row.paid_amount || 0).toLocaleString()}</td>}
-                  {isInvoice && showField('payments') && <td style={{ color: row.balance_amount > 0 ? '#dc2626' : '#16a34a' }}>{currencyCode} {Number(row.balance_amount || 0).toLocaleString()}</td>}
+                  {isInvoice && showField('payments') && <td>{currencyCode} {Number(row.paid_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>}
+                  {isInvoice && showField('payments') && <td style={{ color: row.balance_amount > 0 ? '#dc2626' : '#16a34a' }}>{currencyCode} {Number(row.balance_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>}
                   {isInvoice && showField('payments') && <td>{termBadge(row)}</td>}
-                  <td>{row.has_service_charges ? `${currencyCode} ${Number(row.service_charges_total + row.service_tax_total).toLocaleString()}` : '—'}</td>
+                  <td>{row.has_service_charges ? `${currencyCode} ${Number(row.service_charges_total + row.service_tax_total).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}</td>
                   <td>{badge(row.status)}{isQuotation && row.approval_status === 'approved' && <span className="badge badge-success" style={{ marginLeft: 4 }}>APPROVED</span>}</td>
                   <td onClick={(e) => e.stopPropagation()}>{rowActions(row)}</td>
                 </tr>
@@ -588,7 +588,7 @@ export default function CustomDocuments({ kind = 'quotations' }) {
                       <div className="form-group"><label>Unit price</label><input type="number" min="0" step="0.01" value={line.unitPrice} onChange={(e) => setLine(index, { unitPrice: e.target.value })} placeholder="0.00" /></div>
                       <div className="form-group"><label>Discount</label><input type="number" min="0" step="0.01" value={line.discountAmount} onChange={(e) => setLine(index, { discountAmount: e.target.value })} placeholder="0" /></div>
                       <div className="form-group"><label>Tax %</label><input type="number" min="0" max="100" step="0.01" value={line.taxPercent} onChange={(e) => setLine(index, { taxPercent: e.target.value })} /></div>
-                      <div className="custom-line-total"><label>Total</label><strong>{currencyCode} {lineTotal(line).toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong></div>
+                      <div className="custom-line-total"><label>Total</label><strong>{currencyCode} {lineTotal(line).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></div>
                       <button type="button" className="btn-action btn-delete" title="Remove line" onClick={() => setLines((prev) => prev.length > 1 ? prev.filter((_, i) => i !== index) : [emptyLine()])}><Trash2 size={16} /></button>
                     </div>
                   ))}
@@ -624,7 +624,7 @@ export default function CustomDocuments({ kind = 'quotations' }) {
                   <div className="form-group">
                     <label>{form.paymentTerm === 'credit' ? 'Received now' : 'Amount received *'}</label>
                     <input type="number" min="0" step="0.01" value={form.paidAmount ?? ''} onChange={(e) => set('paidAmount', e.target.value)} placeholder="0.00" />
-                    <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 4, width: '100%' }} onClick={() => set('paidAmount', String(grandTotal))}>Paid in full ({currencyCode} {grandTotal.toLocaleString()})</button>
+                    <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 4, width: '100%' }} onClick={() => set('paidAmount', String(grandTotal))}>Paid in full ({currencyCode} {grandTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})</button>
                   </div>
                   {/* Where the money goes. Only asked when money is changing hands. */}
                   {accounts.length > 0 && (Number(form.paidAmount) || 0) > 0 && (
@@ -633,7 +633,7 @@ export default function CustomDocuments({ kind = 'quotations' }) {
                   {form.paymentTerm === 'credit' && (
                     <div className="form-group" style={{ alignSelf: 'flex-end' }}>
                       <p className="sm-role-job-note" style={{ margin: 0 }}>
-                        Outstanding after this: <strong>{currencyCode} {Math.max(0, grandTotal - (Number(form.paidAmount) || 0)).toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong>
+                        Outstanding after this: <strong>{currencyCode} {Math.max(0, grandTotal - (Number(form.paidAmount) || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
                       </p>
                     </div>
                   )}
@@ -646,10 +646,10 @@ export default function CustomDocuments({ kind = 'quotations' }) {
               </div>
 
               <div className="custom-totals">
-                <span>Subtotal <strong>{currencyCode} {subtotal.toLocaleString()}</strong></span>
-                <span>Lines incl. tax <strong>{currencyCode} {linesTotal.toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong></span>
-                {svc.totals.grand > 0 && <span>Service charges <strong>{currencyCode} {svc.totals.grand.toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong></span>}
-                <span className="custom-grand">Total <strong>{currencyCode} {grandTotal.toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong></span>
+                <span>Subtotal <strong>{currencyCode} {subtotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></span>
+                <span>Lines incl. tax <strong>{currencyCode} {linesTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></span>
+                {svc.totals.grand > 0 && <span>Service charges <strong>{currencyCode} {svc.totals.grand.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></span>}
+                <span className="custom-grand">Total <strong>{currencyCode} {grandTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></span>
               </div>
             </div>
             <div className="modal-footer">
@@ -670,7 +670,7 @@ export default function CustomDocuments({ kind = 'quotations' }) {
           { label: 'Date', value: drawer?.created_at ? new Date(drawer.created_at).toLocaleDateString('en-GB') : '-' },
           { label: 'Customer', value: drawer?.customer_name },
           { label: 'Title', value: drawer?.title || '—' },
-          { label: 'Total', value: drawer?.total_amount != null ? `${currencyCode} ${Number(drawer.total_amount).toLocaleString()}` : '-' },
+          { label: 'Total', value: drawer?.total_amount != null ? `${currencyCode} ${Number(drawer.total_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-' },
           ...(isInvoice ? [
             { label: 'Payment Term', value: drawer?.payment_term === 'credit' ? `CREDIT — due ${drawer?.credit_due_date ? new Date(drawer.credit_due_date).toLocaleDateString('en-GB') : ''}` : 'PAID' },
             // Where the money actually landed, so the counter and the Accounts
@@ -704,8 +704,8 @@ export default function CustomDocuments({ kind = 'quotations' }) {
             </div>
             <div className="modal-body">
               <p className="sm-role-job-note">
-                Invoice total <strong>{currencyCode} {convertModal.total.toLocaleString()}</strong>
-                {convertModal.alreadyPaid > 0 && <> &middot; already taken on the booking <strong>{currencyCode} {convertModal.alreadyPaid.toLocaleString()}</strong></>}
+                Invoice total <strong>{currencyCode} {convertModal.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                {convertModal.alreadyPaid > 0 && <> &middot; already taken on the booking <strong>{currencyCode} {convertModal.alreadyPaid.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></>}
               </p>
               <div className="form-row">
                 <div className="form-group">
@@ -728,7 +728,7 @@ export default function CustomDocuments({ kind = 'quotations' }) {
                   <label>Balance due by *</label>
                   <input type="date" min={new Date().toISOString().slice(0, 10)} value={convertModal.creditDueDate} onChange={(e) => setConvertModal((prev) => ({ ...prev, creditDueDate: e.target.value }))} />
                   <small style={{ color: '#dc2626' }}>
-                    {currencyCode} {convertOutstanding.toLocaleString(undefined, { maximumFractionDigits: 2 })} stays on the customer account as a credit balance.
+                    {currencyCode} {convertOutstanding.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} stays on the customer account as a credit balance.
                   </small>
                 </div>
               )}
@@ -750,7 +750,7 @@ export default function CustomDocuments({ kind = 'quotations' }) {
               <button className="modal-close" onClick={() => !payModal.saving && setPayModal(null)}>&times;</button>
             </div>
             <div className="modal-body">
-              <p className="sm-role-job-note">Outstanding: <strong>{currencyCode} {payModal.outstanding.toLocaleString()}</strong> from {payModal.item.customer_name}</p>
+              <p className="sm-role-job-note">Outstanding: <strong>{currencyCode} {payModal.outstanding.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong> from {payModal.item.customer_name}</p>
               <div className="form-row">
                 <div className="form-group"><label>Amount *</label><input type="number" min="0.01" step="0.01" autoFocus value={payModal.amount} onChange={(e) => setPayModal((prev) => ({ ...prev, amount: e.target.value }))} /></div>
                 <div className="form-group"><label>Payment mode *</label><SearchableSelect value={payModal.paymentMethodId} onChange={(e) => setPayModal((prev) => ({ ...prev, paymentMethodId: e.target.value }))} options={paymentMethods.map((pm) => ({ label: pm.name, value: String(pm.id || pm._id) }))} labelField="label" valueField="value" placeholder="Select..." /></div>

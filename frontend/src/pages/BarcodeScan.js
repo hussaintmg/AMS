@@ -180,7 +180,7 @@ function BarcodeScan({ category = "vehicle" }) {
   useEffect(() => { basketRef.current = basket; }, [basket]);
 
   const money = useCallback(
-    (value) => `${currencyCode} ${num(value).toLocaleString("en-PK")}`,
+    (value) => `${currencyCode} ${num(value).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
     [currencyCode],
   );
 
@@ -603,7 +603,7 @@ function BarcodeScan({ category = "vehicle" }) {
                       </td>
                       <td>
                         <input
-                          type="number"
+                          type="number" step="0.01"
                           min="0"
                           value={row.unitPrice}
                           onChange={(event) => setPrice(row.key, event.target.value)}
@@ -731,7 +731,7 @@ function BarcodeScan({ category = "vehicle" }) {
                 <label htmlFor="scan-received">Amount received</label>
                 <input
                   id="scan-received"
-                  type="number"
+                  type="number" step="0.01"
                   min="0"
                   className="scan-received"
                   value={amountReceived}

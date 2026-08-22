@@ -68,7 +68,7 @@ export default function EmployeeDrawer({ isOpen, onClose, employee }) {
               </div>
               <div className="email-drawer-row">
                 <span className="email-drawer-label">Salary</span>
-                <span className="email-drawer-value">{employee?.salary != null ? Number(employee.salary).toLocaleString() : '-'}</span>
+                <span className="email-drawer-value">{employee?.salary != null ? Number(employee.salary).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}</span>
               </div>
             </div>
           </div>

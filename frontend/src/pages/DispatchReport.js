@@ -119,7 +119,7 @@ export default function DispatchReport() {
     };
 
     const formatDate = (d) => d ? new Date(d).toLocaleDateString('en-GB') : '-';
-    const formatPKR = (v) => v ? `PKR ${Number(v).toLocaleString()}` : '-';
+    const formatPKR = (v) => v ? `PKR ${Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-';
     const linkedValue = (value, path) => value ? (
         <button type="button" className="btn-link" onClick={() => navigate(path)}>{value}</button>
     ) : '-';

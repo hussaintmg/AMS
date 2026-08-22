@@ -76,9 +76,14 @@ function itemName(record) {
   return legacy?.description || '';
 }
 
+// Always two decimals. Left to its own devices toLocaleString prints 1250.5
+// for a price of 1250.50 and 1250 for 1250.00, so the same column on one
+// printed invoice showed some prices with paisa and some without.
 const money = (value) => {
   const number = Number(value);
-  return Number.isFinite(number) ? `PKR ${number.toLocaleString('en-PK')}` : '';
+  return Number.isFinite(number)
+    ? `PKR ${number.toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    : '';
 };
 
 /**
@@ -86,9 +91,13 @@ const money = (value) => {
  * every printed tax document carries under its grand total.
  */
 function amountInWords(value) {
-  const number = Math.round(Math.abs(Number(value)));
-  if (!Number.isFinite(number)) return '';
-  if (number === 0) return 'RUPEES ZERO ONLY';
+  const total = Math.abs(Number(value));
+  if (!Number.isFinite(total)) return '';
+  const number = Math.floor(total);
+  // Prices carry paisa now, and rounding them away made the words disagree
+  // with the figure printed directly above them.
+  const paisa = Math.round((total - number) * 100);
+  if (number === 0 && !paisa) return 'RUPEES ZERO ONLY';
   const ones = ['', 'ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'SEVEN', 'EIGHT', 'NINE', 'TEN',
     'ELEVEN', 'TWELVE', 'THIRTEEN', 'FOURTEEN', 'FIFTEEN', 'SIXTEEN', 'SEVENTEEN', 'EIGHTEEN', 'NINETEEN'];
   const tens = ['', '', 'TWENTY', 'THIRTY', 'FORTY', 'FIFTY', 'SIXTY', 'SEVENTY', 'EIGHTY', 'NINETY'];
@@ -109,7 +118,10 @@ function amountInWords(value) {
   if (lakh) parts.push(`${below100(lakh)} LAKH`);
   if (thousand) parts.push(`${below100(thousand)} THOUSAND`);
   if (rest) parts.push(below1000(rest));
-  return `RUPEES ${parts.join(' ')} ONLY`;
+  const rupees = parts.length ? parts.join(' ') : 'ZERO';
+  return paisa
+    ? `RUPEES ${rupees} AND ${below100(paisa)} PAISA ONLY`
+    : `RUPEES ${rupees} ONLY`;
 }
 
 /**

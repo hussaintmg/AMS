@@ -675,7 +675,7 @@ function VariantForm({
       <div className="form-group">
         <label>Base Price (PKR)</label>
         <input
-          type="number"
+          type="number" step="0.01"
           name="basePrice"
           value={formData.basePrice || ""}
           onChange={onChange}
@@ -742,7 +742,7 @@ function ColorForm({ formData, onChange, set }) {
         <div className="form-group">
           <label>Additional Cost (PKR)</label>
           <input
-            type="number"
+            type="number" step="0.01"
             name="additionalCost"
             value={formData.additionalCost || 0}
             onChange={onChange}

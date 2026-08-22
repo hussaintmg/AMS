@@ -433,7 +433,7 @@ const Expenses = () => {
                         {showField("amount") && (
                           <td>
                             {exp.amount != null
-                              ? Number(exp.amount).toLocaleString()
+                              ? Number(exp.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
                               : "-"}
                           </td>
                         )}
@@ -551,7 +551,7 @@ const Expenses = () => {
                             <span className="row-label">Amount</span>
                             <span className="row-value">
                               {exp.amount != null
-                                ? Number(exp.amount).toLocaleString()
+                                ? Number(exp.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
                                 : "-"}
                             </span>
                           </div>

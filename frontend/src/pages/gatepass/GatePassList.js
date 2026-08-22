@@ -94,7 +94,7 @@ export default function GatePassList({ direction }) {
       if (!isIn && entryType === 'customer') {
         const lists = await Promise.allSettled([invoiceAPI.getAll({ limit: 100 }), partsInvoiceAPI.getAll({ limit: 100 }), customInvoicesAPI.getAll({ limit: 100 }).catch(() => ({ data: { data: [] } }))]);
         const all = [];
-        lists.forEach((res, i) => { if (res.status === 'fulfilled') (res.value?.data?.data || []).forEach((inv) => all.push({ id: inv.id, label: `${inv.invoice_number} — ${inv.customer_name || ''} — PKR ${Number(inv.total_amount || 0).toLocaleString()}`, customer_id: inv.customer_id, model: ['Invoice', 'PartInvoice', 'CustomInvoice'][i] })); });
+        lists.forEach((res, i) => { if (res.status === 'fulfilled') (res.value?.data?.data || []).forEach((inv) => all.push({ id: inv.id, label: `${inv.invoice_number} — ${inv.customer_name || ''} — PKR ${Number(inv.total_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, customer_id: inv.customer_id, model: ['Invoice', 'PartInvoice', 'CustomInvoice'][i] })); });
         setInvoices(all);
       }
     } catch { /* pickers simply stay empty */ }

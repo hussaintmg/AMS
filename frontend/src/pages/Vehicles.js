@@ -509,7 +509,7 @@ const Vehicles = () => {
 
   // Format currency
   const formatCurrency = (amount) => {
-    return `PKR ${Number(amount).toLocaleString()}`;
+    return `PKR ${Number(amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
   // Columns are tagged with the catalog field that governs them; the ones this
@@ -1149,7 +1149,7 @@ const Vehicles = () => {
                     <div className="form-group">
                       <label>Purchase Price (PKR) *</label>
                       <input
-                        type="number"
+                        type="number" step="0.01"
                         name="purchasePrice"
                         className="form-input"
                         value={formData.purchasePrice}
@@ -1161,7 +1161,7 @@ const Vehicles = () => {
                     <div className="form-group">
                       <label>Selling Price (PKR) *</label>
                       <input
-                        type="number"
+                        type="number" step="0.01"
                         name="sellingPrice"
                         className="form-input"
                         value={formData.sellingPrice}

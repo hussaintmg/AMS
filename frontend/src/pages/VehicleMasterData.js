@@ -505,7 +505,7 @@ const VehicleMasterData = () => {
                         <td>{variant.make_name}</td>
                         <td>{variant.model_name}</td>
                         <td><strong>{variant.name}</strong></td>
-                        <td>PKR {Number(variant.base_price || 0).toLocaleString()}</td>
+                        <td>PKR {Number(variant.base_price || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                         <td>{variant.vehicle_count || 0}</td>
                         <td>{renderStatus(variant)}</td>
                         <td onClick={(e) => e.stopPropagation()}>
@@ -550,7 +550,7 @@ const VehicleMasterData = () => {
                             />
                         </td>
                         <td>{color.is_metallic ? 'Yes' : 'No'}</td>
-                        <td>PKR {Number(color.additional_cost || 0).toLocaleString()}</td>
+                        <td>PKR {Number(color.additional_cost || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                         <td>{color.vehicle_count || 0}</td>
                         <td>{renderStatus(color)}</td>
                         <td onClick={(e) => e.stopPropagation()}>
@@ -758,7 +758,7 @@ const VehicleMasterData = () => {
                         <span className={`badge-pill ${variant.is_active ? 'status-active' : 'status-inactive'}`}>{variant.is_active ? 'Active' : 'Inactive'}</span>
                     </div>
                     <div className="data-card-body">
-                        <div className="data-card-row"><span className="row-icon">💰</span><span className="row-label">Price</span><span className="row-value">PKR {Number(variant.base_price || 0).toLocaleString()}</span></div>
+                        <div className="data-card-row"><span className="row-icon">💰</span><span className="row-label">Price</span><span className="row-value">PKR {Number(variant.base_price || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
                         <div className="data-card-row"><span className="row-icon">🚙</span><span className="row-label">Vehicles</span><span className="row-value">{variant.vehicle_count || 0}</span></div>
                     </div>
                     <div className="data-card-footer" onClick={e => e.stopPropagation()}>
@@ -783,7 +783,7 @@ const VehicleMasterData = () => {
                     </div>
                     <div className="data-card-body">
                         <div className="data-card-row"><span className="row-icon">✨</span><span className="row-label">Metallic</span><span className="row-value">{color.is_metallic ? 'Yes' : 'No'}</span></div>
-                        <div className="data-card-row"><span className="row-icon">💰</span><span className="row-label">Add. Cost</span><span className="row-value">PKR {Number(color.additional_cost || 0).toLocaleString()}</span></div>
+                        <div className="data-card-row"><span className="row-icon">💰</span><span className="row-label">Add. Cost</span><span className="row-value">PKR {Number(color.additional_cost || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
                         <div className="data-card-row"><span className="row-icon">🚙</span><span className="row-label">Vehicles</span><span className="row-value">{color.vehicle_count || 0}</span></div>
                     </div>
                     <div className="data-card-footer" onClick={e => e.stopPropagation()}>
@@ -980,9 +980,9 @@ const VehicleMasterData = () => {
             case 'models':
                 return (<><Detail label="Brand" value={item.make_name} /><Detail label="Model" value={item.name} /><Detail label="Year" value={item.year} /><Detail label="Body Type" value={item.body_type} /><Detail label="Fuel" value={item.fuel_type} /><Detail label="Transmission" value={item.transmission} /><Detail label="Variants" value={item.variant_count} /><Detail label="Vehicles" value={item.vehicle_count} /><Detail label="Status" value={statusBadge(item.is_active)} /></>);
             case 'variants':
-                return (<><Detail label="Brand" value={item.make_name} /><Detail label="Model" value={item.model_name} /><Detail label="Variant" value={item.name} /><Detail label="Base Price" value={`PKR ${Number(item.base_price || 0).toLocaleString()}`} /><Detail label="Vehicles" value={item.vehicle_count} /><Detail label="Status" value={statusBadge(item.is_active)} /></>);
+                return (<><Detail label="Brand" value={item.make_name} /><Detail label="Model" value={item.model_name} /><Detail label="Variant" value={item.name} /><Detail label="Base Price" value={`PKR ${Number(item.base_price || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} /><Detail label="Vehicles" value={item.vehicle_count} /><Detail label="Status" value={statusBadge(item.is_active)} /></>);
             case 'colors':
-                return (<><Detail label="Color" value={item.name} /><Detail label="Hex" value={item.hex_code} /><Detail label="Metallic" value={item.is_metallic ? 'Yes' : 'No'} /><Detail label="Additional Cost" value={`PKR ${Number(item.additional_cost || 0).toLocaleString()}`} /><Detail label="Vehicles" value={item.vehicle_count} /><Detail label="Status" value={statusBadge(item.is_active)} /></>);
+                return (<><Detail label="Color" value={item.name} /><Detail label="Hex" value={item.hex_code} /><Detail label="Metallic" value={item.is_metallic ? 'Yes' : 'No'} /><Detail label="Additional Cost" value={`PKR ${Number(item.additional_cost || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} /><Detail label="Vehicles" value={item.vehicle_count} /><Detail label="Status" value={statusBadge(item.is_active)} /></>);
             case 'categories':
                 return (<><Detail label="Name" value={item.name} /><Detail label="Description" value={item.description} /><Detail label="Parent" value={item.parent_name || 'Root'} /><Detail label="Parts" value={item.parts_count} /><Detail label="Sub-Categories" value={item.sub_category_count} /><Detail label="Status" value={statusBadge(item.is_active)} /></>);
             case 'suppliers':

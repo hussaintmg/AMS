@@ -318,7 +318,7 @@ export default function LeadDrawer({ leadId, onClose, onUpdated }) {
                 <div className="form-row">
                   <div className="form-group">
                     <label>Lead Value</label>
-                    <input type="number" className="form-input" value={editForm.leadValue} onChange={(e) => setEditForm((p) => ({ ...p, leadValue: e.target.value }))} />
+                    <input type="number" step="0.01" className="form-input" value={editForm.leadValue} onChange={(e) => setEditForm((p) => ({ ...p, leadValue: e.target.value }))} />
                   </div>
                   <div className="form-group">
                     <label>Probability (%)</label>
@@ -346,7 +346,7 @@ export default function LeadDrawer({ leadId, onClose, onUpdated }) {
                   <DetailRow icon={Flag} label="Type" value={lead.type?.name} />
                   <DetailRow icon={MessageSquare} label="Status" value={lead.status} />
                   <DetailRow icon={Tag} label="Customer Type" value={lead.customerType === 'corporate' ? 'Corporate' : 'Individual'} />
-                  <DetailRow icon={DollarSign} label="Lead Value" value={lead.leadValue ? `${Number(lead.leadValue).toLocaleString()}` : '-'} />
+                  <DetailRow icon={DollarSign} label="Lead Value" value={lead.leadValue ? `${Number(lead.leadValue).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-'} />
                   <DetailRow label="Probability" value={lead.probability ? `${lead.probability}%` : '-'} />
                   <DetailRow icon={CalendarDays} label="Expected Close" value={lead.expectedCloseDate ? new Date(lead.expectedCloseDate).toLocaleDateString() : '-'} />
                   <DetailRow icon={CalendarDays} label="Next Follow-Up" value={lead.nextFollowUpAt ? new Date(lead.nextFollowUpAt).toLocaleDateString() : '-'} />

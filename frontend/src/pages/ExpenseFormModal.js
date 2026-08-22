@@ -48,7 +48,7 @@ function ExpenseFormModal({ isOpen, mode, initialData, categories, employees, ac
   if (!isOpen) return null;
 
   const catOptions = (categories || []).map(c => ({ id: c.name || c._id, name: `${c.name || c}${c.categoryGroup ? ` (${c.categoryGroup})` : ''}` }));
-  const acctOptions = (accounts || []).map(a => ({ id: a.id || a._id, name: `${a.name}${a.current_balance != null ? ` — ${Number(a.current_balance).toLocaleString('en-PK')}` : ''}` }));
+  const acctOptions = (accounts || []).map(a => ({ id: a.id || a._id, name: `${a.name}${a.current_balance != null ? ` — ${Number(a.current_balance).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}` }));
   const empOptions = employees.map(e => ({ id: e._id || e.id, name: `${e.firstName || e.first_name || ''} ${e.lastName || e.last_name || ''}`.trim() || '-' }));
 
   return (

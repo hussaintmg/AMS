@@ -297,14 +297,14 @@ function DepartmentDrawer({
                   <span className="dept-detail-label">Budget</span>
                   {isEditing ? (
                     <input
-                      type="number"
+                      type="number" step="0.01"
                       className="form-control"
                       name="budget"
                       value={editForm.budget}
                       onChange={(e) => setEditForm({ ...editForm, budget: Number(e.target.value) })}
                     />
                   ) : (
-                    <span className="dept-detail-value">{department.budget != null ? department.budget.toLocaleString() : '-'}</span>
+                    <span className="dept-detail-value">{department.budget != null ? department.budget.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}</span>
                   )}
                 </div>
                 <div className="dept-detail-row">

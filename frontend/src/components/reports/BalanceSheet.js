@@ -38,7 +38,7 @@ const LOOK = {
 };
 const lookOf = (type) => LOOK[type] || LOOK.other;
 
-const money = (value) => `PKR ${Number(value || 0).toLocaleString('en-PK', { maximumFractionDigits: 2 })}`;
+const money = (value) => `PKR ${Number(value || 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const short = (value) => {
   const n = Math.abs(Number(value) || 0);
   if (n >= 1e7) return `${(n / 1e7).toFixed(1)}cr`;

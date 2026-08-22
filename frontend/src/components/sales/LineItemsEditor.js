@@ -21,9 +21,13 @@ import "../../styles/lineItems.css";
  * `requireInventoryVehicle` (bookings and later) forces a real inventory unit
  * rather than a catalogue variant, matching the server's own rule.
  */
+// Two decimals always: a price may carry paisa, and a column that prints
+// "1,250" beside "1,250.5" reads like two different kinds of number.
 const money = (value, code = "PKR") => {
   const number = Number(value);
-  return Number.isFinite(number) ? `${code} ${number.toLocaleString("en-PK")}` : `${code} 0`;
+  return Number.isFinite(number)
+    ? `${code} ${number.toLocaleString("en-PK", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    : `${code} 0.00`;
 };
 const num = (value, fallback = 0) => {
   const parsed = Number(value);
@@ -265,7 +269,7 @@ function LineItemsEditor({
                   </td>
                   <td>
                     <input
-                      type="number"
+                      type="number" step="0.01"
                       min="0"
                       value={line.unitPrice}
                       disabled={disabled}
@@ -275,7 +279,7 @@ function LineItemsEditor({
                   </td>
                   <td>
                     <input
-                      type="number"
+                      type="number" step="0.01"
                       min="0"
                       value={line.discountAmount}
                       disabled={disabled}
@@ -284,7 +288,7 @@ function LineItemsEditor({
                   </td>
                   <td>
                     <input
-                      type="number"
+                      type="number" step="0.01"
                       min="0"
                       value={line.taxAmount}
                       disabled={disabled}

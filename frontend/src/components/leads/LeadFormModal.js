@@ -341,7 +341,7 @@ export default function LeadFormModal({ lead, onClose, onSaved }) {
               </div>
               <div className="form-group">
                 <label>Lead Value</label>
-                <input type="number" className="form-input" value={form.leadValue} onChange={(e) => set('leadValue', e.target.value)} min="0" step="0.01" />
+                <input type="number" step="0.01" className="form-input" value={form.leadValue} onChange={(e) => set('leadValue', e.target.value)} min="0" step="0.01" />
               </div>
               <div className="form-group">
                 <label>Probability (%)</label>

@@ -38,11 +38,11 @@ export default function LedgerDrawer({ isOpen, onClose, entry }) {
               </div>
               <div className="email-drawer-row">
                 <span className="email-drawer-label">Debit</span>
-                <span className="email-drawer-value">{entry?.debit ? Number(entry.debit).toLocaleString() : '0'}</span>
+                <span className="email-drawer-value">{entry?.debit ? Number(entry.debit).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0'}</span>
               </div>
               <div className="email-drawer-row">
                 <span className="email-drawer-label">Credit</span>
-                <span className="email-drawer-value">{entry?.credit ? Number(entry.credit).toLocaleString() : '0'}</span>
+                <span className="email-drawer-value">{entry?.credit ? Number(entry.credit).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0'}</span>
               </div>
               <div className="email-drawer-row email-drawer-row-full">
                 <span className="email-drawer-label">Description</span>

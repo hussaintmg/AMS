@@ -268,7 +268,7 @@ function LeadsPage() {
                 </td>
                 )}
                 {showField('assignment') && <td>{lead.assignedTo ? `${lead.assignedTo.firstName || ''} ${lead.assignedTo.lastName || ''}`.trim() || lead.assignedTo.email : '-'}</td>}
-                {showField('value') && <td>{lead.leadValue ? Number(lead.leadValue).toLocaleString() : '-'}</td>}
+                {showField('value') && <td>{lead.leadValue ? Number(lead.leadValue).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}</td>}
                 {showField('activity') && <td>{lead.nextFollowUpAt ? new Date(lead.nextFollowUpAt).toLocaleDateString() : '-'}</td>}
                 <td>
                   <ActionButtons
@@ -324,7 +324,7 @@ function LeadsPage() {
                 <div className="user-card-field"><span className="field-label">Phone</span><span className="field-value">{lead.phone || '-'}</span></div>
                 <div className="user-card-field"><span className="field-label">Source</span><span className="field-value">{lead.source?.name || '-'}</span></div>
                 <div className="user-card-field"><span className="field-label">Priority</span><span className="field-value">{lead.priority?.name || '-'}</span></div>
-                <div className="user-card-field"><span className="field-label">Value</span><span className="field-value">{lead.leadValue ? Number(lead.leadValue).toLocaleString() : '-'}</span></div>
+                <div className="user-card-field"><span className="field-label">Value</span><span className="field-value">{lead.leadValue ? Number(lead.leadValue).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}</span></div>
                 <div className="user-card-field"><span className="field-label">Assigned</span><span className="field-value">{lead.assignedTo ? `${lead.assignedTo.firstName || ''} ${lead.assignedTo.lastName || ''}`.trim() : 'Unassigned'}</span></div>
               </div>
               <div className="user-card-actions">

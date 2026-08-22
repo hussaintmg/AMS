@@ -342,7 +342,7 @@ function ServiceMasterData() {
             case 'packages':
                 return (<><Detail label="Package Name" value={item.packageName} /><Detail label="Price" value={`PKR ${Number(item.price || 0).toFixed(2)}`} /><Detail label="Duration" value={item.duration ? `${item.duration} min` : '-'} /><Detail label="Services" value={(item.services || []).length} /><Detail label="Description" value={item.description} /><Detail label="Warranty" value={item.warranty} /><Detail label="Status" value={statusBadge(item.isActive)} /></>);
             case 'warranties':
-                return (<><Detail label="Name" value={item.name} /><Detail label="Code" value={item.code} /><Detail label="Duration" value={item.durationMonths ? `${item.durationMonths} months` : '-'} /><Detail label="Km Limit" value={item.durationKm ? `${Number(item.durationKm).toLocaleString()} km` : '-'} /><Detail label="Description" value={item.description} /><Detail label="Terms" value={item.terms} /><Detail label="Status" value={statusBadge(item.isActive)} /></>);
+                return (<><Detail label="Name" value={item.name} /><Detail label="Code" value={item.code} /><Detail label="Duration" value={item.durationMonths ? `${item.durationMonths} months` : '-'} /><Detail label="Km Limit" value={item.durationKm ? `${Number(item.durationKm).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} km` : '-'} /><Detail label="Description" value={item.description} /><Detail label="Terms" value={item.terms} /><Detail label="Status" value={statusBadge(item.isActive)} /></>);
             default: return null;
         }
     };
@@ -650,7 +650,7 @@ function ServiceMasterData() {
                     <div key={i} className="package-service-row">
                         <input type="text" placeholder="Service name" value={svc.name || ''} onChange={e => handleServiceChange(i, 'name', e.target.value)} />
                         <input type="number" placeholder="Qty" value={svc.quantity ?? 1} onChange={e => handleServiceChange(i, 'quantity', Number(e.target.value))} min="1" className="input-sm" />
-                        <input type="number" placeholder="Price" value={svc.price ?? 0} onChange={e => handleServiceChange(i, 'price', Number(e.target.value))} min="0" step="0.01" className="input-sm" />
+                        <input type="number" step="0.01" placeholder="Price" value={svc.price ?? 0} onChange={e => handleServiceChange(i, 'price', Number(e.target.value))} min="0" step="0.01" className="input-sm" />
                         <button type="button" className="btn-icon danger" onClick={() => handleRemoveService(i)} title="Remove">✕</button>
                     </div>
                 ))}

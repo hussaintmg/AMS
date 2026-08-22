@@ -336,7 +336,7 @@ function Appointments() {
     } catch (err) { toast.error(err.response?.data?.message || 'Failed to create job card'); }
   };
 
-  const stOptions = serviceTypes.map((t) => ({ id: String(t._id || t.id), name: `${t.name}${t.basePrice ? ` - PKR ${Number(t.basePrice).toLocaleString()}` : ''}` }));
+  const stOptions = serviceTypes.map((t) => ({ id: String(t._id || t.id), name: `${t.name}${t.basePrice ? ` - PKR ${Number(t.basePrice).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}` }));
   const advisorOptions = advisors.map((a) => ({ id: String(a.id), name: a.name }));
   const customerOptions = customers.map((c) => ({ id: String(c.id), name: customerOptionLabel(c) }));
   const brandOptions = vehicleBrands.map((b) => ({ id: String(b.id), name: b.name }));
@@ -882,10 +882,10 @@ function JobCards() {
     return { laborTotal, partsTotal, discount, tax, grandTotal: laborTotal + partsTotal - discount + tax };
   })();
 
-  const stOptions = serviceTypes.map((t) => ({ id: String(t._id || t.id), name: `${t.name}${t.basePrice ? ` - PKR ${Number(t.basePrice).toLocaleString()}` : ''}` }));
-  const lrOptions = laborRates.map((lr) => ({ id: String(lr._id || lr.id), name: `${lr.name}${lr.rate ? ` - PKR ${Number(lr.rate).toLocaleString()}/hr` : ''}` }));
+  const stOptions = serviceTypes.map((t) => ({ id: String(t._id || t.id), name: `${t.name}${t.basePrice ? ` - PKR ${Number(t.basePrice).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}` }));
+  const lrOptions = laborRates.map((lr) => ({ id: String(lr._id || lr.id), name: `${lr.name}${lr.rate ? ` - PKR ${Number(lr.rate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/hr` : ''}` }));
   const wtOptions = warrantyTypes.map((w) => ({ id: String(w._id || w.id), name: `${w.name}${w.durationMonths ? ` (${w.durationMonths}mo)` : ''}` }));
-  const packageOptions = servicePackages.map((p) => ({ id: String(p._id || p.id), name: `${p.packageName || p.name}${p.price ? ` - PKR ${Number(p.price).toLocaleString()}` : ''}` }));
+  const packageOptions = servicePackages.map((p) => ({ id: String(p._id || p.id), name: `${p.packageName || p.name}${p.price ? ` - PKR ${Number(p.price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}` }));
   const technicianOptions = technicians.map((t) => ({ id: String(t.id), name: t.name }));
   const advisorOptions = advisors.map((a) => ({ id: String(a.id), name: a.name }));
   const customerOptions = customers.map((c) => ({ id: String(c.id), name: customerOptionLabel(c) }));
@@ -908,7 +908,7 @@ function JobCards() {
       </div>
 
       <div className="stats-grid service-stats-grid">
-        {[['Total', stats.total, 'info'], ['Open', stats.open, 'primary'], ['In Progress', stats.in_progress, 'warning'], ['Completed', stats.completed, 'success'], ['Revenue', `PKR ${Number(stats.totalRevenue || 0).toLocaleString()}`, 'success']].map(([label, value, tone]) => (
+        {[['Total', stats.total, 'info'], ['Open', stats.open, 'primary'], ['In Progress', stats.in_progress, 'warning'], ['Completed', stats.completed, 'success'], ['Revenue', `PKR ${Number(stats.totalRevenue || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 'success']].map(([label, value, tone]) => (
           <div className={`stat-card ${tone}`} key={label}><div className="stat-info"><h3>{label}</h3><div className="value">{value || 0}</div></div></div>
         ))}
       </div>
@@ -931,9 +931,9 @@ function JobCards() {
             { field: 'customer', header: 'Customer', accessor: 'customer_name' },
             { field: 'vehicle', header: 'Vehicle', render: (r) => <>{r.customer_vehicle_make} {r.customer_vehicle_model}<br /><small>{r.customer_vehicle_number}</small></> },
             { field: 'document', header: 'Received', render: (r) => r.received_date ? new Date(r.received_date).toLocaleDateString() : '-' },
-            { field: 'amounts', header: 'Labor', render: (r) => `PKR ${Number(r.labor_total || 0).toLocaleString()}` },
-            { field: 'amounts', header: 'Parts', render: (r) => `PKR ${Number(r.parts_total || 0).toLocaleString()}` },
-            { field: 'amounts', header: 'Total', render: (r) => <strong>PKR {Number(r.grand_total || 0).toLocaleString()}</strong> },
+            { field: 'amounts', header: 'Labor', render: (r) => `PKR ${Number(r.labor_total || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` },
+            { field: 'amounts', header: 'Parts', render: (r) => `PKR ${Number(r.parts_total || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` },
+            { field: 'amounts', header: 'Total', render: (r) => <strong>PKR {Number(r.grand_total || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong> },
             { field: 'invoice', header: 'Invoice', render: (r) => r.invoice_number ? <button type="button" className="link-button" onClick={() => navigate(`/invoices?search=${encodeURIComponent(r.invoice_number)}`)}>{r.invoice_number}</button> : <span className="text-muted">Pending</span> },
             { field: 'document', header: 'Status', render: (r) => (
               <select className={`badge badge-${JC_STATUS_CLASS[r.status] || 'info'}`}
@@ -990,7 +990,7 @@ function JobCards() {
             {showField('document') && <div className="user-card-field"><span className="field-label">JC #</span><span><strong>{jc.job_card_number}</strong></span></div>}
             {showField('customer') && <div className="user-card-field"><span className="field-label">Customer</span><span>{jc.customer_name}</span></div>}
             {showField('vehicle') && <div className="user-card-field"><span className="field-label">Vehicle</span><span>{jc.customer_vehicle_make} {jc.customer_vehicle_model} - {jc.customer_vehicle_number}</span></div>}
-            {showField('amounts') && <div className="user-card-field"><span className="field-label">Total</span><span><strong>PKR {Number(jc.grand_total || 0).toLocaleString()}</strong></span></div>}
+            {showField('amounts') && <div className="user-card-field"><span className="field-label">Total</span><span><strong>PKR {Number(jc.grand_total || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></span></div>}
             {showField('invoice') && <div className="user-card-field"><span className="field-label">Invoice</span><span>{jc.invoice_number ? <button type="button" className="link-button" onClick={() => navigate(`/invoices?search=${encodeURIComponent(jc.invoice_number)}`)}>{jc.invoice_number}</button> : 'Pending'}</span></div>}
             {showField('document') && <div className="user-card-field"><span className="field-label">Status</span>
               <span className={`badge badge-${JC_STATUS_CLASS[jc.status] || 'info'}`}>{jc.status}</span>
@@ -1124,8 +1124,8 @@ function JobCards() {
                             <tr key={s.id}>
                               <td>{s.description}</td>
                               <td>{s.hours || '-'}</td>
-                              <td>PKR {Number(s.rate).toLocaleString()}</td>
-                              <td>PKR {Number(s.total).toLocaleString()}</td>
+                              <td>PKR {Number(s.rate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                              <td>PKR {Number(s.total).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                               <td><span className={`badge badge-${s.status === 'completed' ? 'success' : s.status === 'in_progress' ? 'warning' : 'info'}`}>{s.status}</span></td>
                               {modalMode === 'edit' && <td><button type="button" className="btn btn-sm btn-danger" onClick={() => handleDeleteService(s.id)}>×</button></td>}
                             </tr>
@@ -1155,8 +1155,8 @@ function JobCards() {
                               <td>{p.part_number}</td>
                               <td>{p.part_name}</td>
                               <td>{p.quantity}</td>
-                              <td>PKR {Number(p.unit_price).toLocaleString()}</td>
-                              <td>PKR {Number(p.total).toLocaleString()}</td>
+                              <td>PKR {Number(p.unit_price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                              <td>PKR {Number(p.total).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                               <td>{p.is_warranty ? <span className="badge badge-success">Yes</span> : 'No'}</td>
                               {modalMode === 'edit' && <td><button type="button" className="btn btn-sm btn-danger" onClick={() => handleDeletePart(p.id)}>×</button></td>}
                             </tr>
@@ -1173,13 +1173,13 @@ function JobCards() {
                   <div style={{ marginTop: '1rem', padding: '1rem', background: '#f8f9fa', borderRadius: '8px' }}>
                     <h4 style={{ marginBottom: '0.75rem' }}>Totals</h4>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '1rem', textAlign: 'center' }}>
-                      <div><small>Labor ({currency.code})</small><div><strong>{currency.symbol} {totals.laborTotal.toLocaleString()}</strong></div></div>
-                      <div><small>Parts ({currency.code})</small><div><strong>{currency.symbol} {totals.partsTotal.toLocaleString()}</strong></div></div>
-                      <div><label style={{ fontSize: 12 }}>Discount</label><input type="number" name="discount" className="form-control" value={formData.discount} onChange={handleChange} disabled={modalMode === 'view'} /></div>
-                      <div><label style={{ fontSize: 12 }}>Tax {serviceTax ? `(${serviceTax.tax_name} ${serviceTax.tax_rate}%)` : ''}</label><input type="number" name="taxAmount" className="form-control" value={formData.taxAmount} onChange={handleChange} disabled={modalMode === 'view'} /></div>
+                      <div><small>Labor ({currency.code})</small><div><strong>{currency.symbol} {totals.laborTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></div></div>
+                      <div><small>Parts ({currency.code})</small><div><strong>{currency.symbol} {totals.partsTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></div></div>
+                      <div><label style={{ fontSize: 12 }}>Discount</label><input type="number" step="0.01" name="discount" className="form-control" value={formData.discount} onChange={handleChange} disabled={modalMode === 'view'} /></div>
+                      <div><label style={{ fontSize: 12 }}>Tax {serviceTax ? `(${serviceTax.tax_name} ${serviceTax.tax_rate}%)` : ''}</label><input type="number" step="0.01" name="taxAmount" className="form-control" value={formData.taxAmount} onChange={handleChange} disabled={modalMode === 'view'} /></div>
                       <div style={{ background: '#1a73e8', color: 'white', padding: '0.5rem', borderRadius: '4px' }}>
                         <small>Grand Total</small>
-                        <div><strong>{currency.symbol} {totals.grandTotal.toLocaleString()}</strong></div>
+                        <div><strong>{currency.symbol} {totals.grandTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></div>
                       </div>
                     </div>
                   </div>
@@ -1252,7 +1252,7 @@ function JobCards() {
                 </div>
                 <div className="form-group">
                   <label>Rate (PKR) *</label>
-                  <input type="number" className="form-control" value={serviceForm.rate}
+                  <input type="number" step="0.01" className="form-control" value={serviceForm.rate}
                     onChange={(e) => setServiceForm({ ...serviceForm, rate: e.target.value })} required />
                 </div>
               </div>
@@ -1294,7 +1294,7 @@ function JobCards() {
                 </div>
                 <div className="form-group">
                   <label>Unit Price (PKR) *</label>
-                  <input type="number" className="form-control" value={partForm.unitPrice}
+                  <input type="number" step="0.01" className="form-control" value={partForm.unitPrice}
                     onChange={(e) => setPartForm({ ...partForm, unitPrice: e.target.value })} required />
                 </div>
               </div>
@@ -1331,8 +1331,8 @@ function JobCards() {
           { label: 'Service Advisor', value: jcDrawer?.service_advisor_name },
           { label: 'Service Package', value: jcDrawer?.service_package_name },
           { label: 'Warranty', value: jcDrawer?.warranty_type_name },
-          { label: 'Labour Total', value: jcDrawer?.labor_total != null ? `PKR ${Number(jcDrawer.labor_total).toLocaleString()}` : '-' },
-          { label: 'Parts Total', value: jcDrawer?.parts_total != null ? `PKR ${Number(jcDrawer.parts_total).toLocaleString()}` : '-' },
+          { label: 'Labour Total', value: jcDrawer?.labor_total != null ? `PKR ${Number(jcDrawer.labor_total).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-' },
+          { label: 'Parts Total', value: jcDrawer?.parts_total != null ? `PKR ${Number(jcDrawer.parts_total).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-' },
           { label: 'Customer Remarks', value: jcDrawer?.customer_remarks, full: true },
           { label: 'Technician Remarks', value: jcDrawer?.technician_remarks, full: true },
         ]}
