@@ -584,7 +584,7 @@ export default function CustomDocuments({ kind = 'quotations' }) {
                     <div className="custom-line" key={index}>
                       <div className="form-group custom-line-desc"><label>Description *</label><input type="text" value={line.description} onChange={(e) => setLine(index, { description: e.target.value })} placeholder="What is being quoted / sold" /></div>
                       <div className="form-group"><label>Unit</label><input type="text" value={line.unit} onChange={(e) => setLine(index, { unit: e.target.value })} placeholder="pcs" /></div>
-                      <div className="form-group"><label>Qty</label><input type="number" min="0" value={line.quantity} onChange={(e) => setLine(index, { quantity: e.target.value })} /></div>
+                      <div className="form-group"><label>Qty</label><input type="number" step="any" min="0" value={line.quantity} onChange={(e) => setLine(index, { quantity: e.target.value })} /></div>
                       <div className="form-group"><label>Unit price</label><input type="number" min="0" step="0.01" value={line.unitPrice} onChange={(e) => setLine(index, { unitPrice: e.target.value })} placeholder="0.00" /></div>
                       <div className="form-group"><label>Discount</label><input type="number" min="0" step="0.01" value={line.discountAmount} onChange={(e) => setLine(index, { discountAmount: e.target.value })} placeholder="0" /></div>
                       <div className="form-group"><label>Tax %</label><input type="number" min="0" max="100" step="0.01" value={line.taxPercent} onChange={(e) => setLine(index, { taxPercent: e.target.value })} /></div>

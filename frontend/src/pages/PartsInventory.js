@@ -1275,6 +1275,7 @@ const PartsInventory = () => {
                         </label>
                         <input
                           type="number"
+                          step="any"
                           name="currentStock"
                           className="form-input"
                           value={formData.currentStock}
@@ -1306,6 +1307,7 @@ const PartsInventory = () => {
                       </label>
                       <input
                         type="number"
+                        step="any"
                         name="minimumStock"
                         className="form-input"
                         value={formData.minimumStock}
@@ -1322,6 +1324,7 @@ const PartsInventory = () => {
                       </label>
                       <input
                         type="number"
+                        step="any"
                         name="maximumStock"
                         className="form-input"
                         value={formData.maximumStock}
@@ -1338,6 +1341,7 @@ const PartsInventory = () => {
                       </label>
                       <input
                         type="number"
+                        step="any"
                         name="reorderLevel"
                         className="form-input"
                         value={formData.reorderLevel}
@@ -1447,6 +1451,7 @@ const PartsInventory = () => {
                   </label>
                   <input
                     type="number"
+                    step="any"
                     name="quantity"
                     className="form-input"
                     value={stockForm.quantity}

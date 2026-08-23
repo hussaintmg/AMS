@@ -1289,7 +1289,7 @@ function JobCards() {
               <div className="form-row">
                 <div className="form-group">
                   <label>Quantity *</label>
-                  <input type="number" min="1" className="form-control" value={partForm.quantity}
+                  <input type="number" step="any" min="1" className="form-control" value={partForm.quantity}
                     onChange={(e) => setPartForm({ ...partForm, quantity: e.target.value })} required autoFocus />
                 </div>
                 <div className="form-group">

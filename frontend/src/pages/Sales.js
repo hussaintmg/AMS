@@ -3645,7 +3645,7 @@ function Invoices({ category = 'vehicle' }) {
                                                     </div>
                                                     <div className="invoice-line-item-qty">
                                                         <label style={{ fontSize: '0.75rem' }}>Qty</label>
-                                                        <input type="number" value={item.quantity} onChange={(e) => handleItemChange(index, 'quantity', e.target.value)} required min="1" />
+                                                        <input type="number" step="any" value={item.quantity} onChange={(e) => handleItemChange(index, 'quantity', e.target.value)} required min="1" />
                                                     </div>
                                                     <div className="invoice-line-item-price">
                                                         <label style={{ fontSize: '0.75rem' }}>Price</label>

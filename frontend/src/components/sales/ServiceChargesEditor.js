@@ -118,7 +118,7 @@ export default function ServiceChargesEditor({
               </div>
               <div className="form-group service-charge-qty">
                 <label>Qty</label>
-                <input type="number" min="0" step="1" value={row.quantity ?? 1} onChange={(e) => update(index, { quantity: e.target.value })} disabled={disabled} />
+                <input type="number" step="any" min="0" value={row.quantity ?? 1} onChange={(e) => update(index, { quantity: e.target.value })} disabled={disabled} />
               </div>
               <div className="form-group service-charge-amount">
                 <label>Amount ({currencyCode})</label>

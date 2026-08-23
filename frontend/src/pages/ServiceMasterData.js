@@ -649,7 +649,7 @@ function ServiceMasterData() {
                 {(formData.services || []).map((svc, i) => (
                     <div key={i} className="package-service-row">
                         <input type="text" placeholder="Service name" value={svc.name || ''} onChange={e => handleServiceChange(i, 'name', e.target.value)} />
-                        <input type="number" placeholder="Qty" value={svc.quantity ?? 1} onChange={e => handleServiceChange(i, 'quantity', Number(e.target.value))} min="1" className="input-sm" />
+                        <input type="number" step="any" placeholder="Qty" value={svc.quantity ?? 1} onChange={e => handleServiceChange(i, 'quantity', Number(e.target.value))} min="1" className="input-sm" />
                         <input type="number" step="0.01" placeholder="Price" value={svc.price ?? 0} onChange={e => handleServiceChange(i, 'price', Number(e.target.value))} min="0" step="0.01" className="input-sm" />
                         <button type="button" className="btn-icon danger" onClick={() => handleRemoveService(i)} title="Remove">✕</button>
                     </div>

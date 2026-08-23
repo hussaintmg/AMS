@@ -595,6 +595,7 @@ function BarcodeScan({ category = "vehicle" }) {
                       <td>
                         <input
                           type="number"
+                          step="any"
                           min="1"
                           value={row.quantity}
                           disabled={row.kind === "vehicle"}

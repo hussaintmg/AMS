@@ -389,7 +389,7 @@ export default function Accounts() {
                 </div>
                 <div className="form-row">
                   <div className="form-group"><label>Opening balance</label><input type="number" step="0.01" value={form.openingBalance ?? ''} onChange={(e) => set('openingBalance', e.target.value)} disabled={Boolean(modal.item)} title={modal.item ? 'Post an adjustment to change a live account' : ''} /></div>
-                  <div className="form-group"><label>Limit (0 = none)</label><input type="number" min="0" step="1" value={form.limit ?? ''} onChange={(e) => set('limit', e.target.value)} placeholder="e.g. 50000" /></div>
+                  <div className="form-group"><label>Limit (0 = none)</label><input type="number" step="0.01" min="0" value={form.limit ?? ''} onChange={(e) => set('limit', e.target.value)} placeholder="e.g. 50000" /></div>
                 </div>
                 <div className="form-group"><label>Sweep excess into</label><SearchableSelect value={form.sweepTo || ''} onChange={(e) => set('sweepTo', e.target.value)} options={[{ value: '', label: '— none —' }, ...accounts.filter((a) => a.id !== modal.item?.id).map((a) => ({ value: a.id, label: a.name }))]} labelField="label" valueField="value" /></div>
                 <div className="form-group"><label>Description</label><input type="text" value={form.description} onChange={(e) => set('description', e.target.value)} /></div>

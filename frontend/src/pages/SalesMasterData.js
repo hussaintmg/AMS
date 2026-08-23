@@ -618,8 +618,10 @@ function SalesMasterData() {
           </select>
         </div>
         <div className="form-group">
+          {/* A discount of 2.5% is as ordinary as one of 2%, so neither side
+              of this is whole-numbers-only. */}
           <label>Value</label>
-          <input type="number" name="value" value={formData.value ?? ''} onChange={handleInputChange} min="0" step={formData.type === 'percentage' ? '1' : '0.01'} />
+          <input type="number" name="value" value={formData.value ?? ''} onChange={handleInputChange} min="0" step="0.01" />
         </div>
       </div>
       <div className="form-group">

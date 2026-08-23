@@ -252,6 +252,7 @@ function LineItemsEditor({
                       <>
                         <input
                           type="number"
+                          step="any"
                           min="1"
                           max={stockOf(line.partId) ?? undefined}
                           value={line.quantity}
