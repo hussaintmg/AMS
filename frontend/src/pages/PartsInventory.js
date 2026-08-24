@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { fieldAccessor, canRoleDo, getRoleJob, pageActions, canQuickCreate } from "../utils/roleJobs";
+import { fieldAccessor, pageActions, canUseQuickCreate } from "../utils/roleJobs";
 import { partsAPI, vehicleMasterAPI } from "../services/api";
 import toast from "react-hot-toast";
 import { Package, Search, Plus, Upload, Pencil, Trash2, ScanLine } from "lucide-react";
@@ -50,15 +50,15 @@ const PartsInventory = () => {
    * live on the parts-manager role, which holds create and edit but not delete —
    * it was being offered Delete on every part and every chip.
    *
-   * A role that has never been through Role Jobs keeps the old behaviour, so
-   * nothing in use today stops working.
+   * A role that has never been through Role Jobs may read this page and nothing
+   * more, which is the rule the server applies to the same requests.
    */
-  const allows = (action) => (getRoleJob(currentUser, 'parts') ? canRoleDo(currentUser, 'parts', action) : true);
+  const allows = pageActions(currentUser, 'parts');
   const canCreatePart = allows('create');
   // Generating a barcode and importing a spreadsheet are their own grants
-  // (Role Jobs → Parts); an unconfigured role keeps what it had.
-  const canGenerateBarcode = getRoleJob(currentUser, 'parts') ? canRoleDo(currentUser, 'parts', 'barcode') : true;
-  const canImportParts = getRoleJob(currentUser, 'parts') ? canRoleDo(currentUser, 'parts', 'import') : canCreatePart;
+  // (Role Jobs → Parts).
+  const canGenerateBarcode = allows('barcode');
+  const canImportParts = allows('import');
   const canEditPart = allows('edit');
   const canDeletePart = allows('delete');
   /**
@@ -68,15 +68,6 @@ const PartsInventory = () => {
    * value"). Each grant is exactly one option in the Adjust Stock dialog, and
    * a role holding none of them is not offered the dialog at all.
    */
-  /**
-   * The "+ Create …" links beside the pickers were drawn for anyone who could
-   * open this form, but the records behind them belong to other pages and are
-   * guarded there: categories and suppliers are Vehicle Master Data, source
-   * types are Parts. A role without those rights was being offered a button
-   * whose only outcome was a 403.
-   */
-  const canCreateVehicleMaster = pageActions(currentUser, 'vehicle_master')('create');
-  const canCreateSourceType = canCreatePart;
 
   const canIncreaseStock = allows('stockIncrease');
   const canDecreaseStock = allows('stockDecrease');
@@ -112,10 +103,15 @@ const PartsInventory = () => {
   // Modal states
   const [showModal, setShowModal] = useState(false);
   const [modalMode, setModalMode] = useState("create");
-  // Role Jobs → Parts → Forms may withhold a shortcut on this form even from a
-  // role that may create the record on its own master-data page.
+  /**
+   * The "+ Create …" links beside the pickers raise records that belong to other
+   * pages — categories and suppliers to Vehicle Master Data, source types to
+   * Parts — and are guarded there. Either that page's Create right or this
+   * shortcut ticked in Role Jobs → Parts → Forms allows one, per form, and the
+   * endpoint behind it asks the same question again.
+   */
   const partFormKind = modalMode === 'edit' ? 'edit' : 'create';
-  const partQuick = (key) => canQuickCreate(currentUser, 'parts', partFormKind, key);
+  const partQuick = (key, owner) => canUseQuickCreate(currentUser, { host: 'parts', form: partFormKind, key, owner });
   const [selectedPart, setSelectedPart] = useState(null);
   const [showStockModal, setShowStockModal] = useState(false);
   const stockFormRef = useRef(null);
@@ -1079,7 +1075,7 @@ const PartsInventory = () => {
                           label="Source Type *"
                           help="Where the part comes from. Manufacturer = OEM, 3rd Party = aftermarket. Add your own types with + Create Source Type."
                         />
-                        {canCreateSourceType && partQuick('source_type') && (
+                        {partQuick('source_type', 'parts') && (
                           <button
                             type="button"
                             className="label-add-link"
@@ -1112,7 +1108,7 @@ const PartsInventory = () => {
                           label="Category"
                           help="Optional grouping for reporting and filtering (e.g., Engine, Electrical)."
                         />
-                        {canCreateVehicleMaster && partQuick('category') && (
+                        {partQuick('category', 'vehicle_master') && (
                           <button
                             type="button"
                             className="label-add-link"
@@ -1157,7 +1153,7 @@ const PartsInventory = () => {
                           label="Supplier"
                           help="Supplier you purchase this part from (optional)."
                         />
-                        {canCreateVehicleMaster && partQuick('supplier') && (
+                        {partQuick('supplier', 'vehicle_master') && (
                           <button
                             type="button"
                             className="label-add-link"

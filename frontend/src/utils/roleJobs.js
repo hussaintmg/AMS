@@ -18,18 +18,22 @@ export const canRoleDo = (user, pageKey, action = 'view') => {
  *   const can = pageActions(user, 'employees');
  *   {can('create') && <button>Add Employee</button>}
  *
- * A role that has never been through Role Jobs has no job row at all, and page
- * access on its own is read-only by design. Screens were written before that
- * existed, so `legacy` decides what such a role sees — `true` keeps today's
- * behaviour rather than emptying the toolbar of every role nobody has configured
- * yet. Once a job row exists it is the only thing consulted.
+ * A role that has never been through Role Jobs has no job row at all. Granting
+ * the page in Roles & Permissions is itself the read grant, so such a role is
+ * read-only — anything that writes needs a job row that says so. That is the
+ * rule the server applies (`utils/roleJobs.js canDo`), and it is the rule here,
+ * because the whole point of this helper is that the operator is never offered a
+ * button whose only outcome is a 403. It used to answer `true` for every action
+ * of an unconfigured role, which drew the full toolbar and then refused every
+ * click on it — the "access denied everywhere" the operators were reporting.
  *
- * The server enforces the same rule regardless; this is so the operator is not
- * offered a button whose only outcome is a 403.
+ * `legacy` overrides that for the one screen that has a reason to (Payroll's
+ * run controls); leave it alone everywhere else.
  */
-export const pageActions = (user, pageKey, legacy = true) => (action) => (
-  getRoleJob(user, pageKey) ? canRoleDo(user, pageKey, action) : legacy
-);
+export const pageActions = (user, pageKey, legacy) => (action) => {
+  if (getRoleJob(user, pageKey)) return canRoleDo(user, pageKey, action);
+  return legacy === undefined ? action === 'view' : legacy;
+};
 
 /**
  * Is an optional module switched on for this installation?
@@ -139,6 +143,34 @@ export const canQuickCreate = (user, pageKey, form, key) => {
   if (!setting || setting.mode !== 'selected') return true;
   const list = form === 'edit' ? setting.edit : setting.create;
   return (list || []).map(String).includes(String(key));
+};
+
+/**
+ * May the operator use a "+ Create X" shortcut on this form — the whole
+ * question, in one call.
+ *
+ *   canUseQuickCreate(user, { host: 'customers', form, key: 'source', owner: 'lead_master' })
+ *
+ * `host` is the page whose form the shortcut sits in, `key` is what it raises
+ * and `owner` is the master-data page that record belongs to.
+ *
+ * Two ways to be allowed, and either is enough:
+ *   1. the owning master-data page's Create right — a Lead Master Data user may
+ *      raise a source from anywhere, as before; or
+ *   2. Create on the page hosting the form, with the shortcut still ticked in
+ *      Role Jobs -> <page> -> Forms.
+ *
+ * The second is what makes the tick worth having. Requiring the owning page as
+ * well meant a sales clerk could only be allowed to name a new source by being
+ * handed the entire Lead Master Data screen, so nobody was — and the shortcut
+ * was drawn for them regardless, with a 403 behind it. Withholding the shortcut
+ * in Role Jobs closes both the button and the endpoint; `authorizeQuickCreate`
+ * on the server answers exactly this question again.
+ */
+export const canUseQuickCreate = (user, { host, form = 'create', key, owner }) => {
+  if (host && !canQuickCreate(user, host, form, key)) return false;
+  if (owner && pageActions(user, owner)('create')) return true;
+  return Boolean(host) && Boolean(getRoleJob(user, host)) && canRoleDo(user, host, 'create');
 };
 
 /**

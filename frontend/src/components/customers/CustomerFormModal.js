@@ -3,17 +3,23 @@ import toast from 'react-hot-toast';
 import { X, Car, Trash2 } from 'lucide-react';
 import { useCustomers } from '../../context/CustomersContext';
 import { useAuth } from '../../context/AuthContext';
-import { pageActions, canQuickCreate, canSeeDropdown } from '../../utils/roleJobs';
+import { canUseQuickCreate, canSeeDropdown } from '../../utils/roleJobs';
 import SearchableSelect from '../SearchableSelect';
 import LeadMasterModal from '../leads/LeadMasterModal';
 import LeadStatusItemModal from '../leads/LeadStatusItemModal';
 import useModalKeyboard from '../../hooks/useModalKeyboard';
+import modalSubmit from '../../utils/modalForm';
+import ModalPortal from '../ModalPortal';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// `quick` names the Role Jobs → Customers → Forms grant a tab needs, when it
+// needs one. Recording a customer's cars is a write of its own — the gate pass
+// and the service desk read them — so it can be withheld from a role that may
+// otherwise fill in this form.
 const TABS = [
   { key: 'basic', label: 'Basic Info' },
   { key: 'contact', label: 'Contact' },
-  { key: 'vehicles', label: 'Vehicles' },
+  { key: 'vehicles', label: 'Vehicles', quick: 'vehicle' },
   { key: 'details', label: 'Details' },
 ];
 
@@ -124,17 +130,21 @@ export default function CustomerFormModal({ customer, onClose, onSaved }) {
 
   useModalKeyboard(true, onClose, handleSubmit, saving);
 
-  // These pickers are filled from Lead Master Data, so the shortcut belongs to
-  // a role that may create there — not to anyone who can open a customer form.
-  // On top of that, Role Jobs → Customers → Forms may withhold the shortcut on
-  // this form (create vs edit) even from a role that may create the record.
+  // These pickers are filled from Lead Master Data, and the shortcut is allowed
+  // either by that page's own Create right or by "+ Create Source" being ticked
+  // for a role that may create customers (Role Jobs → Customers → Forms). The
+  // form it sits in — create or edit — is part of the grant.
   const formKind = isEdit ? 'edit' : 'create';
   // A dropdown Role Jobs has set to "Hidden" for this form is not drawn at all.
   const showDropdown = (key) => canSeeDropdown(user, 'customers', formKind, key);
+  const mayQuickCreate = (field, owner) => canUseQuickCreate(user, { host: 'customers', form: formKind, key: field, owner });
+  // A withheld tab is not drawn, but whatever it holds still rides along on
+  // save — hiding the cars must not be a way to lose them.
+  const tabs = TABS.filter((tab) => !tab.quick || mayQuickCreate(tab.quick, 'customers'));
   const renderLabel = (text, field, quickType, page = 'lead_master') => (
     <div className="form-label-add">
       <span>{text}</span>
-      {pageActions(user, page)('create') && canQuickCreate(user, 'customers', formKind, field) && (
+      {mayQuickCreate(field, page) && (
         <button type="button" className="label-add-link" data-quick-create={field} onClick={() => setQuickCreate(quickType || field)}>+ Create {text}</button>
       )}
     </div>
@@ -374,51 +384,53 @@ export default function CustomerFormModal({ customer, onClose, onSaved }) {
   };
 
   return (
-    <>
-      {/* No inline z-index: this modal is opened from drawers and from other
-          modals, so it has to follow the shared stacking scale in index.css. */}
-      <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-        <div className="modal-content customer-form-modal" style={{ maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
-          <div className="modal-header">
-            <h3>{isEdit ? 'Edit Customer' : 'New Customer'}</h3>
-            <button className="modal-close" onClick={onClose}><X size={20} /></button>
-          </div>
-
-          <div className="form-tabs">
-            {TABS.map((t) => (
-              <button key={t.key} className={`form-tab ${activeTab === t.key ? 'active' : ''}`} onClick={() => setActiveTab(t.key)}>
-                {t.label}
-              </button>
-            ))}
-          </div>
-
-          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
-            <div className="modal-body" style={{ overflowY: 'auto', flex: 1 }}>
-              {renderForm()}
+    <ModalPortal>
+      <>
+        {/* No inline z-index: this modal is opened from drawers and from other
+            modals, so it has to follow the shared stacking scale in index.css. */}
+        <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+          <div className="modal-content customer-form-modal" style={{ maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+            <div className="modal-header">
+              <h3>{isEdit ? 'Edit Customer' : 'New Customer'}</h3>
+              <button className="modal-close" onClick={onClose}><X size={20} /></button>
             </div>
 
-            <div className="modal-footer" style={{ flexShrink: 0 }}>
-              <button type="button" className="btn btn-secondary" onClick={onClose} disabled={saving}>Cancel</button>
-              <button type="submit" className="btn btn-primary" disabled={saving}>
-                {saving ? 'Saving...' : (isEdit ? 'Update Customer' : 'Create Customer')}
-              </button>
+            <div className="form-tabs">
+              {tabs.map((t) => (
+                <button key={t.key} className={`form-tab ${activeTab === t.key ? 'active' : ''}`} onClick={() => setActiveTab(t.key)}>
+                  {t.label}
+                </button>
+              ))}
             </div>
-          </form>
+
+            <form onSubmit={modalSubmit(handleSubmit)} style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+              <div className="modal-body" style={{ overflowY: 'auto', flex: 1 }}>
+                {renderForm()}
+              </div>
+
+              <div className="modal-footer" style={{ flexShrink: 0 }}>
+                <button type="button" className="btn btn-secondary" onClick={onClose} disabled={saving}>Cancel</button>
+                <button type="submit" className="btn btn-primary" disabled={saving}>
+                  {saving ? 'Saving...' : (isEdit ? 'Update Customer' : 'Create Customer')}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
-      </div>
 
-      {quickCreate === 'source' && (
-        <LeadMasterModal type="sources" onClose={() => setQuickCreate(null)} onSaved={(item) => { loadMeta(); if (item?._id) set('source', item._id); }} />
-      )}
-      {quickCreate === 'type' && (
-        <LeadMasterModal type="types" onClose={() => setQuickCreate(null)} onSaved={(item) => { loadMeta(); if (item?._id) set('type', item._id); }} />
-      )}
-      {quickCreate === 'status' && meta.statusCollectionId && (
-        <LeadStatusItemModal collectionId={meta.statusCollectionId} collectionName={meta.statusCollectionName} onClose={() => setQuickCreate(null)} onCreated={(item) => { loadMeta(); if (item?.value || item?.label) set('status', item.value || item.label); }} />
-      )}
-      {quickCreate === 'cities' && (
-        <LeadMasterModal type="cities" onClose={() => setQuickCreate(null)} onSaved={(item) => { loadMeta(); if (item?.name) set('city', item.name); }} />
-      )}
-    </>
+        {quickCreate === 'source' && (
+          <LeadMasterModal type="sources" onClose={() => setQuickCreate(null)} onSaved={(item) => { loadMeta(); if (item?._id) set('source', item._id); }} />
+        )}
+        {quickCreate === 'type' && (
+          <LeadMasterModal type="types" onClose={() => setQuickCreate(null)} onSaved={(item) => { loadMeta(); if (item?._id) set('type', item._id); }} />
+        )}
+        {quickCreate === 'status' && meta.statusCollectionId && (
+          <LeadStatusItemModal collectionId={meta.statusCollectionId} collectionName={meta.statusCollectionName} onClose={() => setQuickCreate(null)} onCreated={(item) => { loadMeta(); if (item?.value || item?.label) set('status', item.value || item.label); }} />
+        )}
+        {quickCreate === 'cities' && (
+          <LeadMasterModal type="cities" onClose={() => setQuickCreate(null)} onSaved={(item) => { loadMeta(); if (item?.name) set('city', item.name); }} />
+        )}
+      </>
+    </ModalPortal>
   );
 }

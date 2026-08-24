@@ -20,7 +20,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { authenticate, authorizeAction, authorizePicker } = require('../middleware/auth');
+const { authenticate, authorizeAction, authorizeAny, authorizePicker, authorizeQuickCreate } = require('../middleware/auth');
 
 // Import Controllers
 const userController = require('../controllers/userManagement.controller');
@@ -74,7 +74,12 @@ router.post('/status-collections', authenticate, authorizeAction('status_managem
 router.put('/status-collections/:id', authenticate, authorizeAction('status_management', 'edit'), statusController.updateCollection);
 router.delete('/status-collections/:id', authenticate, authorizeAction('status_management', 'delete'), statusController.deleteCollection);
 router.get('/status-collections/:id/items', authenticate, authorizeAction('status_management', 'view'), statusController.getCollectionItems);
-router.post('/status-collections/:id/items', authenticate, authorizeAction('status_management', 'create'), statusController.createCollectionItem);
+// A status is also raised from the "+ Create Status" shortcut inside the Leads
+// and Customers forms, so that shortcut's own grant opens this too.
+router.post('/status-collections/:id/items', authenticate, authorizeAny(
+  authorizeAction('status_management', 'create'),
+  authorizeQuickCreate('status_management', 'status'),
+), statusController.createCollectionItem);
 router.put('/status-items/:itemId', authenticate, authorizeAction('status_management', 'edit'), statusController.updateStatusItem);
 router.delete('/status-items/:itemId', authenticate, authorizeAction('status_management', 'delete'), statusController.deleteStatusItem);
 router.patch('/status-items/:itemId/toggle', authenticate, authorizeAction('status_management', 'edit'), statusController.toggleStatusItem);

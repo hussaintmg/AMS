@@ -1,7 +1,15 @@
 const express = require('express');
 const router = express.Router();
 const leadMasterController = require('../controllers/leadMaster.controller');
-const { authenticate, authorizeAction, authorizePicker } = require('../middleware/auth');
+const { authenticate, authorizeAction, authorizeAny, authorizePicker, authorizeQuickCreate } = require('../middleware/auth');
+
+/**
+ * What the page catalog calls the record this URL raises: `/lead-master/sources`
+ * is the "+ Create Source" shortcut on the Leads and Customers forms. The two
+ * spellings have to be tied together somewhere, and the guard is the only place
+ * that needs them both.
+ */
+const QUICK_CREATE_KEY = { sources: 'source', types: 'type', priorities: 'priority', cities: 'city' };
 
 /**
  * @swagger
@@ -122,7 +130,13 @@ router.get('/stats', authenticate, authorizeAction('lead_master', 'view'), leadM
 // The city / source / type / priority pickers on the Leads and Customers
 // forms read this, so holding either page is enough to list them.
 router.get('/:type', authenticate, authorizePicker('lead_master', ['LeadCity', 'LeadSource', 'LeadType', 'LeadPriority']), leadMasterController.getAll);
-router.post('/:type', authenticate, authorizeAction('lead_master', 'create'), leadMasterController.create);
+// Either grant raises a source, type, priority or city: Lead Master Data's own
+// Create right, or the "+ Create Source" shortcut ticked on a form of a page the
+// role does hold (Role Jobs -> Leads / Customers -> Forms).
+router.post('/:type', authenticate, authorizeAny(
+  authorizeAction('lead_master', 'create'),
+  authorizeQuickCreate('lead_master', (req) => QUICK_CREATE_KEY[req.params.type]),
+), leadMasterController.create);
 router.put('/:type/:id', authenticate, authorizeAction('lead_master', 'edit'), leadMasterController.update);
 router.delete('/:type/:id', authenticate, authorizeAction('lead_master', 'delete'), leadMasterController.remove);
 

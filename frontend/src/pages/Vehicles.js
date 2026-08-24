@@ -13,7 +13,7 @@ import SearchableSelect from "../components/SearchableSelect";
 import VehicleMasterModal from "../components/vehicle/VehicleMasterModal";
 import { useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { fieldAccessor, pageActions, canQuickCreate } from "../utils/roleJobs";
+import { fieldAccessor, pageActions, canUseQuickCreate } from "../utils/roleJobs";
 import MasterQuickCreate from "../components/MasterQuickCreate";
 import { vehicleAPI, adminAPI, vehicleMasterAPI } from "../services/api";
 import toast from "react-hot-toast";
@@ -37,9 +37,9 @@ const Vehicles = () => {
   // server's 403 was the first the operator heard of it.
   const can = pageActions(currentUser, 'vehicles');
   // Makes, models, variants, colours and conditions are Vehicle Master Data
-  // records; the quick-create links here post to that page's endpoints, so
-  // they are offered only to a role that may create them there.
-  const canCreateVehicleMaster = pageActions(currentUser, 'vehicle_master')('create');
+  // records and the quick-create links here post to that page's endpoints, so
+  // either that page's Create right or the shortcut ticked in Role Jobs →
+  // Vehicles → Forms allows one — see utils/roleJobs.js canUseQuickCreate.
 
   // State
   const [vehicles, setVehicles] = useState([]);
@@ -66,7 +66,7 @@ const Vehicles = () => {
   // Role Jobs → Vehicles → Forms may withhold a shortcut on this form even
   // from a role that may create the record on Vehicle Master Data.
   const formKind = modalMode === 'edit' ? 'edit' : 'create';
-  const quick = (key) => canCreateVehicleMaster && canQuickCreate(currentUser, 'vehicles', formKind, key);
+  const quick = (key) => canUseQuickCreate(currentUser, { host: 'vehicles', form: formKind, key, owner: 'vehicle_master' });
   const [selectedVehicle, setSelectedVehicle] = useState(null);
   const [showBulkUpload, setShowBulkUpload] = useState(false);
   const [quickCreateType, setQuickCreateType] = useState(null);
@@ -1107,7 +1107,7 @@ const Vehicles = () => {
                     <div className="form-group">
                       <div className="form-label-add">
                         Condition
-                        {canCreateVehicleMaster && (
+                        {quick('condition') && (
                         <a
                           className="label-add-link"
                           onClick={() => openQuickCreate("condition")}

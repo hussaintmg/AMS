@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { X, Pencil, Trash2, User, CalendarDays, DollarSign, Phone, Mail, MapPin, Tag, Flag, MessageSquare, ArrowRightLeft } from 'lucide-react';
 import { useLeads } from '../../context/LeadsContext';
 import { useAuth } from '../../context/AuthContext';
-import { pageActions, canQuickCreate } from '../../utils/roleJobs';
+import { pageActions, canUseQuickCreate } from '../../utils/roleJobs';
 import SearchableSelect from '../SearchableSelect';
 import ConfirmModal from '../ConfirmModal';
 import LeadQuickCreateModal from './LeadQuickCreateModal';
@@ -183,14 +183,14 @@ export default function LeadDrawer({ leadId, onClose, onUpdated }) {
    * SearchableSelect, which does not accept one — so they rendered with no
    * caption at all and a bare icon button floating beside the select.
    */
-  // Only a role that may create on the owning master-data page is offered the
-  // shortcut; otherwise the button's only outcome is a 403.
   // The drawer's inline form is the lead's edit form, so Role Jobs → Leads →
-  // Forms → Edit decides which shortcuts it may carry.
+  // Forms → Edit decides which shortcuts it may carry — and the owning
+  // master-data page's Create right allows one regardless.
+  const mayQuickCreate = (field, page = 'lead_master') => canUseQuickCreate(user, { host: 'leads', form: 'edit', key: field, owner: page });
   const renderFieldLabel = (text, type, field, page = 'lead_master') => (
     <div className="form-label-add">
       <span>{text}</span>
-      {pageActions(user, page)('create') && canQuickCreate(user, 'leads', 'edit', field) && (
+      {mayQuickCreate(field, page) && (
         <button type="button" className="label-add-link" title={`Create ${text}`} onClick={() => setQuickCreate({ show: true, type, field })}>
           + {text}
         </button>
@@ -293,6 +293,7 @@ export default function LeadDrawer({ leadId, onClose, onUpdated }) {
                 <div className="form-group">
                   <div className="form-label-add">
                     <span>Status</span>
+                    {mayQuickCreate('status', 'status_management') && (
                     <button
                       type="button"
                       className="label-add-link"
@@ -307,6 +308,7 @@ export default function LeadDrawer({ leadId, onClose, onUpdated }) {
                     >
                       + Status
                     </button>
+                    )}
                   </div>
                   <select className="form-input" value={editForm.status} onChange={(e) => setEditForm((p) => ({ ...p, status: e.target.value }))}>
                     <option value="">Select status</option>

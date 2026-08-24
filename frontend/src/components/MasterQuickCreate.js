@@ -2,10 +2,11 @@ import React, { useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
-import { pageActions, canQuickCreate, pageKeyForPath } from '../utils/roleJobs';
+import { canUseQuickCreate, pageKeyForPath } from '../utils/roleJobs';
 import { adminAPI, serviceMasterAPI, warehouseAPI, vehicleMasterAPI, paymentMethodsAPI, expensesAPI, partsAPI, accountsAPI } from '../services/api';
 import useModalKeyboard from '../hooks/useModalKeyboard';
 import '../styles/userManagement.css';
+import ModalPortal from './ModalPortal';
 
 /**
  * "+ Create X" beside a master-data dropdown.
@@ -18,15 +19,16 @@ import '../styles/userManagement.css';
  * unless the role may create that record, and the same page key is what the
  * endpoint behind it guards on.
  *
- * Two grants decide, and both must hold:
- *   1. the owning master-data page's Create right (`spec.page`) — may this role
- *      make such a record at all;
- *   2. the shortcut itself, per page and per form (Role Jobs → Forms) — may it
- *      do so from *inside this form*. A role may be allowed to create leads and
- *      still be kept from raising new sources while doing it.
+ * Two grants can allow it, and either is enough:
+ *   1. the owning master-data page's Create right (`spec.page`) — a role that
+ *      may manage warehouses raises one from anywhere; or
+ *   2. Create on the page hosting the form, with the shortcut itself still
+ *      ticked for that form (Role Jobs → Forms).
  *
- * A role that has never been through Role Jobs keeps the old behaviour (the
- * button shows), so nothing in use today stops working.
+ * Withholding the shortcut in Role Jobs removes the button *and* closes the
+ * endpoint — the server asks the same question again in `authorizeQuickCreate`.
+ * A role may be allowed to create leads and still be kept from raising new
+ * sources while doing it.
  *
  * Usage:
  *   <MasterQuickCreate type="department" form="edit" onCreated={(dept) => { … }} />
@@ -156,8 +158,24 @@ const SPECS = {
   supplier: {
     page: 'vehicle_master',
     label: 'Supplier',
+    // The endpoint requires a code and a type as well as a name; without both it
+    // answers 400, which reads to the operator exactly like a refused
+    // permission. The code is proposed from the name and the type defaults to
+    // the commonest, so the dialog stays a two-second detour.
     fields: [
       { key: 'name', label: 'Supplier name', required: true, autoFocus: true },
+      { key: 'supplierCode', label: 'Code', required: true, deriveFrom: 'name' },
+      {
+        key: 'type',
+        label: 'Type',
+        required: true,
+        default: 'oem',
+        options: [
+          { value: 'oem', label: 'OEM (Manufacturer)' },
+          { value: 'distributor', label: 'Distributor' },
+          { value: 'local_vendor', label: 'Local Vendor' },
+        ],
+      },
       { key: 'phone', label: 'Phone' },
     ],
     submit: (values) => vehicleMasterAPI.createSupplier(values),
@@ -228,7 +246,10 @@ export default function MasterQuickCreate({ type, label, onCreated, form = 'crea
   const submit = async () => {
     if (!spec || saving) return;
     const payload = { ...values };
-    spec.fields.forEach((field) => { if (field.fromProps) payload[field.key] = context[field.fromProps]; });
+    spec.fields.forEach((field) => {
+      if (field.fromProps) payload[field.key] = context[field.fromProps];
+      if (field.default !== undefined && !payload[field.key]) payload[field.key] = field.default;
+    });
     const missing = spec.fields.find((field) => field.required && !String(payload[field.key] ?? '').trim());
     if (missing) { toast.error(`${missing.label} is required`); return; }
     setSaving(true);
@@ -251,12 +272,10 @@ export default function MasterQuickCreate({ type, label, onCreated, form = 'crea
   useModalKeyboard(open, close, submit);
 
   if (!spec) return null;
-  // Legacy default (true) matches every other screen: a role nobody has
-  // configured in Role Jobs keeps the button it has always had.
-  if (!pageActions(user, spec.page)('create')) return null;
-  // And the shortcut itself must be allowed on this page's form.
+  // Either the owning master-data page's Create right, or this shortcut ticked
+  // on a form of the page it sits in — see utils/roleJobs.js canUseQuickCreate.
   const screen = pageKey || pageKeyForPath(user, pathname);
-  if (screen && !canQuickCreate(user, screen, form, type)) return null;
+  if (!canUseQuickCreate(user, { host: screen, form, key: type, owner: spec.page })) return null;
 
   const setValue = (field, raw) => setValues((prev) => {
     const next = { ...prev, [field.key]: raw };
@@ -275,6 +294,7 @@ export default function MasterQuickCreate({ type, label, onCreated, form = 'crea
       </button>
 
       {open && (
+        <ModalPortal>
         <div className="modal-overlay" onClick={close}>
           <div className="modal-content" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
@@ -285,15 +305,27 @@ export default function MasterQuickCreate({ type, label, onCreated, form = 'crea
               {typedFields.map((field) => (
                 <div className="form-group" key={field.key}>
                   <label>{field.label}{field.required ? ' *' : ''}</label>
-                  <input
-                    className="form-input"
-                    type={field.type || 'text'}
-                    autoFocus={field.autoFocus}
-                    placeholder={field.placeholder || ''}
-                    value={values[field.key] ?? ''}
-                    onChange={(e) => setValue(field, e.target.value)}
-                    onBlur={() => field.deriveFrom && setValues((prev) => ({ ...prev, [`${field.key}__touched`]: true }))}
-                  />
+                  {field.options ? (
+                    <select
+                      className="form-input"
+                      value={values[field.key] ?? field.default ?? ''}
+                      onChange={(e) => setValue(field, e.target.value)}
+                    >
+                      {field.options.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      className="form-input"
+                      type={field.type || 'text'}
+                      autoFocus={field.autoFocus}
+                      placeholder={field.placeholder || ''}
+                      value={values[field.key] ?? ''}
+                      onChange={(e) => setValue(field, e.target.value)}
+                      onBlur={() => field.deriveFrom && setValues((prev) => ({ ...prev, [`${field.key}__touched`]: true }))}
+                    />
+                  )}
                 </div>
               ))}
             </div>
@@ -305,6 +337,7 @@ export default function MasterQuickCreate({ type, label, onCreated, form = 'crea
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
     </>
   );

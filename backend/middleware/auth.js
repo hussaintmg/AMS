@@ -3,7 +3,7 @@ const { User } = require('../models');
 const { AppError } = require('./errorHandler');
 const { getPermissionSettings, resolvePagePermissions, canAccessTarget, routeTarget } = require('../utils/permissionResolver');
 const { resolveEffectiveLogPermission } = require('../utils/logPermissionResolver');
-const { canDo, getJob } = require('../utils/roleJobs');
+const { canDo, getJob, canQuickCreate } = require('../utils/roleJobs');
 const { pathFor } = require('../utils/pageRegistry');
 const logger = require('../utils/logger');
 
@@ -288,6 +288,51 @@ const authorizePicker = (ownerPage, model) => {
 };
 
 /**
+ * Raising a master-data record from inside another page's form.
+ *
+ * "+ Create Source" sits in the New Customer form, and the endpoint behind it
+ * belongs to Lead Master Data. Guarded on that page alone, the only way to let
+ * a sales clerk name a new source while filling the form was to hand them the
+ * whole Lead Master Data screen — so in practice nobody was given it, the
+ * button was drawn anyway, and every use of it ended in "Access denied". The
+ * shortcut had a permission of its own (Role Jobs -> <page> -> Forms) that
+ * decided whether it was *shown* and nothing else.
+ *
+ * This makes that grant real. The request is allowed when the caller holds a
+ * page whose form offers this shortcut, may create on that page, and still has
+ * the shortcut itself ticked. Withholding it in Role Jobs closes the endpoint
+ * again, which is what makes the tick worth having.
+ *
+ * `key` is the catalog key of the record being raised ('source', 'category',
+ * 'status'...), or a function of the request when the endpoint serves several
+ * (`/lead-master/:type`). Pair it with `authorizeAction` through
+ * `authorizeAny`, so owning the master-data page keeps working as before.
+ */
+const authorizeQuickCreate = (owner, key) => {
+  const { quickCreateHosts } = require('../constants/pageCatalog');
+  const hostsFor = (wanted) => quickCreateHosts(owner, wanted);
+  return (req, res, next) => {
+    if (!req.user) return next(new AppError('Authentication required', 401));
+    if (req.user.isSuperAdmin) return next();
+
+    const wanted = typeof key === 'function' ? key(req) : key;
+    if (!wanted) return next(new AppError(`Access denied: no access to ${owner}`, 403));
+
+    const hosts = hostsFor(wanted);
+    const target = (pageKey) => ({ pageKey, path: pathFor(pageKey) || pageKey, module: pageKey });
+    const allowed = hosts.some(({ page }) => (
+      canAccessTarget(req.user, target(page))
+      && canDo(req.user, page, 'create')
+      && canQuickCreate(req.user, page, wanted)
+    ));
+    if (allowed) return next();
+
+    logDenial(req, hosts.map((host) => host.page), 'create', `no form grants the "${wanted}" shortcut`);
+    return next(new AppError(`Access denied: no access to ${owner}`, 403));
+  };
+};
+
+/**
  * Pass if ANY of these guards passes.
  *
  * `authorizeAction` ORs several *pages* for one action, but converting is a
@@ -344,7 +389,9 @@ const METHOD_ACTIONS = { GET: 'view', HEAD: 'view', POST: 'create', PUT: 'edit',
  * existing record (adding a part to a job card, completing it) edits that
  * record rather than creating a new one. Each entry is
  * `{ pattern, method?, action }`, matched against the router-relative path,
- * first match wins.
+ * first match wins. An entry may carry `guard` instead of `action` when the
+ * route is not this page's alone — a record raised from another page's form
+ * answers to that form's shortcut grant as well (see `authorizeQuickCreate`).
  *
  * Mount it *instead of* the per-route `authenticate`, not alongside it, or
  * every request verifies its token twice.
@@ -353,6 +400,7 @@ const authorizeRouter = (pageKey, overrides = []) => (req, res, next) => {
   const rule = overrides.find((entry) => (
     entry.pattern.test(req.path) && (!entry.method || entry.method === req.method)
   ));
+  if (rule?.guard) return rule.guard(req, res, next);
   const action = rule?.action || METHOD_ACTIONS[req.method] || 'view';
   return authorizeAction(pageKey, action)(req, res, next);
 };
@@ -363,6 +411,7 @@ module.exports = {
   authorizeAction,
   authorizeAny,
   authorizePicker,
+  authorizeQuickCreate,
   authorizeRouter,
   authorizePage,
   checkPermission,

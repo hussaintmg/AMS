@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import SearchableSelect from '../components/SearchableSelect';
 import useModalKeyboard from '../hooks/useModalKeyboard';
 import MasterQuickCreate from '../components/MasterQuickCreate';
+import modalSubmit from '../utils/modalForm';
+import ModalPortal from '../components/ModalPortal';
 
 function ExpenseFormModal({ isOpen, mode, initialData, categories, employees, accounts = [], onClose, onSubmit, loading, onCategoryCreated }) {
   const [formData, setFormData] = useState({
@@ -52,86 +54,88 @@ function ExpenseFormModal({ isOpen, mode, initialData, categories, employees, ac
   const empOptions = employees.map(e => ({ id: e._id || e.id, name: `${e.firstName || e.first_name || ''} ${e.lastName || e.last_name || ''}`.trim() || '-' }));
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content modal-lg" onClick={e => e.stopPropagation()}>
-        <div className="modal-header">
-          <h2>{mode === 'create' ? 'New Expense' : 'Edit Expense'}</h2>
-          <button className="modal-close" onClick={onClose}>&times;</button>
-        </div>
-        <form onSubmit={handleSubmit}>
-          <div className="modal-body">
-            <div className="form-row">
-              <div className="form-group">
-                <div className="form-label-add">
-                  <span>Category *</span>
-                  <MasterQuickCreate
-                    type="expense_category"
-                    label="Category"
-                    pageKey="expenses"
-                    form={mode === 'create' ? 'create' : 'edit'}
-                    onCreated={async (created) => {
-                      await onCategoryCreated?.();
-                      if (created?.name) setFormData(p => ({ ...p, category: created.name }));
-                    }}
-                  />
+    <ModalPortal>
+      <div className="modal-overlay" onClick={onClose}>
+        <div className="modal-content modal-lg" onClick={e => e.stopPropagation()}>
+          <div className="modal-header">
+            <h2>{mode === 'create' ? 'New Expense' : 'Edit Expense'}</h2>
+            <button className="modal-close" onClick={onClose}>&times;</button>
+          </div>
+          <form onSubmit={modalSubmit(handleSubmit)}>
+            <div className="modal-body">
+              <div className="form-row">
+                <div className="form-group">
+                  <div className="form-label-add">
+                    <span>Category *</span>
+                    <MasterQuickCreate
+                      type="expense_category"
+                      label="Category"
+                      pageKey="expenses"
+                      form={mode === 'create' ? 'create' : 'edit'}
+                      onCreated={async (created) => {
+                        await onCategoryCreated?.();
+                        if (created?.name) setFormData(p => ({ ...p, category: created.name }));
+                      }}
+                    />
+                  </div>
+                  <SearchableSelect options={catOptions} value={formData.category}
+                    onChange={e => setFormData(p => ({ ...p, category: e.target.value }))} required />
+                  {errors.category && <span className="field-error">{errors.category}</span>}
                 </div>
-                <SearchableSelect options={catOptions} value={formData.category}
-                  onChange={e => setFormData(p => ({ ...p, category: e.target.value }))} required />
-                {errors.category && <span className="field-error">{errors.category}</span>}
+                <div className="form-group">
+                  <label>Amount *</label>
+                  <input type="number" step="0.01" className="form-control" name="amount" value={formData.amount} onChange={handleChange} required />
+                  {errors.amount && <span className="field-error">{errors.amount}</span>}
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Expense Date *</label>
+                  <input type="date" className="form-control" name="expenseDate" value={formData.expenseDate} onChange={handleChange} required />
+                  {errors.expenseDate && <span className="field-error">{errors.expenseDate}</span>}
+                </div>
+                <div className="form-group">
+                  <label>Paid from *</label>
+                  <SearchableSelect options={acctOptions} value={formData.paidFromAccount}
+                    onChange={e => setFormData(p => ({ ...p, paidFromAccount: e.target.value }))} required />
+                  {errors.paidFromAccount && <span className="field-error">{errors.paidFromAccount}</span>}
+                </div>
+                <div className="form-group">
+                  <label>Status</label>
+                  <select className="form-control" name="status" value={formData.status} onChange={handleChange}>
+                    <option value="draft">Draft</option>
+                    <option value="submitted">Submitted</option>
+                    <option value="approved">Approved</option>
+                  </select>
+                </div>
               </div>
               <div className="form-group">
-                <label>Amount *</label>
-                <input type="number" step="0.01" className="form-control" name="amount" value={formData.amount} onChange={handleChange} required />
-                {errors.amount && <span className="field-error">{errors.amount}</span>}
+                <label>Description</label>
+                <textarea className="form-control" rows={2} name="description" value={formData.description} onChange={handleChange} />
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Vendor</label>
+                  <input className="form-control" name="vendor" value={formData.vendor} onChange={handleChange} />
+                </div>
+                <div className="form-group">
+                  <label>Employee</label>
+                  <SearchableSelect options={empOptions} value={formData.employee}
+                    onChange={e => setFormData(p => ({ ...p, employee: e.target.value }))} placeholder="Optional" />
+                </div>
               </div>
             </div>
-            <div className="form-row">
-              <div className="form-group">
-                <label>Expense Date *</label>
-                <input type="date" className="form-control" name="expenseDate" value={formData.expenseDate} onChange={handleChange} required />
-                {errors.expenseDate && <span className="field-error">{errors.expenseDate}</span>}
-              </div>
-              <div className="form-group">
-                <label>Paid from *</label>
-                <SearchableSelect options={acctOptions} value={formData.paidFromAccount}
-                  onChange={e => setFormData(p => ({ ...p, paidFromAccount: e.target.value }))} required />
-                {errors.paidFromAccount && <span className="field-error">{errors.paidFromAccount}</span>}
-              </div>
-              <div className="form-group">
-                <label>Status</label>
-                <select className="form-control" name="status" value={formData.status} onChange={handleChange}>
-                  <option value="draft">Draft</option>
-                  <option value="submitted">Submitted</option>
-                  <option value="approved">Approved</option>
-                </select>
-              </div>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-secondary" onClick={onClose} disabled={loading}>Cancel</button>
+              <button type="submit" className="btn btn-primary" disabled={loading}>
+                {loading ? <><span className="spinner-mini"></span> {mode === 'create' ? 'Creating...' : 'Saving...'}</>
+                  : mode === 'create' ? 'Create Expense' : 'Save Changes'}
+              </button>
             </div>
-            <div className="form-group">
-              <label>Description</label>
-              <textarea className="form-control" rows={2} name="description" value={formData.description} onChange={handleChange} />
-            </div>
-            <div className="form-row">
-              <div className="form-group">
-                <label>Vendor</label>
-                <input className="form-control" name="vendor" value={formData.vendor} onChange={handleChange} />
-              </div>
-              <div className="form-group">
-                <label>Employee</label>
-                <SearchableSelect options={empOptions} value={formData.employee}
-                  onChange={e => setFormData(p => ({ ...p, employee: e.target.value }))} placeholder="Optional" />
-              </div>
-            </div>
-          </div>
-          <div className="modal-footer">
-            <button type="button" className="btn btn-secondary" onClick={onClose} disabled={loading}>Cancel</button>
-            <button type="submit" className="btn btn-primary" disabled={loading}>
-              {loading ? <><span className="spinner-mini"></span> {mode === 'create' ? 'Creating...' : 'Saving...'}</>
-                : mode === 'create' ? 'Create Expense' : 'Save Changes'}
-            </button>
-          </div>
-        </form>
+          </form>
+        </div>
       </div>
-    </div>
+    </ModalPortal>
   );
 }
 

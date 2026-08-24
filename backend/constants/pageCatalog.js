@@ -164,11 +164,11 @@ const PAGE_CATALOG = {
     },
     forms: {
       create: {
-        quickCreate: [qc('source', '+ Create Source', 'lead_master'), qc('type', '+ Create Type', 'lead_master'), qc('status', '+ Create Status', 'status_management'), qc('city', '+ Create City', 'lead_master')],
+        quickCreate: [qc('source', '+ Create Source', 'lead_master'), qc('type', '+ Create Type', 'lead_master'), qc('status', '+ Create Status', 'status_management'), qc('city', '+ Create City', 'lead_master'), qc('vehicle', 'Vehicles tab (the customer’s cars)', 'customers')],
         dropdowns: [dd('source', 'Source', 'LeadSource'), dd('type', 'Type', 'LeadType'), dd('status', 'Status', 'StatusItem'), dd('city', 'City', 'LeadCity'), dd('assignedTo', 'Assign To', 'User', true), dd('department', 'Department', 'Department', true)],
       },
       edit: {
-        quickCreate: [qc('source', '+ Create Source', 'lead_master'), qc('type', '+ Create Type', 'lead_master'), qc('status', '+ Create Status', 'status_management'), qc('city', '+ Create City', 'lead_master')],
+        quickCreate: [qc('source', '+ Create Source', 'lead_master'), qc('type', '+ Create Type', 'lead_master'), qc('status', '+ Create Status', 'status_management'), qc('city', '+ Create City', 'lead_master'), qc('vehicle', 'Vehicles tab (the customer’s cars)', 'customers')],
         dropdowns: [dd('source', 'Source', 'LeadSource'), dd('type', 'Type', 'LeadType'), dd('status', 'Status', 'StatusItem'), dd('city', 'City', 'LeadCity'), dd('assignedTo', 'Assign To', 'User', true), dd('department', 'Department', 'Department', true)],
       },
       filters: { dropdowns: [dd('source', 'Source', 'LeadSource'), dd('type', 'Type', 'LeadType'), dd('city', 'City', 'LeadCity'), dd('status', 'Status', 'StatusItem'), dd('assignedTo', 'Assigned To', 'User', true), dd('department', 'Department', 'Department', true)] },
@@ -182,11 +182,11 @@ const PAGE_CATALOG = {
     drawer: { fields: [], extras: [] },
     forms: {
       create: {
-        quickCreate: [qc('make', '+ Create Make', 'vehicle_master'), qc('model', '+ Create Model', 'vehicle_master'), qc('variant', '+ Create Variant', 'vehicle_master'), qc('color', '+ Create Colour', 'vehicle_master'), qc('warehouse', '+ Create Warehouse', 'warehouses')],
+        quickCreate: [qc('make', '+ Create Make', 'vehicle_master'), qc('model', '+ Create Model', 'vehicle_master'), qc('variant', '+ Create Variant', 'vehicle_master'), qc('color', '+ Create Colour', 'vehicle_master'), qc('condition', '+ Condition', 'vehicle_master'), qc('warehouse', '+ Create Warehouse', 'warehouses')],
         dropdowns: [dd('make', 'Brand / Make', 'VehicleMake'), dd('model', 'Model', 'VehicleModel'), dd('variant', 'Variant', 'VehicleVariant'), dd('color', 'Colour', 'VehicleColor'), dd('condition', 'Condition', 'static'), dd('warehouse', 'Warehouse', 'Warehouse', true)],
       },
       edit: {
-        quickCreate: [qc('make', '+ Create Make', 'vehicle_master'), qc('model', '+ Create Model', 'vehicle_master'), qc('variant', '+ Create Variant', 'vehicle_master'), qc('color', '+ Create Colour', 'vehicle_master'), qc('warehouse', '+ Create Warehouse', 'warehouses')],
+        quickCreate: [qc('make', '+ Create Make', 'vehicle_master'), qc('model', '+ Create Model', 'vehicle_master'), qc('variant', '+ Create Variant', 'vehicle_master'), qc('color', '+ Create Colour', 'vehicle_master'), qc('condition', '+ Condition', 'vehicle_master'), qc('warehouse', '+ Create Warehouse', 'warehouses')],
         dropdowns: [dd('make', 'Brand / Make', 'VehicleMake'), dd('model', 'Model', 'VehicleModel'), dd('variant', 'Variant', 'VehicleVariant'), dd('color', 'Colour', 'VehicleColor'), dd('condition', 'Condition', 'static'), dd('warehouse', 'Warehouse', 'Warehouse', true)],
       },
       filters: { dropdowns: [dd('status', 'Status', 'static'), dd('make', 'Brand', 'VehicleMake'), dd('dispatch', 'Dispatch', 'static')] },
@@ -527,6 +527,33 @@ const pageQuickCreateKeys = (pageKey, form) => (catalogFor(pageKey).forms[form]?
 const pageDropdowns = (pageKey, form) => catalogFor(pageKey).forms[form]?.dropdowns || [];
 
 /**
+ * Every screen that offers a "+ Create X" shortcut owned by `owner`.
+ *
+ * The catalog already records, for each form, which master-data page owns each
+ * shortcut. Read the other way round it answers the question a route guard has
+ * to ask: "this POST raises a lead source — which pages offer that from inside
+ * one of their forms?" Holding one of those pages, with Create on it and the
+ * shortcut itself still ticked, is what lets the request through without the
+ * whole Lead Master Data page having to be granted as well.
+ *
+ * Returns `{ page, key, form }` rows, one per form the shortcut appears on.
+ */
+const quickCreateHosts = (owner, keys = null) => {
+  const wanted = keys ? new Set((Array.isArray(keys) ? keys : [keys]).map(String)) : null;
+  const hosts = [];
+  for (const [pageKey, entry] of Object.entries(PAGE_CATALOG)) {
+    for (const form of ['create', 'edit']) {
+      for (const item of entry?.forms?.[form]?.quickCreate || []) {
+        if (item.owner !== owner) continue;
+        if (wanted && !wanted.has(String(item.key))) continue;
+        hosts.push({ page: pageKey, key: item.key, form });
+      }
+    }
+  }
+  return hosts;
+};
+
+/**
  * The catalog shaped for the browser: the same data with the internal
  * `match` lists kept (the view gate needs them) and nothing else added.
  */
@@ -553,4 +580,5 @@ module.exports = {
   pageDrawerExtraKeys,
   pageQuickCreateKeys,
   pageDropdowns,
+  quickCreateHosts,
 };

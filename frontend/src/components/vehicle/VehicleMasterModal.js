@@ -4,6 +4,8 @@ import ToggleSwitch from "../ToggleSwitch";
 import { vehicleMasterAPI } from "../../services/api";
 import toast from "react-hot-toast";
 import useModalKeyboard from "../../hooks/useModalKeyboard";
+import ModalPortal from '../ModalPortal';
+import modalSubmit from '../../utils/modalForm';
 
 const LABEL_MAP = {
   make: "Brand",
@@ -264,116 +266,118 @@ export default function VehicleMasterModal({
   const modalTitle = mode === "create" ? `Add ${label}` : `Edit ${label}`;
 
   return (
-    <div
-      className="modal-overlay"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
-          <h2>{modalTitle}</h2>
-          <button className="modal-close" onClick={onClose}>
-            ×
-          </button>
-        </div>
-        <form ref={formRef} onSubmit={handleSubmit}>
-          <div className="modal-body">
-            {type === "make" && (
-              <MakeForm
-                formData={formData}
-                onChange={handleInputChange}
-                set={set}
-              />
-            )}
-            {type === "model" && (
-              <ModelForm
-                formData={formData}
-                onChange={handleInputChange}
-                set={set}
-                makes={allMakes}
-                onQuickCreate={() => setQuickCreate("make")}
-              />
-            )}
-            {type === "variant" && (
-              <VariantForm
-                formData={formData}
-                onChange={handleInputChange}
-                set={set}
-                makes={allMakes}
-                models={allModels}
-                variantMakeId={variantMakeId}
-                setVariantMakeId={setVariantMakeId}
-                onQuickCreateMake={() => setQuickCreate("make")}
-                onQuickCreateModel={() => setQuickCreate("model")}
-              />
-            )}
-            {type === "color" && (
-              <ColorForm
-                formData={formData}
-                onChange={handleInputChange}
-                set={set}
-              />
-            )}
-            {type === "category" && (
-              <CategoryForm
-                formData={formData}
-                onChange={handleInputChange}
-                set={set}
-                categories={categories}
-                item={item}
-              />
-            )}
-            {type === "supplier" && (
-              <SupplierForm
-                formData={formData}
-                onChange={handleInputChange}
-                set={set}
-              />
-            )}
-            {type === "condition" && (
-              <ConditionForm
-                formData={formData}
-                onChange={handleInputChange}
-                set={set}
-              />
-            )}
-          </div>
-          <div className="modal-footer">
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={onClose}
-              disabled={saving}
-            >
-              Cancel
+    <ModalPortal>
+      <div
+        className="modal-overlay"
+        onClick={(e) => {
+          if (e.target === e.currentTarget) onClose();
+        }}
+      >
+        <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-header">
+            <h2>{modalTitle}</h2>
+            <button className="modal-close" onClick={onClose}>
+              ×
             </button>
-            <button type="submit" className="btn btn-primary" disabled={saving}>
-              {saving ? (
-                <>
-                  <span className="spinner-mini"></span> Saving...
-                </>
-              ) : mode === "create" ? (
-                "Create"
-              ) : (
-                "Save Changes"
+          </div>
+          <form ref={formRef} onSubmit={modalSubmit(handleSubmit)}>
+            <div className="modal-body">
+              {type === "make" && (
+                <MakeForm
+                  formData={formData}
+                  onChange={handleInputChange}
+                  set={set}
+                />
               )}
-            </button>
-          </div>
-        </form>
-      </div>
+              {type === "model" && (
+                <ModelForm
+                  formData={formData}
+                  onChange={handleInputChange}
+                  set={set}
+                  makes={allMakes}
+                  onQuickCreate={() => setQuickCreate("make")}
+                />
+              )}
+              {type === "variant" && (
+                <VariantForm
+                  formData={formData}
+                  onChange={handleInputChange}
+                  set={set}
+                  makes={allMakes}
+                  models={allModels}
+                  variantMakeId={variantMakeId}
+                  setVariantMakeId={setVariantMakeId}
+                  onQuickCreateMake={() => setQuickCreate("make")}
+                  onQuickCreateModel={() => setQuickCreate("model")}
+                />
+              )}
+              {type === "color" && (
+                <ColorForm
+                  formData={formData}
+                  onChange={handleInputChange}
+                  set={set}
+                />
+              )}
+              {type === "category" && (
+                <CategoryForm
+                  formData={formData}
+                  onChange={handleInputChange}
+                  set={set}
+                  categories={categories}
+                  item={item}
+                />
+              )}
+              {type === "supplier" && (
+                <SupplierForm
+                  formData={formData}
+                  onChange={handleInputChange}
+                  set={set}
+                />
+              )}
+              {type === "condition" && (
+                <ConditionForm
+                  formData={formData}
+                  onChange={handleInputChange}
+                  set={set}
+                />
+              )}
+            </div>
+            <div className="modal-footer">
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={onClose}
+                disabled={saving}
+              >
+                Cancel
+              </button>
+              <button type="submit" className="btn btn-primary" disabled={saving}>
+                {saving ? (
+                  <>
+                    <span className="spinner-mini"></span> Saving...
+                  </>
+                ) : mode === "create" ? (
+                  "Create"
+                ) : (
+                  "Save Changes"
+                )}
+              </button>
+            </div>
+          </form>
+        </div>
 
-      {quickCreate && (
-        <VehicleMasterModal
-          type={quickCreate}
-          mode="create"
-          makes={allMakes}
-          models={allModels}
-          onClose={() => setQuickCreate(null)}
-          onSaved={handleQuickCreateSaved}
-        />
-      )}
-    </div>
+        {quickCreate && (
+          <VehicleMasterModal
+            type={quickCreate}
+            mode="create"
+            makes={allMakes}
+            models={allModels}
+            onClose={() => setQuickCreate(null)}
+            onSaved={handleQuickCreateSaved}
+          />
+        )}
+      </div>
+    </ModalPortal>
   );
 }
 

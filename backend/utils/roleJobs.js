@@ -35,6 +35,28 @@ const canDo = (user, pageKey, action = 'view') => {
   return action === 'view' ? job.actions?.view !== false : job.actions?.[action] === true;
 };
 
+/**
+ * May this role raise `key` from inside one of `pageKey`'s forms?
+ *
+ * Mirrors the browser's `utils/roleJobs.js canQuickCreate` exactly, so the
+ * button the operator is offered and the request the server accepts are decided
+ * by the same rule. "All shortcuts" is the default a role carries until someone
+ * limits it in Role Jobs -> Forms, which is why anything but `mode: 'selected'`
+ * reads as yes.
+ *
+ * A role with no job row at all gets `false` here: this is the *extra* way in,
+ * and the caller has already tried the owning master-data page.
+ */
+const canQuickCreate = (user, pageKey, key) => {
+  const job = getJob(user, pageKey);
+  if (job?.superAdmin) return true;
+  if (!job) return false;
+  const setting = job.quickCreate;
+  if (!setting || setting.mode !== 'selected') return true;
+  const allowed = [...(setting.create || []), ...(setting.edit || [])].map(String);
+  return allowed.includes(String(key));
+};
+
 const requireJob = (pageKey, action = 'view') => (req, res, next) => {
   if (!canDo(req.user, pageKey, action)) return res.status(403).json({ success: false, message: `Permission denied: cannot ${action} ${pageKey}` });
   next();
@@ -94,4 +116,4 @@ async function scopeFilter(user, pageKey, ownerFields = ['createdBy']) {
   return { $or: fields.map((field) => ({ [field]: { $in: ids } })) };
 }
 
-module.exports = { getJob, canDo, requireJob, allowedOwnerIds, scopeFilter, superAdminIds };
+module.exports = { getJob, canDo, canQuickCreate, requireJob, allowedOwnerIds, scopeFilter, superAdminIds };

@@ -9,12 +9,27 @@
 
 const express = require('express');
 const router = express.Router();
-const { authenticate, authorizeRouter } = require('../middleware/auth');
+const { authenticate, authorizeAction, authorizeAny, authorizeRouter, authorizeQuickCreate } = require('../middleware/auth');
 const vehicleMasterController = require('../controllers/vehicleMaster.controller');
+
+/**
+ * Part categories and suppliers live on this router, but they are also raised
+ * from inside the Parts form ("+ Create Category", "+ Create Supplier"). A
+ * storekeeper who may add a part has no business being handed the whole Vehicle
+ * Master screen just to name the category it belongs to, so those two POSTs
+ * take either grant.
+ */
+const alsoFromPartsForm = (key) => authorizeAny(
+  authorizeAction('vehicle_master', 'create'),
+  authorizeQuickCreate('vehicle_master', key),
+);
 
 // Makes, models, variants and colours are company-wide reference data. Reading
 // them needs the page; changing them needs the matching Role Jobs action.
-router.use(authenticate, authorizeRouter('vehicle_master'));
+router.use(authenticate, authorizeRouter('vehicle_master', [
+  { pattern: /^\/categories\/?$/, method: 'POST', guard: alsoFromPartsForm('category') },
+  { pattern: /^\/suppliers\/?$/, method: 'POST', guard: alsoFromPartsForm('supplier') },
+]));
 
 /**
  * @swagger

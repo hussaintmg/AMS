@@ -3,12 +3,14 @@ import toast from 'react-hot-toast';
 import { X } from 'lucide-react';
 import { useLeads } from '../../context/LeadsContext';
 import { useAuth } from '../../context/AuthContext';
-import { pageActions, canQuickCreate, canSeeDropdown } from '../../utils/roleJobs';
+import { canUseQuickCreate, canSeeDropdown } from '../../utils/roleJobs';
 import MasterQuickCreate from '../MasterQuickCreate';
 import SearchableSelect from '../SearchableSelect';
 import LeadMasterModal from './LeadMasterModal';
 import LeadStatusItemModal from './LeadStatusItemModal';
 import useModalKeyboard from '../../hooks/useModalKeyboard';
+import modalSubmit from '../../utils/modalForm';
+import ModalPortal from '../ModalPortal';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -177,15 +179,16 @@ export default function LeadFormModal({ lead, onClose, onSaved }) {
    * Management for a status item. The button is offered only to a role that
    * may create there, so it can no longer hand out a guaranteed 403.
    */
-  // Role Jobs → Leads → Forms may withhold a shortcut on this form (create vs
-  // edit) even from a role that may create the record on its own page.
+  // A shortcut is allowed either by the owning master-data page's Create right
+  // or by being ticked in Role Jobs → Leads → Forms for a role that may create
+  // leads — per form, so the create form and the edit form can differ.
   const formKind = lead ? 'edit' : 'create';
   // A dropdown Role Jobs has set to "Hidden" for this form is not drawn at all.
   const showDropdown = (key) => canSeeDropdown(user, 'leads', formKind, key);
   const renderLabel = (text, field, onCreate, page = 'lead_master') => (
     <div className="form-label-add">
       <span>{text}</span>
-      {onCreate && pageActions(user, page)('create') && canQuickCreate(user, 'leads', formKind, field) && (
+      {onCreate && canUseQuickCreate(user, { host: 'leads', form: formKind, key: field, owner: page }) && (
         <button type="button" className="label-add-link" data-quick-create={field} onClick={onCreate}>+ Create {text}</button>
       )}
     </div>
@@ -410,67 +413,69 @@ export default function LeadFormModal({ lead, onClose, onSaved }) {
   };
 
   return (
-    <>
-      <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-        <div className="modal-content lead-form-modal" style={{ maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
-          <div className="modal-header">
-            <h3>{isEdit ? 'Edit Lead' : 'New Lead'}</h3>
-            <button className="modal-close" onClick={onClose}><X size={20} /></button>
-          </div>
-
-          <div className="form-tabs">
-            {TABS.map((t) => (
-              <button key={t.key} className={`form-tab ${activeTab === t.key ? 'active' : ''}`} onClick={() => setActiveTab(t.key)}>
-                {t.label}
-              </button>
-            ))}
-          </div>
-
-          {/* noValidate: the browser's native type="email" check would block submit
-              before handleSubmit runs, so our own field-level messages never rendered
-              and the user saw the form silently refuse to submit. */}
-          <form noValidate onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
-            <div className="modal-body" style={{ overflowY: 'auto', flex: 1 }}>
-              {renderTab()}
+    <ModalPortal>
+      <>
+        <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+          <div className="modal-content lead-form-modal" style={{ maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+            <div className="modal-header">
+              <h3>{isEdit ? 'Edit Lead' : 'New Lead'}</h3>
+              <button className="modal-close" onClick={onClose}><X size={20} /></button>
             </div>
 
-            <div className="modal-footer" style={{ flexShrink: 0 }}>
-              <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
-              <button type="submit" className="btn btn-primary" disabled={saving}>
-                {saving ? 'Saving...' : (isEdit ? 'Update Lead' : 'Create Lead')}
-              </button>
+            <div className="form-tabs">
+              {TABS.map((t) => (
+                <button key={t.key} className={`form-tab ${activeTab === t.key ? 'active' : ''}`} onClick={() => setActiveTab(t.key)}>
+                  {t.label}
+                </button>
+              ))}
             </div>
-          </form>
+
+            {/* noValidate: the browser's native type="email" check would block submit
+                before handleSubmit runs, so our own field-level messages never rendered
+                and the user saw the form silently refuse to submit. */}
+            <form noValidate onSubmit={modalSubmit(handleSubmit)} style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+              <div className="modal-body" style={{ overflowY: 'auto', flex: 1 }}>
+                {renderTab()}
+              </div>
+
+              <div className="modal-footer" style={{ flexShrink: 0 }}>
+                <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
+                <button type="submit" className="btn btn-primary" disabled={saving}>
+                  {saving ? 'Saving...' : (isEdit ? 'Update Lead' : 'Create Lead')}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
-      </div>
 
-      {quickCreate.show && (
-        <LeadMasterModal
-          type={quickCreate.type}
-          onClose={() => setQuickCreate({ show: false, type: null })}
-          onSaved={(item) => {
-            const field = quickCreate.type === 'sources' ? 'source'
-              : quickCreate.type === 'types' ? 'type'
-                : quickCreate.type === 'cities' ? 'city'
-                  : 'priority';
-            loadMeta();
-            if (field === 'city' && item?.name) {
-              set('city', item.name);
-            } else if (item?._id) {
-              set(field, item._id);
-            }
-          }}
-        />
-      )}
+        {quickCreate.show && (
+          <LeadMasterModal
+            type={quickCreate.type}
+            onClose={() => setQuickCreate({ show: false, type: null })}
+            onSaved={(item) => {
+              const field = quickCreate.type === 'sources' ? 'source'
+                : quickCreate.type === 'types' ? 'type'
+                  : quickCreate.type === 'cities' ? 'city'
+                    : 'priority';
+              loadMeta();
+              if (field === 'city' && item?.name) {
+                set('city', item.name);
+              } else if (item?._id) {
+                set(field, item._id);
+              }
+            }}
+          />
+        )}
 
-      {showStatusItemModal && meta.leadStatusCollectionId && (
-        <LeadStatusItemModal
-          collectionId={meta.leadStatusCollectionId}
-          collectionName={meta.statuses.length > 0 ? 'Lead Status' : undefined}
-          onClose={() => setShowStatusItemModal(false)}
-          onCreated={handleStatusItemCreated}
-        />
-      )}
-    </>
+        {showStatusItemModal && meta.leadStatusCollectionId && (
+          <LeadStatusItemModal
+            collectionId={meta.leadStatusCollectionId}
+            collectionName={meta.statuses.length > 0 ? 'Lead Status' : undefined}
+            onClose={() => setShowStatusItemModal(false)}
+            onCreated={handleStatusItemCreated}
+          />
+        )}
+      </>
+    </ModalPortal>
   );
 }

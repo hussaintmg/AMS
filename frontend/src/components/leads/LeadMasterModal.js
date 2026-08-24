@@ -3,6 +3,8 @@ import toast from 'react-hot-toast';
 import { X } from 'lucide-react';
 import { leadMasterAPI } from '../../services/api';
 import useModalKeyboard from '../../hooks/useModalKeyboard';
+import modalSubmit from '../../utils/modalForm';
+import ModalPortal from '../ModalPortal';
 
 const LEAD_TYPE_MAPPING_OPTIONS = [
   { value: 'parts', label: 'Parts' },
@@ -57,81 +59,83 @@ export default function LeadMasterModal({ type, onClose, onSaved }) {
   const label = LABEL_MAP[type] || 'Item';
 
   return (
-    <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="modal-content">
-        <div className="modal-header">
-          <h3>Create {label}</h3>
-          <button className="modal-close" onClick={onClose}><X size={24} /></button>
-        </div>
-        <form ref={formRef} onSubmit={handleSubmit}>
-          <div className="modal-body">
-            <div className="form-group">
-              <label>Name *</label>
-              <input type="text" className="form-input" value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="Enter name" />
-            </div>
-            {type !== 'cities' && (
+    <ModalPortal>
+      <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+        <div className="modal-content">
+          <div className="modal-header">
+            <h3>Create {label}</h3>
+            <button className="modal-close" onClick={onClose}><X size={24} /></button>
+          </div>
+          <form ref={formRef} onSubmit={modalSubmit(handleSubmit)}>
+            <div className="modal-body">
               <div className="form-group">
-                <label>Description</label>
-                <textarea className="form-input" rows="2" value={form.description} onChange={(e) => set('description', e.target.value)} placeholder="Optional description" />
+                <label>Name *</label>
+                <input type="text" className="form-input" value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="Enter name" />
               </div>
-            )}
-            <div className="form-row">
-              <div className="form-group">
-                <label>Sort Order</label>
-                <input type="number" className="form-input" value={form.sortOrder} onChange={(e) => set('sortOrder', parseInt(e.target.value) || 0)} />
-              </div>
-              {(type === 'sources' || type === 'priorities' || type === 'types') && (
+              {type !== 'cities' && (
                 <div className="form-group">
-                  <label>Color</label>
-                  <input type="color" className="form-input" value={form.color} onChange={(e) => set('color', e.target.value)} style={{ height: '42px', padding: '4px' }} />
+                  <label>Description</label>
+                  <textarea className="form-input" rows="2" value={form.description} onChange={(e) => set('description', e.target.value)} placeholder="Optional description" />
+                </div>
+              )}
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Sort Order</label>
+                  <input type="number" className="form-input" value={form.sortOrder} onChange={(e) => set('sortOrder', parseInt(e.target.value) || 0)} />
+                </div>
+                {(type === 'sources' || type === 'priorities' || type === 'types') && (
+                  <div className="form-group">
+                    <label>Color</label>
+                    <input type="color" className="form-input" value={form.color} onChange={(e) => set('color', e.target.value)} style={{ height: '42px', padding: '4px' }} />
+                  </div>
+                )}
+              </div>
+              {type === 'types' && (
+                <>
+                  <div className="form-group">
+                    <label>Category</label>
+                    <select className="form-input" value={form.category} onChange={(e) => set('category', e.target.value)}>
+                      <option value="vehicle">Vehicle</option>
+                      <option value="service">Service</option>
+                      <option value="parts">Parts</option>
+                      <option value="general">General</option>
+                      <option value="corporate">Corporate</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>Lead Type Mapping</label>
+                    <div className="mapping-checkbox-grid">
+                      {LEAD_TYPE_MAPPING_OPTIONS.map((option) => (
+                        <label key={option.value} className="mapping-checkbox">
+                          <input
+                            type="checkbox"
+                            checked={form.portalModules.includes(option.value)}
+                            onChange={() => togglePortalModule(option.value)}
+                          />
+                          <span>{option.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+              {type === 'priorities' && (
+                <div className="form-group">
+                  <label>Level (0-10)</label>
+                  <input type="number" className="form-input" value={form.level} onChange={(e) => set('level', Math.min(10, Math.max(0, parseInt(e.target.value) || 0)))} min="0" max="10" />
                 </div>
               )}
             </div>
-            {type === 'types' && (
-              <>
-                <div className="form-group">
-                  <label>Category</label>
-                  <select className="form-input" value={form.category} onChange={(e) => set('category', e.target.value)}>
-                    <option value="vehicle">Vehicle</option>
-                    <option value="service">Service</option>
-                    <option value="parts">Parts</option>
-                    <option value="general">General</option>
-                    <option value="corporate">Corporate</option>
-                    <option value="other">Other</option>
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label>Lead Type Mapping</label>
-                  <div className="mapping-checkbox-grid">
-                    {LEAD_TYPE_MAPPING_OPTIONS.map((option) => (
-                      <label key={option.value} className="mapping-checkbox">
-                        <input
-                          type="checkbox"
-                          checked={form.portalModules.includes(option.value)}
-                          onChange={() => togglePortalModule(option.value)}
-                        />
-                        <span>{option.label}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              </>
-            )}
-            {type === 'priorities' && (
-              <div className="form-group">
-                <label>Level (0-10)</label>
-                <input type="number" className="form-input" value={form.level} onChange={(e) => set('level', Math.min(10, Math.max(0, parseInt(e.target.value) || 0)))} min="0" max="10" />
-              </div>
-            )}
-          </div>
-          <div className="modal-footer">
-            <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn btn-primary" disabled={saving}>
-              {saving ? <><span className="spinner-mini"></span> Saving...</> : 'Create'}
-            </button>
-          </div>
-        </form>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
+              <button type="submit" className="btn btn-primary" disabled={saving}>
+                {saving ? <><span className="spinner-mini"></span> Saving...</> : 'Create'}
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
-    </div>
+    </ModalPortal>
   );
 }

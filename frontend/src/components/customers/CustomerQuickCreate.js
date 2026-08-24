@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { CustomersProvider } from '../../context/CustomersContext';
 import { useAuth } from '../../context/AuthContext';
-import { pageActions, canQuickCreate, pageKeyForPath } from '../../utils/roleJobs';
+import { canUseQuickCreate, pageKeyForPath } from '../../utils/roleJobs';
 import CustomerFormModal from './CustomerFormModal';
 
 /**
@@ -22,10 +22,11 @@ export default function CustomerQuickCreate({ label = '+ Customer', onCreated, f
   const [open, setOpen] = useState(false);
 
   // Raising a customer from a service or sales form is still creating a
-  // customer, so it asks the Customers page's Create right.
-  if (!pageActions(user, 'customers')('create')) return null;
+  // customer, so the Customers page's Create right allows it — and so does
+  // "+ Customer" ticked on this page's own form, for a role that may create
+  // here. Either way the shortcut can be withheld per form in Role Jobs.
   const screen = pageKey || pageKeyForPath(user, pathname);
-  if (screen && !canQuickCreate(user, screen, form, 'customer')) return null;
+  if (!canUseQuickCreate(user, { host: screen, form, key: 'customer', owner: 'customers' })) return null;
 
   return (
     <>

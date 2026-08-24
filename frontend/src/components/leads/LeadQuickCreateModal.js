@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import toast from 'react-hot-toast';
 import { X } from 'lucide-react';
 import { leadMasterAPI } from '../../services/api';
+import modalSubmit from '../../utils/modalForm';
+import ModalPortal from '../ModalPortal';
 
 const LABEL_MAP = { sources: 'Source', types: 'Type', priorities: 'Priority', cities: 'City' };
 
@@ -44,34 +46,36 @@ export default function LeadQuickCreateModal({ type, onClose, onCreated }) {
   const label = LABEL_MAP[type] || type?.slice(0, -1) || 'Item';
 
   return (
-    <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="modal-content" style={{ maxWidth: '400px' }}>
-        <div className="modal-header">
-          <h3>Create {label}</h3>
-          <button className="modal-close" onClick={onClose}><X size={20} /></button>
-        </div>
-        <form onSubmit={handleSubmit}>
-          <div className="modal-body">
-            <div className="form-group">
-              <label>Name *</label>
-              <input
-                ref={inputRef}
-                type="text"
-                className="form-input"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder={`Enter ${label.toLowerCase()} name`}
-              />
+    <ModalPortal>
+      <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+        <div className="modal-content" style={{ maxWidth: '400px' }}>
+          <div className="modal-header">
+            <h3>Create {label}</h3>
+            <button className="modal-close" onClick={onClose}><X size={20} /></button>
+          </div>
+          <form onSubmit={modalSubmit(handleSubmit)}>
+            <div className="modal-body">
+              <div className="form-group">
+                <label>Name *</label>
+                <input
+                  ref={inputRef}
+                  type="text"
+                  className="form-input"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder={`Enter ${label.toLowerCase()} name`}
+                />
+              </div>
             </div>
-          </div>
-          <div className="modal-footer">
-            <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn btn-primary" disabled={saving || !name.trim()}>
-              {saving ? 'Creating...' : 'Create'}
-            </button>
-          </div>
-        </form>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
+              <button type="submit" className="btn btn-primary" disabled={saving || !name.trim()}>
+                {saving ? 'Creating...' : 'Create'}
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
-    </div>
+    </ModalPortal>
   );
 }
