@@ -2,7 +2,8 @@ import { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
-  getRoleJob, canSeeColumn, canSeeDrawerField, canUseDrawerExtra, pageKeyForPath, catalogSlug,
+  getRoleJob, canSeeColumn, canSeeDrawerField, canUseDrawerExtra, canSeeDropdown,
+  pageKeyForPath, catalogSlug,
 } from '../utils/roleJobs';
 
 /**
@@ -111,11 +112,75 @@ function gateDrawers(user, pageKey, root) {
   });
 }
 
+/**
+ * Which of a page's three forms a control is sitting in.
+ *
+ * The catalog keeps create, edit and filters apart, because they are different
+ * questions — a clerk may pick an assignee when raising a record and not when
+ * changing one. The DOM does not say which form it is, but the dialog above it
+ * does: every screen writes "New …" or "Add …" when it is creating and "Edit …"
+ * when it is not. A control outside a dialog is on the list itself, which is
+ * where the filters live.
+ */
+const formKindOf = (element) => {
+  const dialog = element.closest('.modal-content, .modal-overlay, .drawer, .email-drawer');
+  if (!dialog) return 'filters';
+  const heading = dialog.querySelector('.modal-header h2, .modal-header h3, h2, h3');
+  return /^edit/i.test(cellText(heading)) ? 'edit' : 'create';
+};
+
+/**
+ * The words naming a form field, and only those.
+ *
+ * A caption is rarely just its caption: it carries the little round help button
+ * (which reads as the letter "i"), the "+ Create X" shortcut beside it, and a
+ * required asterisk. Reading the element's text raw gives
+ * "Categoryi+ Create Category", which matches no catalog key. Everything that
+ * is a control rather than a word comes out first.
+ */
+const fieldLabel = (group) => {
+  const label = group.querySelector('label, .form-label-add');
+  if (!label) return '';
+  const words = label.cloneNode(true);
+  words.querySelectorAll('button, a, svg, input, select, textarea, [data-quick-create]').forEach((el) => el.remove());
+  return cellText(words).replace(/\s*\*\s*$/, '').trim();
+};
+
+/**
+ * A dropdown Role Jobs has set to "Hidden" is not drawn.
+ *
+ * The alternative was to teach forty forms to ask before drawing each picker,
+ * and forty more the next time a screen is added. The catalog already names
+ * every dropdown by the words beside it, which is the same handle the column and
+ * drawer rules use, so the field is found the same way — by reading the label
+ * off the screen. The whole form group goes, not just the select: a caption
+ * hanging over nothing is worse than the field being absent.
+ */
+function gateDropdowns(user, pageKey, root) {
+  const catalog = user?.pageCatalog?.[pageKey];
+  if (!catalog) return;
+  root.querySelectorAll('.form-group, .filter-group').forEach((group) => {
+    const label = fieldLabel(group);
+    if (!label) return;
+    const slug = catalogSlug(label);
+    if (!slug) return;
+    const form = formKindOf(group);
+    const entry = (catalog.forms?.[form]?.dropdowns || [])
+      .find((dd) => catalogSlug(dd.label) === slug || catalogSlug(dd.key) === slug);
+    if (!entry) return;
+    group.classList.toggle(HIDDEN_CLASS, !canSeeDropdown(user, pageKey, form, entry.key));
+  });
+}
+
 /** Whether this role has any screen-level restriction on this page at all. */
 const hasScreenRules = (user, pageKey) => {
   const job = getRoleJob(user, pageKey);
   if (!job || job.superAdmin) return false;
-  return job.columns?.mode === 'selected' || job.drawerFields?.mode === 'selected' || job.drawerExtras?.mode === 'selected';
+  return job.columns?.mode === 'selected'
+    || job.drawerFields?.mode === 'selected'
+    || job.drawerExtras?.mode === 'selected'
+    // A dropdown rule is a row per field, so any row at all is a restriction.
+    || (Array.isArray(job.dropdowns) && job.dropdowns.length > 0);
 };
 
 export default function ViewGate() {
@@ -125,7 +190,11 @@ export default function ViewGate() {
   useEffect(() => {
     if (!user) return undefined;
     const pageKey = pageKeyForPath(user, pathname);
-    const root = document.getElementById('root') || document.body;
+    // The body, not the React root: a dialog opened from a form is portalled to
+    // the end of `<body>` (components/ModalPortal.js), which is outside `#root`
+    // and so was never reached by the gate. Anything portalled — a drawer raised
+    // from a modal, a table inside one — has to be gated like the rest.
+    const root = document.body;
     if (!pageKey || !hasScreenRules(user, pageKey)) {
       // Nothing to enforce here: undo any gating a previous page left behind.
       root.querySelectorAll(`.${HIDDEN_CLASS}`).forEach((el) => el.classList.remove(HIDDEN_CLASS));
@@ -141,6 +210,7 @@ export default function ViewGate() {
       try {
         gateTables(user, pageKey, root);
         gateDrawers(user, pageKey, root);
+        gateDropdowns(user, pageKey, root);
       } finally {
         observer.observe(root, { childList: true, subtree: true });
       }

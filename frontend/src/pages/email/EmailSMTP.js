@@ -2,8 +2,13 @@ import React, { useState, useEffect, useCallback } from 'react';
 import toast from 'react-hot-toast';
 import { emailAPI } from '../../services/api';
 import { useEmailSMTPContext } from '../../context/EmailSMTPContext';
+import { useAuth } from '../../context/AuthContext';
+import { pageActions } from '../../utils/roleJobs';
 
 export default function EmailSMTP() {
+  // Saving the server's mail settings is this page's Edit grant; sending a test
+  // message through them is its Send email grant.
+  const can = pageActions(useAuth().user, 'email_templates');
   const { config, loadConfig } = useEmailSMTPContext();
   const [form, setForm] = useState({ host: '', port: 587, encryption: 'tls', username: '', password: '', senderName: '', senderEmail: '', replyTo: '' });
   const [errors, setErrors] = useState({});
@@ -144,12 +149,12 @@ export default function EmailSMTP() {
           </div>
 
           <div style={{ display: 'flex', gap: 12, marginTop: 20 }}>
-            <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+            {can('edit') && <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
               {saving ? <><span className="spinner-mini"></span> Saving...</> : 'Save Configuration'}
-            </button>
-            <button className="btn btn-secondary" onClick={handleTest} disabled={testing}>
+            </button>}
+            {can('sendEmail') && <button className="btn btn-secondary" onClick={handleTest} disabled={testing}>
               {testing ? 'Testing...' : 'Test Connection'}
-            </button>
+            </button>}
           </div>
 
           {testResult && (

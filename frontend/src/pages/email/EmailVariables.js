@@ -6,8 +6,14 @@ import ConfirmModal from '../../components/ConfirmModal';
 import EmailDrawer from '../../components/EmailDrawer';
 import EmailVariableFormModal from './EmailVariableFormModal';
 import EmailBulkImportModal from './EmailBulkImportModal';
+import { pageActions } from '../../utils/roleJobs';
+import { useAuth } from '../../context/AuthContext';
 
 export default function EmailVariables() {
+  // Every write on the email screens is one of this page's grants (Role Jobs →
+  // Email Templates). They were drawn for anyone who could open the screen, and
+  // the server refused each one.
+  const can = pageActions(useAuth().user, 'email_templates');
   const { variables, loadVariables, addVariable, updateVariable, removeVariable } = useEmailVariablesContext();
   const [showModal, setShowModal] = useState(false);
   const [mode, setMode] = useState('create');
@@ -124,9 +130,9 @@ export default function EmailVariables() {
       <div className="email-module-header">
         <h2>Email Variables</h2>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn btn-secondary" onClick={() => setShowImport(true)}>Import CSV</button>
-          <button className="btn btn-secondary" onClick={() => { setMode('json'); setShowImport(true); }}>Import JSON</button>
-          <button className="btn btn-primary" onClick={handleCreate}>+ New Variable</button>
+          {can('create') && <button className="btn btn-secondary" onClick={() => setShowImport(true)}>Import CSV</button>}
+          {can('create') && <button className="btn btn-secondary" onClick={() => { setMode('json'); setShowImport(true); }}>Import JSON</button>}
+          {can('create') && <button className="btn btn-primary" onClick={handleCreate}>+ New Variable</button>}
         </div>
       </div>
 
@@ -171,11 +177,11 @@ export default function EmailVariables() {
                 </td>
                 <td data-label="Created">{v.createdAt ? new Date(v.createdAt).toLocaleDateString() : '-'}</td>
                 <td data-label="Actions">
-                  <button className="btn btn-sm" onClick={() => handleEdit(v)}>Edit</button>
+                  {can('edit') && <button className="btn btn-sm" onClick={() => handleEdit(v)}>Edit</button>}
                   <button className="btn btn-sm" onClick={() => handleToggle(v)} disabled={actionLoading === `toggle-${v._id}`}>
                     {actionLoading === `toggle-${v._id}` ? <><span className="spinner-mini"></span></> : (v.isActive ? 'Deactivate' : 'Activate')}
                   </button>
-                  <button className="btn btn-sm btn-danger" onClick={() => setDeleteTarget(v._id)}>Delete</button>
+                  {can('delete') && <button className="btn btn-sm btn-danger" onClick={() => setDeleteTarget(v._id)}>Delete</button>}
                 </td>
               </tr>
             ))}
@@ -202,11 +208,11 @@ export default function EmailVariables() {
             </div>
             <div className="email-card-actions">
               <button className="btn btn-sm" onClick={() => setDetailItem(v)}>Detail</button>
-              <button className="btn btn-sm" onClick={() => handleEdit(v)}>Edit</button>
+              {can('edit') && <button className="btn btn-sm" onClick={() => handleEdit(v)}>Edit</button>}
               <button className="btn btn-sm" onClick={() => handleToggle(v)} disabled={actionLoading === `toggle-${v._id}`}>
                 {actionLoading === `toggle-${v._id}` ? <><span className="spinner-mini"></span></> : (v.isActive ? 'Deactivate' : 'Activate')}
               </button>
-              <button className="btn btn-sm btn-danger" onClick={() => setDeleteTarget(v._id)}>Delete</button>
+              {can('delete') && <button className="btn btn-sm btn-danger" onClick={() => setDeleteTarget(v._id)}>Delete</button>}
             </div>
           </div>
         ))}

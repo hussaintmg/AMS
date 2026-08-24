@@ -15,6 +15,7 @@ import FilterBar, {
 import { serverManagementAPI, adminAPI, customerRoleConfigAPI, employeeRoleConfigAPI, warehouseManagerRolesAPI, serviceAdvisorRolesAPI, modulesAPI } from "../services/api";
 import ToggleSwitch from "../components/ToggleSwitch";
 import { useAuth } from "../context/AuthContext";
+import { pageActions } from "../utils/roleJobs";
 import { showApiSuccess, showApiError } from "../utils/toastResponse";
 import "../styles/serverManagement.css";
 import "../styles/filters.css";
@@ -462,7 +463,15 @@ function ServerManagement() {
   // Optional modules (Custom tab).
   const [modules, setModules] = useState([]);
   const [modulesLoading, setModulesLoading] = useState(false);
-  const { refreshUser } = useAuth();
+  const { refreshUser, user } = useAuth();
+  /**
+   * Every save on this screen is one grant: Server Management -> Edit. A role
+   * given the page without it saw all eight tabs and every Save button, and the
+   * server refused each one. A disabled fieldset is the whole answer in one
+   * place — it disables every control inside it, so a tab added later is
+   * read-only too without anyone remembering to gate it.
+   */
+  const canEditServer = pageActions(user, 'server_management')('edit');
   // Every page is listed now, so the screen needs a way to narrow it down.
   const [roleJobSearch, setRoleJobSearch] = useState('');
   const [roleJobShowAll, setRoleJobShowAll] = useState(false);
@@ -3336,6 +3345,13 @@ function ServerManagement() {
         ))}
       </div>
 
+      {!canEditServer && (
+        <p className="sm-role-job-note">
+          You may read these settings but not change them — Server Management, Edit
+          is not granted to your role.
+        </p>
+      )}
+      <fieldset className="sm-settings-body" disabled={!canEditServer}>
       {activeTab === "Frontend Management" && renderPages()}
       {activeTab === "Branding" && renderBranding()}
       {activeTab === "Roles Permissions" && renderRoles()}
@@ -3344,6 +3360,7 @@ function ServerManagement() {
       {activeTab === "Role Jobs" && renderRoleJobs()}
       {activeTab === "Role Usage" && renderRoleUsage()}
       {activeTab === "Custom" && renderCustom()}
+      </fieldset>
       {renderPageModal()}
       <UserFormModal
         isOpen={showUserModal}

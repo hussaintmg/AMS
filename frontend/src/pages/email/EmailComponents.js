@@ -6,10 +6,16 @@ import { useEmailComponentsContext } from '../../context/EmailComponentsContext'
 import ConfirmModal from '../../components/ConfirmModal';
 import EmailDrawer from '../../components/EmailDrawer';
 import EmailComponentFormModal from './EmailComponentFormModal';
+import { pageActions } from '../../utils/roleJobs';
+import { useAuth } from '../../context/AuthContext';
 
 const categories = ['header', 'footer', 'layout', 'content', 'media', 'cta', 'legal', 'custom'];
 
 export default function EmailComponents() {
+  // Every write on the email screens is one of this page's grants (Role Jobs →
+  // Email Templates). They were drawn for anyone who could open the screen, and
+  // the server refused each one.
+  const can = pageActions(useAuth().user, 'email_templates');
   const navigate = useNavigate();
   const { components, loadComponents, addComponent, updateComponent, removeComponent } = useEmailComponentsContext();
   const [showModal, setShowModal] = useState(false);
@@ -114,7 +120,7 @@ export default function EmailComponents() {
     <div className="email-module">
       <div className="email-module-header">
         <h2>Email Components</h2>
-        <button className="btn btn-primary" onClick={handleCreate}>+ New Component</button>
+        {can('create') && <button className="btn btn-primary" onClick={handleCreate}>+ New Component</button>}
       </div>
 
       <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
@@ -149,14 +155,14 @@ export default function EmailComponents() {
             <div className="email-card-actions">
               <button className="btn btn-sm btn-primary" onClick={() => navigate(`/email/components/${c._id}/editor`)}>Open Editor</button>
               <button className="btn btn-sm" onClick={() => setDetailItem(c)}>Detail</button>
-              <button className="btn btn-sm" onClick={() => handleEdit(c)}>Edit</button>
+              {can('edit') && <button className="btn btn-sm" onClick={() => handleEdit(c)}>Edit</button>}
               <button className="btn btn-sm" onClick={() => handleDuplicate(c._id)} disabled={actionLoading === `dup-${c._id}`}>
                 {actionLoading === `dup-${c._id}` ? <><span className="spinner-mini"></span></> : 'Duplicate'}
               </button>
               <button className="btn btn-sm" onClick={() => handleToggleActive(c)} disabled={actionLoading === `toggle-${c._id}`}>
                 {actionLoading === `toggle-${c._id}` ? <><span className="spinner-mini"></span></> : (c.isActive ? 'Deactivate' : 'Activate')}
               </button>
-              <button className="btn btn-sm btn-danger" onClick={() => setDeleteTarget(c._id)}>Delete</button>
+              {can('delete') && <button className="btn btn-sm btn-danger" onClick={() => setDeleteTarget(c._id)}>Delete</button>}
             </div>
           </div>
         ))}

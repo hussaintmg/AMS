@@ -6,8 +6,14 @@ import { useEmailTemplatesContext } from '../../context/EmailTemplatesContext';
 import ConfirmModal from '../../components/ConfirmModal';
 import EmailDrawer from '../../components/EmailDrawer';
 import EmailUsageFormModal from './EmailUsageFormModal';
+import { pageActions } from '../../utils/roleJobs';
+import { useAuth } from '../../context/AuthContext';
 
 export default function EmailUsage() {
+  // Every write on the email screens is one of this page's grants (Role Jobs →
+  // Email Templates). They were drawn for anyone who could open the screen, and
+  // the server refused each one.
+  const can = pageActions(useAuth().user, 'email_templates');
   const { usages, loadUsages, addUsage, updateUsage, removeUsage } = useEmailUsageContext();
   const { templates, loadTemplates } = useEmailTemplatesContext();
   const [showModal, setShowModal] = useState(false);
@@ -130,7 +136,7 @@ export default function EmailUsage() {
     <div className="email-module">
       <div className="email-module-header">
         <h2>Email Usage</h2>
-        <button className="btn btn-primary" onClick={handleCreate}>+ New Usage</button>
+        {can('create') && <button className="btn btn-primary" onClick={handleCreate}>+ New Usage</button>}
       </div>
 
       <input className="form-control search-input" placeholder="Search usage records..." value={search} onChange={e => setSearch(e.target.value)} style={{ maxWidth: 300, marginBottom: 16 }} />
@@ -191,11 +197,11 @@ export default function EmailUsage() {
             </div>
             <div className="email-card-actions">
               <button className="btn btn-sm" onClick={() => setDetailItem(u)}>Detail</button>
-              <button className="btn btn-sm" onClick={() => handleEdit(u)}>Edit</button>
+              {can('edit') && <button className="btn btn-sm" onClick={() => handleEdit(u)}>Edit</button>}
               <button className="btn btn-sm btn-primary" onClick={() => handleValidate(u._id)} disabled={actionLoading === 'validate'}>
                 {actionLoading === 'validate' ? <><span className="spinner-mini"></span></> : 'Validate'}
               </button>
-              <button className="btn btn-sm btn-danger" onClick={() => setDeleteTarget(u._id)}>Delete</button>
+              {can('delete') && <button className="btn btn-sm btn-danger" onClick={() => setDeleteTarget(u._id)}>Delete</button>}
             </div>
           </div>
         ))}

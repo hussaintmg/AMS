@@ -3,8 +3,14 @@ import toast from 'react-hot-toast';
 import { emailAPI } from '../../services/api';
 import { useEmailQueueContext } from '../../context/EmailQueueContext';
 import ConfirmModal from '../../components/ConfirmModal';
+import { pageActions } from '../../utils/roleJobs';
+import { useAuth } from '../../context/AuthContext';
 
 export default function EmailQueue() {
+  // Every write on the email screens is one of this page's grants (Role Jobs →
+  // Email Templates). They were drawn for anyone who could open the screen, and
+  // the server refused each one.
+  const can = pageActions(useAuth().user, 'email_templates');
   const { queue, queueStats, loadQueue, updateQueueItem, removeQueueItem } = useEmailQueueContext();
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
@@ -58,12 +64,12 @@ export default function EmailQueue() {
       <div className="email-module-header">
         <h2>Email Queue</h2>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn btn-sm btn-secondary" onClick={handleRetryAll} disabled={actionLoading === 'retryAll'}>
+          {can('sendEmail') && <button className="btn btn-sm btn-secondary" onClick={handleRetryAll} disabled={actionLoading === 'retryAll'}>
             {actionLoading === 'retryAll' ? <><span className="spinner-mini"></span> Retrying...</> : 'Retry All Failed'}
-          </button>
-          <button className="btn btn-sm btn-secondary" onClick={handleClearSent} disabled={actionLoading === 'clearSent'}>
+          </button>}
+          {can('sendEmail') && <button className="btn btn-sm btn-secondary" onClick={handleClearSent} disabled={actionLoading === 'clearSent'}>
             {actionLoading === 'clearSent' ? <><span className="spinner-mini"></span> Clearing...</> : 'Clear Sent'}
-          </button>
+          </button>}
         </div>
       </div>
 
@@ -102,10 +108,10 @@ export default function EmailQueue() {
               <td data-label="Error" style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', fontSize: '0.8rem' }}>{q.errorMessage || '-'}</td>
               <td data-label="Created" style={{ fontSize: '0.8rem' }}>{new Date(q.createdAt).toLocaleString()}</td>
               <td data-label="Actions">
-                {q.status === 'failed' && <button className="btn btn-sm btn-primary" onClick={() => handleRetry(q._id)} disabled={actionLoading === `retry-${q._id}`}>
+                {q.status === 'failed' && can('sendEmail') && <button className="btn btn-sm btn-primary" onClick={() => handleRetry(q._id)} disabled={actionLoading === `retry-${q._id}`}>
                   {actionLoading === `retry-${q._id}` ? <><span className="spinner-mini"></span></> : 'Retry'}
                 </button>}
-                <button className="btn btn-sm btn-danger" onClick={() => setDeleteTarget(q._id)}>Delete</button>
+                {can('sendEmail') && <button className="btn btn-sm btn-danger" onClick={() => setDeleteTarget(q._id)}>Delete</button>}
                 <button className="btn btn-sm" onClick={() => setSelectedItem(q)}>Detail</button>
               </td>
             </tr>

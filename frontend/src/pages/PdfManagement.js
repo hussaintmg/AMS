@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { FileText, Plus, Pencil, Trash2, Save, Upload, Search, Copy, Check } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { pdfManagementAPI } from '../services/api';
+import { useAuth } from '../context/AuthContext';
+import { pageActions } from '../utils/roleJobs';
 import '../styles/pdfManagement.css';
 
 const TYPES = [{ key: 'quotation', label: 'Quotation' }, { key: 'booking', label: 'Booking' }, { key: 'order', label: 'Sales Order' }, { key: 'invoice', label: 'Invoice' }];
@@ -10,6 +12,10 @@ const CATEGORY_LABELS = { document: 'Document', customer: 'Customer', vehicle: '
 
 export default function PdfManagement() {
   const navigate = useNavigate();
+  // Templates, their assignment and the custom variables are three separate
+  // grants on this page; the screen offered all of them to anyone who could
+  // open it, and the server refused every one.
+  const can = pageActions(useAuth().user, 'pdf_management');
   const [tab, setTab] = useState('usage');
   const [templates, setTemplates] = useState([]);
   const [usages, setUsages] = useState([]);
@@ -53,13 +59,13 @@ export default function PdfManagement() {
   const deleteVariable = async (v) => { if (!v.id) return; if (!window.confirm(`Remove custom variable ${v.reference}?`)) return; try { await pdfManagementAPI.deleteVariable(v.id); await loadVariables(); toast.success('Variable removed'); } catch { toast.error('Failed to remove variable'); } };
   const importVariables = async () => { if (!variableFile) return; const text = await variableFile.text(); let rows=[]; try { if (variableFile.name.toLowerCase().endsWith('.json')) rows=JSON.parse(text); else if (variableFile.name.toLowerCase().endsWith('.xml')) { rows=[...text.matchAll(/<variable[^>]*key=["']([^"']+)["'][^>]*>/gi)].map(m=>({key:m[1]})); } else { const lines=text.split(/\r?\n/).filter(Boolean), headers=lines.shift().split(',').map(v=>v.trim()); rows=lines.map(line=>Object.fromEntries(line.split(',').map((v,i)=>[headers[i],v.trim()]))); } if(!Array.isArray(rows)) throw new Error(); await pdfManagementAPI.bulkVariables({documentType:variableType,variables:rows}); await loadVariables(); setVariableFile(null); toast.success('Variables imported'); } catch { toast.error('Use valid JSON, CSV or XML'); } };
   return <div className="pdf-management-page">
-    <header className="pdf-page-header"><div><h1>PDF Management</h1><p>Design and assign server-generated sales documents.</p></div>{tab === 'templates' && <button className="btn btn-primary" onClick={() => setCreating(true)}><Plus size={17}/> New Template</button>}</header>
+    <header className="pdf-page-header"><div><h1>PDF Management</h1><p>Design and assign server-generated sales documents.</p></div>{tab === 'templates' && can('create') && <button className="btn btn-primary" onClick={() => setCreating(true)}><Plus size={17}/> New Template</button>}</header>
     <div className="pdf-tabs">{['usage','templates','variables'].map((key) => <button key={key} className={tab === key ? 'active' : ''} onClick={() => setTab(key)}>{key[0].toUpperCase()+key.slice(1)}</button>)}</div>
-    {tab === 'usage' && <section className="pdf-panel"><div className="pdf-section-title"><h2>Document Usage</h2><p>Only active templates can be assigned.</p></div><div className="pdf-usage-list">{TYPES.map((type) => { const usage = usages.find((u) => u.documentType === type.key); return <div className="pdf-usage-row" key={type.key}><div className="pdf-usage-name"><FileText size={20}/><div><strong>{type.label}</strong><span>Sales / {type.label}</span></div></div><select value={usage?.template?._id || ''} onChange={(e) => assign(type.key, e.target.value)}><option value="">Select active template</option>{activeByType[type.key].map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></div>; })}</div></section>}
-    {tab === 'templates' && <section className="pdf-panel"><div className="pdf-template-grid">{templates.map((item) => <article className="pdf-template-card" key={item.id}><div><span className={`pdf-status ${item.status}`}>{item.status}</span><h3>{item.name}</h3><p>{TYPES.find((t) => t.key === item.documentType)?.label}</p></div><div className="pdf-card-actions"><button title="Edit" onClick={() => navigate(`/pdf-management/templates/${item.id}/editor`)}><Pencil size={17}/></button><button title="Delete" onClick={() => remove(item.id)}><Trash2 size={17}/></button></div></article>)}</div></section>}
+    {tab === 'usage' && <section className="pdf-panel"><div className="pdf-section-title"><h2>Document Usage</h2><p>Only active templates can be assigned.</p></div><div className="pdf-usage-list">{TYPES.map((type) => { const usage = usages.find((u) => u.documentType === type.key); return <div className="pdf-usage-row" key={type.key}><div className="pdf-usage-name"><FileText size={20}/><div><strong>{type.label}</strong><span>Sales / {type.label}</span></div></div><select value={usage?.template?._id || ''} disabled={!can('edit')} onChange={(e) => assign(type.key, e.target.value)}><option value="">Select active template</option>{activeByType[type.key].map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></div>; })}</div></section>}
+    {tab === 'templates' && <section className="pdf-panel"><div className="pdf-template-grid">{templates.map((item) => <article className="pdf-template-card" key={item.id}><div><span className={`pdf-status ${item.status}`}>{item.status}</span><h3>{item.name}</h3><p>{TYPES.find((t) => t.key === item.documentType)?.label}</p></div><div className="pdf-card-actions">{can('edit') && <button title="Edit" onClick={() => navigate(`/pdf-management/templates/${item.id}/editor`)}><Pencil size={17}/></button>}{can('delete') && <button title="Delete" onClick={() => remove(item.id)}><Trash2 size={17}/></button>}</div></article>)}</div></section>}
     {tab === 'variables' && <section className="pdf-panel">
       <div className="pdf-section-title row"><div><h2>Variables</h2><p>Click any variable to copy its reference. Sample values come from your latest {TYPES.find(t=>t.key===variableType)?.label.toLowerCase()}{sampleSource ? ` (${sampleSource})` : ''}.</p></div><select value={variableType} onChange={(e) => setVariableType(e.target.value)}>{TYPES.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}</select></div>
-      <form className="pdf-variable-create" onSubmit={addVariable}><input required placeholder="Custom key e.g. company.website" value={variableForm.key} onChange={e=>setVariableForm({...variableForm,key:e.target.value})}/><input placeholder="Label" value={variableForm.label} onChange={e=>setVariableForm({...variableForm,label:e.target.value})}/><button className="btn btn-primary"><Plus size={15}/> Add</button><label className="btn btn-secondary"><Upload size={15}/> Import JSON/CSV/XML<input hidden type="file" accept=".json,.csv,.xml" onChange={e=>setVariableFile(e.target.files[0])}/></label>{variableFile&&<button type="button" className="btn btn-secondary" onClick={importVariables}>Import {variableFile.name}</button>}</form>
+      {can('create') && <form className="pdf-variable-create" onSubmit={addVariable}><input required placeholder="Custom key e.g. company.website" value={variableForm.key} onChange={e=>setVariableForm({...variableForm,key:e.target.value})}/><input placeholder="Label" value={variableForm.label} onChange={e=>setVariableForm({...variableForm,label:e.target.value})}/><button className="btn btn-primary"><Plus size={15}/> Add</button><label className="btn btn-secondary"><Upload size={15}/> Import JSON/CSV/XML<input hidden type="file" accept=".json,.csv,.xml" onChange={e=>setVariableFile(e.target.files[0])}/></label>{variableFile&&<button type="button" className="btn btn-secondary" onClick={importVariables}>Import {variableFile.name}</button>}</form>}
       <div className="pdf-variable-searchbar"><Search size={15}/><input placeholder="Search variables..." value={variableSearch} onChange={e=>setVariableSearch(e.target.value)}/></div>
       {Object.keys(groupedVariables).length === 0 && <p className="pdf-variable-empty">No variables match your search.</p>}
       {Object.entries(groupedVariables).map(([cat, items]) => <div className="pdf-variable-group" key={cat}>
@@ -70,7 +76,7 @@ export default function PdfManagement() {
             <div className="pdf-variable-card-head"><code>{v.reference}</code>{copiedKey === v.key ? <Check size={14} className="pdf-copied"/> : <Copy size={13} className="pdf-copy-icon"/>}</div>
             <div className="pdf-variable-card-label">{v.label || v.key}</div>
             <div className={`pdf-variable-card-sample${sample ? '' : ' blank'}`}>{sample ? `→ ${sample}` : '→ (blank in latest record)'}</div>
-            {!v.builtIn && <button type="button" className="pdf-variable-card-delete" onClick={(e)=>{e.stopPropagation();deleteVariable(v);}} title="Remove custom variable"><Trash2 size={13}/></button>}
+            {!v.builtIn && can('delete') && <button type="button" className="pdf-variable-card-delete" onClick={(e)=>{e.stopPropagation();deleteVariable(v);}} title="Remove custom variable"><Trash2 size={13}/></button>}
           </div>;
         })}</div>
       </div>)}

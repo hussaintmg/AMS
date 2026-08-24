@@ -2041,9 +2041,20 @@ label:has(> .label-add-link) > .label-add-link {
 
 /* ═══════════════════════════════════════════════════════════════
    ROLE VIEW GATE (components/ViewGate.js)
-   A table column, drawer row or drawer button the role may not see. Set from
-   Role Jobs → Table columns / Drawer; applied by reading the words on screen.
+   A table column, drawer row, drawer button or form field the role may not see.
+   Set from Role Jobs → Table columns / Drawer / Forms; applied by reading the
+   words on screen.
    ═══════════════════════════════════════════════════════════════ */
 .vg-hidden.vg-hidden {
   display: none !important;
+}
+
+/* A settings screen a role may read but not change (Server Management → Edit).
+   `fieldset` is doing the work — it disables every control inside it — so it
+   must not bring a fieldset's own border and margins with it. */
+.sm-settings-body {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
 }

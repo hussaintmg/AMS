@@ -6,8 +6,14 @@ import { useEmailTemplatesContext } from '../../context/EmailTemplatesContext';
 import { useEmailUsageContext } from '../../context/EmailUsageContext';
 import ConfirmModal from '../../components/ConfirmModal';
 import EmailTemplateFormModal from './EmailTemplateFormModal';
+import { pageActions } from '../../utils/roleJobs';
+import { useAuth } from '../../context/AuthContext';
 
 export default function EmailTemplatesPage() {
+  // Every write on the email screens is one of this page's grants (Role Jobs →
+  // Email Templates). They were drawn for anyone who could open the screen, and
+  // the server refused each one.
+  const can = pageActions(useAuth().user, 'email_templates');
   const navigate = useNavigate();
   const { templates, templateStats, loadTemplates, addTemplate, updateTemplate, removeTemplate } = useEmailTemplatesContext();
   const { loadUsages } = useEmailUsageContext();
@@ -195,7 +201,7 @@ export default function EmailTemplatesPage() {
     <div className="email-module">
       <div className="email-module-header">
         <h2>Email Templates</h2>
-        <button className="btn btn-primary" onClick={handleCreate}>+ Create Template</button>
+        {can('create') && <button className="btn btn-primary" onClick={handleCreate}>+ Create Template</button>}
       </div>
 
       {templateStats && (
@@ -239,15 +245,15 @@ export default function EmailTemplatesPage() {
               <button className="btn btn-sm btn-primary" onClick={(e) => { e.stopPropagation(); handlePreview(t); }} disabled={actionLoading === 'preview'}>
                 {actionLoading === 'preview' ? <><span className="spinner-mini"></span> Loading...</> : 'Preview'}
               </button>
-              <button className="btn btn-sm btn-secondary" onClick={(e) => { e.stopPropagation(); setSelectedTemplate(t); setShowTest(true); }}>Test</button>
+              {can('sendEmail') && <button className="btn btn-sm btn-secondary" onClick={(e) => { e.stopPropagation(); setSelectedTemplate(t); setShowTest(true); }}>Test</button>}
               <button className="btn btn-sm" onClick={(e) => { e.stopPropagation(); loadVersions(t); }} disabled={actionLoading === 'versions'}>
                 {actionLoading === 'versions' ? <><span className="spinner-mini"></span></> : 'Versions'}
               </button>
-              <button className="btn btn-sm" onClick={(e) => { e.stopPropagation(); handleEdit(t); }}>Edit</button>
+              {can('edit') && <button className="btn btn-sm" onClick={(e) => { e.stopPropagation(); handleEdit(t); }}>Edit</button>}
               <button className="btn btn-sm" onClick={(e) => { e.stopPropagation(); handleToggleActive(t); }} disabled={actionLoading === 'toggle'}>
                 {actionLoading === 'toggle' ? <><span className="spinner-mini"></span></> : ((t.isActive || t.active) ? 'Deactivate' : 'Activate')}
               </button>
-              <button className="btn btn-sm btn-danger" onClick={(e) => { e.stopPropagation(); setDeleteTarget(t._id); }}>Delete</button>
+              {can('delete') && <button className="btn btn-sm btn-danger" onClick={(e) => { e.stopPropagation(); setDeleteTarget(t._id); }}>Delete</button>}
             </div>
           </div>
         ))}

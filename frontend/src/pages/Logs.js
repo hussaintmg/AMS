@@ -1,5 +1,7 @@
 import React, { useEffect, useCallback, useRef, useState } from "react";
 import { useLogs } from "../context/LogsContext";
+import { useAuth } from "../context/AuthContext";
+import { pageActions } from "../utils/roleJobs";
 import LogTable from "../components/logs/LogTable";
 import FilterBar, {
   SearchInput,
@@ -148,6 +150,10 @@ export default function Logs() {
     setShowDrawer(false);
     setSelectedLog(null);
   };
+
+  // LogTable draws its Delete only when it is handed a handler, so withholding
+  // the handler withholds the button. The endpoint asks for the same grant.
+  const canDeleteLog = pageActions(useAuth().user, 'logs')('delete');
 
   const handleDeleteLog = (log) => {
     setConfirmDeleteId(log._id || log.id);
@@ -400,7 +406,7 @@ export default function Logs() {
       <LogTable
         logs={logs}
         onView={handleViewLog}
-        onDelete={handleDeleteLog}
+        onDelete={canDeleteLog ? handleDeleteLog : undefined}
         loading={tableLoading}
       />
 
