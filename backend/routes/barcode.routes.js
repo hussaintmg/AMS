@@ -8,12 +8,33 @@
  */
 const express = require('express');
 const router = express.Router();
-const { authenticate, authorizeAction } = require('../middleware/auth');
+const { authenticate, authorizeAction, authorizeAny } = require('../middleware/auth');
 const barcodeController = require('../controllers/barcode.controller');
 
 // Which page a barcode action belongs to, so role permissions apply per page.
 const pageFor = (req) => (req.params.kind === 'vehicle' ? 'vehicles' : 'parts');
 const guard = (action) => (req, res, next) => authorizeAction(pageFor(req), action)(req, res, next);
+
+/**
+ * Resolving a code is a read of the product behind it — name, price, stock, the
+ * whole line item — so it answers to the pages that already show that product:
+ * the inventory screen, the counter that scans into a document, and the
+ * documents raised there. Scanning had no page check at all, only "are you
+ * signed in", so a role granted nothing could read any part or vehicle in the
+ * company by typing its code.
+ */
+const PART_READERS = ['parts', 'part_scan', 'part_quotations', 'part_bookings', 'part_invoices'];
+const VEHICLE_READERS = ['vehicles', 'vehicle_scan', 'quotations', 'bookings', 'sales_orders', 'invoices'];
+
+/**
+ * The counter says which side it is on, and the lookup is judged on that side
+ * alone. A request that names no kind searches both, so holding either is
+ * enough — `whenScanKind` routes it to the branch that applies.
+ */
+const whenScanKind = (...kinds) => (req, res, next) => {
+  const kind = String(req.body?.kind || req.query?.kind || '').toLowerCase();
+  return kinds.includes(kind) ? next() : next('route');
+};
 
 /**
  * @swagger
@@ -23,8 +44,12 @@ const guard = (action) => (req, res, next) => authorizeAction(pageFor(req), acti
  *     summary: Resolve a scanned barcode / part code / chassis number to a product line item
  *     security: [{ bearerAuth: [] }]
  */
-router.post('/scan', authenticate, barcodeController.scan);
-router.get('/scan', authenticate, barcodeController.scan);
+router.post('/scan', authenticate, whenScanKind('vehicle'), authorizeAction(VEHICLE_READERS, 'view'), barcodeController.scan);
+router.post('/scan', authenticate, whenScanKind('part'), authorizeAction(PART_READERS, 'view'), barcodeController.scan);
+router.post('/scan', authenticate, authorizeAny(authorizeAction(PART_READERS, 'view'), authorizeAction(VEHICLE_READERS, 'view')), barcodeController.scan);
+router.get('/scan', authenticate, whenScanKind('vehicle'), authorizeAction(VEHICLE_READERS, 'view'), barcodeController.scan);
+router.get('/scan', authenticate, whenScanKind('part'), authorizeAction(PART_READERS, 'view'), barcodeController.scan);
+router.get('/scan', authenticate, authorizeAny(authorizeAction(PART_READERS, 'view'), authorizeAction(VEHICLE_READERS, 'view')), barcodeController.scan);
 
 /**
  * @swagger
@@ -34,7 +59,9 @@ router.get('/scan', authenticate, barcodeController.scan);
  *     summary: Free-text product lookup for stock that cannot be scanned
  *     security: [{ bearerAuth: [] }]
  */
-router.get('/search', authenticate, barcodeController.search);
+router.get('/search', authenticate, whenScanKind('vehicle'), authorizeAction(VEHICLE_READERS, 'view'), barcodeController.search);
+router.get('/search', authenticate, whenScanKind('part'), authorizeAction(PART_READERS, 'view'), barcodeController.search);
+router.get('/search', authenticate, authorizeAny(authorizeAction(PART_READERS, 'view'), authorizeAction(VEHICLE_READERS, 'view')), barcodeController.search);
 
 /**
  * @swagger

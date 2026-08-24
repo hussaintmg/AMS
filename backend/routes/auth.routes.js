@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
-const { generateToken, generateRefreshToken, authenticate, getCookieValue } = require('../middleware/auth');
+const { generateToken, generateRefreshToken, authenticate, authorizeAction, getCookieValue } = require('../middleware/auth');
 const { User, Role } = require('../models');
 const { AppError } = require('../middleware/errorHandler');
 const logger = require('../utils/logger');
@@ -94,8 +94,9 @@ const buildResetExpiry = () => new Date(Date.now() + RESET_WINDOW_MS);
  *
  * /api/auth/register:
  *   post:
- *     summary: Register a new user
+ *     summary: Create a user account (User Management → Create)
  *     tags: [Auth]
+ *     security: [{ bearerAuth: [] }]
  *     requestBody:
  *       required: true
  *       content:
@@ -377,7 +378,20 @@ router.post('/login', async (req, res, next) => {
   }
 });
 
-router.post('/register', async (req, res, next) => {
+/**
+ * Creating a user account.
+ *
+ * This sat on the public half of the auth router, beside sign-in and password
+ * recovery, with no check on it at all: anyone who could reach the API could
+ * create an account, and `roleId` is taken straight from the request, so they
+ * could choose which role it landed on. The only thing standing between an
+ * anonymous caller and an administrator account was `role.count`, a seat cap
+ * that most roles do not set. Nothing in the app calls this — User Management
+ * posts to /api/admin/users — so it was an open door onto a room nobody used.
+ *
+ * It is now the same grant that screen needs.
+ */
+router.post('/register', authenticate, authorizeAction('user_management', 'create'), async (req, res, next) => {
   try {
     const { email, password, firstName, lastName, phone, roleId } = req.body;
 

@@ -19,6 +19,10 @@ const { AppError } = require('../middleware/errorHandler');
  * leave the endpoint open when the stub is finally replaced.
  */
 const canView = authorizeAction('invoices', 'view');
+// Taking money against an invoice is the same grant the drawer's Record Payment
+// button asks for. This POST inserts a payment row and moves the invoice's paid
+// and balance figures, and it was reachable by anyone who was merely signed in.
+const canRecordPayment = authorizeAction('invoices', 'recordPayment');
 
 router.get('/', authenticate, canView, async (req, res, next) => {
     try {
@@ -36,7 +40,7 @@ router.get('/', authenticate, canView, async (req, res, next) => {
     } catch (error) { next(error); }
 });
 
-router.post('/', authenticate, async (req, res, next) => {
+router.post('/', authenticate, canRecordPayment, async (req, res, next) => {
     try {
         const { invoiceId, bookingId, customerId, paymentMethodId, amount, referenceNumber } = req.body;
         if (!paymentMethodId || !amount) throw new AppError('Required fields missing', 400);

@@ -76,6 +76,12 @@ const OPEN_BY_DESIGN = new Set([
   'service_master',
   // Own logs only, scoped by log permissions rather than by page.
   'logs',
+  // The probe role holds Customers and the parts sales pages, whose forms pick a
+  // vehicle and a department. `authorizePicker` admits exactly that read and
+  // nothing else — granting a page has to carry the lists it is filled from, or
+  // the grant opens a screen of empty dropdowns.
+  'vehicles',
+  'department_management',
 ]);
 
 const arg = (name, fallback = '') => {

@@ -2,7 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const uploaderController = require('../controllers/uploader.controller');
-const { authenticate, authorizeAction } = require('../middleware/auth');
+const { authenticate, authorizeAction, authorizeAny } = require('../middleware/auth');
 const { FILE_DEFINITIONS, MAX_FILE_SIZE } = require('../services/imports/spreadsheetMapper');
 
 const router = express.Router();
@@ -56,6 +56,17 @@ function handleMulter(middleware) {
   });
 }
 
+/**
+ * The pages behind the three slots. Importing one report is one grant, so a
+ * dealer's order clerk can be allowed to load Order Intake without also being
+ * able to load Dispatch.
+ */
+const IMPORT_PERMISSIONS = [...new Set(Object.values(FILE_DEFINITIONS).map((definition) => definition.permission))];
+
+/**
+ * Judge each slot the caller actually filled, and only those: an empty request
+ * has nothing to authorise and is refused by the controller as a bad request.
+ */
 function authorizeSelectedImports(req, res, next) {
   const definitions = Object.values(FILE_DEFINITIONS).filter((definition) => (req.files?.[definition.fieldName] || []).length);
   let index = 0;
@@ -85,9 +96,17 @@ router.post(
 );
 
 
+/**
+ * POST /api/uploader/detect
+ * Names the report a workbook is, so the screen can drop it in the right slot.
+ * It writes nothing, but it reads the dealer's spreadsheet and answers with what
+ * is in it, and it exists only to serve the import screen — so it asks for the
+ * same grant as importing something: any one of the three upload rights.
+ */
 router.post(
   '/detect',
   authenticate,
+  authorizeAny(...IMPORT_PERMISSIONS.map((page) => authorizeAction(page, 'create'))),
   handleMulter(upload.single('file')),
   uploaderController.detectFileType,
 );
