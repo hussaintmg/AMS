@@ -952,10 +952,24 @@ const getServiceTypes = async (req, res, next) => {
     }
 };
 
-async function getUsersByRolePattern(pattern) {
+/**
+ * Whose users this request may pick from, when the browser has named the
+ * dropdown it is filling (`?forPage=services&forForm=create&forField=technician`).
+ * `null` means unrestricted; `HIDDEN` means the role has the picker switched
+ * off. Without this, Role Jobs offered "whose records may this list offer" for
+ * the advisor and technician pickers and nothing answered it.
+ */
+async function pickerScope(req) {
+    const { requestDropdownFilter } = require('../utils/dropdownScope');
+    return requestDropdownFilter(req, null, ['_id', 'createdBy']);
+}
+
+async function getUsersByRolePattern(pattern, scope) {
+    const { isHidden } = require('../utils/dropdownScope');
+    if (isHidden(scope)) return [];
     const roles = await Role.find({ name: { $regex: pattern, $options: 'i' } }).select('_id').lean();
     if (!roles.length) return [];
-    const users = await User.find({ role: { $in: roles.map((r) => r._id) }, isActive: true })
+    const users = await User.find({ role: { $in: roles.map((r) => r._id) }, isActive: true, ...(scope || {}) })
         .select('firstName lastName email')
         .sort({ firstName: 1 })
         .lean();
@@ -964,7 +978,7 @@ async function getUsersByRolePattern(pattern) {
 
 const getTechnicians = async (req, res, next) => {
     try {
-        const technicians = await getUsersByRolePattern('technician');
+        const technicians = await getUsersByRolePattern('technician', await pickerScope(req));
         res.json({ success: true, data: technicians });
     } catch (error) {
         next(error);
@@ -976,11 +990,15 @@ const getAdvisors = async (req, res, next) => {
         // Prefer the roles chosen under Server Management → Role Usage. Fall back
         // to matching on role name so existing installs keep working until an
         // admin configures the list.
+        const { isHidden } = require('../utils/dropdownScope');
+        const scope = await pickerScope(req);
+        if (isHidden(scope)) return res.json({ success: true, data: [] });
+
         const setting = await SystemSetting.findOne({ key: 'service_advisor_roles' }).lean();
         const configuredRoleIds = Array.isArray(setting?.value) ? setting.value : [];
 
         if (configuredRoleIds.length) {
-            const users = await User.find({ role: { $in: configuredRoleIds }, isActive: true })
+            const users = await User.find({ role: { $in: configuredRoleIds }, isActive: true, ...(scope || {}) })
                 .select('firstName lastName email')
                 .sort({ firstName: 1 })
                 .lean();
@@ -991,7 +1009,7 @@ const getAdvisors = async (req, res, next) => {
             return res.json({ success: true, data: advisors });
         }
 
-        const advisors = await getUsersByRolePattern('service_(advisor|manager)|advisor');
+        const advisors = await getUsersByRolePattern('service_(advisor|manager)|advisor', scope);
         res.json({ success: true, data: advisors });
     } catch (error) {
         next(error);

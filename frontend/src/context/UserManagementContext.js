@@ -57,10 +57,21 @@ export function UserManagementProvider({ children }) {
         }
     }, []);
 
-    const loadDepartments = useCallback(async () => {
+    /**
+     * The department list, naming the dropdown it is filling so Role Jobs can
+     * narrow which departments it offers.
+     *
+     * Two screens share this context — User Management and Department
+     * Management — and they fill different pickers from the same list, so the
+     * caller says which one. The default is User Management's, which is where
+     * this list was first loaded from.
+     */
+    const loadDepartments = useCallback(async (hint) => {
         try {
-            // Names its dropdown so Role Jobs → User Management → Forms can narrow which departments it lists.
-            const res = await adminAPI.getDepartments({ flat: true, forPage: 'user_management', forForm: 'create', forField: 'department' });
+            const res = await adminAPI.getDepartments({
+                flat: true,
+                ...(hint || { forPage: 'user_management', forForm: 'create', forField: 'department' }),
+            });
             const data = res.data.data;
             const deptList = (data && Array.isArray(data.flat)) ? data.flat : (data || []);
             // `departments` feeds the pickers in user/department forms, so only

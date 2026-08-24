@@ -17,9 +17,19 @@
  * choices on forty screens without each screen being rewritten.
  *
  * `scope: true` on a dropdown means "whose records may this role pick from" is
- * a meaningful question (users, customers, employees, departments…). Master
- * lists shared by the whole company (sources, categories, colours) are
- * `scope: false`: they can only be shown or hidden.
+ * a meaningful question (users, customers, employees, departments…) *and* the
+ * endpoint feeding it can answer it — `utils/dropdownScope.js` is applied by the
+ * customer, department, employee, user and warehouse lists, and by the Leads and
+ * Customers meta endpoints. Anything else is `scope: false`: shown or hidden,
+ * nothing in between.
+ *
+ * The distinction is not cosmetic. Role Jobs draws the four "whose records"
+ * modes from this flag, so claiming it for a list nothing scopes puts an option
+ * in front of an administrator that does nothing when they save it — which is
+ * indistinguishable from the permission engine being broken. Company-wide
+ * reference data (suppliers, roles, categories, colours) has no owner to scope
+ * by in the first place; stock and documents are already narrowed by the page's
+ * own data scope.
  *
  * Kept honest by `scripts/audit_page_operations.js --catalog` and
  * `scripts/test_role_permissions.js`, which fail when this file claims a page,
@@ -63,7 +73,7 @@ const salesDocumentForm = (extraDropdowns = []) => ({
   quickCreate: [CUSTOMER_QC, SERVICE_TYPE_QC, PAYMENT_METHOD_QC],
   dropdowns: [
     CUSTOMER_PICK,
-    dd('product', 'Product / vehicle / part', 'Vehicle|Part', true),
+    dd('product', 'Product / vehicle / part', 'Vehicle|Part'),
     dd('service_type', 'Service type (service charges)', 'ServiceType'),
     PAYMENT_METHOD_PICK,
     ...extraDropdowns,
@@ -183,11 +193,11 @@ const PAGE_CATALOG = {
     forms: {
       create: {
         quickCreate: [qc('make', '+ Create Make', 'vehicle_master'), qc('model', '+ Create Model', 'vehicle_master'), qc('variant', '+ Create Variant', 'vehicle_master'), qc('color', '+ Create Colour', 'vehicle_master'), qc('condition', '+ Condition', 'vehicle_master'), qc('warehouse', '+ Create Warehouse', 'warehouses')],
-        dropdowns: [dd('make', 'Brand / Make', 'VehicleMake'), dd('model', 'Model', 'VehicleModel'), dd('variant', 'Variant', 'VehicleVariant'), dd('color', 'Colour', 'VehicleColor'), dd('condition', 'Condition', 'static'), dd('warehouse', 'Warehouse', 'Warehouse', true)],
+        dropdowns: [dd('make', 'Brand / Make', 'VehicleMake'), dd('model', 'Model', 'VehicleModel'), dd('variant', 'Variant', 'VehicleVariant'), dd('color', 'Colour', 'VehicleColor'), dd('condition', 'Condition', 'static'), dd('warehouse', 'Warehouse', 'Warehouse')],
       },
       edit: {
         quickCreate: [qc('make', '+ Create Make', 'vehicle_master'), qc('model', '+ Create Model', 'vehicle_master'), qc('variant', '+ Create Variant', 'vehicle_master'), qc('color', '+ Create Colour', 'vehicle_master'), qc('condition', '+ Condition', 'vehicle_master'), qc('warehouse', '+ Create Warehouse', 'warehouses')],
-        dropdowns: [dd('make', 'Brand / Make', 'VehicleMake'), dd('model', 'Model', 'VehicleModel'), dd('variant', 'Variant', 'VehicleVariant'), dd('color', 'Colour', 'VehicleColor'), dd('condition', 'Condition', 'static'), dd('warehouse', 'Warehouse', 'Warehouse', true)],
+        dropdowns: [dd('make', 'Brand / Make', 'VehicleMake'), dd('model', 'Model', 'VehicleModel'), dd('variant', 'Variant', 'VehicleVariant'), dd('color', 'Colour', 'VehicleColor'), dd('condition', 'Condition', 'static'), dd('warehouse', 'Warehouse', 'Warehouse')],
       },
       filters: { dropdowns: [dd('status', 'Status', 'static'), dd('make', 'Brand', 'VehicleMake'), dd('dispatch', 'Dispatch', 'static')] },
     },
@@ -200,11 +210,11 @@ const PAGE_CATALOG = {
     forms: {
       create: {
         quickCreate: [qc('category', '+ Create Category', 'vehicle_master'), qc('supplier', '+ Create Supplier', 'vehicle_master'), qc('source_type', '+ Create Source Type', 'parts')],
-        dropdowns: [dd('source_type', 'Source Type', 'PartSourceType'), dd('category', 'Category', 'PartCategory'), dd('supplier', 'Supplier', 'Supplier', true), dd('unit', 'Unit', 'static')],
+        dropdowns: [dd('source_type', 'Source Type', 'PartSourceType'), dd('category', 'Category', 'PartCategory'), dd('supplier', 'Supplier', 'Supplier'), dd('unit', 'Unit', 'static')],
       },
       edit: {
         quickCreate: [qc('category', '+ Create Category', 'vehicle_master'), qc('supplier', '+ Create Supplier', 'vehicle_master'), qc('source_type', '+ Create Source Type', 'parts')],
-        dropdowns: [dd('source_type', 'Source Type', 'PartSourceType'), dd('category', 'Category', 'PartCategory'), dd('supplier', 'Supplier', 'Supplier', true), dd('unit', 'Unit', 'static')],
+        dropdowns: [dd('source_type', 'Source Type', 'PartSourceType'), dd('category', 'Category', 'PartCategory'), dd('supplier', 'Supplier', 'Supplier'), dd('unit', 'Unit', 'static')],
       },
       filters: { dropdowns: [dd('category', 'Category', 'PartCategory'), dd('stock', 'Stock', 'static')] },
     },
@@ -328,8 +338,8 @@ const PAGE_CATALOG = {
       extras: [],
     },
     forms: {
-      create: { quickCreate: [qc('department', '+ Create Department', 'department_management')], dropdowns: [dd('department', 'Department', 'Department', true), dd('role', 'Role', 'Role', true)] },
-      edit: { quickCreate: [qc('department', '+ Create Department', 'department_management')], dropdowns: [dd('department', 'Department', 'Department', true), dd('role', 'Role', 'Role', true)] },
+      create: { quickCreate: [qc('department', '+ Create Department', 'department_management')], dropdowns: [dd('department', 'Department', 'Department', true), dd('role', 'Role', 'Role')] },
+      edit: { quickCreate: [qc('department', '+ Create Department', 'department_management')], dropdowns: [dd('department', 'Department', 'Department', true), dd('role', 'Role', 'Role')] },
       filters: { dropdowns: [] },
     },
   },
@@ -378,7 +388,7 @@ const PAGE_CATALOG = {
     columns: [col('Account'), col('Type'), col('Balance'), col('Limit'), col('Status'), col('Transfer #'), col('From'), col('To'), col('Amount'), col('Date'), col('Payable #'), col('Vendor'), col('Due Date'), col('Outstanding'), col('Customer'), col('Invoice #'), col('Opening'), col('In'), col('Out'), col('Closing')],
     drawer: { fields: [], extras: [] },
     forms: {
-      create: { quickCreate: [], dropdowns: [dd('from_account', 'From account', 'Account'), dd('to_account', 'To account', 'Account'), dd('vendor', 'Vendor', 'Supplier', true), dd('customer', 'Customer', 'Customer', true)] },
+      create: { quickCreate: [], dropdowns: [dd('from_account', 'From account', 'Account'), dd('to_account', 'To account', 'Account'), dd('vendor', 'Vendor', 'Supplier'), dd('customer', 'Customer', 'Customer', true)] },
       edit: { quickCreate: [], dropdowns: [dd('from_account', 'From account', 'Account'), dd('to_account', 'To account', 'Account')] },
       filters: { dropdowns: [dd('account', 'Account', 'Account'), dd('status', 'Status', 'static')] },
     },
@@ -400,7 +410,7 @@ const PAGE_CATALOG = {
     columns: [col('Gate Pass #'), col('Type'), col('Date'), col('Against Entry'), col('Invoice #'), col('GRN #'), col('Transporter / Customer'), col('Vehicle No'), col('Items'), col('Status')],
     drawer: { fields: [row('Details'), row('Items'), row('Linked Documents')], extras: [{ key: 'drawer.download_pdf', label: 'Download PDF button in drawer', match: ['Download PDF'] }] },
     forms: {
-      create: { quickCreate: [], dropdowns: [dd('entry', 'Entry (gate pass in)', 'GatePass', true), dd('invoice', 'Invoice / estimate', 'Invoice|PartInvoice|CustomInvoice', true)] },
+      create: { quickCreate: [], dropdowns: [dd('entry', 'Entry (gate pass in)', 'GatePass'), dd('invoice', 'Invoice / estimate', 'Invoice|PartInvoice|CustomInvoice')] },
       edit: { quickCreate: [], dropdowns: [] },
       filters: { dropdowns: [dd('entry_type', 'Entry type', 'static'), dd('status', 'Status', 'static')] },
     },
@@ -451,9 +461,9 @@ const PAGE_CATALOG = {
     columns: [col('User'), col('Email'), col('Role'), col('Department'), col('Status'), col('Last Login')],
     drawer: { fields: [], extras: [] },
     forms: {
-      create: { quickCreate: [], dropdowns: [dd('role', 'Role', 'Role', true), dd('department', 'Department', 'Department', true)] },
-      edit: { quickCreate: [], dropdowns: [dd('role', 'Role', 'Role', true), dd('department', 'Department', 'Department', true)] },
-      filters: { dropdowns: [dd('role', 'Role', 'Role', true)] },
+      create: { quickCreate: [], dropdowns: [dd('role', 'Role', 'Role'), dd('department', 'Department', 'Department', true)] },
+      edit: { quickCreate: [], dropdowns: [dd('role', 'Role', 'Role'), dd('department', 'Department', 'Department', true)] },
+      filters: { dropdowns: [dd('role', 'Role', 'Role')] },
     },
   },
   department_management: {
@@ -472,8 +482,8 @@ const PAGE_CATALOG = {
     columns: [col('Name'), col('Code'), col('Type'), col('Rate'), col('Status')],
     drawer: { fields: [], extras: [] },
     forms: {
-      create: { quickCreate: [], dropdowns: [dd('company', 'Company', 'Company'), dd('branch_type', 'Branch Type', 'static'), dd('manager', 'Manager', 'User', true), dd('currency', 'Currency', 'static'), dd('tax_type', 'Tax Type', 'static')] },
-      edit: { quickCreate: [], dropdowns: [dd('company', 'Company', 'Company'), dd('branch_type', 'Branch Type', 'static'), dd('manager', 'Manager', 'User', true)] },
+      create: { quickCreate: [], dropdowns: [dd('company', 'Company', 'Company'), dd('branch_type', 'Branch Type', 'static'), dd('manager', 'Manager', 'User'), dd('currency', 'Currency', 'static'), dd('tax_type', 'Tax Type', 'static')] },
+      edit: { quickCreate: [], dropdowns: [dd('company', 'Company', 'Company'), dd('branch_type', 'Branch Type', 'static'), dd('manager', 'Manager', 'User')] },
       filters: { dropdowns: [] },
     },
   },
@@ -481,10 +491,10 @@ const PAGE_CATALOG = {
   data_import: { label: 'Data Import', path: '/data-import', columns: [col('File'), col('Module'), col('Status'), col('Uploaded By'), col('Date')], drawer: { fields: [], extras: [] }, forms: { create: { quickCreate: [], dropdowns: [] }, edit: { quickCreate: [], dropdowns: [] }, filters: { dropdowns: [] } } },
 
   // ── Communication, reporting, system ────────────────────────────────────
-  reports: { label: 'Reports', path: '/reports', columns: [], drawer: { fields: [], extras: [] }, forms: { create: { quickCreate: [], dropdowns: [] }, edit: { quickCreate: [], dropdowns: [] }, filters: { dropdowns: [CUSTOMER_PICK, dd('employee', 'Employee', 'Employee', true)] } } },
+  reports: { label: 'Reports', path: '/reports', columns: [], drawer: { fields: [], extras: [] }, forms: { create: { quickCreate: [], dropdowns: [] }, edit: { quickCreate: [], dropdowns: [] }, filters: { dropdowns: [CUSTOMER_PICK, dd('employee', 'Employee', 'Employee')] } } },
   email_templates: { label: 'Email Templates', path: '/email', columns: [col('Name'), col('Category'), col('Status'), col('Updated')], drawer: { fields: [], extras: [] }, forms: { create: { quickCreate: [], dropdowns: [dd('category', 'Category', 'static')] }, edit: { quickCreate: [], dropdowns: [dd('category', 'Category', 'static')] }, filters: { dropdowns: [] } } },
   pdf_management: { label: 'PDF Management', path: '/pdf-management', columns: [col('Name'), col('Document Type'), col('Status'), col('Updated')], drawer: { fields: [], extras: [] }, forms: { create: { quickCreate: [], dropdowns: [dd('document_type', 'Document type', 'static')] }, edit: { quickCreate: [], dropdowns: [] }, filters: { dropdowns: [] } } },
-  logs: { label: 'Logs', path: '/logs', columns: [col('Time'), col('User'), col('Action'), col('Module'), col('Status'), col('IP')], drawer: { fields: [row('Request'), row('Response'), row('User'), row('Meta')], extras: [] }, forms: { create: { quickCreate: [], dropdowns: [] }, edit: { quickCreate: [], dropdowns: [] }, filters: { dropdowns: [dd('user', 'Logs Of', 'User', true), dd('role', 'Role', 'Role', true), dd('status_code', 'Status Code', 'static')] } } },
+  logs: { label: 'Logs', path: '/logs', columns: [col('Time'), col('User'), col('Action'), col('Module'), col('Status'), col('IP')], drawer: { fields: [row('Request'), row('Response'), row('User'), row('Meta')], extras: [] }, forms: { create: { quickCreate: [], dropdowns: [] }, edit: { quickCreate: [], dropdowns: [] }, filters: { dropdowns: [dd('user', 'Logs Of', 'User'), dd('role', 'Role', 'Role'), dd('status_code', 'Status Code', 'static')] } } },
   dashboard: { label: 'Dashboard', path: '/dashboard', columns: [], drawer: { fields: [], extras: [] }, forms: { create: { quickCreate: [], dropdowns: [] }, edit: { quickCreate: [], dropdowns: [] }, filters: { dropdowns: [] } } },
   search: { label: 'Search', path: '/search', columns: [], drawer: { fields: [], extras: [] }, forms: { create: { quickCreate: [], dropdowns: [] }, edit: { quickCreate: [], dropdowns: [] }, filters: { dropdowns: [] } } },
   profile: { label: 'Profile', path: '/profile', columns: [], drawer: { fields: [], extras: [] }, forms: { create: { quickCreate: [], dropdowns: [] }, edit: { quickCreate: [], dropdowns: [] }, filters: { dropdowns: [] } } },

@@ -65,7 +65,7 @@ function WarehouseManagement() {
   const fetchFormReferenceData = useCallback(async () => {
     const [typesRes, managersRes] = await Promise.allSettled([
       leadMasterAPI.getAll('types', { active: 'true' }),
-      warehouseManagerRolesAPI.getUsers(),
+      warehouseManagerRolesAPI.getUsers(dropdownHint('warehouses', 'create', 'manager')),
     ]);
     if (typesRes.status === 'fulfilled') {
       setTypeOptions(toArray(typesRes.value?.data?.data));

@@ -224,7 +224,7 @@ const Payroll = () => {
     // Both the advances tab and the employee record tab need the staff list.
     useEffect(() => {
         if (tab === 'periods' || employees.length) return;
-        employeeAPI.list({ limit: 500, status: 'active' })
+        employeeAPI.list({ limit: 500, status: 'active', ...dropdownHint('payroll', 'create', 'employee') })
             .then((res) => setEmployees(res.data?.data?.employees || []))
             .catch(() => { /* the picker simply stays empty */ });
     }, [tab, employees.length]);

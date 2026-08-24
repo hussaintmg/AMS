@@ -43,6 +43,22 @@ function sources(dir = SRC, out = []) {
 const FILES = sources();
 const ALL = FILES.map((f) => f.text).join('\n');
 
+/**
+ * The server half. A dropdown fed by a page's own meta endpoint needs no hint
+ * from the browser — the endpoint already knows which page it is, and calls
+ * `filterRows(user, '<page>', FORMS, '<key>', …)` itself. Only the shared list
+ * endpoints, which serve a dozen dropdowns from one route, have to be told.
+ */
+const CONTROLLERS = (() => {
+  const dir = path.resolve(__dirname, '..', 'controllers');
+  return fs.readdirSync(dir).filter((f) => f.endsWith('.js'))
+    .map((f) => fs.readFileSync(path.join(dir, f), 'utf8')).join('\n');
+})();
+
+const scopedOnServer = (pageKey, key) => new RegExp(
+  `filterRows\\(\\s*[\\w.]+\\s*,\\s*['"]${pageKey}['"]\\s*,[^,]+,\\s*['"]${key}['"]`,
+).test(CONTROLLERS);
+
 const has = (needle) => ALL.includes(needle);
 const filesWith = (needle) => FILES.filter((f) => f.text.includes(needle)).map((f) => f.file);
 
@@ -84,12 +100,22 @@ function dropdownGate(pageKey, key) {
     || new RegExp(`canSeeDropdown\\(\\s*\\w+\\s*,\\s*\\w+\\s*,`).test(f.text) && f.text.includes(`'${pageKey}'`));
   const asked = bound.some((f) => new RegExp(`showDropdown\\(\\s*['"]${key}['"]`).test(f.text)
     || new RegExp(`canSeeDropdown\\([^)]*['"]${key}['"]`).test(f.text));
-  const scoped = new RegExp(`dropdownHint\\(\\s*(['"]${pageKey}['"]|\\w+)\\s*,[^)]*['"]${key}['"]`).test(ALL);
+  // Either through the helper, or written out — several loaders pass the three
+  // query parameters inline, which is the same request on the wire.
+  const viaHelper = new RegExp(`dropdownHint\\(\\s*(['"]${pageKey}['"]|\\w+)\\s*,[^)]*['"]${key}['"]`).test(ALL);
+  const inline = new RegExp(`forPage:\\s*['"]${pageKey}['"][^}]{0,160}?forField:\\s*['"]${key}['"]`).test(ALL);
+  const hinted = viaHelper || inline;
+  const scoped = hinted || scopedOnServer(pageKey, key);
   // Hiding is enforced centrally from the DOM, so a screen asking for itself is
   // belt and braces rather than the only thing between the role and the field.
   // Scoping cannot be: only the call site knows which request it is loading, so
   // the hint has to be sent there.
-  return { hidden: asked || CENTRAL_DROPDOWN_GATE, hiddenBy: asked ? 'screen' : 'ViewGate', scoped };
+  return {
+    hidden: asked || CENTRAL_DROPDOWN_GATE,
+    hiddenBy: asked ? 'screen' : 'ViewGate',
+    scoped,
+    scopedBy: hinted ? 'query hint' : (scoped ? 'the page meta endpoint' : null),
+  };
 }
 
 // ── actions ────────────────────────────────────────────────────────────────

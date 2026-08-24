@@ -7,7 +7,7 @@
 const express = require('express');
 const router = express.Router();
 const { query } = require('../config/database');
-const { authenticate, authorizeAction } = require('../middleware/auth');
+const { authenticate, authorizeAction, authorizePicker } = require('../middleware/auth');
 
 // Legacy compatibility endpoint used by older dashboard builds
 router.get('/active', authenticate, async (req, res, next) => {
@@ -22,7 +22,7 @@ router.get('/active', authenticate, async (req, res, next) => {
     } catch (error) { next(error); }
 });
 
-router.get('/', authenticate, authorizeAction('user_management', 'view'), async (req, res, next) => {
+router.get('/', authenticate, authorizePicker('user_management', 'User'), async (req, res, next) => {
     try {
         const users = await query(
             `SELECT u.id, u.uuid, u.email, u.first_name, u.last_name, u.phone, 

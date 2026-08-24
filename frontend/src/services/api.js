@@ -215,13 +215,13 @@ export const customerRoleConfigAPI = {
 export const warehouseManagerRolesAPI = {
     get: () => api.get('/server-management/warehouse-manager-roles'),
     update: (roles) => api.put('/server-management/warehouse-manager-roles', { roles }),
-    getUsers: () => api.get('/server-management/warehouse-manager-users'),
+    getUsers: (params) => api.get('/server-management/warehouse-manager-users', { params }),
 };
 
 export const serviceAdvisorRolesAPI = {
     get: () => api.get('/server-management/service-advisor-roles'),
     update: (roles) => api.put('/server-management/service-advisor-roles', { roles }),
-    getUsers: () => api.get('/server-management/service-advisor-users'),
+    getUsers: (params) => api.get('/server-management/service-advisor-users', { params }),
 };
 
 export const pdfManagementAPI = {
@@ -559,8 +559,8 @@ export const serviceAPI = {
 
     // Lookups
     getServiceTypes: () => api.get('/services/types/list'),
-    getTechnicians: () => api.get('/services/technicians/list'),
-    getAdvisors: () => api.get('/services/advisors/list')
+    getTechnicians: (params) => api.get('/services/technicians/list', { params }),
+    getAdvisors: (params) => api.get('/services/advisors/list', { params })
 };
 
 

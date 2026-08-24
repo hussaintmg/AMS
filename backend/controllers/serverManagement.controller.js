@@ -939,15 +939,27 @@ const makeRoleUsageHandlers = (name) => {
         next(error);
       }
     },
-    /** Active users holding one of the configured roles. */
-    users: async (_req, res, next) => {
+    /**
+     * Active users holding one of the configured roles.
+     *
+     * This feeds the Warehouse Manager and Service Advisor pickers, so it also
+     * answers the role's rule for whichever dropdown named itself in the query
+     * (`?forPage=services&forForm=create&forField=service_advisor`). Without
+     * that, Role Jobs offered "whose records may this list offer" for these
+     * three pickers and nothing read the answer.
+     */
+    users: async (req, res, next) => {
       try {
+        const { requestDropdownFilter, isHidden } = require('../utils/dropdownScope');
         const roles = await readRoleUsage(name);
         if (!roles.length) return res.json({ success: true, data: { users: [], roles } });
+        const scope = await requestDropdownFilter(req, null, ['_id', 'createdBy']);
+        if (isHidden(scope)) return res.json({ success: true, data: { users: [], roles } });
         const users = await User.find({
           role: { $in: roles },
           isActive: true,
           status: 'active',
+          ...(scope || {}),
         })
           .select('firstName lastName email phone role')
           .populate('role', 'name displayName')

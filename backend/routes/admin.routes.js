@@ -30,7 +30,11 @@ const statusController = require('../controllers/statusManagement.controller');
 
 // ── User Management ──
 router.get('/users/stats', authenticate, authorizeAction('user_management', 'view'), userController.getUserStats);
-router.get('/users', authenticate, authorizeAction('user_management', 'view'), userController.getAllUsers);
+// The Manager, Assign To and Advisor pickers are all filled from this list, so
+// holding a page whose form carries one is enough to read it — Department
+// Management opened with an empty Manager picker until it was. Read-only, and
+// only this endpoint: it never becomes permission to manage users.
+router.get('/users', authenticate, authorizePicker('user_management', 'User'), userController.getAllUsers);
 router.post('/users/fix-fullname', authenticate, authorizeAction('user_management', 'edit'), userController.fixAllUsersFullName);
 router.post('/users', authenticate, authorizeAction('user_management', 'create'), userController.createUser);
 router.get('/users/:id', authenticate, authorizeAction('user_management', 'view'), userController.getUserById);

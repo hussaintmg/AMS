@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useAuth } from "../context/AuthContext";
-import { pageActions } from '../utils/roleJobs';
+import { pageActions, dropdownHint } from '../utils/roleJobs';
 import { useUserManagement } from "../context/UserManagementContext";
 import toast from "react-hot-toast";
 import ErrorPopup from "../components/ErrorPopup";
@@ -71,8 +71,11 @@ const DepartmentManagement = () => {
     try {
       setLoading(true);
       const [deptData] = await Promise.all([
-        loadDepartments(),
-        loadUsers({ limit: 1000 }),
+        // This screen's own pickers, not User Management's: the parent
+        // department and the manager each answer to Role Jobs → Department
+        // Management → Forms.
+        loadDepartments(dropdownHint('department_management', 'create', 'parent')),
+        loadUsers({ limit: 1000, ...dropdownHint('department_management', 'create', 'manager') }),
         loadRoles(),
         loadDepartmentStats(),
       ]);

@@ -167,7 +167,7 @@ function Appointments() {
       const results = await Promise.allSettled([
         fetchAllCustomersForDropdown('service_appointments'),
         serviceMasterAPI.getTypes(),
-        serviceAPI.getAdvisors().catch(() => ({ data: { data: [] } })),
+        serviceAPI.getAdvisors(dropdownHint('service_appointments', 'create', 'service_advisor')).catch(() => ({ data: { data: [] } })),
         vehicleAPI.getMakes(),
       ]);
       setCustomers(results[0].status === 'fulfilled' ? results[0].value || [] : []);
@@ -695,8 +695,8 @@ function JobCards() {
         serviceMasterAPI.getLaborRates(),
         serviceMasterAPI.getWarranties(),
         serviceMasterAPI.getPackages({ limit: 500 }),
-        serviceAPI.getTechnicians().catch(() => ({ data: { data: [] } })),
-        serviceAPI.getAdvisors().catch(() => ({ data: { data: [] } })),
+        serviceAPI.getTechnicians(dropdownHint('services', 'create', 'technician')).catch(() => ({ data: { data: [] } })),
+        serviceAPI.getAdvisors(dropdownHint('services', 'create', 'service_advisor')).catch(() => ({ data: { data: [] } })),
         partsAPI.getAll({ limit: 500 }),
         vehicleBrandingService.getActiveBrands().catch(() => ({ data: { brands: [] }, success: true })),
       ]);
