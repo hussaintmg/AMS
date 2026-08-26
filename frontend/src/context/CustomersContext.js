@@ -48,9 +48,11 @@ export function CustomersProvider({ children }) {
     }
   }, [buildParams]);
 
-  const loadMeta = useCallback(async () => {
+  const loadMeta = useCallback(async (form) => {
     try {
-      const { data: res } = await customerAPI.getMeta();
+      // `form` narrows the pickers to that form's dropdown rules; without it
+      // the widest rule of the three applies, which is what a list page wants.
+      const { data: res } = await customerAPI.getMeta(form ? { forForm: form } : undefined);
       if (res?.success) setMeta(res.data);
     } catch (_) { /* ignore */ }
   }, []);

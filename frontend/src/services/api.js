@@ -184,7 +184,7 @@ export const leadAPI = {
     create: (data) => api.post('/leads', data),
     update: (id, data) => api.put(`/leads/${id}`, data),
     delete: (id) => api.delete(`/leads/${id}`),
-    getMeta: () => api.get('/leads/meta'),
+    getMeta: (params) => api.get('/leads/meta', { params }),
     getStats: () => api.get('/leads/stats'),
     getActivities: (id) => api.get(`/leads/${id}/activities`),
     assign: (id, data) => api.put(`/leads/${id}/assign`, data),
@@ -261,7 +261,7 @@ export const customerAPI = {
     toggleStatus: (id) => api.patch(`/customers/${id}/status`),
     getStats: () => api.get('/customers/stats'),
     getCities: () => api.get('/customers/cities'),
-    getMeta: () => api.get('/customers/meta')
+    getMeta: (params) => api.get('/customers/meta', { params })
 };
 
 // Vehicles

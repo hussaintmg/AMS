@@ -65,8 +65,19 @@ async function createAuditLog(userId, action, module, details, req) {
 exports.getCustomerMeta = async (req, res, next) => {
   try {
     const { filterRows } = require('../utils/dropdownScope');
-    // The meta list serves the create form, the edit form and the filter bar.
-    const FORMS = ['create', 'edit', 'filters'];
+    /**
+     * Which form's rules to apply.
+     *
+     * One response serves the create form, the edit form and the filter bar, so
+     * with no form named the widest rule among the three wins — otherwise a
+     * strict create-form rule would quietly narrow the filter bar as well. The
+     * cost of that is a rule set on one form alone doing nothing at all, which
+     * is not what the person ticking it in Role Jobs expects. So a caller that
+     * knows which form it is opening says so (`?forForm=create`), and then that
+     * form's rule is the only one consulted.
+     */
+    const asked = String(req.query.forForm || '').trim();
+    const FORMS = ['create', 'edit', 'filters'].includes(asked) ? [asked] : ['create', 'edit', 'filters'];
     const statusSetting = await SystemSetting.findOne({ key: 'lead_status_collection_id' }).lean();
     let statusCollection = null;
     if (statusSetting?.value) {
@@ -101,13 +112,20 @@ exports.getCustomerMeta = async (req, res, next) => {
       allowedRoleIds = setting.value;
     }
 
-    let users = [];
-    if (allowedRoleIds.length > 0) {
-      users = await User.find({ role: { $in: allowedRoleIds }, isActive: true })
-        .select('firstName lastName email role createdBy')
-        .sort({ firstName: 1 })
-        .lean();
-    }
+    // Whom this record may be assigned to.
+    //
+    // Server Management → Role Usage → Lead Assignment narrows this to chosen
+    // roles. Until somebody sets it, every active user is offered — the same
+    // fallback the service advisor list uses. It used to answer with nothing at
+    // all, so the picker was empty on a fresh install however the role was
+    // granted, and there was nothing on screen to say why.
+    let users = await User.find({
+      ...(allowedRoleIds.length ? { role: { $in: allowedRoleIds } } : {}),
+      isActive: true,
+    })
+      .select('firstName lastName email role createdBy')
+      .sort({ firstName: 1 })
+      .lean();
     // A user "owns" their own row as well as the ones they created.
     users = await filterRows(req.user, 'customers', FORMS, 'assignedTo', users, ['_id', 'createdBy']);
     statuses = await filterRows(req.user, 'customers', FORMS, 'status', statuses, ['createdBy']);

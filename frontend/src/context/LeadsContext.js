@@ -18,10 +18,12 @@ export function LeadsProvider({ children }) {
   const initialLoadDone = useRef(false);
   const previousLimit = useRef(20);
 
-  const loadMeta = useCallback(async () => {
+  const loadMeta = useCallback(async (form) => {
     setMetaLoading(true);
     try {
-      const { data } = await leadAPI.getMeta();
+      // `form` narrows the pickers to that form's dropdown rules; without it
+      // the widest rule of the three applies, which is what a list page wants.
+      const { data } = await leadAPI.getMeta(form ? { forForm: form } : undefined);
       if (data?.success) {
         setMeta(data.data);
       }

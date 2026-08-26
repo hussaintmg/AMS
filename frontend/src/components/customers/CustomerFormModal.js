@@ -51,6 +51,13 @@ export default function CustomerFormModal({ customer, onClose, onSaved }) {
 
   const isEdit = Boolean(customer);
 
+  // The pickers on *this* form, not the widest of the three. The list page loads
+  // meta without naming a form, so a rule set on the create form alone would
+  // otherwise never be applied to the create form.
+  useEffect(() => { loadMeta(isEdit ? 'edit' : 'create'); }, [isEdit, loadMeta]);
+  // …and put it back the way the list page wants it when the form closes.
+  useEffect(() => () => { loadMeta(); }, [loadMeta]);
+
   useEffect(() => {
     if (customer) {
       setForm({
@@ -141,6 +148,19 @@ export default function CustomerFormModal({ customer, onClose, onSaved }) {
   // A withheld tab is not drawn, but whatever it holds still rides along on
   // save — hiding the cars must not be a way to lose them.
   const tabs = TABS.filter((tab) => !tab.quick || mayQuickCreate(tab.quick, 'customers'));
+
+  /**
+   * An empty picker with no explanation reads as a broken screen. There are only
+   * two reasons either of these lists comes back empty, and both are somewhere
+   * an administrator can go and change.
+   */
+  const emptyPickerNote = (what) => (
+    <small className="field-error" style={{ color: 'var(--gray-500)', fontWeight: 400 }}>
+      No {what} to choose from. Either this role's “{what === 'users' ? 'Assign To' : 'Department'}”
+      rule narrows the list (Server Management → Role Jobs → Customers → Forms), or nothing
+      matches it yet.
+    </small>
+  );
   const renderLabel = (text, field, quickType, page = 'lead_master') => (
     <div className="form-label-add">
       <span>{text}</span>
@@ -361,6 +381,7 @@ export default function CustomerFormModal({ customer, onClose, onSaved }) {
                 valueField="_id"
                 labelField="name"
               />
+              {!(meta.users || []).length && emptyPickerNote('users')}
             </div>
             )}
             {showDropdown('department') && (
@@ -374,6 +395,7 @@ export default function CustomerFormModal({ customer, onClose, onSaved }) {
                 valueField="_id"
                 labelField="name"
               />
+              {!(meta.departments || []).length && emptyPickerNote('departments')}
             </div>
             )}
           </>

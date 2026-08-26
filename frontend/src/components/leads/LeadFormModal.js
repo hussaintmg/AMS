@@ -150,12 +150,7 @@ export default function LeadFormModal({ lead, onClose, onSaved }) {
 
   useModalKeyboard(true, onClose, handleSubmit, saving);
 
-  const getAssignedOptions = () => {
-    if (!meta.leadAssignmentRolesConfigured && meta.users.length === 0) {
-      return { users: [], empty: true };
-    }
-    return { users: meta.users, empty: false };
-  };
+  const getAssignedOptions = () => ({ users: meta.users || [], empty: !(meta.users || []).length });
 
   const buildOptionsWithInactive = (items, inactiveItems, idField = '_id') => {
     const activeItems = items.map((i) => ({ ...i, _isInactive: false }));
@@ -183,6 +178,11 @@ export default function LeadFormModal({ lead, onClose, onSaved }) {
   // or by being ticked in Role Jobs → Leads → Forms for a role that may create
   // leads — per form, so the create form and the edit form can differ.
   const formKind = lead ? 'edit' : 'create';
+
+  // The pickers on this form, not the widest rule of the three — see
+  // CustomersContext.loadMeta.
+  useEffect(() => { loadMeta(formKind); }, [formKind, loadMeta]);
+  useEffect(() => () => { loadMeta(); }, [loadMeta]);
   // A dropdown Role Jobs has set to "Hidden" for this form is not drawn at all.
   const showDropdown = (key) => canSeeDropdown(user, 'leads', formKind, key);
   const renderLabel = (text, field, onCreate, page = 'lead_master') => (
@@ -374,8 +374,13 @@ export default function LeadFormModal({ lead, onClose, onSaved }) {
               <label>Assign To</label>
               {assignOptions.empty ? (
                 <div className="empty-assignees">
-                  <p>No lead assignment roles configured.</p>
-                  <small>Ask an admin to configure lead assignment roles in Server Management.</small>
+                  <p>Nobody to assign this to.</p>
+                  <small>
+                    Either this role&rsquo;s &ldquo;Assign To&rdquo; rule narrows the list
+                    (Server Management &rarr; Role Jobs &rarr; Leads &rarr; Forms), or Lead
+                    Assignment is limited to roles that have no active users
+                    (Server Management &rarr; Role Usage).
+                  </small>
                 </div>
               ) : (
                 <SearchableSelect
